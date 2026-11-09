@@ -166,6 +166,23 @@ export interface UsageDTO {
 	readonly costTotal: number;
 	/** True when (part of) the spend came from the fixture model: cost is 0 and not real. */
 	readonly fixture?: boolean;
+	/**
+	 * True when (part of) these numbers come from a simulated model (the fixture): token counts are faux estimates and
+	 * cost is 0. The UI must not present them as real usage.
+	 */
+	readonly simulated?: boolean;
+	/** Conversation totals only: per "provider/modelId" (and per tool) breakdown, each flagged simulated or not. */
+	readonly byModel?: readonly UsageByModelDTO[];
+}
+
+export interface UsageByModelDTO {
+	/** "provider/modelId" for model spend, "tool:<name>" for tool-reported spend. */
+	readonly key: string;
+	readonly simulated: boolean;
+	readonly input: number;
+	readonly output: number;
+	readonly totalTokens: number;
+	readonly costTotal: number;
 }
 
 export interface LiveToolDTO {

@@ -386,6 +386,16 @@ export class Runtime implements RuntimeService {
 		}
 	}
 
+	/** Simulated (fixture) model: the fixture provider, or a gateway platform model labelled as the test model. */
+	readonly isSimulated = (provider: string, modelId: string): boolean => {
+		if (provider === FIXTURE_PROVIDER) return true;
+		try {
+			return /测试模型|非真实 ?AI/.test(this.manager.models().getModel(provider, modelId)?.name ?? "");
+		} catch {
+			return false;
+		}
+	};
+
 	modelLabel(ref: { provider: string; modelId: string } | undefined): string {
 		if (!ref) return "未选择模型";
 		if (isFixtureModel(ref)) return FIXTURE_LABEL;
@@ -557,7 +567,7 @@ export class Runtime implements RuntimeService {
 			return names.get(u);
 		};
 		const visible = entries.filter((e) => e.kind !== "pi.system");
-		const dtos = visible.map((e) => entryDTO(e, name));
+		const dtos = visible.map((e) => entryDTO(e, name, this.isSimulated));
 		const lookups: { i: number; conversationId: number; requestId: string }[] = [];
 		visible.forEach((e, i) => {
 			const rid = (e.data as any)?.requestId;
@@ -617,7 +627,7 @@ export class Runtime implements RuntimeService {
 		return {
 			...(agent.model ? { model: { provider: agent.model.provider, modelId: agent.model.modelId } } : {}),
 			thinkingLevel: agent.thinkingLevel,
-			fixture: isFixtureModel(agent.model),
+			fixture: !!agent.model && this.isSimulated(agent.model.provider, agent.model.modelId),
 			modelLabel: this.modelLabel(agent.model),
 			tools: agent.tools.map((t) => t.name),
 			...(agent.maxTurns ? { maxTurns: agent.maxTurns } : {}),
@@ -676,7 +686,7 @@ export class Runtime implements RuntimeService {
 			approvals,
 			effects,
 			subagents,
-			usage: usageFromState(view.docs[UsageDoc.definition.kind]),
+			usage: usageFromState(view.docs[UsageDoc.definition.kind], this.isSimulated),
 			agent: await this.agentDTO(harness, conv, context),
 			revision,
 			at: nowIso(),

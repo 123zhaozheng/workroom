@@ -368,7 +368,9 @@ test("runtime: per-message outcome (B) — done, aborted, model_error, withdrawn
 		// reload: entries and SSE snapshot both carry the outcome on each message
 		const users = (await entries(t, a.token, c)).filter((e) => e.kind === "user") as any[];
 		const by = (text: string) => users.find((u) => u.text.includes(text));
-		assert.deepEqual(by("好的").submission, { submissionId: ok.submissionId, status: "done" });
+		assert.equal(by("好的").submission.submissionId, ok.submissionId);
+		assert.equal(by("好的").submission.status, "done");
+		assert.ok(users.length && Number.isInteger(by("好的").submission.answerEntryId));
 		assert.equal(by("[[fail]]").submission.status, "unanswered");
 		assert.equal(by("[[fail]]").submission.reason, "model_error");
 		assert.equal(by("会被停止").submission.status, "unanswered");
@@ -407,6 +409,31 @@ test("runtime: server-side title — directives stripped, first meaningful line,
 		await t.json("PATCH", base(c), { token: a.token, json: { title: "我的标题" } });
 		await settle(t, a.token, c, (await send(t, a.token, c, "别改标题 [[reply ok]]")).submissionId);
 		assert.equal((await t.json("GET", base(c), { token: a.token })).conversation.title, "我的标题");
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("runtime: usage from the fixture is flagged simulated (totals, per model, per entry); real models are not", async () => {
+	const { usageFromState } = await import("../src/runtime/dto.ts");
+	const u = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0.01, output: 0.02, cacheRead: 0, cacheWrite: 0, total: 0.03 } };
+	const mixed = usageFromState({ models: { "fixture/workroom-fixture": u, "workroom/claude": u }, tools: {} } as any);
+	assert.equal(mixed.simulated, true);
+	assert.deepEqual(mixed.byModel!.map((m) => [m.key, m.simulated]), [["fixture/workroom-fixture", true], ["workroom/claude", false]]);
+	const real = usageFromState({ models: { "workroom/claude": u }, tools: {} } as any);
+	assert.equal(real.simulated, undefined);
+	const t = await startTestApp();
+	try {
+		const a = await t.user("rt-usage@example.com");
+		const c = await newChat(t, a.token);
+		await settle(t, a.token, c, (await send(t, a.token, c, "用量 [[reply ok]]")).submissionId);
+		const st: ConversationState = await t.json("GET", `${base(c)}/state`, { token: a.token });
+		assert.equal(st.usage.simulated, true);
+		assert.equal(st.usage.costTotal, 0);
+		assert.deepEqual(st.usage.byModel!.map((m) => [m.key, m.simulated]), [["fixture/workroom-fixture", true]]);
+		const asst = st.entries.find((e) => e.kind === "assistant") as any;
+		assert.equal(asst.usage.simulated, true);
+		assert.equal(st.agent.fixture, true);
 	} finally {
 		await t.dispose();
 	}

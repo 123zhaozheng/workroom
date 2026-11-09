@@ -6,8 +6,13 @@ import { FIXTURE_PROVIDER, textOfContent } from "./fixture-model.ts";
 
 const ZERO_USAGE: UsageDTO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, costTotal: 0 };
 
-export function usageDTO(u: Partial<Usage> | undefined, fixture = false): UsageDTO {
-	if (!u) return { ...ZERO_USAGE, ...(fixture ? { fixture } : {}) };
+/** Default simulated-model test: the fixture provider. The runtime passes a richer predicate (gateway labels). */
+export type SimulatedModel = (provider: string, modelId: string) => boolean;
+export const fixtureOnly: SimulatedModel = (provider) => provider === FIXTURE_PROVIDER;
+
+export function usageDTO(u: Partial<Usage> | undefined, simulated = false): UsageDTO {
+	const flag = simulated ? { fixture: true, simulated: true } : {};
+	if (!u) return { ...ZERO_USAGE, ...flag };
 	return {
 		input: u.input ?? 0,
 		output: u.output ?? 0,
@@ -15,7 +20,7 @@ export function usageDTO(u: Partial<Usage> | undefined, fixture = false): UsageD
 		cacheWrite: u.cacheWrite ?? 0,
 		totalTokens: u.totalTokens ?? 0,
 		costTotal: u.cost?.total ?? 0,
-		...(fixture ? { fixture } : {}),
+		...flag,
 	};
 }
 
@@ -28,16 +33,28 @@ export function addUsage(a: UsageDTO, b: UsageDTO): UsageDTO {
 		totalTokens: a.totalTokens + b.totalTokens,
 		costTotal: a.costTotal + b.costTotal,
 		...(a.fixture || b.fixture ? { fixture: true } : {}),
+		...(a.simulated || b.simulated ? { simulated: true } : {}),
 	};
 }
 
-/** Sum a conversation's pi.usage document (models + tools). */
-export function usageFromState(state: Readonly<UsageState> | undefined): UsageDTO {
+/** Sum a conversation's pi.usage document (models + tools), with a per-model breakdown flagged simulated or real. */
+export function usageFromState(state: Readonly<UsageState> | undefined, isSimulated: SimulatedModel = fixtureOnly): UsageDTO {
 	let out: UsageDTO = { ...ZERO_USAGE };
 	if (!state) return out;
-	for (const [key, u] of Object.entries((state as any).models ?? {})) out = addUsage(out, usageDTO(u as Usage, key.startsWith(`${FIXTURE_PROVIDER}/`)));
-	for (const u of Object.values((state as any).tools ?? {})) out = addUsage(out, usageDTO(u as Usage));
-	return out;
+	const byModel: UsageDTO["byModel"] & any[] = [];
+	for (const [key, u] of Object.entries((state as any).models ?? {})) {
+		const slash = key.indexOf("/");
+		const sim = isSimulated(key.slice(0, slash), key.slice(slash + 1));
+		const d = usageDTO(u as Usage, sim);
+		out = addUsage(out, d);
+		byModel.push({ key, simulated: sim, input: d.input, output: d.output, totalTokens: d.totalTokens, costTotal: d.costTotal });
+	}
+	for (const [name, u] of Object.entries((state as any).tools ?? {})) {
+		const d = usageDTO(u as Usage);
+		out = addUsage(out, d);
+		byModel.push({ key: `tool:${name}`, simulated: false, input: d.input, output: d.output, totalTokens: d.totalTokens, costTotal: d.costTotal });
+	}
+	return byModel.length ? { ...out, byModel } : out;
 }
 
 function assistantParts(m: AssistantMessage | undefined): { text: string; thinking?: string; toolCalls: ToolCallDTO[] } {
@@ -52,7 +69,7 @@ function assistantParts(m: AssistantMessage | undefined): { text: string; thinki
 	return { text, ...(thinking ? { thinking } : {}), toolCalls };
 }
 
-export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string | undefined): EntryDTO {
+export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string | undefined, isSimulated: SimulatedModel = fixtureOnly): EntryDTO {
 	const base = { id: e.id as number, conversationId: e.conversationId as number };
 	const msg = e.model?.[0] as Message | undefined;
 	switch (e.kind) {
@@ -83,8 +100,8 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 				stopReason: m?.stopReason ?? "stop",
 				...(m?.errorMessage ? { errorMessage: m.errorMessage } : {}),
 				model: { provider: m?.provider ?? "", modelId: m?.model ?? "" },
-				fixture: m?.provider === FIXTURE_PROVIDER,
-				usage: usageDTO(m?.usage, m?.provider === FIXTURE_PROVIDER),
+				fixture: !!m && isSimulated(m.provider, m.model),
+				usage: usageDTO(m?.usage, !!m && isSimulated(m.provider, m.model)),
 				timestamp: m?.timestamp,
 			};
 		}
