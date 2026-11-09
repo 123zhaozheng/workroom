@@ -11,7 +11,6 @@ import type { SandboxRunsResponse } from "../../../shared/files.ts";
 import type { SandboxDriverAdminDTO, SandboxDriverStatusDTO, SandboxDriverUpdate, WorkspaceFilesResponse } from "../../../shared/sandbox.ts";
 import type { BrowserService } from "./browser.ts";
 import { DEFAULT_LIMITS, type Sandbox } from "./sandbox.ts";
-import { namespaceDriver } from "./sandbox/namespaces.ts";
 import { isInlineImage } from "./sandbox/workspace.ts";
 import { noneDriver } from "./sandbox/none.ts";
 import type { DriverStatus, SandboxDriver } from "./sandbox/driver.ts";
@@ -83,7 +82,7 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 			reason: r.reason,
 			network: s.network,
 			docker: { image: s.docker.image, pythonImage: s.docker.pythonImage, nodeImage: s.docker.nodeImage, cpus: s.docker.cpus, autoPull: s.docker.autoPull, ...(manage ? { bin: s.docker.bin, host: s.docker.host } : {}) },
-			drivers: [statusDTO(namespaceDriver, r.statuses.namespaces, manage), statusDTO(sb.drivers.docker, r.statuses.docker, manage), statusDTO(none, settingNone, manage)],
+			drivers: [statusDTO(sb.drivers.namespaces, r.statuses.namespaces, manage), statusDTO(sb.drivers.docker, r.statuses.docker, manage), statusDTO(none, settingNone, manage)],
 			prepare: prep ? { mode: prep.mode, state: prep.state, startedAt: prep.startedAt, finishedAt: prep.finishedAt, log: manage ? prep.log.slice(-40) : [] } : undefined,
 			maxConcurrent: s.maxConcurrent,
 			services: manage ? sb.listServices().map((x) => ({ key: x.key, id: x.id, runtime: x.runtime, startedAt: x.startedAt, lastActivityAt: x.lastActivityAt, driver: x.driver, running: x.running })) : [],

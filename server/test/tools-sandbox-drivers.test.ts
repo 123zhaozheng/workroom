@@ -310,3 +310,33 @@ test("workspace paths: traversal, absolute, drive-letter, backslash and device-n
 	assert.equal(cleanPath(""), "");
 	assert.equal(cleanPath("结果/报表 2026.csv"), "结果/报表 2026.csv");
 });
+
+test("runHost: no shell, clean environment, timeout kills the whole process tree, exit codes and output are reported", async () => {
+	const { runHost } = await import("../src/tools/sandbox/hostexec.ts");
+	process.env.WR_SECRET_FOR_TEST = "leak";
+	try {
+		const ok = await runHost([process.execPath, "-e", "console.log('hi', process.env.WR_SECRET_FOR_TEST, process.env.EXTRA); process.stderr.write('e')"], { env: { EXTRA: "x" } });
+		assert.deepEqual([ok.status, ok.exitCode, ok.stdout.trim(), ok.stderr], ["ok", 0, "hi undefined x", "e"]);
+		const bad = await runHost([process.execPath, "-e", "process.exit(3)"]);
+		assert.deepEqual([bad.status, bad.exitCode], ["error", 3]);
+		const t0 = Date.now();
+		const hang = await runHost([process.execPath, "-e", "require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)//wr-host-grandchild'], {stdio:'ignore'}); setInterval(()=>{},1000)"], { timeoutMs: 800 });
+		assert.equal(hang.status, "timeout");
+		assert.ok(Date.now() - t0 < 6000);
+		const { execFileSync } = await import("node:child_process");
+		let left = "";
+		try {
+			left = execFileSync("pgrep", ["-f", "wr-host-grandchild"], { encoding: "utf8" });
+		} catch {
+			/* none */
+		}
+		assert.equal(left.trim(), "", "grandchild died with the tree");
+		const missing = await runHost(["definitely-not-a-program-xyz"]);
+		assert.deepEqual([missing.status, missing.exitCode], ["error", 127]);
+		const ac = new AbortController();
+		setTimeout(() => ac.abort(), 200);
+		assert.equal((await runHost([process.execPath, "-e", "setInterval(()=>{},1000)"], { signal: ac.signal })).status, "killed");
+	} finally {
+		delete process.env.WR_SECRET_FOR_TEST;
+	}
+});
