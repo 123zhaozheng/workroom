@@ -20,7 +20,9 @@ import type { AppContext, ModelGateway, ModelRef, PlatformModel, Principal } fro
 import { HttpError, newId, nowIso } from "../core/http.ts";
 import { SecretBox } from "../identity/secrets.ts";
 import { Allowlist, resolveTarget } from "./egress.ts";
+import { pinnedFetch } from "../tools/netpolicy.ts";
 import { logEvent, redactText } from "./log.ts";
+import { DEFAULT_BREAKER_THRESHOLD, DEFAULT_BREAKER_WINDOW_MS, Limiter, type Acquire, type LimitClass } from "./models-limits.ts";
 import { builtinProviderMap, listRemoteModels, modelFromRemote, requestAuth, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from "./models-fetch.ts";
 import { normalizeBaseUrl } from "./models-presets.ts";
 import { DbCredentialStore, DbModelsStore, providerEnv, providerHeaders, providerKey } from "./models-store.ts";
@@ -28,7 +30,7 @@ import { FIXTURE_MODEL_ID, FIXTURE_PI_PROVIDER, platformId, RESERVED_PROVIDER_ID
 
 export { FIXTURE_MODEL_ID, FIXTURE_PI_PROVIDER, WORKROOM_PI_PROVIDER };
 export type Capability = "text" | "image" | "tools" | "reasoning";
-export type ErrorClass = "rate_limit" | "overloaded" | "server" | "timeout" | "network" | "auth" | "context_overflow" | "bad_request" | "aborted" | "no_credentials" | "capability_mismatch" | "unknown";
+export type ErrorClass = "local_rate_limit" | "concurrency" | "circuit_open" | "rate_limit" | "overloaded" | "server" | "timeout" | "network" | "auth" | "context_overflow" | "bad_request" | "aborted" | "no_credentials" | "capability_mismatch" | "unknown";
 
 const ALIAS_API = "workroom-alias";
 
@@ -81,6 +83,8 @@ function addUsage(t: Usage, u: Usage | undefined): void {
 export function classifyError(m: AssistantMessage): { cls: ErrorClass; retryable: boolean } {
 	if (m.stopReason === "aborted") return { cls: "aborted", retryable: false };
 	const msg = (m.errorMessage ?? "").toLowerCase();
+	const local = /^(local_rate_limit|concurrency|circuit_open)\b/.exec(msg)?.[1];
+	if (local) return { cls: local as ErrorClass, retryable: true };
 	if (isContextOverflow(m)) return { cls: "context_overflow", retryable: false };
 	// pi-ai's provider errors start with the HTTP status ("503 …", "400: {…}"): the status decides before any word in the body does.
 	const status = Number(/^\s*(?:http\s*)?(\d{3})\b/.exec(msg)?.[1]);
@@ -144,8 +148,17 @@ export class Gateway implements ModelGateway {
 	readonly #links = new Map<string, Link>();
 	#rows: Map<string, ProviderRow> | null = null;
 	#entries: Map<string, Map<string, EntryRow>> | null = null;
-	/** Injectable for deterministic tests. */
-	now: () => number = () => Date.now();
+	/** Injectable for deterministic tests (also drives the limiter / breaker clock). */
+	get now(): () => number {
+		return this.#now;
+	}
+	set now(f: () => number) {
+		this.#now = f;
+		this.limits.now = f;
+	}
+	#now: () => number = () => Date.now();
+	/** Local rpm / concurrency limits and circuit breaker around every provider's streams. */
+	readonly limits = new Limiter(() => this.#now());
 	/** Called after each finished request with its linkage (usage importer marks the conversation dirty). */
 	onRequestFinished?: (link: { spaceId?: string; conversationId?: number }) => void;
 	/** Resolver override for tests of the personal-provider egress guard. */
@@ -304,7 +317,7 @@ export class Gateway implements ModelGateway {
 				const r = this.rowOf(id);
 				if (!r) return [];
 				await this.guardTarget(r);
-				const { models } = await listRemoteModels({ row: r, baseUrl: this.baseUrlOf(r), key: r.keyless ? undefined : providerKey(r, this.secrets).key, headers: providerHeaders(r, this.secrets), signal: c.signal }); // key from the store, not c.credential.key: bearer-style auth resolves without an apiKey
+				const { models } = await listRemoteModels({ row: r, baseUrl: this.baseUrlOf(r), key: r.keyless ? undefined : providerKey(r, this.secrets).key, headers: providerHeaders(r, this.secrets), signal: c.signal, fetchImpl: r.scope === "user" ? pinnedFetch() : undefined }); // key from the store, not c.credential.key: bearer-style auth resolves without an apiKey
 				this.db.run("UPDATE model_providers SET last_fetch_at = ? WHERE id = ?", nowIso(), id);
 				return models.map((m) => modelFromRemote(r, this.baseUrlOf(r), m, this.#builtins));
 			},
@@ -371,6 +384,12 @@ export class Gateway implements ModelGateway {
 		await resolveTarget(row.base_url, new Allowlist([]), this.resolver);
 	}
 
+	#limitScopes(row: ProviderRow, m: Model<Api>): [Parameters<Limiter["tryAcquire"]>[0], Parameters<Limiter["tryAcquire"]>[1]] {
+		const e = this.entryOf(m.provider, m.id);
+		const scopes = [{ key: row.id, label: row.name, rpm: row.rpm_limit, concurrency: row.concurrency_limit }, { key: `${row.id}/${m.id}`, label: `${row.name} / ${m.name}`, rpm: e?.rpm_limit, concurrency: e?.concurrency_limit }];
+		return [scopes, { key: row.id, label: row.name, threshold: row.breaker_threshold ?? DEFAULT_BREAKER_THRESHOLD, windowMs: row.breaker_window_ms ?? DEFAULT_BREAKER_WINDOW_MS }];
+	}
+
 	#fallbacksOf(provider: string, modelId: string): ModelRef[] {
 		return json<ModelRef[]>(this.entryOf(provider, modelId)?.fallbacks, []);
 	}
@@ -385,7 +404,9 @@ export class Gateway implements ModelGateway {
 		return out;
 	}
 
-	async #runAttempts(model: Model<Api>, context: TranscriptContext, options: SimpleStreamOptions & { metadata?: Record<string, unknown> }, row: ProviderRow | null, run: (m: Model<Api>, o: any) => AssistantMessageEventStream, out: AssistantMessageEventStream): Promise<void> {
+	async #runAttempts(model: Model<Api>, context: TranscriptContext, options: SimpleStreamOptions & { metadata?: Record<string, unknown> }, rowAtBuild: ProviderRow | null, run: (m: Model<Api>, o: any) => AssistantMessageEventStream, out: AssistantMessageEventStream): Promise<void> {
+		// the row captured when the provider was built may be stale (limits, timeout edited since): always use the current one
+		const row = rowAtBuild ? (this.rowOf(rowAtBuild.id) ?? rowAtBuild) : null;
 		const t0 = this.now();
 		const requestKey = newId("rq");
 		const meta = (options.metadata ?? {}) as Record<string, unknown>;
@@ -407,7 +428,7 @@ export class Gateway implements ModelGateway {
 		}
 		const upstreamMeta = Object.fromEntries(Object.entries(meta).filter(([k]) => !k.startsWith("wr")));
 		const { metadata: _m, ...rest } = options;
-		const baseOpts: SimpleStreamOptions = { ...rest, ...(Object.keys(upstreamMeta).length ? { metadata: upstreamMeta } : {}), ...(!rest.timeoutMs && row?.timeout_ms ? { timeoutMs: row.timeout_ms } : {}) };
+		const baseOpts: SimpleStreamOptions = { ...rest, ...(Object.keys(upstreamMeta).length ? { metadata: upstreamMeta } : {}), ...(!rest.timeoutMs && row?.timeout_ms ? { timeoutMs: row.timeout_ms } : {}), ...(row?.scope === "user" ? { fetch: pinnedFetch() } : {}) };
 
 		const needs = transcriptNeeds(context);
 		const chain: Model<Api>[] = [model];
@@ -424,6 +445,7 @@ export class Gateway implements ModelGateway {
 		}
 
 		const spent = zeroUsage();
+		let lastDenied: { cls: LimitClass; detail: string } | undefined;
 		let last: { msg: AssistantMessage; model: Model<Api> } | undefined;
 		let attemptNo = 0;
 		let failovers = 0;
@@ -431,6 +453,18 @@ export class Gateway implements ModelGateway {
 			const cand = chain[i]!;
 			const candRow = i === 0 ? row : (this.rowOf(cand.provider) ?? null);
 			const startedAt = this.now();
+			// Local limits + circuit breaker (the fixture has no provider row: never limited). A fallback called through Models is already
+			// accounted for by the outer loop (wrNoFailover), so only the outer call acquires.
+			let acq: Extract<Acquire, { release: unknown }> | undefined;
+			if (candRow && meta.wrNoFailover !== true && meta.wrNoRecord !== true) {
+				const got = this.limits.tryAcquire(...this.#limitScopes(candRow, cand));
+				if ("denied" in got) {
+					lastDenied ??= got.denied;
+					if (record) this.#insertAttempt({ requestKey, attemptNo: ++attemptNo, model: cand, row: candRow, link, status: "skipped", cls: got.denied.cls, error: got.denied.detail, retryable: true, failover: failovers > 0, startedAt: new Date(startedAt).toISOString(), endedAt: nowIso(), fixture: false });
+					continue;
+				}
+				acq = got;
+			}
 			let started = false;
 			let firstToken: number | null = null;
 			let final: AssistantMessage | undefined;
@@ -474,6 +508,7 @@ export class Gateway implements ModelGateway {
 			const isErr = final.stopReason === "error" || final.stopReason === "aborted";
 			addUsage(spent, final.usage ?? zeroUsage());
 			const cls = isErr ? classifyError(final) : undefined;
+			acq?.release(!isErr ? "ok" : final.stopReason === "aborted" ? "aborted" : cls && ["server", "network", "timeout", "overloaded", "auth"].includes(cls.cls) ? "infra_fail" : "other");
 			const canFailover = isErr && !started && final.stopReason === "error" && !!cls?.retryable && !options.signal?.aborted && i < chain.length - 1;
 			const isFixture = cand.provider === FIXTURE_PI_PROVIDER;
 			if (record) {
@@ -487,7 +522,15 @@ export class Gateway implements ModelGateway {
 			}
 			break;
 		}
-		const msg: AssistantMessage = last!.msg;
+		if (!last) {
+			// every candidate was denied by a local limit / open circuit: nothing reached an upstream. Retryable by pi-durable (backoff = queue).
+			const m = errorMessage(model, `${lastDenied!.cls}: ${lastDenied!.detail}`);
+			out.push({ type: "error", reason: "error", error: m });
+			out.end(m);
+			if (record) this.onRequestFinished?.(link);
+			return;
+		}
+		const msg: AssistantMessage = last.msg;
 		if (failovers > 0) {
 			// Several upstream calls served this request: the message bills ALL of them (M15-C: actual calls), identity = the model that answered.
 			msg.usage = spent;
@@ -837,7 +880,7 @@ export class Gateway implements ModelGateway {
 			try {
 				await this.guardTarget(row);
 				const k = providerKey(row, this.secrets);
-				const r = await listRemoteModels({ row, baseUrl: this.baseUrlOf(row), key: row.keyless ? undefined : k.key, headers: providerHeaders(row, this.secrets), signal: AbortSignal.timeout(20_000) });
+				const r = await listRemoteModels({ row, baseUrl: this.baseUrlOf(row), key: row.keyless ? undefined : k.key, headers: providerHeaders(row, this.secrets), signal: AbortSignal.timeout(20_000), fetchImpl: row.scope === "user" ? pinnedFetch() : undefined });
 				result.list = { ok: true, count: r.models.length, latencyMs: r.latencyMs, url: r.url };
 			} catch (e) {
 				result.list = { ok: false, detail: redactText((e as Error).message) };
@@ -850,7 +893,7 @@ export class Gateway implements ModelGateway {
 		else {
 			const t0 = Date.now();
 			try {
-				const msg = await this.#models.completeSimple(model, { messages: [{ role: "user", content: "Reply with the single word: OK", timestamp: Date.now() }] }, { maxTokens: 24, signal: AbortSignal.timeout(45_000), metadata: { wrNoRecord: true } });
+				const msg = await this.#models.completeSimple(model, { messages: [{ role: "user", content: "Reply with the single word: OK", timestamp: Date.now() }] }, { maxTokens: 24, signal: AbortSignal.timeout(45_000), metadata: { wrNoRecord: true }, ...(row.scope === "user" ? { fetch: pinnedFetch() } : {}) });
 				const text = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("").trim();
 				result.completion = msg.stopReason === "error" || msg.stopReason === "aborted" ? { ok: false, modelId: model.id, detail: redactText(msg.errorMessage ?? msg.stopReason), latencyMs: Date.now() - t0 } : { ok: true, modelId: model.id, text: text.slice(0, 80), latencyMs: Date.now() - t0 };
 			} catch (e) {

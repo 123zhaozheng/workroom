@@ -83,6 +83,8 @@ function ProviderRowView({ p, base, personal, canProviders, canModels, catalog, 
 						{p.healthDetail ? ` · ${p.healthDetail}` : ""}
 					</span>
 				</span>
+				{p.circuit?.open ? <Badge tone="danger" title={`连续失败 ${p.circuit.fails} 次，熔断中；到期后半开探测`} data-testid="circuit-open">熔断中</Badge> : null}
+				{p.rpmLimit || p.concurrencyLimit ? <Badge title="本地限流">{p.rpmLimit ? `${p.rpmLimit}/分钟` : ""}{p.rpmLimit && p.concurrencyLimit ? " · " : ""}{p.concurrencyLimit ? `并发 ${p.concurrencyLimit}` : ""}</Badge> : null}
 				<HealthBadge p={p} />
 				{canProviders ? (
 					<>
@@ -104,6 +106,11 @@ function ProviderRowView({ p, base, personal, canProviders, canModels, catalog, 
 							<Wifi />
 							测试连接
 						</Button>
+						{p.circuit?.open && !p.readOnly ? (
+							<Button size="sm" disabled={busy} onClick={() => run(() => post(`${base}/${p.id}/reset-circuit`, {}))} data-testid="reset-circuit">
+								重置熔断
+							</Button>
+						) : null}
 						<Button
 							size="sm"
 							disabled={busy || p.health !== "ready" || (p.readOnly && !personal)}

@@ -139,11 +139,11 @@ export function registerModelRoutes(api: Hono<AppEnv>, ctx: AppContext, gw: Gate
 			const b = await jsonBody<ProviderInput & { models?: unknown[]; fetchModels?: boolean; enableFetched?: boolean }>(c);
 			const row = await createProviderRow(gw, ownerOf(p, mode), b, p.userId);
 			await gw.reload(row.id);
-			auditSafe(c, p, "model.provider.create", row.id, { ...touched(b), type: row.type, scope: row.scope, preset: row.preset });
+			auditSafe(c, p, "model.provider.create", row.id, { ...touched(b), limits: [b.rpmLimit, b.concurrencyLimit], type: row.type, scope: row.scope, preset: row.preset });
 			if (Array.isArray(b.models)) {
 				for (const m of b.models as Record<string, any>[]) {
-					const { id: mid, enabled, visibility, fallbacks, defaultThinking, description, ...spec } = m;
-					saveEntry(gw, row, String(mid), { manual: true, spec, enabled: enabled ?? true, visibility, fallbacks, defaultThinking, description });
+					const { id: mid, enabled, visibility, fallbacks, defaultThinking, description, rpmLimit, concurrencyLimit, ...spec } = m;
+					saveEntry(gw, row, String(mid), { manual: true, spec, enabled: enabled ?? true, visibility, fallbacks, defaultThinking, description, rpmLimit, concurrencyLimit });
 				}
 				await gw.reload(row.id);
 			}
@@ -183,6 +183,15 @@ export function registerModelRoutes(api: Hono<AppEnv>, ctx: AppContext, gw: Gate
 			return c.json({ ok: true });
 		});
 
+		/** Close the circuit breaker by hand (it also half-opens by itself after the window). */
+		api.post(`${prefix}/:id/reset-circuit`, async (c) => {
+			const p = await actor(c, mode, "providers");
+			const row = rowFor(p, mode, c.req.param("id"), true);
+			gw.limits.reset(row.id);
+			auditSafe(c, p, "model.provider.reset_circuit", row.id, {});
+			return c.json(detail(row, p));
+		});
+
 		/** Real request: list models + a tiny completion. Never recorded as usage. */
 		api.post(`${prefix}/:id/test`, async (c) => {
 			const p = await actor(c, mode, "providers");
@@ -220,10 +229,10 @@ export function registerModelRoutes(api: Hono<AppEnv>, ctx: AppContext, gw: Gate
 		api.post(`${prefix}/:id/models`, async (c) => {
 			const p = await actor(c, mode, mode === "personal" ? "providers" : "models");
 			const row = rowFor(p, mode, c.req.param("id"), true);
-			const { id: mid, enabled, visibility, fallbacks, defaultThinking, description, sort, ...spec } = await jsonBody<Record<string, any>>(c);
+			const { id: mid, enabled, visibility, fallbacks, defaultThinking, description, sort, rpmLimit, concurrencyLimit, ...spec } = await jsonBody<Record<string, any>>(c);
 			if (typeof mid !== "string" || !mid.trim()) throw new HttpError(400, "invalid_model", "模型 ID 必填");
 			if (gw.effectiveModels(row.id).some((m) => m.id === mid.trim())) throw new HttpError(409, "exists", "模型 ID 已存在于该服务商（可直接编辑）");
-			saveEntry(gw, row, mid.trim(), { manual: true, spec, enabled: enabled ?? true, visibility: mode === "personal" ? null : visibility, fallbacks, defaultThinking, description, sort });
+			saveEntry(gw, row, mid.trim(), { manual: true, spec, enabled: enabled ?? true, visibility: mode === "personal" ? null : visibility, fallbacks, defaultThinking, description, sort, rpmLimit, concurrencyLimit });
 			await gw.reload(row.id);
 			auditSafe(c, p, "model.entry.create", `${row.id}/${mid}`, { name: spec.name });
 			const m = gw.effectiveModels(row.id).find((x) => x.id === mid.trim())!;
@@ -247,7 +256,7 @@ export function registerModelRoutes(api: Hono<AppEnv>, ctx: AppContext, gw: Gate
 			const mid = c.req.param("modelId");
 			const b = await jsonBody<EntryPatch & Record<string, any>>(c);
 			const patch: EntryPatch = {};
-			for (const k of ["enabled", "visibility", "fallbacks", "defaultThinking", "sort", "description", "resetSpec"] as const) if (k in b) (patch as any)[k] = b[k];
+			for (const k of ["enabled", "visibility", "fallbacks", "defaultThinking", "sort", "description", "resetSpec", "rpmLimit", "concurrencyLimit"] as const) if (k in b) (patch as any)[k] = b[k];
 			if (mode === "personal") delete patch.visibility;
 			// spec fields may be sent flat (contextWindow, compat, ...) or under `spec`
 			const flat = Object.fromEntries(Object.entries(b).filter(([k]) => ["name", "contextWindow", "maxTokens", "input", "reasoning", "thinkingLevelMap", "cost", "compat", "tools"].includes(k)));

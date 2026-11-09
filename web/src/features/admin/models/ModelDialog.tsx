@@ -27,6 +27,8 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 	const [description, setDescription] = useState(model?.description ?? "");
 	const [defaultThinking, setDefaultThinking] = useState<string>(model?.defaultThinking ?? "");
 	const [vis, setVis] = useState({ departmentIds: new Set(model?.visibility?.departmentIds ?? []), userIds: new Set(model?.visibility?.userIds ?? []) });
+	const [mrpm, setMrpm] = useState(model?.rpmLimit ? String(model.rpmLimit) : "");
+	const [mconc, setMconc] = useState(model?.concurrencyLimit ? String(model.concurrencyLimit) : "");
 	const [fallbacks, setFallbacks] = useState<string[]>((model?.fallbacks ?? []).map((f) => `${f.provider}/${f.modelId}`));
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string>();
@@ -70,6 +72,8 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 			const visibility = personal ? undefined : vis.departmentIds.size || vis.userIds.size ? { ...(vis.departmentIds.size ? { departmentIds: [...vis.departmentIds] } : {}), ...(vis.userIds.size ? { userIds: [...vis.userIds] } : {}) } : null;
 			const extra = {
 				description: description.trim() || null,
+				rpmLimit: mrpm ? Number(mrpm) : null,
+				concurrencyLimit: mconc ? Number(mconc) : null,
 				defaultThinking: (defaultThinking || null) as ThinkingLevel | null,
 				...(personal ? {} : { visibility, fallbacks: fallbacks.map((f) => ({ provider: f.slice(0, f.indexOf("/")), modelId: f.slice(f.indexOf("/") + 1) })) }),
 			};
@@ -222,6 +226,16 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 						</>
 					) : null}
 
+					<div className="grid grid-cols-2 gap-2">
+						<label className="text-xs text-fg-subtle">
+							本模型每分钟请求上限（叠加在服务商限制上，可空）
+							<Input value={mrpm} onChange={(e) => setMrpm(e.target.value.replace(/\D/g, ""))} className="mt-0.5 h-8" />
+						</label>
+						<label className="text-xs text-fg-subtle">
+							本模型并发上限（可空）
+							<Input value={mconc} onChange={(e) => setMconc(e.target.value.replace(/\D/g, ""))} className="mt-0.5 h-8" />
+						</label>
+					</div>
 					<div>
 						<Label>说明（可选）</Label>
 						<Input value={description} onChange={(e) => setDescription(e.target.value)} />

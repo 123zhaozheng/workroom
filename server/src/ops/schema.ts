@@ -118,4 +118,16 @@ CREATE TABLE model_aliases (alias_id TEXT PRIMARY KEY, provider_id TEXT NOT NULL
 CREATE TABLE model_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
 `,
 	},
+	{
+		version: 3,
+		name: "model providers: local rpm / concurrency limits (provider + model) and circuit breaker settings",
+		sql: `
+ALTER TABLE model_providers ADD COLUMN rpm_limit INTEGER;
+ALTER TABLE model_providers ADD COLUMN concurrency_limit INTEGER;
+ALTER TABLE model_providers ADD COLUMN breaker_threshold INTEGER;
+ALTER TABLE model_providers ADD COLUMN breaker_window_ms INTEGER;
+ALTER TABLE model_entries ADD COLUMN rpm_limit INTEGER;
+ALTER TABLE model_entries ADD COLUMN concurrency_limit INTEGER;
+`,
+	},
 ];

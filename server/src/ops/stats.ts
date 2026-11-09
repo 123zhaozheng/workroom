@@ -421,7 +421,8 @@ export class StatsService {
 		}
 
 		// Series by model / provider / route (model requests; tokens include compaction adjustments attributable to a model).
-		const labels = new Map(this.#db.all<{ id: string; label: string }>("SELECT id, label FROM ops_platform_models").map((m) => [m.id, m.label]));
+		// display names of every native model ("<provider>/<modelId>"), fixture and legacy aliases included (gateway.modelLabels)
+		const labels: Map<string, string> = this.#ctx.services.has("models") ? (this.#ctx.services.get("models") as unknown as { modelLabels(): Map<string, string> }).modelLabels() : new Map();
 		const seriesRows = this.#db.all<{ b: string; m: string; route: string | null; fixture: number; outcome: string; kind: string; n: number; t: number }>(
 			`SELECT ${bucketSql("l.at", gran, tz)} AS b, COALESCE(l.platform_model_id, 'unknown') AS m, l.route, l.fixture, l.outcome, l.kind, COUNT(*) AS n, COALESCE(SUM(l.total_tokens),0) AS t FROM usage_ledger l WHERE ${lf.sql} AND l.at >= ? AND l.at < ? AND l.kind IN ('model_request','adjustment') GROUP BY b, m, l.route, l.fixture, l.outcome, l.kind`,
 			...lf.params,

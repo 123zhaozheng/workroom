@@ -12,6 +12,7 @@ import { startTestApp, type TestApp } from "./helpers/app.ts";
 import { waitFor } from "../src/runtime/testing.ts";
 import { OPENAI_KEY, startOpenAIMock } from "./models-mock-servers.ts";
 import type { Gateway } from "../src/ops/gateway.ts";
+import { setResolverForTests } from "../src/tools/netpolicy.ts";
 
 const SECRET = "test-secret-key-for-model-access-0123456789";
 const PERSONAL_KEY = "sk-personal-USER-KEY-0123456789abcdef";
@@ -145,6 +146,7 @@ test("personal providers (个人自带密钥): policy-gated, owner-only, SSRF-gu
 	try {
 		const { owner, dev, other } = await org(t);
 		(t.app.ctx.services.get("models") as unknown as Gateway).resolver = async () => [{ address: "93.184.216.34", family: 4 }]; // "localhost" looks public to the guard
+		process.env.WORKROOM_URL_ALLOWLIST = `localhost:${up.port},pinned.test:${up.port}`; // operator allowlist for the request-time pinned fetch
 		const body = { name: "我的 Key", type: "openai-completions", baseUrl: `http://localhost:${up.port}/v1`, apiKey: PERSONAL_KEY, fetchModels: true, enableFetched: true };
 
 		// 1. Off by default
@@ -205,6 +207,27 @@ test("personal providers (个人自带密钥): policy-gated, owner-only, SSRF-gu
 		// 4. Personal providers cannot reference server env vars or built-in singletons
 		await t.json("POST", "/api/me/model-providers", { token: dev.token, json: { ...body, apiKeyEnv: "WORKROOM_SECRET_KEY", fetchModels: false }, expect: 400 });
 		await t.json("POST", "/api/me/model-providers", { token: dev.token, json: { name: "b", type: "builtin", builtinId: "anthropic", apiKey: "k" }, expect: 403 });
+		// 4b. DNS pinning: the request connects to the address validated at request time. A host that resolved to a public address when the
+		// provider was saved but rebinds to loopback afterwards is refused; an allowlisted name connects to its pinned address (no real DNS needed).
+		const gwx = t.app.ctx.services.get("models") as unknown as Gateway;
+		const pinnedP = (await t.json("POST", "/api/me/model-providers", { token: dev.token, json: { name: "pinned", type: "openai-completions", baseUrl: `http://pinned.test:${up.port}/v1`, apiKey: PERSONAL_KEY, models: [{ id: "mock-chat", name: "pinned" }] } })).provider;
+		setResolverForTests(async () => ["127.0.0.1"]);
+		try {
+			const tr = await t.json("POST", `/api/me/model-providers/${pinnedP.id}/test`, { token: dev.token, json: {} });
+			assert.equal(tr.ok, true, JSON.stringify(tr)); // pinned.test has no DNS: the connection used the pinned, validated address
+			const rebind = (await t.json("POST", "/api/me/model-providers", { token: dev.token, json: { name: "rebind", type: "openai-completions", baseUrl: `http://rebind.test:${up.port}/v1`, apiKey: PERSONAL_KEY, models: [{ id: "mock-chat", name: "rebind" }] } })).provider;
+			const before = up.requests.length;
+			const rt = await t.json("POST", `/api/me/model-providers/${rebind.id}/test`, { token: dev.token, json: {} });
+			assert.equal(rt.ok, false);
+			assert.match(JSON.stringify(rt), /url_blocked|内网|blocked|Connection error|connect/i);
+			assert.equal(up.requests.length, before, "the rebound request never reached the loopback server");
+			await t.json("DELETE", `/api/me/model-providers/${rebind.id}`, { token: dev.token });
+		} finally {
+			setResolverForTests(null);
+		}
+		await t.json("DELETE", `/api/me/model-providers/${pinnedP.id}`, { token: dev.token });
+		void gwx;
+
 		// 5. Policy revoked → personal models vanish and the routes close; re-allowed → back
 		await t.json("PUT", "/api/admin/model-settings", { token: owner.token, json: { personalProviders: false } });
 		assert.ok(!(await listIds(t, dev.token)).some((x) => x.startsWith(mine.id)));
@@ -228,6 +251,7 @@ test("personal providers (个人自带密钥): policy-gated, owner-only, SSRF-gu
 		await t.json("POST", "/api/admin/model-providers", { token: owner.token, json: { name: "本机", type: "openai-completions", baseUrl: "http://127.0.0.1:11434/v1", keyless: true } });
 
 	} finally {
+		delete process.env.WORKROOM_URL_ALLOWLIST;
 		await t.dispose();
 		await up.close();
 	}

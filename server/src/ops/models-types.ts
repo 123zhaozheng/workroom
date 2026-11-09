@@ -36,6 +36,10 @@ export interface ProviderRow {
 	keyless: number;
 	auth_style: AuthStyle;
 	timeout_ms: number | null;
+	rpm_limit: number | null;
+	concurrency_limit: number | null;
+	breaker_threshold: number | null;
+	breaker_window_ms: number | null;
 	status: "enabled" | "disabled";
 	source: "admin" | "personal" | "config" | "env" | "migration" | "test";
 	last_check: string | null;
@@ -78,6 +82,8 @@ export interface EntryRow {
 	default_thinking: string | null;
 	sort: number;
 	description: string | null;
+	rpm_limit: number | null;
+	concurrency_limit: number | null;
 	created_at: string;
 	updated_at: string;
 }

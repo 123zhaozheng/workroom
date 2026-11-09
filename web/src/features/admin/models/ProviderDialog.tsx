@@ -49,6 +49,10 @@ export function ProviderDialog({
 	const [keyless, setKeyless] = useState(existing?.keyless ?? false);
 	const [authStyle, setAuthStyle] = useState<ModelAuthStyle>(existing?.authStyle ?? "default");
 	const [timeout, setTimeoutMs] = useState(existing?.timeoutMs ? String(existing.timeoutMs) : "");
+	const [rpm, setRpm] = useState(existing?.rpmLimit ? String(existing.rpmLimit) : "");
+	const [conc, setConc] = useState(existing?.concurrencyLimit ? String(existing.concurrencyLimit) : "");
+	const [brThreshold, setBrThreshold] = useState(existing?.breakerThreshold !== undefined ? String(existing.breakerThreshold) : "");
+	const [brWindow, setBrWindow] = useState(existing?.breakerWindowMs ? String(existing.breakerWindowMs) : "");
 	const [headers, setHeaders] = useState<HeaderRow[]>((existing?.headerNames ?? []).map((n) => ({ name: n, value: "****" })));
 	const [extraEnv, setExtraEnv] = useState<HeaderRow[]>((existing?.envKeys ?? []).map((n) => ({ name: n, value: "****" })));
 	const [fetchAfter, setFetchAfter] = useState(true);
@@ -76,13 +80,13 @@ export function ProviderDialog({
 			const hdr = Object.fromEntries(headers.filter((h) => h.name.trim()).map((h) => [h.name.trim(), h.value]));
 			const env = Object.fromEntries(extraEnv.filter((h) => h.name.trim()).map((h) => [h.name.trim(), h.value]));
 			if (editing) {
-				const body: UpdateModelProviderRequest = { name, keyless, authStyle, timeoutMs: timeout ? Number(timeout) : null, headers: hdr, ...(type === "builtin" ? { env } : { baseUrl }) };
+				const body: UpdateModelProviderRequest = { name, keyless, authStyle, timeoutMs: timeout ? Number(timeout) : null, rpmLimit: rpm ? Number(rpm) : null, concurrencyLimit: conc ? Number(conc) : null, breakerThreshold: brThreshold ? Number(brThreshold) : null, breakerWindowMs: brWindow ? Number(brWindow) : null, headers: hdr, ...(type === "builtin" ? { env } : { baseUrl }) };
 				if (clearKey) body.apiKey = null;
 				else if (keyMode === "inline" && apiKey) body.apiKey = apiKey;
 				if (!personal && keyMode === "env") body.apiKeyEnv = apiKeyEnv || undefined;
 				await patch(`${base}/${existing!.id}`, body as never);
 			} else {
-				const body: CreateModelProviderRequest = { name, type, preset: preset || undefined, keyless, authStyle, ...(timeout ? { timeoutMs: Number(timeout) } : {}), ...(Object.keys(hdr).length ? { headers: hdr } : {}), ...(type === "builtin" ? { builtinId, ...(Object.keys(env).length ? { env } : {}) } : { baseUrl }), ...(keyMode === "inline" && apiKey ? { apiKey } : {}), ...(!personal && keyMode === "env" && apiKeyEnv ? { apiKeyEnv } : {}), ...(fetchAfter ? { fetchModels: true, enableFetched: !!personal } : {}) };
+				const body: CreateModelProviderRequest = { name, type, preset: preset || undefined, keyless, authStyle, ...(timeout ? { timeoutMs: Number(timeout) } : {}), ...(rpm ? { rpmLimit: Number(rpm) } : {}), ...(conc ? { concurrencyLimit: Number(conc) } : {}), ...(brThreshold ? { breakerThreshold: Number(brThreshold) } : {}), ...(brWindow ? { breakerWindowMs: Number(brWindow) } : {}), ...(Object.keys(hdr).length ? { headers: hdr } : {}), ...(type === "builtin" ? { builtinId, ...(Object.keys(env).length ? { env } : {}) } : { baseUrl }), ...(keyMode === "inline" && apiKey ? { apiKey } : {}), ...(!personal && keyMode === "env" && apiKeyEnv ? { apiKeyEnv } : {}), ...(fetchAfter ? { fetchModels: true, enableFetched: !!personal } : {}) };
 				await post(base, body as never);
 			}
 			onOpenChange(false);
@@ -238,6 +242,17 @@ export function ProviderDialog({
 							<div>
 								<Label>自定义请求头（值加密保存；编辑时显示 **** 表示保持不变）</Label>
 								{rowEditor(headers, setHeaders, "Header 名", "值")}
+							</div>
+							<div>
+								<Label>本地限流与熔断（可选；超限时先切换到备用模型，否则返回可重试的错误由系统退避重试）</Label>
+								<div className="grid gap-2 sm:grid-cols-4">
+									{([["每分钟请求上限", rpm, setRpm, "不限"], ["并发上限", conc, setConc, "不限"], ["熔断阈值（连续失败次数，0=关闭）", brThreshold, setBrThreshold, "默认 3"], ["熔断时长（毫秒）", brWindow, setBrWindow, "默认 30000"]] as const).map(([label, v, set, ph]) => (
+										<label key={label} className="text-xs text-fg-subtle">
+											{label}
+											<Input value={v} onChange={(e) => set(e.target.value.replace(/\D/g, ""))} placeholder={ph} className="mt-0.5 h-8" />
+										</label>
+									))}
+								</div>
 							</div>
 							<div>
 								<Label>请求超时（毫秒，可选）</Label>

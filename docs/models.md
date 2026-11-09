@@ -95,12 +95,14 @@ pi-ai 内置 `azure` provider（Azure OpenAI Responses）：类型选“pi-ai �
 - **可见范围**：每个模型可限定部门、成员（`visibility.departmentIds/userIds`，项目 `projectIds` 仅 API）。管理员（`model.manage`）看全部。限制不只影响选择器：网关在**每次请求**时用当前权限复核，已有会话里的模型一旦对该用户不可见，请求会以 `model_not_allowed` 失败且不会到达上游。
 - **权限**：`model.provider.manage` = 服务商与密钥；`model.manage` = 模型开关/可见范围/默认模型；`model.use` = 使用模型。没有 RBAC 服务时退化为组织 owner/admin。
 - **默认模型**：组织设置（`PUT /api/admin/model-settings {defaultModel}`）；配置文件的 `defaultModel` 作为实例级兜底。
-- **故障切换**：模型的 `fallbacks`（最多 5 个，可跨服务商）。主模型在**尚未输出任何内容**且错误可重试（429/529/5xx/超时/网络/鉴权）时按序尝试备用；已开始输出或 400 类错误不切换。最终消息的 `provider/model` 是真正应答的模型，`usage` 为所有实际调用之和。备用模型须满足图片需求。每次尝试写入 `ops_route_attempts`（会话“模型与路由记录”可查）。熔断、RPM/并发限制在本轮**移除**（pi-ai 不提供；429 由 pi-durable 的重试处理）。
+- **故障切换**：模型的 `fallbacks`（最多 5 个，可跨服务商）。主模型在**尚未输出任何内容**且错误可重试（429/529/5xx/超时/网络/鉴权）时按序尝试备用；已开始输出或 400 类错误不切换。最终消息的 `provider/model` 是真正应答的模型，`usage` 为所有实际调用之和。备用模型须满足图片需求。每次尝试写入 `ops_route_attempts`（会话“模型与路由记录”可查）。
+- **本地限流与熔断**（`models-limits.ts`，包裹原生 stream，与故障切换同一层）：服务商可设每分钟请求数（RPM，滑动 60 秒）、最大并发、熔断阈值/时长（默认连续 3 次基础设施失败——5xx/网络/超时/过载/鉴权——熔断 30 秒；阈值 0 关闭）；单个模型还可再设 RPM/并发。熔断到期后**半开**：只放行一个探测请求，成功即关闭，失败则重新熔断；其它请求在探测期间被跳过。400 类错误说明上游在应答，不计失败；测试连接不计入。可在管理页点“重置熔断”。测试模型（fixture）没有服务商行，不受限、不熔断。
+  命中限制时：先**跳过**并尝试该模型的备用模型（每次跳过都记入 `ops_route_attempts`，`status=skipped`，`error_class` 为 `local_rate_limit` / `concurrency` / `circuit_open`）；没有可用备用时**拒绝**——请求不会发往上游，助手消息报错 `local_rate_limit: …` / `concurrency: …` / `circuit_open: …`（错误文字含 “rate limit / too many requests / service unavailable”，pi-ai 判为可重试，pi-durable 按退避重试，效果等同排队）。
 - **预算/用量**：照旧（见 `docs/ops.md` §3），平台模型 id 现为 `<服务商 id>/<modelId>`。
 
 ## 8. 个人自带密钥（M15）
 
-管理员在“模型与渠道”打开“允许成员自带密钥”。成员在设置页（`<PersonalProviders />`）添加自己的服务商：仅本人可见、可用、可编辑；管理员也看不到。限制：只能是三种通用类型；不能引用服务器环境变量；Base URL 须解析到公网地址（创建、获取、测试和**每次请求前**都会复查，但 SDK 实际连接时的 DNS 解析未做地址钉扎，存在理论上的 DNS 重绑定窗口）；别人继续你的个人密钥会话（例如共享项目）会被拒绝，不会消耗你的密钥；策略关闭后个人模型立即失效。
+管理员在“模型与渠道”打开“允许成员自带密钥”。成员在设置页（`<PersonalProviders />`）添加自己的服务商：仅本人可见、可用、可编辑；管理员也看不到。限制：只能是三种通用类型；不能引用服务器环境变量；Base URL 须解析到公网地址：创建时检查，每次请求前再检查，并且获取列表、测试连接、对话请求都通过 `tools/netpolicy.ts` 的 `pinnedFetch` 发出（只连接刚校验过的 IP，TLS 仍按域名校验，不跟随重定向），所以不存在 DNS 重绑定窗口；运维可用 `WORKROOM_URL_ALLOWLIST`（host 或 host:port）放行特定内网名；别人继续你的个人密钥会话（例如共享项目）会被拒绝，不会消耗你的密钥；策略关闭后个人模型立即失效。
 
 ## 9. 配置文件 `workroom.models.json`
 
@@ -128,7 +130,7 @@ pi-ai 内置 `azure` provider（Azure OpenAI Responses）：类型选“pi-ai �
 }
 ```
 
-字段：`api`/`type`（三种通用类型）或 `builtin`（pi-ai 内置 id）；`baseUrl`；`apiKeyEnv`（任意环境变量名，不是密钥本身）；`headers`/`env` 的值为字符串或 `{ "env": "NAME" }`（启动时解析并加密入库）；`authStyle`、`keyless`、`timeoutMs`；`models[]`（字段同 §6，另有 `enabled`、`visibility`、`fallbacks`、`description`）；`enable[]`（启用目录中已有的模型）。**文件里出现 `apiKey` 会拒绝该服务商**；任何校验失败（含 `compat`）只跳过该服务商并在管理页顶部与日志报错。另：旧环境变量 `WORKROOM_ANTHROPIC_API_KEY` / `WORKROOM_OPENAI_API_KEY` / `WORKROOM_OPENAI_COMPAT_*` 仍被识别（生成 `env-anthropic` / `env-openai` / `env-compat`，Key 仅作为变量名保存）。
+字段：`api`/`type`（三种通用类型）或 `builtin`（pi-ai 内置 id）；`baseUrl`；`rpmLimit`、`concurrencyLimit`、`breakerThreshold`、`breakerWindowMs`（模型条目可设 `rpmLimit`/`concurrencyLimit`）；`apiKeyEnv`（任意环境变量名，不是密钥本身）；`headers`/`env` 的值为字符串或 `{ "env": "NAME" }`（启动时解析并加密入库）；`authStyle`、`keyless`、`timeoutMs`；`models[]`（字段同 §6，另有 `enabled`、`visibility`、`fallbacks`、`description`）；`enable[]`（启用目录中已有的模型）。**文件里出现 `apiKey` 会拒绝该服务商**；任何校验失败（含 `compat`）只跳过该服务商并在管理页顶部与日志报错。另：旧环境变量 `WORKROOM_ANTHROPIC_API_KEY` / `WORKROOM_OPENAI_API_KEY` / `WORKROOM_OPENAI_COMPAT_*` 仍被识别（生成 `env-anthropic` / `env-openai` / `env-compat`，Key 仅作为变量名保存）。
 
 ## 10. 从旧版迁移
 
@@ -155,4 +157,4 @@ pi-ai 内置 `azure` provider（Azure OpenAI Responses）：类型选“pi-ai �
 
 ## 13. 测试
 
-`server/test/models-providers.test.ts`（两种 mock 上游、流式 + 工具往返、密钥不泄露）、`models-gateway.test.ts`（故障切换、compat 上线、无密钥服务、Bearer、blocked）、`models-access.test.ts`（可见范围、RBAC、个人密钥隔离/SSRF、跨组织）、`models-bootstrap.test.ts`（旧数据迁移、环境变量、配置文件）。
+`server/test/models-providers.test.ts`（两种 mock 上游、流式 + 工具往返、密钥不泄露）、`models-limits.test.ts`（RPM/并发溢出与拒绝、熔断开/半开/恢复、故障切换与计费）、`models-gateway.test.ts`（故障切换、compat 上线、无密钥服务、Bearer、blocked）、`models-access.test.ts`（可见范围、RBAC、个人密钥隔离/SSRF、跨组织）、`models-bootstrap.test.ts`（旧数据迁移、环境变量、配置文件）。

@@ -71,7 +71,7 @@ async function bootstrapEnv(ctx: AppContext, gw: Gateway): Promise<void> {
 }
 
 // ------------------------------------------------------------------------------------------------ 2. legacy tables
-interface OldChannel { id: string; org_id: string | null; name: string; provider: string; base_url: string | null; api_key_enc: string | null; api_key_env: string | null; key_hint: string | null; status: string; timeout_ms: number | null; price: string | null; builtin: number }
+interface OldChannel { id: string; org_id: string | null; name: string; provider: string; base_url: string | null; api_key_enc: string | null; api_key_env: string | null; key_hint: string | null; status: string; timeout_ms: number | null; rpm_limit: number | null; concurrency_limit: number | null; price: string | null; builtin: number }
 interface OldModel { id: string; org_id: string | null; label: string; description: string | null; kind: string; capabilities: string; thinking_levels: string; default_thinking: string | null; context_window: number | null; max_tokens: number | null; visibility: string | null; is_default: number; enabled: number; sort: number; builtin: number }
 interface OldRoute { platform_model_id: string; channel_id: string; upstream_model_id: string; priority: number; enabled: number; capabilities: string | null }
 
@@ -96,8 +96,8 @@ export function migrateLegacy(ctx: AppContext, gw: Gateway): { providers: number
 			const type = OLD_TYPE[ch.provider]!;
 			const baseUrl = ch.base_url || (type === "anthropic-messages" ? "https://api.anthropic.com" : type === "openai-responses" ? "https://api.openai.com/v1" : null);
 			db.run(
-				`INSERT OR IGNORE INTO model_providers (id, scope, org_id, name, type, base_url, api_key_enc, api_key_env, key_hint, keyless, auth_style, timeout_ms, status, source, created_at, updated_at)
-				 VALUES (?, 'org', ?, ?, ?, ?, ?, ?, ?, ?, 'default', ?, ?, 'migration', ?, ?)`,
+				`INSERT OR IGNORE INTO model_providers (id, scope, org_id, name, type, base_url, api_key_enc, api_key_env, key_hint, keyless, auth_style, timeout_ms, rpm_limit, concurrency_limit, status, source, created_at, updated_at)
+				 VALUES (?, 'org', ?, ?, ?, ?, ?, ?, ?, ?, 'default', ?, ?, ?, ?, 'migration', ?, ?)`,
 				id,
 				ch.org_id,
 				ch.name,
@@ -108,6 +108,8 @@ export function migrateLegacy(ctx: AppContext, gw: Gateway): { providers: number
 				ch.key_hint,
 				ch.provider === "openai-compatible" && !ch.api_key_enc && !ch.api_key_env ? 1 : 0,
 				ch.timeout_ms,
+				ch.rpm_limit,
+				ch.concurrency_limit,
 				ch.status,
 				now,
 				now,
@@ -193,6 +195,10 @@ interface ConfigProvider {
 	authStyle?: string;
 	keyless?: boolean;
 	timeoutMs?: number;
+	rpmLimit?: number;
+	concurrencyLimit?: number;
+	breakerThreshold?: number;
+	breakerWindowMs?: number;
 	preset?: string;
 	models?: ConfigModel[];
 	enable?: string[];
@@ -253,15 +259,15 @@ export async function applyConfigFile(ctx: AppContext, gw: Gateway): Promise<voi
 						throw new Error(`模型「${mid}」：${(e as Error).message}`);
 					}
 				}
-				const row = await upsertInstanceProvider(gw, pid, { name: d.name ?? id, type, builtinId: d.builtin, preset: d.preset, baseUrl: d.baseUrl, apiKeyEnv: d.apiKeyEnv ?? null, headers: resolveRefs(`${id}.headers`, d.headers) ?? null, env: resolveRefs(`${id}.env`, d.env) ?? null, authStyle: d.authStyle ?? "default", keyless: !!d.keyless, timeoutMs: d.timeoutMs ?? null }, "config", { anyEnv: true });
+				const row = await upsertInstanceProvider(gw, pid, { name: d.name ?? id, type, builtinId: d.builtin, preset: d.preset, baseUrl: d.baseUrl, apiKeyEnv: d.apiKeyEnv ?? null, headers: resolveRefs(`${id}.headers`, d.headers) ?? null, env: resolveRefs(`${id}.env`, d.env) ?? null, authStyle: d.authStyle ?? "default", keyless: !!d.keyless, timeoutMs: d.timeoutMs ?? null, rpmLimit: d.rpmLimit ?? null, concurrencyLimit: d.concurrencyLimit ?? null, breakerThreshold: d.breakerThreshold ?? null, breakerWindowMs: d.breakerWindowMs ?? null }, "config", { anyEnv: true });
 				wanted.add(pid);
 				await gw.reload(row.id);
 				const listed = new Set<string>();
 				for (const m of d.models ?? []) {
-					const { id: mid, enabled, visibility, fallbacks: _fb, defaultThinking, description, sort, ...spec } = m as Record<string, any>;
+					const { id: mid, enabled, visibility, fallbacks: _fb, defaultThinking, description, sort, rpmLimit, concurrencyLimit, ...spec } = m as Record<string, any>;
 					if (typeof mid !== "string") throw new Error(`${id}.models[]: 缺少 id`);
 					listed.add(mid);
-					saveEntry(gw, row, mid, { manual: true, spec, enabled: enabled ?? true, visibility, defaultThinking, description, sort });
+					saveEntry(gw, row, mid, { manual: true, spec, enabled: enabled ?? true, visibility, defaultThinking, description, sort, rpmLimit, concurrencyLimit });
 				}
 				// stale manual models of this provider (removed from the file) go away; catalog models are switched on via "enable"
 				for (const e of [...gw.entriesOf(row.id).values()]) if (e.manual && !listed.has(e.model_id)) ctx.db.run("DELETE FROM model_entries WHERE provider_id = ? AND model_id = ?", row.id, e.model_id);

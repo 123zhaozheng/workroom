@@ -198,6 +198,14 @@ export interface ModelProviderDTO {
 	headerNames: string[];
 	envKeys: string[];
 	timeoutMs?: number;
+	/** Local limits applied around the native streams (unset = unlimited). */
+	rpmLimit?: number;
+	concurrencyLimit?: number;
+	/** Consecutive infrastructure failures that open the circuit (0 = breaker off; default 3) and the open window in ms (default 30000). */
+	breakerThreshold?: number;
+	breakerWindowMs?: number;
+	inflight?: number;
+	circuit?: { open: boolean; halfOpen: boolean; until?: number; fails: number };
 	status: "enabled" | "disabled";
 	health: "ready" | "blocked" | "disabled";
 	healthDetail?: string;
@@ -237,6 +245,8 @@ export interface AdminModelDTO {
 	defaultThinking?: ThinkingLevel;
 	description?: string;
 	sort: number;
+	rpmLimit?: number;
+	concurrencyLimit?: number;
 	/** Looks like an embedding / speech / image model: not offered by default. */
 	nonChat: boolean;
 	isDefault: boolean;
@@ -281,6 +291,10 @@ export interface CreateModelProviderRequest {
 	keyless?: boolean;
 	authStyle?: ModelAuthStyle;
 	timeoutMs?: number;
+	rpmLimit?: number;
+	concurrencyLimit?: number;
+	breakerThreshold?: number;
+	breakerWindowMs?: number;
 	/** Manual models to add at the same time. */
 	models?: (Partial<AdminModelSpec> & { id: string; enabled?: boolean })[];
 	/** Run 获取模型列表 right after creating; enableFetched switches the chat ones on. */
@@ -288,7 +302,7 @@ export interface CreateModelProviderRequest {
 	enableFetched?: boolean;
 }
 /** null clears (apiKey, headers, env, timeoutMs); a header value "****" keeps the stored value. */
-export type UpdateModelProviderRequest = Partial<Omit<CreateModelProviderRequest, "type" | "builtinId" | "models" | "fetchModels" | "enableFetched" | "apiKey" | "headers" | "env" | "timeoutMs">> & { status?: "enabled" | "disabled"; apiKey?: string | null; headers?: Record<string, string> | null; env?: Record<string, string> | null; timeoutMs?: number | null };
+export type UpdateModelProviderRequest = Partial<Omit<CreateModelProviderRequest, "type" | "builtinId" | "models" | "fetchModels" | "enableFetched" | "apiKey" | "headers" | "env" | "timeoutMs" | "rpmLimit" | "concurrencyLimit" | "breakerThreshold" | "breakerWindowMs">> & { status?: "enabled" | "disabled"; apiKey?: string | null; headers?: Record<string, string> | null; env?: Record<string, string> | null; timeoutMs?: number | null; rpmLimit?: number | null; concurrencyLimit?: number | null; breakerThreshold?: number | null; breakerWindowMs?: number | null };
 
 /** What a manual model / an override may define (pi-ai Model fields; compat is validated against pi-ai's schema for the provider's API). */
 export interface AdminModelSpec {

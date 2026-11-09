@@ -113,6 +113,11 @@ export interface ProviderInput {
 	keyless?: boolean;
 	authStyle?: string;
 	timeoutMs?: number | null;
+	rpmLimit?: number | null;
+	concurrencyLimit?: number | null;
+	/** 0 disables the breaker; null = default (3). */
+	breakerThreshold?: number | null;
+	breakerWindowMs?: number | null;
 	status?: string;
 }
 
@@ -133,6 +138,12 @@ async function checkBaseUrl(gw: Gateway, scope: ProviderScope, url: string): Pro
 	if (u.username || u.password) throw new HttpError(400, "invalid_base_url", "Base URL 不得包含用户名/密码（密钥请填在 API Key 里）");
 	// Personal providers name hosts chosen by an end user: refuse internal / metadata addresses (SSRF).
 	if (scope === "user") await resolveTarget(url, new Allowlist([]), gw.resolver);
+}
+
+function limitVal(v: unknown, what: string, min: number, max: number): number | null {
+	if (v === null || v === undefined) return null;
+	if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) throw new HttpError(400, "invalid_limit", `${what} 需为 ${min}–${max} 的整数（留空 = 不限制）`);
+	return v;
 }
 
 function sealHeaders(gw: Gateway, h: Record<string, string>): string | null {
@@ -187,8 +198,8 @@ export async function createProviderRow(gw: Gateway, owner: Owner, input: Provid
 	const envEnc = input.env ? sealEnv(gw, input.env) : null;
 	const now = nowIso();
 	gw.db.run(
-		`INSERT INTO model_providers (id, scope, org_id, owner_user_id, name, type, builtin_id, preset, base_url, api_key_enc, api_key_env, key_hint, headers_enc, env_enc, keyless, auth_style, timeout_ms, status, source, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enabled', ?, ?, ?, ?)`,
+		`INSERT INTO model_providers (id, scope, org_id, owner_user_id, name, type, builtin_id, preset, base_url, api_key_enc, api_key_env, key_hint, headers_enc, env_enc, keyless, auth_style, timeout_ms, rpm_limit, concurrency_limit, breaker_threshold, breaker_window_ms, status, source, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enabled', ?, ?, ?, ?)`,
 		id,
 		owner.scope,
 		owner.orgId,
@@ -206,6 +217,10 @@ export async function createProviderRow(gw: Gateway, owner: Owner, input: Provid
 		input.keyless ? 1 : 0,
 		authStyle,
 		input.timeoutMs ?? null,
+		limitVal(input.rpmLimit, "每分钟请求上限", 1, 100_000),
+		limitVal(input.concurrencyLimit, "并发上限", 1, 10_000),
+		limitVal(input.breakerThreshold, "熔断阈值", 0, 1000),
+		limitVal(input.breakerWindowMs, "熔断窗口", 1000, 3_600_000),
 		owner.source,
 		actorId,
 		now,
@@ -264,6 +279,7 @@ export async function updateProviderRow(gw: Gateway, row: ProviderRow, input: Pr
 		if (input.timeoutMs !== null && (!Number.isInteger(input.timeoutMs) || input.timeoutMs < 1000 || input.timeoutMs > 600_000)) throw new HttpError(400, "invalid", "timeoutMs 取值 1000–600000");
 		add("timeout_ms", input.timeoutMs);
 	}
+	for (const [k, col, what, lo, hi] of [["rpmLimit", "rpm_limit", "每分钟请求上限", 1, 100_000], ["concurrencyLimit", "concurrency_limit", "并发上限", 1, 10_000], ["breakerThreshold", "breaker_threshold", "熔断阈值", 0, 1000], ["breakerWindowMs", "breaker_window_ms", "熔断窗口", 1000, 3_600_000]] as const) if (input[k] !== undefined) add(col, limitVal(input[k], what, lo, hi));
 	if (input.status !== undefined) {
 		if (input.status !== "enabled" && input.status !== "disabled") throw new HttpError(400, "invalid", "status 无效");
 		add("status", input.status);
@@ -298,6 +314,8 @@ export interface EntryPatch {
 	defaultThinking?: string | null;
 	sort?: number;
 	description?: string | null;
+	rpmLimit?: number | null;
+	concurrencyLimit?: number | null;
 }
 
 export function validateFallbacks(gw: Gateway, row: ProviderRow, v: unknown): Fallback[] {
@@ -334,10 +352,10 @@ export function saveEntry(gw: Gateway, row: ProviderRow, modelId: string, patch:
 	const now = nowIso();
 	const specJson = Object.keys(spec).length ? JSON.stringify(spec) : null;
 	gw.db.run(
-		`INSERT INTO model_entries (provider_id, model_id, manual, spec, enabled, visibility, fallbacks, default_thinking, sort, description, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO model_entries (provider_id, model_id, manual, spec, enabled, visibility, fallbacks, default_thinking, sort, description, rpm_limit, concurrency_limit, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(provider_id, model_id) DO UPDATE SET manual = excluded.manual, spec = excluded.spec, enabled = excluded.enabled, visibility = excluded.visibility, fallbacks = excluded.fallbacks,
-		   default_thinking = excluded.default_thinking, sort = excluded.sort, description = excluded.description, updated_at = excluded.updated_at`,
+		   default_thinking = excluded.default_thinking, sort = excluded.sort, description = excluded.description, rpm_limit = excluded.rpm_limit, concurrency_limit = excluded.concurrency_limit, updated_at = excluded.updated_at`,
 		row.id,
 		modelId,
 		manual ? 1 : 0,
@@ -348,6 +366,8 @@ export function saveEntry(gw: Gateway, row: ProviderRow, modelId: string, patch:
 		defaultThinking,
 		patch.sort ?? existing?.sort ?? 0,
 		patch.description === undefined ? (existing?.description ?? null) : patch.description,
+		patch.rpmLimit === undefined ? (existing?.rpm_limit ?? null) : limitVal(patch.rpmLimit, "每分钟请求上限", 1, 100_000),
+		patch.concurrencyLimit === undefined ? (existing?.concurrency_limit ?? null) : limitVal(patch.concurrencyLimit, "并发上限", 1, 10_000),
 		existing?.created_at ?? now,
 		now,
 	);
@@ -380,6 +400,12 @@ export function providerDto(gw: Gateway, row: ProviderRow, viewerOrgId?: string)
 		headerNames: gw.headerNames(row),
 		envKeys: gw.envOf(row),
 		timeoutMs: row.timeout_ms ?? undefined,
+		rpmLimit: row.rpm_limit ?? undefined,
+		concurrencyLimit: row.concurrency_limit ?? undefined,
+		breakerThreshold: row.breaker_threshold ?? undefined,
+		breakerWindowMs: row.breaker_window_ms ?? undefined,
+		inflight: gw.limits.inflight(row.id),
+		circuit: gw.limits.circuit(row.id),
 		status: row.status,
 		health: h.health,
 		healthDetail: h.detail,
@@ -423,6 +449,8 @@ export function adminModelDto(gw: Gateway, row: ProviderRow, m: Model<Api>, def?
 		defaultThinking: e?.default_thinking ?? undefined,
 		description: e?.description ?? undefined,
 		sort: e?.sort ?? 0,
+		rpmLimit: e?.rpm_limit ?? undefined,
+		concurrencyLimit: e?.concurrency_limit ?? undefined,
 		nonChat: NON_CHAT.test(m.id),
 		isDefault: def?.provider === row.id && def.modelId === m.id,
 	};
