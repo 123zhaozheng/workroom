@@ -330,3 +330,21 @@ test("fixture demo mode drives a real module tool: 生成 → D's file tool when
 		await t.dispose();
 	}
 });
+
+test("runtime: input validation — unknown/unlisted model refused, chip shapes checked, title search escapes wildcards", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("rt-val@example.com");
+		await t.json("POST", "/api/conversations", { token: a.token, json: { modelId: "someprovider/some-model" }, expect: 400 });
+		const c = await newChat(t, a.token, { title: "100% 完成" });
+		await newChat(t, a.token, { title: "别的" });
+		const r = await t.json("POST", `${base(c)}/messages`, { token: a.token, json: { text: "x", requestId: rid(), attachments: [{ fileId: 1 }] }, expect: 400 });
+		assert.equal(r.error.code, "invalid_attachments");
+		await t.json("POST", `${base(c)}/messages`, { token: a.token, json: { text: "", requestId: rid() }, expect: 400 });
+		await t.json("POST", `${base(c)}/messages`, { token: a.token, json: { text: "x" }, expect: 400 });
+		const hits = await t.json("GET", `/api/conversations?q=${encodeURIComponent("%")}`, { token: a.token });
+		assert.deepEqual(hits.conversations.map((x: any) => x.title), ["100% 完成"]);
+	} finally {
+		await t.dispose();
+	}
+});

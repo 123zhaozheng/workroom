@@ -89,7 +89,7 @@ export class Runtime implements RuntimeService {
 			spaceId,
 			conv.id as number,
 			principal.userId,
-			options.title?.trim() || DEFAULT_TITLE,
+			String(options.title ?? "").trim().slice(0, 200) || DEFAULT_TITLE,
 			options.projectId ?? space.projectId ?? null,
 			options.kind ?? "chat",
 			now,
@@ -262,8 +262,8 @@ export class Runtime implements RuntimeService {
 		let sql = `SELECT * FROM rt_conversations WHERE space_id IN (${spaces.map(() => "?").join(",")}) AND archived = ?`;
 		params.push(q.archived ? 1 : 0);
 		if (q.q?.trim()) {
-			sql += " AND title LIKE ?";
-			params.push(`%${q.q.trim()}%`);
+			sql += " AND title LIKE ? ESCAPE '\\'";
+			params.push(`%${q.q.trim().replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
 		}
 		sql += " ORDER BY updated_at DESC LIMIT ?";
 		params.push(limit);
@@ -317,23 +317,34 @@ export class Runtime implements RuntimeService {
 		return { provider: FIXTURE_PROVIDER, modelId: FIXTURE_MODEL_ID };
 	}
 
-	/** Resolve a request's modelId: platform id (models service) or "provider/modelId". */
+	/**
+	 * Resolve a request's modelId. With the model gateway (group E) only models it lists for the principal are accepted
+	 * (platform id, or "provider/modelId" of a listed ref) — never a raw provider model the gateway did not offer.
+	 * Without a gateway only the fixture model exists.
+	 */
 	async resolveModel(p: Principal, modelId: string | undefined): Promise<ModelRef | undefined> {
 		if (!modelId) return undefined;
+		if (typeof modelId !== "string" || modelId.length > 200) throw new HttpError(400, "unknown_model", "未知模型");
 		if (this.ctx.services.has("models")) {
 			const list = await this.ctx.services.get("models").listFor(p);
-			const m = list.find((x) => x.id === modelId);
-			if (m) {
-				if (m.status === "blocked") throw new HttpError(409, "model_blocked", `模型不可用：${m.statusDetail ?? "未配置凭据"}`);
-				return m.ref;
-			}
+			const m = list.find((x) => x.id === modelId || `${x.ref.provider}/${x.ref.modelId}` === modelId);
+			if (!m) throw new HttpError(400, "unknown_model", "未知模型或无权使用该模型");
+			if (m.status === "blocked") throw new HttpError(409, "model_blocked", `模型不可用：${m.statusDetail ?? "未配置凭据"}`);
+			return m.ref;
 		}
-		const [provider, ...rest] = modelId.split("/");
-		if (provider && rest.length) {
-			if (!this.manager.models().getModel(provider, rest.join("/"))) throw new HttpError(400, "unknown_model", "未知模型");
-			return { provider, modelId: rest.join("/") };
-		}
+		if (modelId === `${FIXTURE_PROVIDER}/${FIXTURE_MODEL_ID}` || modelId === FIXTURE_MODEL_ID) return { provider: FIXTURE_PROVIDER, modelId: FIXTURE_MODEL_ID };
 		throw new HttpError(400, "unknown_model", "未知模型");
+	}
+
+	/** Validate client-supplied attachment / knowledge chips (shape only; tools re-check access when they read them). */
+	validateRefs(input: { attachments?: unknown; knowledgeRefs?: unknown }): void {
+		const str = (v: unknown, max = 200) => typeof v === "string" && v.length > 0 && v.length <= max;
+		if (input.attachments !== undefined) {
+			if (!Array.isArray(input.attachments) || input.attachments.length > 20 || !input.attachments.every((a: any) => a && str(a.fileId) && str(a.versionId) && str(a.name, 500))) throw new HttpError(400, "invalid_attachments", "附件格式无效");
+		}
+		if (input.knowledgeRefs !== undefined) {
+			if (!Array.isArray(input.knowledgeRefs) || input.knowledgeRefs.length > 20 || !input.knowledgeRefs.every((k: any) => k && str(k.kbId) && (k.docId === undefined || str(k.docId)) && str(k.name, 500))) throw new HttpError(400, "invalid_knowledge_refs", "知识引用格式无效");
+		}
 	}
 
 	modelLabel(ref: { provider: string; modelId: string } | undefined): string {
@@ -356,6 +367,7 @@ export class Runtime implements RuntimeService {
 		if (typeof input.requestId !== "string" || !input.requestId || input.requestId.length > 200) throw new HttpError(400, "invalid_request_id", "requestId 必填");
 		if (typeof input.text !== "string" || !input.text.trim()) throw new HttpError(400, "empty", "消息不能为空");
 		if (input.text.length > 100_000) throw new HttpError(413, "too_long", "消息过长");
+		this.validateRefs(input);
 		const { harness, conv, row } = await this.access(p, "write", spaceId, conversationId, context);
 		if (!row) throw new HttpError(409, "read_only", "子任务会话只读");
 		if (this.ctx.services.has("budget")) {
@@ -417,7 +429,7 @@ export class Runtime implements RuntimeService {
 			spaceId,
 			fork.id as number,
 			p.userId,
-			title?.trim() || `${row?.title ?? "会话"}（分支）`,
+			String(title ?? "").trim().slice(0, 200) || `${row?.title ?? "会话"}（分支）`.slice(0, 200),
 			row?.project_id ?? null,
 			now,
 			now,

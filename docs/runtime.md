@@ -120,7 +120,7 @@ Fork / 编辑 / 再生成只是在 pi 中新建一个从某条目开始的会话
 ## 10. 测试
 
 ```
-node --disable-warning=ExperimentalWarning --test server/test/runtime.test.ts        # 8
+node --disable-warning=ExperimentalWarning --test server/test/runtime.test.ts        # 11
 node --disable-warning=ExperimentalWarning --test server/test/runtime-lease.test.ts  # 5
 node --disable-warning=ExperimentalWarning --test server/test/runtime-team.test.ts   # 4
 node --disable-warning=ExperimentalWarning --test server/test/proof.test.ts          # 3（含子进程 SIGKILL）
