@@ -1,0 +1,94 @@
+// 预算 tab.
+import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import type { BudgetDTO } from "@shared/ops";
+import { del, patch, post } from "@/lib/api";
+import { type Project } from "@/lib/types";
+import { useApi } from "@/lib/useApi";
+import { Button } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
+import { Badge, Loadable } from "@/components/ui/misc";
+import { useAct, Table, Row } from "@/features/admin/common";
+
+export function Budgets() {
+	const res = useApi<{ budgets: BudgetDTO[] }>("/budgets");
+	const projects = useApi<{ projects: Project[] }>("/projects");
+	const { busy, run, note } = useAct(res.reload);
+	const [scope, setScope] = useState("org");
+	const [period, setPeriod] = useState<"day" | "month" | "total">("month");
+	const [cost, setCost] = useState("");
+	const [tokens, setTokens] = useState("");
+	const [action, setAction] = useState<"block" | "warn">("block");
+	return (
+		<div>
+			<form
+				className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-surface p-3"
+				onSubmit={(e) => {
+					e.preventDefault();
+					const sc = scope === "org" ? { kind: "org", id: "" } : { kind: "project", id: scope.slice(8) };
+					void run(
+						() => post("/admin/budgets", { scope: sc, period, ...(cost ? { limitCost: Number(cost) } : {}), ...(tokens ? { limitTokens: Number(tokens) } : {}), action }),
+						"预算已创建",
+					);
+				}}
+			>
+				<Select value={scope} onChange={(e) => setScope(e.target.value)} className="h-8 text-[13px]" aria-label="范围">
+					<option value="org">整个组织</option>
+					{(projects.data?.projects ?? []).map((p) => (
+						<option key={p.id} value={`project:${p.id}`}>
+							项目：{p.name}
+						</option>
+					))}
+				</Select>
+				<Select value={period} onChange={(e) => setPeriod(e.target.value as "day" | "month" | "total")} className="h-8 text-[13px]">
+					<option value="day">每日（UTC）</option>
+					<option value="month">每月（UTC）</option>
+					<option value="total">累计</option>
+				</Select>
+				<Input value={cost} onChange={(e) => setCost(e.target.value)} placeholder="费用上限 USD" type="number" min={0} step="0.01" className="h-8 w-32 text-[13px]" />
+				<Input value={tokens} onChange={(e) => setTokens(e.target.value)} placeholder="Token 上限" type="number" min={0} className="h-8 w-32 text-[13px]" />
+				<Select value={action} onChange={(e) => setAction(e.target.value as "block" | "warn")} className="h-8 text-[13px]">
+					<option value="block">超限阻止</option>
+					<option value="warn">仅提醒</option>
+				</Select>
+				<Button size="sm" variant="primary" type="submit" disabled={busy || (!cost && !tokens)} data-testid="budget-create">
+					<Plus />
+					新建预算
+				</Button>
+			</form>
+			{note}
+			<Loadable state={res} what="预算" need="E 组：GET /api/budgets">
+				{(res.data?.budgets ?? []).length === 0 ? (
+					<p className="text-[13px] text-fg-subtle">没有预算。测试模型用量不计入预算。</p>
+				) : (
+					<Table testId="admin-budgets">
+						{res.data!.budgets.map((b) => (
+							<div key={b.id}>
+								<Row>
+									<span className="min-w-0 flex-1">
+										<span className="block font-medium">
+											{b.scope.kind === "org" ? "整个组织" : `${b.scope.kind === "project" ? "项目" : b.scope.kind === "department" ? "部门" : "成员"}：${b.scope.name ?? b.scope.id}`} · {b.period === "day" ? "每日" : b.period === "month" ? "每月" : "累计"}
+										</span>
+										<span className="block text-xs text-fg-subtle">
+											已用 ${b.spent.cost.toFixed(4)}
+											{b.limitCost != null ? ` / $${b.limitCost}` : ""} · {b.spent.tokens.toLocaleString()}
+											{b.limitTokens != null ? ` / ${b.limitTokens.toLocaleString()}` : ""} tokens · {b.action === "block" ? "超限阻止" : "仅提醒"}
+										</span>
+									</span>
+									<Badge tone={b.state === "ok" ? "success" : b.state === "warn" ? "warning" : "danger"}>{b.state === "ok" ? "正常" : b.state === "warn" ? "接近上限" : "已超限"}</Badge>
+									<label className="flex items-center gap-1.5 text-xs text-fg-muted">
+										<input type="checkbox" checked={b.enabled} disabled={busy} onChange={(e) => run(() => patch(`/admin/budgets/${b.id}`, { enabled: e.target.checked }))} />
+										启用
+									</label>
+									<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/budgets/${b.id}`), "预算已删除")}>
+										<Trash2 />
+									</Button>
+								</Row>
+							</div>
+						))}
+					</Table>
+				)}
+			</Loadable>
+		</div>
+	);
+}
