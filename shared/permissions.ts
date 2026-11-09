@@ -242,6 +242,13 @@ export const BASE_ROLE_IDS: readonly string[] = ["builtin:owner", "builtin:admin
 /** Permissions that let a viewer into the admin console at all (used for tab gating in the UI). */
 export const ADMIN_CONSOLE_PERMISSIONS: readonly string[] = ["org.settings.manage", "member.view", "member.invite", "dept.manage", "dept.member.manage", "role.view", "role.manage", "role.assign", "grant.manage", "model.manage", "model.provider.manage", "budget.view", "budget.manage", "billing.view", "audit.view", "trace.view", "member.session.manage"];
 
+/** Does a viewer holding `permissions` (from `/api/me` `permissionsAnywhere`) get the admin console (组织管理)? True for auditors, billing admins, department admins... not only owner/admin. */
+export function hasAdminConsoleAccess(permissions: Iterable<string> | undefined): boolean {
+	if (!permissions) return false;
+	for (const x of permissions) if (ADMIN_CONSOLE_PERMISSIONS.includes(x)) return true;
+	return false;
+}
+
 // ------------------------------------------------------------------ DTOs shared by server and web
 export interface ScopeRef {
 	readonly kind: PermissionScopeKind;

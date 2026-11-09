@@ -141,7 +141,7 @@ export class AssistantStore {
 
 	async create(p: Principal, b: any): Promise<AssistantDTO> {
 		const scope = b.scope === "org" ? "org" : "personal";
-		if (scope === "org") await this.#ctx.services.get("acl").require(p, "admin", { kind: "org", id: p.orgId });
+		if (scope === "org") await this.#ctx.services.get("authz").require(p, "assistant.publish.org");
 		const v = this.#validate(b, false);
 		await this.#requireModel(p, v.model);
 		const id = newId("ast");
@@ -169,7 +169,7 @@ export class AssistantStore {
 	async #own(p: Principal, id: string): Promise<Row> {
 		const r = this.#ctx.db.get<Row>("SELECT * FROM rt_assistants WHERE id = ? AND archived_at IS NULL AND org_id = ?", id, p.orgId);
 		if (!r || (r.scope === "personal" && r.owner_user_id !== p.userId)) throw new HttpError(404, "assistant_not_found", "助手不存在");
-		if (r.scope === "org") await this.#ctx.services.get("acl").require(p, "admin", { kind: "org", id: p.orgId });
+		if (r.scope === "org") await this.#ctx.services.get("authz").require(p, "assistant.publish.org");
 		return r;
 	}
 

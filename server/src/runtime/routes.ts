@@ -315,7 +315,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 	// ------------------------------------------------------------ runtime status (ops)
 	api.get("/runtime/status", async (c) => {
 		const p = principalOf(c);
-		await rt.acl.require(p, "admin", { kind: "org", id: p.orgId });
+		await rt.ctx.services.get("authz").require(p, "trace.view");
 		return c.json({ instanceId: rt.manager.instanceId, openSpaces: rt.manager.openSpaces().length, fixtureCalls: rt.manager.fixture.calls() });
 	});
 }

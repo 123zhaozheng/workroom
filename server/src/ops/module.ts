@@ -78,7 +78,7 @@ export const opsModule: WorkroomModule = {
 			return (await gateway.can(p, "model.manage")) ? { allow: true, reason: p.orgRole } : { allow: false, reason: "not_admin" };
 		});
 		// Automation ACL: read = owner or anyone who can read its space; write/delete/admin = owner (still able to write
-		// the space) or an org admin of the same org.
+		// the space) or someone holding automation.run_as_others (RBAC).
 		id.registerResolver("automation", async (p: Principal, action: Action, res: ResourceRef): Promise<Decision> => {
 			const a = ctx.db.get<any>("SELECT * FROM auto_automations WHERE id = ? AND deleted_at IS NULL", res.id);
 			if (!a) return { allow: false, reason: "not_found" };
@@ -86,7 +86,7 @@ export const opsModule: WorkroomModule = {
 			const space = id.spaceDecision(p, action === "read" ? "read" : "write", id.space(a.space_id));
 			if (action === "read") return a.owner_user_id === p.userId || space.allow ? { allow: true, reason: "read" } : space;
 			if (a.owner_user_id === p.userId) return space.allow ? { allow: true, reason: "owner" } : space;
-			return p.orgRole !== "member" ? { allow: true, reason: p.orgRole } : { allow: false, reason: "not_owner" };
+			return (await ctx.services.get("authz").has(p, "automation.run_as_others")) ? { allow: true, reason: "run_as_others" } : { allow: false, reason: "not_owner" };
 		});
 		// Public read-only share renderer for automations (definition summary only; never the prompt's secrets).
 		id.registerShareRenderer("automation", async (r) => {

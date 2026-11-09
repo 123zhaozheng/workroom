@@ -249,6 +249,8 @@ export interface AuthzExplanation {
 export interface AuthzService {
 	/** Permission ids come from the catalog in shared/permissions.ts, e.g. "member.disable", "skill.review", "model.provider.manage". Always evaluated against current state. */
 	has(principal: Principal, permission: string, scope?: AuthzScope): Promise<boolean>;
+	/** Same decision as `has`, synchronously (the evaluation reads the local database only). For hot sync paths such as KB ACLs. */
+	hasSync(principal: Principal, permission: string, scope?: AuthzScope): boolean;
 	/** Throws HttpError(403) when not granted. */
 	require(principal: Principal, permission: string, scope?: AuthzScope): Promise<void>;
 	explain(principal: Principal, permission: string, scope?: AuthzScope): Promise<AuthzExplanation>;

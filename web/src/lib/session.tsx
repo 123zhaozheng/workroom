@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { ApiError, get, post } from "./api";
+import { hasAdminConsoleAccess } from "@shared/permissions";
 import type { MeResponse } from "./types";
 
 interface SessionCtx {
@@ -51,9 +52,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 		setStatus("anonymous");
 	}, []);
 
-	const role = data?.me.orgRole;
+	// 组织管理 is shown to anybody holding an admin-console permission (auditors, billing admins, department admins ...), not just owner/admin.
+	// Older servers without RBAC fields fall back to the legacy role.
+	const me = data?.me;
+	const isOrgAdmin = me?.permissionsAnywhere ? hasAdminConsoleAccess(me.permissionsAnywhere) : me?.orgRole === "owner" || me?.orgRole === "admin";
 	return (
-		<Ctx.Provider value={{ status, me: data?.me, personalSpaceId: data?.personalSpaceId, brand, refresh, logout, isOrgAdmin: role === "owner" || role === "admin" }}>
+		<Ctx.Provider value={{ status, me: data?.me, personalSpaceId: data?.personalSpaceId, brand, refresh, logout, isOrgAdmin }}>
 			{children}
 		</Ctx.Provider>
 	);

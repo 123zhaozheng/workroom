@@ -6,7 +6,19 @@ export type OrgRole = "owner" | "admin" | "member";
 export type ProjectRole = "owner" | "editor" | "viewer";
 
 export interface MeResponse {
-	me: { userId: string; orgId: string; orgName?: string; orgRole: OrgRole; name: string; email: string; departmentIds?: string[] };
+	me: {
+		userId: string;
+		orgId: string;
+		orgName?: string;
+		orgRole: OrgRole;
+		name: string;
+		email: string;
+		departmentIds?: string[];
+		/** RBAC: permission ids held at org scope / at org scope or in any department or project scope. */
+		permissions?: string[];
+		permissionsAnywhere?: string[];
+		baseRole?: string;
+	};
 	personalSpaceId: string;
 	brand: { name: string; tagline: string };
 }

@@ -412,11 +412,24 @@ export class Runtime implements RuntimeService {
 		return content;
 	}
 
+	/**
+	 * An input that claims to come from an automation must act as that automation's owner. Running it as anybody else
+	 * ("run as other") needs `automation.run_as_others`. Delegation/subagent inputs carry the delegating user already.
+	 */
+	async #checkRunAs(p: Principal, input: { via?: InputEntryData["via"] }): Promise<void> {
+		const via = input.via;
+		if (via?.kind !== "automation") return;
+		const row = this.ctx.services.has("automation") ? (this.ctx.services.get("automation") as { get(id: string): { owner_user_id: string } | null }).get(via.automationId) : null;
+		if (row && row.owner_user_id === p.userId) return;
+		await this.ctx.services.get("authz").require(p, "automation.run_as_others");
+	}
+
 	async submit(p: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string; whenBusy?: "steer" | "followUp" | "reject" }, context: Context): Promise<SubmissionDTO> {
 		if (typeof input.requestId !== "string" || !input.requestId || input.requestId.length > 200) throw new HttpError(400, "invalid_request_id", "requestId 必填");
 		if (typeof input.text !== "string" || !input.text.trim()) throw new HttpError(400, "empty", "消息不能为空");
 		if (input.text.length > 100_000) throw new HttpError(413, "too_long", "消息过长");
 		this.validateRefs(input);
+		await this.#checkRunAs(p, input);
 		const { harness, conv, row } = await this.access(p, "write", spaceId, conversationId, context);
 		if (!row) throw new HttpError(409, "read_only", "子任务会话只读");
 		if (this.ctx.services.has("budget")) {

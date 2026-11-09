@@ -141,7 +141,7 @@ export class KnowledgeStore implements KnowledgeService {
 
 	constructor(ctx: AppContext) {
 		this.ctx = ctx;
-		this.access = new KbAccess(ctx.db);
+		this.access = new KbAccess(ctx.db, () => (ctx.services.has("authz") ? ctx.services.get("authz") : undefined));
 	}
 	get db() {
 		return this.ctx.db;
@@ -217,11 +217,15 @@ export class KnowledgeStore implements KnowledgeService {
 		const name = req.name?.trim();
 		if (!name) throw new HttpError(400, "invalid", "知识库名称必填");
 		if (!SCOPES.includes(req.scope)) throw new HttpError(400, "invalid_scope", "范围必须是 personal / project / department / org");
-		const orgRole = this.access.liveOrgRole(p.userId, p.orgId);
-		if (!orgRole) throw new HttpError(401, "revoked", "账号已不在组织中");
+		if (!this.access.liveOrgRole(p.userId, p.orgId)) throw new HttpError(401, "revoked", "账号已不在组织中");
+		const need = (permission: string, label: string, departmentId?: string): void => {
+			if (!this.access.can(p, permission, departmentId)) throw new HttpError(403, "forbidden", `缺少权限：${label}（${permission}）`, { reason: "missing_permission", permission });
+		};
 		let projectId: string | null = null;
 		let departmentId: string | null = null;
-		if (req.scope === "project") {
+		if (req.scope === "personal") {
+			need("kb.create.personal", "创建个人知识库");
+		} else if (req.scope === "project") {
 			if (!req.projectId) throw new HttpError(400, "invalid", "项目知识库需要 projectId");
 			const role = this.access.projectRole(p.userId, req.projectId);
 			if (!role) throw new HttpError(403, "forbidden", "不是该项目成员", { reason: "not_member" });
@@ -231,11 +235,10 @@ export class KnowledgeStore implements KnowledgeService {
 			if (!req.departmentId) throw new HttpError(400, "invalid", "部门知识库需要 departmentId");
 			const dept = this.db.get<{ org_id: string }>("SELECT org_id FROM id_departments WHERE id = ?", req.departmentId);
 			if (!dept || dept.org_id !== p.orgId) throw new HttpError(404, "department_not_found", "部门不存在");
-			const admin = orgRole === "owner" || orgRole === "admin";
-			if (!admin && !this.access.inDepartment(p.userId, req.departmentId, p.orgId)) throw new HttpError(403, "forbidden", "不是该部门成员", { reason: "not_in_department" });
+			need("kb.create.department", "创建部门知识库", req.departmentId);
 			departmentId = req.departmentId;
 		} else if (req.scope === "org") {
-			if (orgRole !== "owner" && orgRole !== "admin") throw new HttpError(403, "forbidden", "只有组织管理员可以创建企业知识库", { reason: "not_admin" });
+			need("kb.create.org", "创建企业知识库");
 		}
 		const id = newId("kb");
 		const now = nowIso();

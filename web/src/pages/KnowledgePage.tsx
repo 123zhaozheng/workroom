@@ -9,6 +9,7 @@ import type { DepartmentDTO, MemberDTO } from "@shared/ops";
 import type { Project } from "@/lib/types";
 import { del, errorText, patch, post } from "@/lib/api";
 import { useSession } from "@/lib/session";
+import { useViewerPerms } from "@/features/admin/rbac-ui";
 import { useApi } from "@/lib/useApi";
 import { cn, formatBytes, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
@@ -95,6 +96,19 @@ function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
 	const [busy, setBusy] = useState(false);
 	const projects = useApi<{ projects: Project[] }>(open ? "/projects" : null);
 	const depts = useApi<{ departments: DepartmentDTO[] }>(open ? "/departments" : null);
+	// Hide scopes the viewer cannot create (the server enforces anyway): org-scope vs anywhere (department-scoped roles count for 部门).
+	const perms = useViewerPerms();
+	const canPersonal = perms.org.has("kb.create.personal");
+	const canDept = perms.anywhere.has("kb.create.department");
+	const canOrg = perms.org.has("kb.create.org");
+	// Older servers without RBAC fields: keep everything visible.
+	const known = perms.org.size > 0 || perms.anywhere.size > 0;
+	const show = { personal: !known || canPersonal, department: !known || canDept, org: !known || canOrg };
+	useEffect(() => {
+		if (scope === "personal" && !show.personal) setScope("project");
+		else if (scope === "department" && !show.department) setScope(show.personal ? "personal" : "project");
+		else if (scope === "org" && !show.org) setScope(show.personal ? "personal" : "project");
+	}, [scope, show.personal, show.department, show.org]);
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent title="新建知识库" description="可见范围决定谁能检索它；检索时按当前成员关系过滤。">
@@ -125,10 +139,10 @@ function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
 					<div>
 						<Label htmlFor="kbscope">可见范围</Label>
 						<Select id="kbscope" value={scope} onChange={(e) => setScope(e.target.value as KbScope)} className="w-full" data-testid="kb-scope">
-							<option value="personal">个人（只有自己）</option>
+							{show.personal ? <option value="personal">个人（只有自己）</option> : null}
 							<option value="project">项目成员</option>
-							<option value="department">部门成员</option>
-							<option value="org">整个企业（需管理员）</option>
+							{show.department ? <option value="department">部门成员</option> : null}
+							{show.org ? <option value="org">整个企业（需「创建企业知识库」权限）</option> : null}
 						</Select>
 						{scope === "project" ? (
 							<Select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="mt-2 w-full" aria-label="项目" data-testid="kb-scope-project">

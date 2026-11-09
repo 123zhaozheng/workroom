@@ -4,11 +4,12 @@
 // Read:   personal → owner only; project → any current project member (owner/editor/viewer);
 //         department → current department members + KB owner/maintainers; org → every current org member.
 // Write:  (add/remove docs, retry, governance) personal → owner; project → project owner/editor, or KB owner/maintainer who is
-//         still a project member; department/org → KB owner/maintainers, org owner/admin.
+//         still a project member; department/org → KB owner/maintainers, or a holder of `kb.govern` (RBAC; department KBs:
+//         held at that department's scope).
 // Admin:  (rename, maintainers, delete) personal → owner; project → project owner or KB owner (still member);
-//         department/org → KB owner, org owner/admin.
+//         department/org → KB owner, or a holder of `kb.govern`.
 import type { AppDb } from "../core/db.ts";
-import type { Decision, Principal, ProjectRole } from "../core/contracts.ts";
+import type { AuthzService, Decision, Principal, ProjectRole } from "../core/contracts.ts";
 import type { KbPermissions, KbScope } from "../../../shared/knowledge.ts";
 
 export interface KbRow {
@@ -56,8 +57,18 @@ export function accessibleKbQuery(orgId: string, userId: string): { sql: string;
 
 export class KbAccess {
 	readonly db: AppDb;
-	constructor(db: AppDb) {
+	readonly #authz: () => AuthzService | undefined;
+	/** `authz` is looked up lazily (the identity module provides it); without it nobody holds RBAC permissions (owner/KB-level rules still apply). */
+	constructor(db: AppDb, authz: () => AuthzService | undefined = () => undefined) {
 		this.db = db;
+		this.#authz = authz;
+	}
+
+	/** Current RBAC decision (no caching). `kb.govern` etc.; scope = org unless a department id is given. */
+	can(p: Principal, permission: string, departmentId?: string | null): boolean {
+		const az = this.#authz();
+		if (!az) return false;
+		return az.hasSync(p, permission, departmentId ? { kind: "department", id: departmentId } : { kind: "org" });
 	}
 
 	/** Current org membership + role (null when removed/disabled). */
@@ -78,9 +89,7 @@ export class KbAccess {
 
 	permissions(p: Principal, kb: KbRow | undefined): KbPermissions {
 		if (!kb || kb.deleted_at || kb.org_id !== p.orgId) return NONE;
-		const orgRole = this.liveOrgRole(p.userId, p.orgId);
-		if (!orgRole) return NONE;
-		const orgAdmin = orgRole === "owner" || orgRole === "admin";
+		if (!this.liveOrgRole(p.userId, p.orgId)) return NONE;
 		const isOwner = kb.owner_user_id === p.userId;
 		const isMaint = isOwner || this.isMaintainer(kb.id, p.userId);
 		switch (kb.scope) {
@@ -94,10 +103,13 @@ export class KbAccess {
 			case "department": {
 				const member = kb.department_id ? this.inDepartment(p.userId, kb.department_id, p.orgId) : false;
 				if (!member && !isMaint) return NONE;
-				return { read: true, write: isMaint || orgAdmin, admin: isOwner || orgAdmin };
+				const governs = this.can(p, "kb.govern", kb.department_id);
+				return { read: true, write: isMaint || governs, admin: isOwner || governs };
 			}
-			case "org":
-				return { read: true, write: isMaint || orgAdmin, admin: isOwner || orgAdmin };
+			case "org": {
+				const governs = this.can(p, "kb.govern");
+				return { read: true, write: isMaint || governs, admin: isOwner || governs };
+			}
 		}
 		return NONE;
 	}

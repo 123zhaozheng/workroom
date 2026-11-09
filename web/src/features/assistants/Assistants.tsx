@@ -13,6 +13,7 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/overlay";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
+import { useViewerPerms } from "@/features/admin/rbac-ui";
 
 type Assistant = AssistantDTO & { modelAvailability?: { status: "ok" | "not_allowed" | "blocked"; reason?: string } };
 
@@ -30,6 +31,7 @@ const MODEL_STATE = { ok: null, not_allowed: "默认模型不在你可用的列�
 /** Settings → 助手: list, create, edit, delete. */
 export function AssistantsSection() {
 	const res = useApi<{ assistants: Assistant[] }>("/assistants");
+	const perms = useViewerPerms();
 	const [editing, setEditing] = useState<Assistant | "new" | null>(null);
 	const [err, setErr] = useState<string>();
 	return (
@@ -59,7 +61,7 @@ export function AssistantsSection() {
 									{a.members.length ? a.members.map((m) => m.name).join("、") : "无"}
 								</p>
 							</div>
-							{!a.builtin ? (
+							{!a.builtin && (a.scope !== "org" || perms.org.has("assistant.publish.org")) ? (
 								<div className="flex gap-1">
 									<Button size="icon" variant="ghost" aria-label="编辑" onClick={() => setEditing(a)}>
 										<Pencil />
