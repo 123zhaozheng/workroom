@@ -76,10 +76,10 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 
 ## 7. pi-durable 扩展（`extension.ts`）
 
-- `kb_search {query, kbIds?, limit?}`：`replay: "safe"`——只读：不写任何行、不调用外部服务；崩溃后重放只是以**当前** ACL 与索引再检索一次，与新的调用等价。行动者通过 `runtime.actorForTool(api, "", ctx)` 解析（A 从 `wr.space` 会话文档取空间，从运行的 `wr.input` 取用户，并按当前 ACL 复核）。未指定 kbIds 时使用本次输入的 `knowledgeRefs`（含 docId 时限定到文档），否则按空间默认范围。输出给模型的文本带 `[n]` 编号与“只依据片段陈述”的说明；各失败原因有明确指示（如 no_evidence：不得声称有知识库依据）。`details = { kind: "wr.kb_search", query, citations(n), diagnostics }` 供 UI 渲染。
+- `kb_search {query, kbIds?, limit?}`：`replay: "safe"`——只读：不写任何行、不调用外部服务；崩溃后重放只是以**当前** ACL 与索引再检索一次，与新的调用等价。行动者通过 `runtime.actorForToolCall(api, ctx)` 解析（A 从 `wr.space` 会话文档取空间，从当前运行的第一条输入取用户与 `knowledgeRefs`，并按当前 ACL 复核）。未指定 kbIds 时使用本次输入的 `knowledgeRefs`（含 docId 时限定到文档），否则按空间默认范围。输出给模型的文本带 `[n]` 编号与“只依据片段陈述”的说明；各失败原因有明确指示（如 no_evidence：不得声称有知识库依据）。`details = { kind: "wr.kb_search", query, citations(n), diagnostics }` 供 UI 渲染。
 - `memory_save {content, scope (必填: private|project|org), kind?}`：`replay: "safe"`——按 `{spaceId, callId}` 幂等，重放返回第一次写入的记忆。project 仅允许在项目会话中、需 owner/editor；org 需组织管理员。来源记为 `extracted`，`sourceRef = {spaceId, conversationId, callId, taskId}`。
 - 提示词段 `knowledge_scope`：列出当前会话默认可检索的知识库及就绪文档数。
-- 提示词段 `memory`：见下。空间从 `wr.space` 读取，行动者用 A 的 `principalOfRun`（当前运行的输入作者）重新解析。
+- 提示词段 `memory`：见下。空间与行动者来自 `runtime.promptScope(input, ctx)`（行动者 = 当前运行输入的作者，按当前身份重新解析；`principal: null` 表示已撤权，此时不输出任何依赖行动者的内容）。
 
 ## 8. 记忆（M10）
 
@@ -101,5 +101,4 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 - **向量检索**：blocked（无嵌入凭据），见 §4。
 - OCR 质量取决于 tesseract（chi_sim best_int）；扫描质量差的页面可能识别错误，引用会标注 OCR。单文档 OCR 上限 100 页。OCR 在主进程外的 worker 线程中运行，但 PDF 栅格化在主线程。
 - 处理是单进程串行；多 worker 部署需要按 `owner_instance` 租约领取任务（未实现，与架构 §2 的单 owner 前提一致）。
-- `knowledgeRefs` 取会话最新的 `wr.input`（运行中途插话时会以插话为准），待 A 在 `ToolActor` 中提供运行输入（`docs/requests/C.md`）。
 - 引用状态依赖 `kb_chunks` 中保留的 tombstone 行；目前不做物理清理（体量可控时可加按时间清理，代价是更早的回答只能显示 `not_found`）。
