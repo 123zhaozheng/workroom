@@ -1,0 +1,335 @@
+{
+  "at": "2026-11-09T23:37:19.642Z",
+  "results": [
+    {
+      "name": "setup: a second ready model (provider with capabilities) and a blocked one (no key) created through the models API",
+      "ok": true,
+      "detail": "{\"pro\":\"e2e-c284\",\"nokey\":\"blocked\"}"
+    },
+    {
+      "name": "dots: canvas rendered on home, animated, devicePixelRatio honoured (2x)",
+      "ok": true,
+      "detail": "{\"mode\":\"animated\",\"draws\":50,\"rafCalls\":97,\"avgDrawMs\":0.4679999997466803,\"maxDrawMs\":4,\"dpr\":2,\"dots\":858,\"regions\":2,\"pixels\":1785600,\"width\":1176,\"height\":900}"
+    },
+    {
+      "name": "dots: backing store = css size × dpr (crisp) on both side canvases",
+      "ok": true,
+      "detail": "[{\"bw\":496,\"bh\":1800,\"w\":248,\"h\":900,\"x\":264},{\"bw\":496,\"bh\":1800,\"w\":248,\"h\":900,\"x\":1192}]"
+    },
+    {
+      "name": "dots perf: throttled to ~30 fps",
+      "ok": true,
+      "detail": "30.0 draws/s (rAF callbacks 60/s)"
+    },
+    {
+      "name": "dots perf: a frame is cheap (avg < 4 ms, 1950 dots @2x, software canvas)",
+      "ok": true,
+      "detail": "avg 0.41 ms, max 4.0 ms, 858 dots"
+    },
+    {
+      "name": "dots perf: animating adds < 15 points of main-thread time over the paused page (headless, software canvas, 2 side canvases @2x)",
+      "ok": true,
+      "detail": "animating 13.4% vs paused 0.3% → +13.1"
+    },
+    {
+      "name": "dots readability: the dot canvases never overlap the message column (nothing behind the text)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dots readability: dots fade in gradually away from the column (inner edge < 40% of outer density)",
+      "ok": true,
+      "detail": "inner=0.04 outer=0.20"
+    },
+    {
+      "name": "dots: soft reaction to the pointer (brighter near it) and relaxes afterwards",
+      "ok": true,
+      "detail": "rest=0.21 near=0.92 after=0.27"
+    },
+    {
+      "name": "dots: hidden tab → zero rAF callbacks and zero frames drawn",
+      "ok": true,
+      "detail": "rAF Δ=0, draws Δ=0, mode=paused"
+    },
+    {
+      "name": "dots: visible again → animation resumes",
+      "ok": true,
+      "detail": "draws 245 → 264"
+    },
+    {
+      "name": "dots: canvas offscreen (IntersectionObserver) → zero rAF callbacks",
+      "ok": true,
+      "detail": "rAF Δ=0, draws Δ=0, mode=paused"
+    },
+    {
+      "name": "dots: back in view → animation resumes",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dots: theme aware (dark dots on light, light dots on dark)",
+      "ok": true,
+      "detail": "light R=19 dark R=234"
+    },
+    {
+      "name": "composer: one shared composer on home (auto-growing textarea, model switcher at the right, + at the left)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "composer: textarea auto-grows with its content",
+      "ok": true,
+      "detail": "48 → 216"
+    },
+    {
+      "name": "composer: + menu offers 上传文件 / 从文件库选择 / 引用知识库 / 使用技能 (a skill is installed)",
+      "ok": true,
+      "detail": "添加到本条消息 | 上传文件 | 从文件库选择 | 引用知识库 | 使用技能"
+    },
+    {
+      "name": "composer: 使用技能 writes the skill into the message",
+      "ok": true,
+      "detail": "使用技能「周报模板」："
+    },
+    {
+      "name": "drop: dragging a file anywhere shows a clear drop overlay",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "drop: overlay disappears when the drag leaves",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "drop: three dropped files upload (multi-file) and become ready cards with a colour kind each (pdf / image / xls)",
+      "ok": true,
+      "detail": "pdf,image,xls"
+    },
+    {
+      "name": "cards: image attachments show a real thumbnail",
+      "ok": true,
+      "detail": "{\"src\":\"blob:\",\"ok\":true}"
+    },
+    {
+      "name": "cards: long names truncate in the middle and keep the extension visible, card width fixed",
+      "ok": true,
+      "detail": "{\"w\":232,\"shown\":\"客户名单-2024-第三季度-终稿-请勿外传.xlsx\",\"tail\":\"请勿外传.xlsx\",\"overflow\":false}"
+    },
+    {
+      "name": "cards: type label and size are shown",
+      "ok": true,
+      "detail": "季度汇总.pdf PDF · 69 B"
+    },
+    {
+      "name": "cards: remove button removes the attachment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "paste: an image on the clipboard becomes an attachment card (named, ready)",
+      "ok": true,
+      "detail": "粘贴的图片-233610.png 图片 · 179 B"
+    },
+    {
+      "name": "paste: clipboard text + image → text paste, no stray image attachment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "upload failure: card shows 上传失败 with the reason and a retry button; sending is blocked",
+      "ok": true,
+      "detail": "会失败的文件.txt 上传失败：网络中断，无法上传 重试"
+    },
+    {
+      "name": "upload failure: retry succeeds and the card becomes ready",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "progress: card shows 上传中 N% with a growing percentage, then ready",
+      "ok": true,
+      "detail": "0,4,7,10,13,16,23,27,30,33,36,43,46,50,53,56,63,66,69,72,76,79,86,89,92,95 | 大文件-录音.zip 上传中 0%"
+    },
+    {
+      "name": "cards: a zip is an 压缩包 card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keys: Shift+Enter inserts a newline and does not send",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keys: Enter while an IME composition is active does not send",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keys: committed Chinese text is kept in the box",
+      "ok": true,
+      "detail": "你好\n"
+    },
+    {
+      "name": "models: grouped by provider (≥ 2 groups)",
+      "ok": true,
+      "detail": "3 groups"
+    },
+    {
+      "name": "models: capability badges for images / tools / reasoning",
+      "ok": true,
+      "detail": "{\"t\":\"E2E Pro 多模态与推理 图片 工具 推理 200K 上下文\",\"status\":\"ready\",\"disabled\":false,\"caps\":[\"image\",\"tools\",\"reasoning\"]}"
+    },
+    {
+      "name": "models: blocked model is disabled and shows the reason",
+      "ok": true,
+      "detail": "E2E 缺密钥模型 不可用：未配置密钥（可勾选“无需密钥”用于本地服务）"
+    },
+    {
+      "name": "models: the test model is labelled 测试模型（非真实 AI） exactly once",
+      "ok": true,
+      "detail": "测试模型（非真实 AI） 仅用于测试：回答是确定性脚本，用量为模拟值"
+    },
+    {
+      "name": "models: thinking levels offered for a reasoning model",
+      "ok": true,
+      "detail": "off,minimal,low,medium,high"
+    },
+    {
+      "name": "models: the choice is saved as the user default (model + thinking level)",
+      "ok": true,
+      "detail": "{\"id\":\"e2e-c284/e2e-pro\",\"thinking\":\"high\"}"
+    },
+    {
+      "name": "models: after reload the home composer still shows the chosen model and level",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "models: new conversation is created with the chosen model (server-side per conversation)",
+      "ok": true,
+      "detail": "{\"provider\":\"e2e-c284\",\"modelId\":\"e2e-pro\"}"
+    },
+    {
+      "name": "models: chat page switcher shows the conversation's model, also after reload",
+      "ok": true,
+      "detail": "E2E Pro"
+    },
+    {
+      "name": "models: switching in a conversation — picker matches what the server really uses; if the server cannot switch, a note says so",
+      "ok": true,
+      "detail": "server=E2E Pro shownFixture=false note=true"
+    },
+    {
+      "name": "models: the switch also becomes the user default for new conversations",
+      "ok": true,
+      "detail": "{\"id\":\"workroom-fixture\"}"
+    },
+    {
+      "name": "bubble: the sent message shows the same cards (name, type, size) for every attachment",
+      "ok": true,
+      "detail": "会议纪要.txt | 文本 · 52 B | 现场照片.png | 图片 · 179 B | 请看附件 [[reply 已收到两个附件。]] | 林夏"
+    },
+    {
+      "name": "bubble: image attachment renders its thumbnail from the server",
+      "ok": true,
+      "detail": "{\"src\":\"/api/files/file_0mw9wgyzta130d2ccf792cc3f/versions/fv_0mw9wgyztb85b4df5fc4234c1/download\",\"ok\":true}"
+    },
+    {
+      "name": "chat: composer is cleared after sending and the empty state is gone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bubble: clicking a card opens the right-side preview",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "drop: files dropped anywhere on the chat page (title bar) are attached",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat keys: Shift+Enter newline, nothing sent",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "deliverable card: type icon, name, version badge, size and a download link in the same visual language",
+      "ok": true,
+      "detail": "项目周报.md | v1 | 文本 · 53 B · 点击预览"
+    },
+    {
+      "name": "dots: also behind the chat page, same guards",
+      "ok": true,
+      "detail": "{\"mode\":\"animated\",\"draws\":45,\"rafCalls\":86,\"avgDrawMs\":0.3311111114919185,\"maxDrawMs\":1.300000000745058,\"dpr\":2,\"dots\":702,\"regions\":2,\"pixels\":1497600,\"width\":1176,\"height\":900}"
+    },
+    {
+      "name": "dots: canvas is behind content and ignores pointer events",
+      "ok": true,
+      "detail": "{\"z\":\"-10\",\"pe\":\"none\"}"
+    },
+    {
+      "name": "settings: 我的模型密钥 section appears only when the admin policy enables personal keys",
+      "ok": true,
+      "detail": "off=0"
+    },
+    {
+      "name": "reduced motion (in-app toggle): dots are drawn static — no rAF loop at all",
+      "ok": true,
+      "detail": "{\"mode\":\"static\",\"draws\":2,\"rafΔ\":0}"
+    },
+    {
+      "name": "settings: turning 动态点阵背景 off removes the canvas entirely",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reduced motion (system): canvas renders static dots, zero rAF callbacks, no frames after the first",
+      "ok": true,
+      "detail": "{\"mode\":\"static\",\"draws\":2,\"rafΔ\":0}"
+    },
+    {
+      "name": "reduced motion: static dots cost ~nothing (main thread < 2%)",
+      "ok": true,
+      "detail": "0.14%"
+    },
+    {
+      "name": "models: richer /api/models shape (provider name, capability object, context window) is grouped and badged",
+      "ok": true,
+      "detail": "Acme AI,另一家 | Acme AI Alpha 4 图片 工具 1M 上下文 Beta 2 工具 推理 Delta 个人密钥 图片 推理 另一家 Gamma 不可用：未配置凭据"
+    },
+    {
+      "name": "390: no horizontal scroll; composer docked at the bottom of the screen",
+      "ok": true,
+      "detail": "{\"sw\":390,\"iw\":390,\"cb\":832,\"ih\":844}"
+    },
+    {
+      "name": "390: the + menu is a bottom sheet with the upload / library / knowledge actions",
+      "ok": true,
+      "detail": "添加到本条消息 |  | 添加到本条消息 |  | 上传文件 | 从这台设备选择，也可以直接拖进来或粘贴图片 | 从文件库选择 | 附加已有文件的最新版本 | 引用知识库 | 把知识库作为本条消息的资"
+    },
+    {
+      "name": "390 chat: no horizontal scroll, composer at the bottom, cards inside the screen",
+      "ok": true,
+      "detail": "{\"sw\":390,\"iw\":390,\"cb\":832,\"ih\":844}"
+    },
+    {
+      "name": "1366×768: chat with preview open has no horizontal overflow",
+      "ok": true,
+      "detail": "{\"sw\":1366,\"iw\":1366}"
+    },
+    {
+      "name": "no external requests during the whole run (fonts / CDN / assets)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no uncaught page errors",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
