@@ -5,6 +5,7 @@ import type { AppContext } from "../core/contracts.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
 import { chunkBlocks } from "./chunker.ts";
 import { parseDocument, ParseError } from "./parsers.ts";
+import type { OcrEngine } from "./ocr.ts";
 import type { KnowledgeStore, VersionRow } from "./service.ts";
 
 const envInt = (name: string, dflt: number) => {
@@ -26,6 +27,8 @@ export class IngestPipeline {
 	/** Total attempts for retryable failures before the version is marked failed (manual retry still possible). */
 	maxAttempts = envInt("WORKROOM_KB_MAX_ATTEMPTS", 3);
 	retryBaseMs = envInt("WORKROOM_KB_RETRY_BASE_MS", 2000);
+	/** Offline OCR engine (null when OCR is disabled or its packages are missing). */
+	ocr: OcrEngine | null = null;
 	#running = false;
 	#stopped = true;
 	#paused = false;
@@ -63,6 +66,7 @@ export class IngestPipeline {
 		this.#stopped = true;
 		clearTimeout(this.#timer);
 		await this.#current?.catch(() => {});
+		await this.ocr?.close();
 	}
 
 	/** Test/ops control: stop picking up new jobs (pending jobs stay durable). */
@@ -150,12 +154,12 @@ export class IngestPipeline {
 				throw new ParseError("source_unavailable", `读取来源文件失败：${e instanceof HttpError ? e.message : (e as Error).message}`, true);
 			}
 			if (!got) throw new ParseError("source_unavailable", "来源文件版本不可读（可能已删除或无权限）", true);
-			const parsed = await parseDocument(got.bytes, v.file_name, v.mime);
+			const parsed = await parseDocument(got.bytes, v.file_name, v.mime, { ocr: this.ocr });
 			if (this.#stopped) throw new ParseError("interrupted", "服务停止，稍后继续", true);
 			this.#setStatus(v.id, "indexing");
 			const chunks = chunkBlocks(parsed.blocks);
 			await new Promise((r) => setImmediate(r)); // let "indexing" be observable; yields between phases
-			this.#index(job, v, chunks, parsed.pageCount);
+			this.#index(job, v, chunks, parsed.pageCount, parsed.ocrPages);
 		} catch (e) {
 			const pe = e instanceof ParseError ? e : new ParseError("internal", `处理失败：${(e as Error).message ?? String(e)}`, true);
 			if (!(e instanceof ParseError)) console.error("[knowledge] ingest error", e);
@@ -181,7 +185,7 @@ export class IngestPipeline {
 		}
 	}
 
-	#index(job: JobRow, v: VersionRow, chunks: ReturnType<typeof chunkBlocks>, pageCount: number | undefined): void {
+	#index(job: JobRow, v: VersionRow, chunks: ReturnType<typeof chunkBlocks>, pageCount: number | undefined, ocrPages: number | undefined): void {
 		const now = nowIso();
 		this.db.tx(() => {
 			const d = this.store.docRow(v.doc_id)!;
@@ -195,19 +199,19 @@ export class IngestPipeline {
 			const serving = d.serving_version_id ? this.store.versionRow(d.serving_version_id) : undefined;
 			const becomesServing = !serving || serving.version_no < v.version_no;
 			const insChunk = this.db.raw.prepare(
-				"INSERT INTO kb_chunks (id, kb_id, doc_id, doc_version_id, file_id, version_id, version_no, file_name, ordinal, page, section, paragraph, sheet, row_start, row_end, text, created_at, tombstoned_at, tombstone_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				"INSERT INTO kb_chunks (id, kb_id, doc_id, doc_version_id, file_id, version_id, version_no, file_name, ordinal, page, section, paragraph, sheet, row_start, row_end, text, created_at, tombstoned_at, tombstone_reason, ocr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			);
 			const insFts = this.db.raw.prepare("INSERT INTO kb_fts (rowid, text) VALUES (?, ?)");
 			for (const c of chunks) {
 				const r = insChunk.run(
 					newId("kbc"), v.kb_id, v.doc_id, v.id, v.file_id, v.version_id, v.version_no, v.file_name, c.ordinal,
 					c.page ?? null, c.section ?? null, c.paragraph ?? null, c.sheet ?? null, c.rowStart ?? null, c.rowEnd ?? null, c.text, now,
-					becomesServing ? null : now, becomesServing ? null : "superseded",
+					becomesServing ? null : now, becomesServing ? null : "superseded", c.ocr ? 1 : 0,
 				);
 				// Section path is indexed with the text so headings are searchable; snippets come from the text only.
 				if (becomesServing) insFts.run(r.lastInsertRowid, c.section ? `${c.section}\n${c.text}` : c.text);
 			}
-			this.db.run("UPDATE kb_doc_versions SET status = 'ready', error = NULL, error_code = NULL, retryable = NULL, chunk_count = ?, page_count = ?, updated_at = ?, superseded_at = ? WHERE id = ?", chunks.length, pageCount ?? null, now, becomesServing ? null : now, v.id);
+			this.db.run("UPDATE kb_doc_versions SET status = 'ready', error = NULL, error_code = NULL, retryable = NULL, chunk_count = ?, page_count = ?, ocr_pages = ?, updated_at = ?, superseded_at = ? WHERE id = ?", chunks.length, pageCount ?? null, ocrPages ?? null, now, becomesServing ? null : now, v.id);
 			if (becomesServing) {
 				if (serving) {
 					// Old version leaves the index now; its rows stay (tombstoned) so old citations can report "superseded".

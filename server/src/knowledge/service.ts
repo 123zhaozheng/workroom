@@ -63,6 +63,7 @@ export interface VersionRow {
 	attempts: number;
 	chunk_count: number;
 	page_count: number | null;
+	ocr_pages: number | null;
 	added_by: string;
 	created_at: string;
 	updated_at: string;
@@ -83,6 +84,7 @@ interface ChunkHit {
 	sheet: string | null;
 	row_start: number | null;
 	row_end: number | null;
+	ocr: number;
 	text: string;
 	rank?: number;
 }
@@ -277,6 +279,7 @@ export class KnowledgeStore implements KnowledgeService {
 			attempts: v.attempts,
 			chunkCount: v.chunk_count,
 			pageCount: v.page_count ?? undefined,
+			...(v.ocr_pages ? { ocrPages: v.ocr_pages } : {}),
 			createdAt: v.created_at,
 			updatedAt: v.updated_at,
 			supersededAt: v.superseded_at ?? undefined,
@@ -555,7 +558,7 @@ export class KnowledgeStore implements KnowledgeService {
 				filters.push(GOV_FILTER);
 				params.push(now, now);
 			}
-			const select = `SELECT c.id, c.kb_id, b.name AS kb_name, c.doc_id, c.file_id, c.version_id, c.version_no, c.file_name, c.page, c.section, c.paragraph, c.sheet, c.row_start, c.row_end, c.text`;
+			const select = `SELECT c.id, c.kb_id, b.name AS kb_name, c.doc_id, c.file_id, c.version_id, c.version_no, c.file_name, c.page, c.section, c.paragraph, c.sheet, c.row_start, c.row_end, c.ocr, c.text`;
 			const joins = `JOIN kb_docs d ON d.id = c.doc_id AND d.serving_version_id = c.doc_version_id AND d.deleted_at IS NULL
 			               JOIN kb_bases b ON b.id = c.kb_id AND b.deleted_at IS NULL`;
 			let scored: { h: ChunkHit; score: number }[] = [];
@@ -641,9 +644,10 @@ export class KnowledgeStore implements KnowledgeService {
 			...(h.paragraph ? { paragraph: h.paragraph } : {}),
 			...(h.sheet ? { sheet: h.sheet } : {}),
 			...(h.row_start ? { rowStart: h.row_start, rowEnd: h.row_end ?? h.row_start } : {}),
+			...(h.ocr ? { ocr: true } : {}),
 			snippet,
 			score: Math.round(score * 10000) / 10000,
-			locator: locatorOf({ page: h.page, section: h.section, paragraph: h.paragraph, sheet: h.sheet, rowStart: h.row_start, rowEnd: h.row_end }),
+			locator: locatorOf({ page: h.page, section: h.section, paragraph: h.paragraph, sheet: h.sheet, rowStart: h.row_start, rowEnd: h.row_end, ocr: h.ocr }),
 		};
 	}
 

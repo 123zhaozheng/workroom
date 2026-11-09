@@ -2,6 +2,12 @@
 
 ## To A (runtime)
 
+Status 2026-11-09: A's `actorForTool(api, "", ctx)` resolves the space from the `wr.space` session doc and C uses that;
+C's prompt sections read `wr.space` via `input.read.snapshot` and the actor via A's `principalOfRun` (duck-typed). Items 1 and 3
+are therefore satisfied in practice; a documented public method would still be preferable to relying on `principalOfRun`.
+Item 2 is open: C currently reads the newest `wr.input` entry of the conversation for `knowledgeRefs` (a steer that arrives
+mid-run would win over the run's first input).
+
 1. **Space of a running tool call.** `kb_search` / `memory_save` need the `spaceId` to call `runtime.actorForTool(api, spaceId, context)`.
    Please expose one of:
    - `RuntimeService.actorForToolCall(api, context): Promise<ToolActor>` (resolves the space itself), or
@@ -32,7 +38,9 @@
 
 ## To integrator
 
-- Dependencies added with `--save-exact`: `unpdf@2.1.0`, `mammoth@1.13.0`, `exceljs@4.4.0`, `node-html-parser@9.0.7`; dev: `pdf-lib@1.17.1`, `jszip` (tests).
+- Dependencies added with `--save-exact`: `unpdf@2.1.0`, `mammoth@1.13.0`, `exceljs@4.4.0`, `node-html-parser@9.0.7`,
+  OCR: `tesseract.js@7.0.0`, `@tesseract.js-data/eng@1.0.0`, `@tesseract.js-data/chi_sim@1.0.0` (≈35 MB language data, local),
+  `@napi-rs/canvas@1.1.0` (PDF page rasterization); dev: `pdf-lib@1.17.1`. Tests also use D's `docx` dependency.
   `package.json`/`package-lock.json` are integrator-owned, so C did not commit them.
 - C reads identity tables `id_project_members`, `id_projects`, `id_department_members`, `id_departments`, `id_org_members`
   inside the retrieval SQL (ACL filter is a SQL sub-select evaluated per query). If E changes those tables, please tell C.

@@ -253,14 +253,20 @@ test("processing: explicit add, queued → parsing → indexing → ready, failu
 		const fs = await t.json("GET", `/api/kb/files/${up.fileId}/status`, { token: alice.token });
 		assert.equal(fs.entries[0].availability, "ready");
 
-		// Unsupported type (image needs OCR) → failed, not retryable, clear message.
-		const img = await uploadFile(t, alice.token, { name: "scan.png", mime: "image/png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]) });
-		const di = (await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: img.fileId, versionId: img.versionId } })).doc;
+		// Unsupported type → failed, not retryable, clear message.
+		const bin = await uploadFile(t, alice.token, { name: "blob.bin", mime: "application/octet-stream", bytes: new Uint8Array([0, 1, 2, 3, 0xff, 0]) });
+		const di = (await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: bin.fileId, versionId: bin.versionId } })).doc;
 		const fi = await waitDoc(t, alice.token, kb.id, di.id);
 		assert.equal(fi.latest.status, "failed");
-		assert.equal(fi.latest.errorCode, "ocr_unavailable");
+		assert.equal(fi.latest.errorCode, "unsupported_type");
 		assert.equal(fi.latest.retryable, false);
 		assert.equal(fi.availability, "failed");
+		// A broken image goes to OCR and fails there (OCR itself is covered by knowledge-ocr.test.ts).
+		const img = await uploadFile(t, alice.token, { name: "scan.png", mime: "image/png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]) });
+		const dimg = (await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: img.fileId, versionId: img.versionId } })).doc;
+		const fimg = await waitDoc(t, alice.token, kb.id, dimg.id);
+		assert.equal(fimg.latest.status, "failed");
+		assert.ok(["ocr_failed", "no_text"].includes(fimg.latest.errorCode), fimg.latest.errorCode);
 		// Corrupt PDF → parse_error.
 		const bad = await uploadFile(t, alice.token, { name: "broken.pdf", mime: MIME.pdf, bytes: "%PDF-1.4 this is not really a pdf" });
 		const db = (await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: bad.fileId, versionId: bad.versionId } })).doc;
@@ -381,7 +387,7 @@ test("governance: owner, version label, effective/expired/withdrawn; inactive do
 	}
 });
 
-test("KB management: maintainers, rename, delete KB; capabilities report vector/OCR as blocked", async () => {
+test("KB management: maintainers, rename, delete KB; capabilities (vector blocked, OCR ready)", async () => {
 	const t = await startTestApp();
 	try {
 		const { alice, bob, orgId } = await orgWithTwo(t);
@@ -405,7 +411,8 @@ test("KB management: maintainers, rename, delete KB; capabilities report vector/
 		const caps = await t.json("GET", "/api/kb/capabilities", { token: alice.token });
 		assert.equal(caps.fulltext.status, "ready");
 		assert.equal(caps.vector.status, "blocked");
-		assert.equal(caps.ocr.status, "blocked");
+		assert.equal(caps.ocr.status, "ready");
+		assert.ok(caps.formats.includes("image"));
 		await kbIdle(t);
 	} finally {
 		await t.dispose();

@@ -1,6 +1,10 @@
 // Document parsers: bytes + metadata → anchored text blocks.
 // Anchors: PDF page; heading path for md/html/docx; sheet + row for xlsx; row for csv; JSON path; paragraph ordinal otherwise.
 import { parse as parseHtml, type HTMLElement, type Node as HtmlNode, NodeType } from "node-html-parser";
+import type { OcrEngine } from "./ocr.ts";
+
+/** Pages beyond this are not OCR'd (bounded work per document); they are reported in ParseResult.ocrSkippedPages. */
+export const MAX_OCR_PAGES = 100;
 
 export interface Block {
 	text: string;
@@ -10,14 +14,23 @@ export interface Block {
 	sheet?: string;
 	rowStart?: number;
 	rowEnd?: number;
+	/** Text recognized by OCR (not from a text layer). */
+	ocr?: boolean;
 }
 export interface ParseResult {
 	format: DocFormat;
 	blocks: Block[];
 	pageCount?: number;
+	/** Pages (PDF) or images whose text came from OCR. */
+	ocrPages?: number;
+	ocrSkippedPages?: number;
 }
 
-export type DocFormat = "txt" | "md" | "html" | "csv" | "json" | "pdf" | "docx" | "xlsx";
+export type DocFormat = "txt" | "md" | "html" | "csv" | "json" | "pdf" | "docx" | "xlsx" | "image";
+export interface ParseOptions {
+	/** OCR engine for images and PDF pages without a text layer; absent → those fail with ocr_unavailable / no_text. */
+	ocr?: OcrEngine | null;
+}
 export const SUPPORTED_FORMATS: readonly DocFormat[] = ["txt", "md", "html", "csv", "json", "pdf", "docx", "xlsx"];
 
 export class ParseError extends Error {
@@ -54,13 +67,19 @@ const EXT: Record<string, DocFormat> = {
 	xlsx: "xlsx",
 };
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic"]);
+const OCR_IMAGE_EXT = new Set(["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "gif"]);
 
-export function detectFormat(name: string, mime: string, bytes: Uint8Array): DocFormat | { unsupported: string; code: string } {
+export function detectFormat(name: string, mime: string, bytes: Uint8Array, opts: ParseOptions = {}): DocFormat | { unsupported: string; code: string } {
 	const ext = name.toLowerCase().split(".").pop() ?? "";
 	const m = mime.toLowerCase().split(";")[0]!.trim();
 	if (EXT[ext]) return EXT[ext];
 	if (MIME[m]) return MIME[m];
-	if (IMAGE_EXT.has(ext) || m.startsWith("image/")) return { code: "ocr_unavailable", unsupported: "图片需要 OCR 才能提取文字；本部署未启用 OCR（离线 OCR 引擎与语言数据未安装）" };
+	if (IMAGE_EXT.has(ext) || m.startsWith("image/")) {
+		if (!opts.ocr) return { code: "ocr_unavailable", unsupported: "图片需要 OCR 才能提取文字；本部署未启用 OCR" };
+		const sub = OCR_IMAGE_EXT.has(ext) ? ext : m.replace("image/", "");
+		if (!OCR_IMAGE_EXT.has(sub) && sub !== "jpeg") return { code: "unsupported_type", unsupported: `OCR 不支持该图片格式（${m || ext}）；支持 png/jpg/webp/bmp/tiff/gif` };
+		return "image";
+	}
 	if (m.startsWith("text/") || looksLikeText(bytes)) return "txt";
 	return { code: "unsupported_type", unsupported: `不支持的文件类型（${m || ext || "unknown"}）；支持 ${SUPPORTED_FORMATS.join(", ")}` };
 }
@@ -92,8 +111,8 @@ export function decodeText(bytes: Uint8Array): string {
 
 const norm = (s: string) => s.replace(/\r\n?/g, "\n").replace(/[ \t ]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 
-export async function parseDocument(bytes: Uint8Array, name: string, mime: string): Promise<ParseResult> {
-	const f = detectFormat(name, mime, bytes);
+export async function parseDocument(bytes: Uint8Array, name: string, mime: string, opts: ParseOptions = {}): Promise<ParseResult> {
+	const f = detectFormat(name, mime, bytes, opts);
 	if (typeof f !== "string") throw new ParseError(f.code, f.unsupported);
 	let res: ParseResult;
 	switch (f) {
@@ -113,8 +132,18 @@ export async function parseDocument(bytes: Uint8Array, name: string, mime: strin
 			res = { format: f, blocks: parseJson(decodeText(bytes)) };
 			break;
 		case "pdf":
-			res = await parsePdf(bytes);
+			res = await parsePdf(bytes, opts.ocr ?? null);
 			break;
+		case "image": {
+			let text: string;
+			try {
+				text = await opts.ocr!.recognize(bytes);
+			} catch (e) {
+				throw new ParseError("ocr_failed", `图片 OCR 失败：${(e as Error).message ?? String(e)}`);
+			}
+			res = { format: f, blocks: paragraphs(text, { ocr: true }), ocrPages: 1 };
+			break;
+		}
 		case "docx":
 			res = { format: f, blocks: await parseDocx(bytes) };
 			break;
@@ -124,7 +153,8 @@ export async function parseDocument(bytes: Uint8Array, name: string, mime: strin
 	}
 	res.blocks = res.blocks.filter((b) => b.text.trim().length > 0);
 	if (res.blocks.length === 0) {
-		if (f === "pdf") throw new ParseError("no_text", "PDF 没有可提取的文本层（可能是扫描件，需要 OCR；本部署未启用 OCR）");
+		if (f === "pdf") throw new ParseError("no_text", opts.ocr ? "PDF 没有文本层，OCR 也未识别出文字" : "PDF 没有可提取的文本层（可能是扫描件，需要 OCR；本部署未启用 OCR）");
+		if (f === "image") throw new ParseError("no_text", "OCR 未在图片中识别出文字");
 		throw new ParseError("no_text", "文件中没有可索引的文字内容");
 	}
 	return res;
@@ -397,12 +427,13 @@ function parseJson(text: string): Block[] {
 }
 
 // ---------- pdf ----------
-async function parsePdf(bytes: Uint8Array): Promise<ParseResult> {
-	const { extractText, getDocumentProxy } = await import("unpdf");
+async function parsePdf(bytes: Uint8Array, ocr: OcrEngine | null): Promise<ParseResult> {
+	const { extractText, getDocumentProxy, renderPageAsImage } = await import("unpdf");
 	let pages: string[];
 	let total: number;
+	let pdf: Awaited<ReturnType<typeof getDocumentProxy>>;
 	try {
-		const pdf = await getDocumentProxy(new Uint8Array(bytes));
+		pdf = await getDocumentProxy(new Uint8Array(bytes));
 		const r = await extractText(pdf, { mergePages: false });
 		pages = r.text as string[];
 		total = r.totalPages;
@@ -412,12 +443,31 @@ async function parsePdf(bytes: Uint8Array): Promise<ParseResult> {
 		throw new ParseError("parse_error", `无法解析 PDF：${msg}`);
 	}
 	const blocks: Block[] = [];
-	pages.forEach((text, i) => {
+	let ocrPages = 0;
+	let ocrSkippedPages = 0;
+	for (let i = 0; i < pages.length; i++) {
+		let text = pages[i] ?? "";
+		let fromOcr = false;
+		if (!text.trim() && ocr) {
+			// Scanned page (no text layer): rasterize at 2x and OCR it, keeping the page number as the anchor.
+			if (ocrPages >= MAX_OCR_PAGES) {
+				ocrSkippedPages++;
+				continue;
+			}
+			try {
+				const png = await renderPageAsImage(pdf, i + 1, { canvasImport: () => import("@napi-rs/canvas"), scale: 2 });
+				text = await ocr.recognize(png);
+				fromOcr = true;
+				ocrPages++;
+			} catch (e) {
+				throw new ParseError("ocr_failed", `第 ${i + 1} 页 OCR 失败：${(e as Error).message ?? String(e)}`, true);
+			}
+		}
 		let n = 1;
 		for (const p of text.replace(/\r\n?/g, "\n").split(/\n\s*\n/)) {
 			const t = norm(p);
-			if (t) blocks.push({ text: t, page: i + 1, paragraph: n++ });
+			if (t) blocks.push({ text: t, page: i + 1, paragraph: n++, ...(fromOcr ? { ocr: true } : {}) });
 		}
-	});
-	return { format: "pdf", blocks, pageCount: total };
+	}
+	return { format: "pdf", blocks, pageCount: total, ...(ocrPages ? { ocrPages } : {}), ...(ocrSkippedPages ? { ocrSkippedPages } : {}) };
 }

@@ -24,6 +24,7 @@ import { knowledgeExtension } from "./extension.ts";
 import { embeddingStatus, type EmbeddingProvider } from "./embeddings.ts";
 import { runEval } from "./eval.ts";
 import { SUPPORTED_FORMATS } from "./parsers.ts";
+import { ocrSupport, TesseractOcr } from "./ocr.ts";
 
 /** Facade provided as service "knowledgeAdmin". */
 export class Knowledge {
@@ -38,7 +39,12 @@ export class Knowledge {
 		this.memory = new MemoryStore(ctx, this.store.access);
 		this.pipeline = new IngestPipeline(ctx, this.store);
 		this.store.onWork = () => this.pipeline.kick();
+		// Offline OCR when its packages are installed (WORKROOM_KB_OCR=0 disables it).
+		const ocr = ocrSupport();
+		this.ocrStatus = process.env.WORKROOM_KB_OCR === "0" ? { ok: false, missing: "disabled by WORKROOM_KB_OCR=0" } : ocr;
+		if (this.ocrStatus.ok) this.pipeline.ocr = new TesseractOcr(ctx.config.dataDir);
 	}
+	readonly ocrStatus: { ok: true } | { ok: false; missing: string };
 	/** Files module hook: new file version → re-index KB docs that follow the file. */
 	fileVersionAdded(fileId: string, ref: FileVersionRef, by?: Principal): string[] {
 		return this.store.fileVersionAdded(fileId, ref, by);
@@ -54,8 +60,10 @@ export class Knowledge {
 		return {
 			fulltext: { status: "ready", detail: "SQLite FTS5（trigram 分词，支持中文子串）+ BM25/覆盖度重排；2 字词使用 LIKE 回退" },
 			vector: embeddingStatus(this.embeddings),
-			ocr: { status: "blocked", detail: "未启用 OCR：需要离线 OCR 引擎（如 tesseract.js + 本地 chi_sim/eng 语言数据）和 PDF 页面栅格化（如 @napi-rs/canvas）；扫描件 PDF 与图片会显示 no_text / ocr_unavailable 失败" },
-			formats: SUPPORTED_FORMATS,
+			ocr: this.ocrStatus.ok
+				? { status: "ready", detail: "离线 OCR：tesseract.js（WASM）+ 本地 chi_sim/eng 语言数据；图片与无文本层的 PDF 页面（栅格化后识别，单文档最多 100 页）" }
+				: { status: "blocked", detail: `OCR 不可用（缺少 ${this.ocrStatus.missing}）；图片与扫描件 PDF 会显示 ocr_unavailable / no_text 失败` },
+			formats: this.ocrStatus.ok ? [...SUPPORTED_FORMATS, "image"] : SUPPORTED_FORMATS,
 		};
 	}
 }

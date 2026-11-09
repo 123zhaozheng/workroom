@@ -14,9 +14,10 @@ export interface Chunk {
 	sheet?: string;
 	rowStart?: number;
 	rowEnd?: number;
+	ocr?: boolean;
 }
 
-const unitKey = (b: Block) => `${b.page ?? ""}\u0001${b.section ?? ""}\u0001${b.sheet ?? ""}`;
+const unitKey = (b: Block) => `${b.page ?? ""}\u0001${b.section ?? ""}\u0001${b.sheet ?? ""}\u0001${b.ocr ? 1 : 0}`;
 
 export function chunkBlocks(blocks: readonly Block[], maxChars = MAX_CHARS): Chunk[] {
 	const out: Chunk[] = [];
@@ -32,7 +33,7 @@ export function chunkBlocks(blocks: readonly Block[], maxChars = MAX_CHARS): Chu
 		for (const piece of pieces) {
 			if (cur && (key !== curKey || (cur as Chunk).text.length + piece.length + 1 > maxChars)) flush();
 			if (!cur) {
-				cur = { ordinal: 0, text: piece, page: b.page, section: b.section, paragraph: b.paragraph, sheet: b.sheet, rowStart: b.rowStart, rowEnd: b.rowEnd };
+				cur = { ordinal: 0, text: piece, page: b.page, section: b.section, paragraph: b.paragraph, sheet: b.sheet, rowStart: b.rowStart, rowEnd: b.rowEnd, ...(b.ocr ? { ocr: true } : {}) };
 				curKey = key;
 			} else {
 				const c: Chunk = cur;
@@ -71,8 +72,9 @@ export function splitLong(text: string, maxChars: number): string[] {
 }
 
 /** Human-readable locator for a chunk/citation. */
-export function locatorOf(c: { page?: number | null; section?: string | null; paragraph?: number | null; sheet?: string | null; rowStart?: number | null; rowEnd?: number | null }): string {
-	if (c.page) return `第 ${c.page} 页`;
+export function locatorOf(c: { page?: number | null; section?: string | null; paragraph?: number | null; sheet?: string | null; rowStart?: number | null; rowEnd?: number | null; ocr?: boolean | number | null }): string {
+	if (c.page) return `第 ${c.page} 页${c.ocr ? "（OCR 识别）" : ""}`;
+	if (c.ocr) return `OCR 识别${c.paragraph ? ` · 第 ${c.paragraph} 段` : ""}`;
 	const rows = c.rowStart ? (c.rowEnd && c.rowEnd !== c.rowStart ? `第 ${c.rowStart}–${c.rowEnd} 行` : `第 ${c.rowStart} 行`) : "";
 	if (c.sheet) return `${c.sheet} ${rows}`.trim();
 	if (rows) return rows;

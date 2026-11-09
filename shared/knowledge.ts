@@ -57,6 +57,8 @@ export interface KbDocVersionDTO {
 	readonly attempts: number;
 	readonly chunkCount: number;
 	readonly pageCount?: number;
+	/** Pages (PDF) / images whose text came from OCR. */
+	readonly ocrPages?: number;
 	readonly createdAt: string;
 	readonly updatedAt: string;
 	/** Set once a newer version became ready and replaced this one in the index. */
@@ -149,7 +151,9 @@ export interface CitationDTO {
 	readonly sheet?: string;
 	readonly rowStart?: number;
 	readonly rowEnd?: number;
-	/** Display label, e.g. "第 3 页", "章节：制度 > 报销", "第 4 段", "Sheet1 第 2–9 行". */
+	/** Text came from OCR (scanned PDF page / image): may contain recognition errors. */
+	readonly ocr?: boolean;
+	/** Display label, e.g. "第 3 页", "章节：制度 > 报销", "第 4 段", "Sheet1 第 2–9 行", "第 2 页（OCR 识别）". */
 	readonly locator: string;
 	readonly kbName: string;
 	/** Citation number used in tool output text ([1], [2], ...); only set by kb_search. */
@@ -217,7 +221,7 @@ export interface CitationStatusDTO {
 export interface KbCapabilities {
 	readonly fulltext: { status: "ready"; detail: string };
 	readonly vector: { status: "blocked"; detail: string };
-	readonly ocr: { status: "blocked"; detail: string };
+	readonly ocr: { status: "ready" | "blocked"; detail: string };
 	readonly formats: readonly string[];
 }
 

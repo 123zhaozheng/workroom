@@ -169,4 +169,12 @@ CREATE TABLE mem_revisions (
 CREATE INDEX mem_revisions_memory ON mem_revisions(memory_id, seq);
 `,
 	},
+	{
+		version: 2,
+		name: "ocr provenance",
+		sql: `
+ALTER TABLE kb_chunks ADD COLUMN ocr INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE kb_doc_versions ADD COLUMN ocr_pages INTEGER;
+`,
+	},
 ];
