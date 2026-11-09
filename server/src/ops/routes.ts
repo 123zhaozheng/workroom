@@ -1,7 +1,6 @@
 // HTTP routes for ops: /models, /admin/{models,channels,routes,route-attempts,budgets,usage,settings,trace},
 // /usage, /stats, /budgets, /automations, /notifications, /notify-channels, /hooks/automations/:token.
 import type { Context as HonoContext, Hono } from "hono";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AppContext, AppEnv, Principal } from "../core/contracts.ts";
 import { HttpError, jsonBody, newId, nowIso, principalOf } from "../core/http.ts";
 import { audit, type Identity } from "../identity/module.ts";
@@ -265,7 +264,6 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		const modelRef = gateway.piModels().getModel(pm.pi_provider, pm.id);
 		if (!modelRef) return c.json({ ok: false, status: "no_route" });
 		const msg = await gateway.piModels().completeSimple(modelRef, { messages: [{ role: "user", content: "Reply with: OK", timestamp: Date.now() }] }, { maxTokens: 16 });
-		void createAssistantMessageEventStream; // (type import anchor)
 		audit(db, p.orgId, p.userId, "channel.test", r.id, { ok: msg.stopReason !== "error", upstream: b.upstreamModelId ?? routeRow.upstream_model_id }, { requestId: rid(c) });
 		return c.json({ ok: msg.stopReason !== "error", status: msg.stopReason, latencyMs: Date.now() - t0, error: msg.errorMessage, route: msg.responseModel });
 	});
