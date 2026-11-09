@@ -137,17 +137,79 @@ Playwright + Chromium（主机预装，`/opt/node-tools/node_modules/playwright`
 
 ### URL 策略（`server/src/tools/netpolicy.ts`）
 
-只允许 http/https、不允许 URL 内含凭据；解析 DNS 后拒绝回环、私网、链路本地（含 169.254.169.254 元数据）、CGNAT、组播、保留地址及 `localhost`/`metadata.google.internal`，除非 `host[:port]` 在运维白名单 `WORKROOM_URL_ALLOWLIST` 中。已知限制：检查与连接之间存在 DNS 重绑定窗口（Chromium/fetch 自行解析）；外部网络在本环境可能受代理限制，测试使用本地 HTTP 服务器 + 白名单。
+只允许 http/https、不允许 URL 内含凭据；解析 DNS 后拒绝回环、私网、链路本地（含 169.254.169.254 元数据）、CGNAT、组播、保留地址及 `localhost`/`metadata.google.internal`，除非 `host[:port]` 或该 IP 在运维白名单 `WORKROOM_URL_ALLOWLIST` 中。
+
+**DNS 固定（防重绑定）**：域名只解析一次，校验通过的 IP 被“钉住”，真正的 TCP 连接直接连到这个 IP（`pinnedRequest`：自定义 `lookup`；HTTPS 仍按域名做 SNI 与证书校验）。
+- 浏览器（`browse` 与交互会话）：Chromium 自己**不解析也不连接**。每个请求（导航、每一跳重定向、子资源、fetch/XHR）都被拦截，由服务端用 `pinnedRequest` 重新发出，再 `route.fulfill` 回页面；同一 context 内每个 origin 只解析一次（之后不再重新解析）；WebSocket 被拒绝；响应 ≤25 MB。
+- MCP HTTP：`StreamableHTTPClientTransport` 使用 `pinnedFetch`，每个连接内的所有请求复用首次校验的 IP。
+- 测试 `server/test/tools-netpolicy.test.ts`：`rebind.test` 第一次解析为白名单 IP 127.0.0.2，之后解析为 127.0.0.1；pinnedRequest、browse（页面 + fetch）与 MCP（initialize/listTools/callTool）都只解析一次并连到 127.0.0.2，127.0.0.1 上的“攻击者”服务收到 0 个请求。
+- 限制：服务端发出的请求不经过本环境的 HTTPS 代理（直连）；外部网络在本环境可能受限，测试使用本地服务器 + 白名单。
 
 ## 7. 能力声明（M14-A）
 
 `GET /tools/capabilities`：成果格式与 PDF CJK 字体状态、沙箱（可用/不可用及原因）、Code Mode、浏览器、当前用户的连接器（状态、访问、是否启用、是否可用）、被阻塞的第三方连接器、已启用技能及缺少的授权、音视频（blocked：无服务/凭据）。模型能力由 E 的模型网关声明。
 
-## 8. 被阻塞 / 未实现（诚实说明）
+## 8. 第二轮新增
+
+### 8.1 后台长任务（M14-C）
+
+- `job_start`（kind = `sandbox` | `browse` | `generate`）立即返回 jobId；任务是 pi-durable 任务 `wr.job`，`{ ownership: conversation, background: true }`：不让会话处于忙碌状态（对话可继续），重启后由该空间的 Harness 恢复；取消 = `harness.abortTask()`（abort 处理器标记 cancelled 并杀掉沙箱进程组）。
+- 状态：`queued → running → done | failed | cancelled | timeout`。预算：墙钟 `timeoutMs`（≤ `WORKROOM_JOB_MAX_TIMEOUT_MS`，默认 1 h）+ CPU 秒（沙箱 RLIMIT_CPU，超出 → timeout）+ 内存。结果以文件版本发布（沙箱：`publish` 列出的路径；browse：正文 .md + 截图；generate：文档），来源 `tool = job:<kind>`、`callId = job:<id>`。
+- 重启：每次运行在 pi memo `attempt:N` 记账。发现上一个进程中断的运行时先杀残留进程组（记录的 pid，校验 cmdline 含 `wr-sandbox`），再按 `restartPolicy`：`rerun`（声明幂等）从头重跑（最多 3 次），`fail`（默认）标记 failed，**不盲目重做**有副作用的脚本。
+- 状态镜像：pi 文档 `wr.jobs`（会话级，`fork: "initial"`），每次状态变化写入，会话 watch/SSE 可见；目录行在 `tool_jobs`。普通会话中止不会取消后台任务（设计如此），用 `POST /jobs/:id/cancel`。
+- 工具：`job_start`（safe：jobId 由调用确定，重放找到同一任务）、`job_status`、`job_cancel`。
+- 测试 `server/test/tools-jobs.test.ts`（经真实运行内核）：job_start <2.5 s 返回、任务运行中追问被回答且会话不忙、产出下载内容正确、`wr.jobs` 镜像、取消（无残留进程，viewer 403）、墙钟与 CPU 预算 → timeout、generate 产出 docx；重启测试：rerun 任务第 2 次运行完成并发布（日志显示两次运行），fail 任务标记 failed 且副作用只发生一次。
+
+### 8.2 交互式浏览器会话与接管（M11-B）
+
+每个会话一个服务端 Chromium 页面（1280×800），Agent 用 `browser_open` / `browser_act`（click/type/press/scroll/navigate/back/forward/reload）/`browser_close` 操作；空间成员可通过 API 接管：接管后 Agent 的动作被拒绝（409），直到用户交还。每次动作后刷新截图（`version` 递增）。观看 = 空间读权限（viewer 可看），操作/接管/关闭 = 空间写权限。网络与 `browse` 相同（URL 策略 + DNS 固定 + 禁 WebSocket），弹窗被合并到主页面、对话框自动关闭、禁止下载。空闲 `WORKROOM_BROWSER_IDLE_MS`（默认 15 min）自动关闭，进程内最多 `WORKROOM_BROWSER_MAX_SESSIONS` 个。测试 `server/test/tools-browser-session.test.ts`。
+
+### 8.3 默认工具集与组织策略
+
+默认会话（不设 `settings.extensions`）提供全部已安装工具：`file_*`、`sandbox_*`、`codemode`、`browse`、`browser_*`、`job_*`、`skill_*`、`tool_search`（MCP 工具保持 deferred）。组织管理员可按组关闭（sandbox / codemode / browser / jobs / connectors / skills），由 `wr.tool-policy` 的 `beforeTool` 钩子对每次调用（含 code mode 嵌套调用）执行；每个工具仍各自校验调用者 ACL。测试 `server/test/tools-defaults.test.ts`（经真实运行内核）。
+
+## 9. API 路由总表（`/api` 下）
+
+| 路由 | 权限 | 说明 |
+|---|---|---|
+| `GET /files` `POST /files` `GET /files/:id` `POST /files/:id/versions` `DELETE /files/:id` | 空间读 / 写 | 文件库（§1） |
+| `GET /files/:id/versions/:vid/{download,preview,text}` | 空间读 | 下载 / 安全预览 / 文本 |
+| `GET /tool-calls?spaceId=&conversationId=&tool=` | 空间读 | 工具调用记录 |
+| `GET /tools/capabilities` | 登录 | 当前用户可用能力与不可用原因 |
+| `GET /tools/policy` · `PUT /tools/policy {groups:{sandbox:false,…}}` | 成员读 · 组织管理员写 | 工具组策略 |
+| `GET /connectors` · `POST /connectors` | 登录 · 个人=任何成员（仅 HTTP）/ 系统=管理员 | 连接列表（含 `blocked`、`secretStorage`）/ 新建并检查 |
+| `GET /connectors/:id` · `PATCH /connectors/:id {name,enabled,secrets,toolPolicies,access,url}` · `DELETE /connectors/:id` | use · admin · admin | 详情 / 修改（停用、换凭据、工具读写策略）/ 删除 |
+| `POST /connectors/:id/check` | use | 立即检查状态并发现工具 |
+| `POST /connectors/:id/reconnect {secrets?}` | use；带 secrets 需 admin | 重新连接（可同时更换凭据）并检查 |
+| `PUT /connectors/:id/enablement {enabled}` | use | 当前用户启用/关闭该连接 |
+| `GET /connectors/:id/calls` | read | 调用记录（管理者看全部） |
+| `GET /skills` · `POST /skills?install=0` | 登录 · 个人任何人 / 组织技能需管理员 | 技能库（含我的安装状态）/ 新建（默认自动安装） |
+| `GET /skills/:id` · `POST /skills/:id/versions` | read · write | 详情（全部版本）/ 新版本 |
+| `POST /skills/:id/install {pinVersionNo?}` · `DELETE /skills/:id/install` | use | 安装（可固定版本）/ 卸载 |
+| `PATCH /skills/:id/install {enabled?, pinnedVersionNo?: n \| null}` | use | 停用/启用；固定版本或跟随最新（null） |
+| `POST /skills/:id/install/upgrade` · `POST /skills/:id/install/rollback` | use | 升级到最新并固定 / 回滚到上一个使用的版本 |
+| `POST /skills/:id/grants {versionNo, permissions}` | use | 为该版本授予（或以 `[]` 撤销）声明的权限 |
+| `GET /skills/:id/runs` | read | 运行记录（含版本） |
+| `GET /skills/drafts` · `POST /skills/drafts {spaceId, conversationId, name?}` | 本人 · 会话读 | 我的草稿 / 从成功任务生成草稿 |
+| `GET /skills/drafts/:id` · `PATCH /skills/drafts/:id` | 本人 | 预览 / 修改（使验证失效） |
+| `POST /skills/drafts/:id/validate` · `POST /skills/drafts/:id/publish {scope?}` | 本人 | 样例验证 / 发布（需最近一次验证通过） |
+| `GET /sandbox/:spaceId` · `/files` · `/file?path=` · `/runs` · `/runs/:runId` | 空间读 | 执行环境、工作目录、下载、运行记录 |
+| `POST /sandbox/:spaceId/publish {conversationId, path, name?, fileId?}` | 空间写 | 发布沙箱文件到文件库 |
+| `GET /jobs?spaceId=&conversationId=&status=` · `GET /jobs/:id` | 空间读 | 后台任务（`canCancel`） |
+| `POST /jobs/:id/cancel` | 空间写 | 取消 |
+| `GET /browser-sessions?spaceId=&conversationId=` · `GET /browser-sessions/:id` | 空间读 | 会话列表/详情（`canControl`） |
+| `GET /browser-sessions/:id/screenshot` | 空间读 | 最新截图 PNG（`?v=<version>` 防缓存） |
+| `POST /browser-sessions {spaceId, conversationId, url}` | 空间写 | 用户打开（由该用户控制） |
+| `POST /browser-sessions/:id/takeover` · `/release` | 空间写 | 接管 / 交还给 Agent |
+| `POST /browser-sessions/:id/actions {type, url?, x?, y?, text?, key?, deltaY?}` | 空间写且为当前接管者 | 点击/输入/按键/滚动/导航/后退/前进/刷新 |
+| `DELETE /browser-sessions/:id` | 空间写 | 关闭 |
+| `GET /work/:spaceId/:conversationId` | 空间读 | `{ work: { jobs, browserSessions } }`（工作面板一次取全） |
+
+## 10. 被阻塞 / 未实现（诚实说明）
 
 - 真实第三方连接器（邮箱、日历、网盘、Slack/Teams/飞书/钉钉）：没有 OAuth 应用与凭据 → 在 `/connectors` 的 `blocked` 中列出，未伪造。MCP 的 OAuth 授权流（SDK `authProvider`）未接入；需要令牌的 HTTP 连接以密钥头方式配置。
 - 音视频生成/理解：无模型或服务凭据（blocked）。长任务的异步状态/取消/预算目前由沙箱运行（运行记录、取消即杀进程、时间/CPU/内存限额）与运行内核的任务机制提供。
 - 沙箱网络：不提供（策略决定）；需要网络的技能不能运行。
 - pptx 预览只有文字大纲，不是版式渲染；docx 预览经 mammoth，复杂版式会丢失。
-- 浏览器“接管”（用户实时操作服务端浏览器）未实现。
+- 浏览器接管是“截图 + 动作”模式（每次动作后刷新截图），不是实时视频流；会话只在拥有该空间租约的进程内存中，服务重启后不保留。
 - 多 worker：沙箱与 MCP 连接池在拥有该空间租约的进程内；未做跨进程路由。

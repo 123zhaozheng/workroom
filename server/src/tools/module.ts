@@ -322,6 +322,7 @@ export const toolsModule: WorkroomModule = {
 			const b = await jsonBody<{ spaceId: string; conversationId: number; name?: string }>(c);
 			return c.json({ draft: await skills.draftFromConversation(p, b.spaceId, Number(b.conversationId), b.name) });
 		});
+		api.get("/skills/drafts", (c) => c.json({ drafts: skills.listDrafts(principalOf(c)) }));
 		api.get("/skills/drafts/:id", (c) => c.json({ draft: skills.draftDTO(skills.draftRow(principalOf(c), c.req.param("id"))) }));
 		api.patch("/skills/drafts/:id", async (c) => c.json({ draft: skills.updateDraft(principalOf(c), c.req.param("id"), await jsonBody(c)) }));
 		api.post("/skills/drafts/:id/validate", async (c) => c.json({ draft: await skills.validateDraft(principalOf(c), c.req.param("id"), () => knownToolNames(ctx)) }));
@@ -344,6 +345,11 @@ export const toolsModule: WorkroomModule = {
 			const { p, s } = await skillOr404(c, "use");
 			const b = await jsonBody<{ pinVersionNo?: number | null }>(c).catch(() => ({}) as { pinVersionNo?: number | null });
 			await skills.installFor(p, s.id, b.pinVersionNo ?? null);
+			return c.json({ skill: await skills.dto(p, skills.skill(s.id)!) });
+		});
+		api.delete("/skills/:id/install", async (c) => {
+			const { p, s } = await skillOr404(c, "use");
+			skills.uninstall(p, s.id);
 			return c.json({ skill: await skills.dto(p, skills.skill(s.id)!) });
 		});
 		api.patch("/skills/:id/install", async (c) => {
@@ -417,6 +423,20 @@ export const toolsModule: WorkroomModule = {
 			const row = mgr.row(c.req.param("id"));
 			if (!row) throw new HttpError(404, "not_found", "连接不存在");
 			await acl.require(p, "use", { kind: "connector", id: row.id });
+			return c.json({ connector: await mgr.dto(p, await mgr.check(row.id)) });
+		});
+		// Reconnect: managers may supply new credentials; anyone who may use it can re-run the connection check.
+		api.post("/connectors/:id/reconnect", async (c) => {
+			const p = principalOf(c);
+			let row = mgr.row(c.req.param("id"));
+			if (!row) throw new HttpError(404, "not_found", "连接不存在");
+			await acl.require(p, "use", { kind: "connector", id: row.id });
+			const b = await jsonBody<{ secrets?: Record<string, string> }>(c).catch(() => ({}) as { secrets?: Record<string, string> });
+			if (b.secrets) {
+				await acl.require(p, "admin", { kind: "connector", id: row.id });
+				row = mgr.update(p, row, { secrets: b.secrets });
+			}
+			await mgr.disconnect(row.id);
 			return c.json({ connector: await mgr.dto(p, await mgr.check(row.id)) });
 		});
 		api.put("/connectors/:id/enablement", async (c) => {

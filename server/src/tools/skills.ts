@@ -243,6 +243,16 @@ export class Skills {
 		);
 		this.#history(skillId, p.userId, "install", prev ? this.effectiveVersionNo(s, prev) : null, pinVersionNo ?? s.latest_version_no);
 	}
+	uninstall(p: Principal, skillId: string): void {
+		const s = this.skill(skillId)!;
+		const inst = this.install(skillId, p.userId);
+		if (!inst) return;
+		this.#db.run("DELETE FROM skill_installs WHERE skill_id = ? AND user_id = ?", skillId, p.userId);
+		this.#history(skillId, p.userId, "uninstall", this.effectiveVersionNo(s, inst), null);
+	}
+	listDrafts(p: Principal): SkillDraftDTO[] {
+		return this.#db.all<any>("SELECT * FROM skill_drafts WHERE org_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 100", p.orgId, p.userId).map((r) => this.draftDTO(r));
+	}
 	async setInstall(p: Principal, skillId: string, patch: { enabled?: boolean; pinnedVersionNo?: number | null }): Promise<void> {
 		const s = await this.#require(p, "use", skillId);
 		const inst = this.install(skillId, p.userId);

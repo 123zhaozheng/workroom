@@ -68,8 +68,24 @@ D's e2e test `server/test/tools-e2e.test.ts` passes through the real runtime (fi
 
 ## To B (web)
 
-- DTOs: `shared/files.ts`. Tool results of `file_create`/`file_revise` carry `details.artifact: FileVersionRefDTO` (file card);
-  `browse` carries `details.screenshot`; `sandbox_exec` carries `details.run: { runId, spaceId }`.
-- Preview: `GET /api/files/:id/versions/:vid/preview` is meant for an `<iframe src>` (HTML previews are served with a CSP
-  `sandbox` header — no scripts, opaque origin). Images/PDF are passed through (use `<img>`/`<iframe>`/pdf.js). `previewKind` on each
-  version tells which viewer to use; `none` → offer download only.
+- DTOs: `shared/files.ts`. Tool results of `file_create`/`file_revise`/`sandbox_publish` carry `details.artifact: FileVersionRefDTO` (file card);
+  `browse` carries `details.screenshot`; `sandbox_exec` carries `details.run: { runId, spaceId }`; `job_start` carries `details.job: JobDTO`;
+  `browser_open`/`browser_act` carry `details.browserSession: BrowserSessionDTO`.
+- Preview: `GET /api/files/:id/versions/:vid/preview` is meant for an `<iframe src>` (HTML previews are served with a CSP `sandbox` header —
+  no scripts, opaque origin). Images/PDF are passed through. `previewKind` on each version tells which viewer to use; `none` → download only.
+- **Round 2 — everything the 能力 page and work panel can act on** (full table with permissions: `docs/files-tools.md` §9):
+  - Skills: `POST /skills/:id/install {pinVersionNo?}`, `DELETE /skills/:id/install`, `PATCH /skills/:id/install {enabled?, pinnedVersionNo?: n|null}`,
+    `POST /skills/:id/install/upgrade`, `POST /skills/:id/install/rollback`, `POST /skills/:id/grants {versionNo, permissions}` (`[]` revokes),
+    `GET /skills/:id/runs`. Each returns `{ skill: SkillDTO }` with `install.{enabled,pinnedVersionNo,effectiveVersionNo,grantedPermissions}`;
+    show `versions[].requiredPermissions` minus `grantedPermissions` as the grant prompt.
+  - From-task flow: `GET /skills/drafts`, `POST /skills/drafts {spaceId, conversationId, name?}` → `{draft}` (preview `instructions`, `resources`,
+    `requiredTools`, `requiredPermissions`, `sample`), `PATCH /skills/drafts/:id`, `POST …/validate` (→ `draft.validation.checks[]`),
+    `POST …/publish {scope?}` (409 until the latest validation passed).
+  - Connectors: `PUT /connectors/:id/enablement {enabled}` (per user), `POST /connectors/:id/reconnect {secrets?}` (re-check; with secrets only
+    when `canManage`), `PATCH /connectors/:id {enabled}` (managers), `GET /connectors/:id/calls`.
+  - Tool policy: `GET /tools/policy` (show switched-off groups), `PUT /tools/policy` for org admins.
+  - Work panel: `GET /work/:spaceId/:conversationId` → `{ work: { jobs: JobDTO[], browserSessions: BrowserSessionDTO[] } }`;
+    `POST /jobs/:id/cancel` when `job.canCancel`; browser: show `<img src="/api/browser-sessions/:id/screenshot?v=<version>">`, buttons
+    接管/交还 (`/takeover`, `/release`) when `canControl`, and send clicks as `POST /browser-sessions/:id/actions {type:"click", x, y}` using the
+    click position scaled to `viewport` (1280×800); text box → `{type:"type", text}` + `{type:"press", key:"Enter"}`; scroll/back/forward/navigate.
+    Viewers (`canControl: false`) get watch-only.
