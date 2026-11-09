@@ -540,6 +540,8 @@ export class Runtime implements RuntimeService {
 		const queued = ((await harness.snapshot(InboxDoc, conv.id, context))?.items ?? []).filter((i) => i.mode !== "write").map((i) => ({ id: i.id as number, entry: (i as any).entry }));
 		await conv.abort(context, body.background ? { background: true } : undefined);
 		await this.recordUnplaced(harness, conv, queued, context);
+		// A run aborted during a tool call made no model request: tell the usage ledger (group E) to re-import.
+		if (this.ctx.services.has("usage")) (this.ctx.services.get("usage") as { markDirty?: (s: string, c: number) => void }).markDirty?.(spaceId, conversationId);
 	}
 
 	async continue(p: Principal, spaceId: string, conversationId: number, body: { requestId?: string }, context: Context): Promise<SubmissionDTO> {
