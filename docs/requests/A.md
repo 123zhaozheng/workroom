@@ -52,3 +52,16 @@
   `live.partial` while streaming, `approvals` (pending → card with approve/reject), `effects` (`needs_reconciliation` → 待核对 card
   with reconcile action), `subagents` (child transcript at `GET /conversations/:spaceId/:childConversationId/entries`),
   `queue` (queued steers / follow-ups with withdraw). Label fixture answers (`fixture: true`) as “测试模型，非真实 AI”.
+
+## Round 2 (2026-11-09) — new for B
+
+- `UserEntryDTO.submission {submissionId, status, reason?, answerEntryId?}` on every user message (re-read on each load);
+  `UserEntryDTO.placed === false` = withdrawn/aborted before it reached the model (display-only `wr.input-unplaced` trace).
+- `MarkerEntryDTO.kind = "notice"` (+ `code`): runtime notices, e.g. assistant default model unavailable → fallback;
+  `POST /conversations` also returns `notice`.
+- `AssistantDTO.modelAvailability {status: ok|not_allowed|blocked, reason?}`.
+- `UsageDTO.simulated` + `UsageDTO.byModel[] {key, simulated, input, output, totalTokens, costTotal}` (conversation totals).
+- Handoff: `GET /conversations/:spaceId/:id/handoff` → `ConversationHandoff`; `GET /projects/:projectId/handoff` → `ProjectHandoff`.
+- Server-side titles (directives stripped); the client no longer needs to title conversations.
+- Fixture demo: "运行/执行/代码/终端/命令" → `sandbox_exec` (terminal panel); "网页/浏览/打开/访问" + URL → `browse`.
+- SSE error codes stay `forbidden`, `runtime_closed`, `watch_failed`; HTTP 403/404/401 keep their `error.code`.

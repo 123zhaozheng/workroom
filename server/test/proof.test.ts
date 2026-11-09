@@ -218,6 +218,18 @@ test("X-PROOF hard kill: SIGKILL mid-run and mid-effect, restart on the same dat
 		const tr3 = st3.entries.filter((e) => e.kind === "tool_result").at(-1) as any;
 		assert.match(tr3.text, /"replayed":true/);
 		assert.equal(tr3.isError, false);
+
+		// M02-A: a fresh login (new session, e.g. another browser) sees the task states and final results
+		const relog = await srv.req("POST", "/api/auth/login", undefined, { email: "kill@example.com", password: "password123" });
+		assert.notEqual(relog.token, token);
+		const list = await srv.req("GET", "/api/conversations", relog.token);
+		assert.ok(list.conversations.some((x: any) => x.conversationId === c.conversationId));
+		const fresh = (await srv.req("GET", `${base(c)}/state?limit=100`, relog.token)) as ConversationState;
+		assert.equal(fresh.live.status, "done");
+		assert.ok(fresh.entries.some((e) => e.kind === "assistant" && (e as any).text.includes("硬重启后完成")));
+		assert.deepEqual(fresh.effects.map((e) => [e.key, e.status]).sort(), [["k-dispatch", "failed"], ["k-receipt", "done"]]);
+		const users = fresh.entries.filter((e) => e.kind === "user") as any[];
+		assert.ok(users.every((u) => u.submission?.status === "done"), "each message shows its outcome after re-login");
 	} catch (err) {
 		console.error(readFileSync(srv.log, "utf8").slice(-4000));
 		throw err;
