@@ -246,11 +246,13 @@ export class Gateway implements ModelGateway {
 	}
 
 	channelHealth(ch: ChannelRow): { health: "ready" | "blocked" | "circuit_open"; detail?: string } {
-		if (ch.provider === "fixture") return this.#fixtureProvider ? { health: "ready" } : { health: "blocked", detail: this.#fixtureDetail || "fixture model disabled" };
-		if (ch.provider === "faux") return this.#attached.has(ch.id) ? { health: "ready" } : { health: "blocked", detail: "未附加进程内 provider（仅测试用渠道）" };
-		const cred = this.channelCredential(ch);
-		if (!cred.key && ch.provider !== "openai-compatible") return { health: "blocked", detail: cred.detail ?? "未配置凭据" };
-		if (ch.provider === "openai-compatible" && !ch.base_url) return { health: "blocked", detail: "缺少 base URL" };
+		if (ch.provider === "fixture" && !this.#fixtureProvider) return { health: "blocked", detail: this.#fixtureDetail || "fixture model disabled" };
+		if (ch.provider === "faux" && !this.#attached.has(ch.id)) return { health: "blocked", detail: "未附加进程内 provider（仅测试用渠道）" };
+		if (ch.provider !== "fixture" && ch.provider !== "faux") {
+			const cred = this.channelCredential(ch);
+			if (!cred.key && ch.provider !== "openai-compatible") return { health: "blocked", detail: cred.detail ?? "未配置凭据" };
+			if (ch.provider === "openai-compatible" && !ch.base_url) return { health: "blocked", detail: "缺少 base URL" };
+		}
 		const b = this.#breaker.get(ch.id);
 		if (b && b.openUntil > this.now()) return { health: "circuit_open", detail: `连续失败 ${b.fails} 次，熔断至 ${new Date(b.openUntil).toISOString()}` };
 		return { health: "ready" };

@@ -314,3 +314,34 @@ test("webhook trigger is idempotent per Idempotency-Key; cross-tenant isolation 
 		await t.dispose();
 	}
 });
+
+test("trigger condition (previous_status) and destination/trigger edits take effect on the next run", async (tt) => {
+	const t = await startTestApp();
+	try {
+		if (!t.app.ctx.services.has("runtime")) return tt.skip("runtime module not loaded");
+		const a = await t.user("a@a.example");
+		const { automation } = await t.json("POST", "/api/automations", { token: a.token, json: { name: "条件", prompt: "[[fail]]", trigger: { kind: "manual" }, timezone: "UTC", condition: { kind: "previous_status", statuses: ["succeeded"] }, destination: { inApp: false } } });
+		const r1 = await t.json("POST", `/api/automations/${automation.id}/run`, { token: a.token });
+		await svc(t).idle();
+		assert.equal(runRow(t, r1.runId).status, "failed"); // no previous run → condition passes
+		const r2 = await t.json("POST", `/api/automations/${automation.id}/run`, { token: a.token });
+		await svc(t).idle();
+		const s2 = runRow(t, r2.runId);
+		assert.equal(s2.status, "skipped");
+		assert.match(s2.reason, /previous run failed/);
+		assert.equal((await t.json("GET", "/api/notifications?unread=1", { token: a.token })).unread, 0, "inApp:false → stored as read");
+		// Edit: condition, prompt, destination, trigger → next run uses them; next-run preview updates.
+		const upd = await t.json("PATCH", `/api/automations/${automation.id}`, { token: a.token, json: { condition: { kind: "always" }, prompt: "[[reply 修改后]]", destination: { inApp: true }, trigger: { kind: "cron", expr: "0 8 * * *" }, timezone: "Asia/Shanghai" } });
+		assert.deepEqual(upd.automation.destination, { conversation: "new", inApp: true, channelIds: [] });
+		assert.match(upd.automation.nextRunAt, /T00:00:00.000Z$/);
+		assert.match(upd.automation.nextRunLocal, /08:00:00 GMT\+8$/);
+		const r3 = await t.json("POST", `/api/automations/${automation.id}/run`, { token: a.token });
+		await svc(t).idle();
+		assert.equal(runRow(t, r3.runId).status, "succeeded");
+		assert.equal((await t.json("GET", "/api/notifications?unread=1", { token: a.token })).unread, 1);
+		const audit = await t.json("GET", "/api/admin/audit?action=automation.update", { token: a.token });
+		assert.equal(audit.items.length, 1);
+	} finally {
+		await t.dispose();
+	}
+});

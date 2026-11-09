@@ -1,7 +1,38 @@
 # Requests from group E (organization / ops)
 
-## To C (knowledge) — test stability
-- `KnowledgePipeline.start()` → `kick()` schedules `#drain` with `setImmediate`. If the app stops before that immediate fires
-  (fast tests), `#drain`'s `finally` calls `this.#runnable()` after `db.close()` → unhandled `ERR_INVALID_STATE: database is not open`,
-  which fails *any* test using `startTestApp()` that disposes quickly. Fix: in `#drain` return early when `#stopped`
-  (skip the DB reads in `finally`). Workaround in E tests: short settle delay before dispose.
+## To A (runtime)
+
+1. **Audit external writes (M16-C).** In `Effects.externalEffect` (and approval decisions), record to the audit service:
+   `ctx.services.get("audit").record({ orgId, actorUserId, action: "effect.dispatching" | "effect.receipt" | "effect.needs_reconciliation", target: spec.target, detail: { key, idempotencyKey, effectId, conversationId, callId }, requestId })`
+   and `action: "grant.approval_decided"` for approvals. Actions starting with `effect.`/`external.` are filed under
+   category `external_write` automatically. Never put secrets or full payloads in `detail`.
+2. **Assistant default model vs. model ACL.** `rt_assistants.model` is a raw `{provider, modelId}` ref. Please validate it
+   against `ctx.services.get("models").listFor(principal)` when an assistant is created/updated *and* when a conversation is
+   created from it (models can be org-scoped, department-restricted, disabled or `blocked`).
+3. **Usage dirty mark on runs that end without a model request** (e.g. aborted during a tool call): optional call
+   `(ctx.services.get("usage") as any).markDirty(spaceId, conversationId)` after abort/settle. Without it the ledger
+   catches up on the next model request in that conversation or on `POST /api/admin/usage/rebuild`.
+4. FYI (no action): E links route attempts to conversations through its own pi extension `wr.ops`
+   (`GenerationTask.beforeRequest` reads `pi.provider` + your `wr.space` session doc). Please keep `wr.space`
+   (`SpaceDoc` in `server/src/runtime/docs.ts`) and keep installing every module's `extensions()` (as today).
+   E's automation recovery runs on its first scheduler tick, never in `start()`, because your start installs extensions.
+
+## To B (web)
+
+- DTOs in `shared/ops.ts` (identity admin, models/channels/routes/attempts, usage/stats, budgets, automations,
+  notifications, trace). Fixture model: `PlatformModelDTO.fixture === true` and the label already carries
+  “测试模型，非真实 AI”. Saved hours: render `savedHours.confirmed` and `savedHours.estimate` (always labelled
+  "estimate"); both are `null` by default — show “无数据”, never a number.
+- Notification links are `/c/<spaceId>/<conversationId>`; public share view path is `/s/<token>` (API `GET /api/shared/:token`).
+- Login: when `POST /api/auth/login` answers 401 `totp_required`, ask for the 6-digit code and resend with `totp`.
+  Enterprise login buttons: `GET /api/auth/oidc/providers` → link to `/api/auth/oidc/:id/start?returnTo=<path>`.
+
+## To integrator
+
+- No dependency added by E (`croner@11.0.0` was already in package.json).
+- `docs/operations.md` (deployment, data volume, online backup/verify/restore CLI, migration, upgrade) is written by E as
+  requested; `scripts/backup.sh` (source backup) is referenced from it.
+
+## Resolved
+
+- ~~C: `KnowledgePipeline` drained after `db.close()` in fast tests~~ — fixed by C (`#drain` checks `#stopped`).

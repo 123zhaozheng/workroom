@@ -312,3 +312,58 @@ test("end-to-end through the runtime API: shown model ↔ recorded route for the
 		await t.dispose();
 	}
 });
+
+test("concurrency limit spills to the next route while a request is in flight; breaker opens after 3 failures", async () => {
+	const t = await startTestApp({ config: { secretKey: SECRET } });
+	try {
+		const a = await t.user("admin@a.example");
+		const spaceId = (await t.json("GET", "/api/me", { token: a.token })).personalSpaceId;
+		let release: () => void = () => {};
+		const gate = new Promise<void>((r) => (release = r));
+		const { pm, fauxes, channels, gw } = await fauxModel(t, a.token, [
+			{ name: "single", concurrencyLimit: 1, responses: [async () => (await gate, fauxAssistantMessage("slow single"))] },
+			{ name: "overflow", responses: [fauxAssistantMessage("overflow answer")] },
+		]);
+		const { harness, close } = await directHarness(t, spaceId);
+		try {
+			const c1 = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: "workroom", modelId: pm.id } } }, ctx);
+			const c2 = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: "workroom", modelId: pm.id } } }, ctx);
+			const s1 = await c1.submit({ type: "input", content: "first", requestId: "c1" }, ctx);
+			await waitFor(() => gw.inflight(channels[0].id) === 1);
+			const r2 = await (await c2.submit({ type: "input", content: "second", requestId: "c2" }, ctx)).wait(ctx);
+			assert.equal(r2.status, "done");
+			assert.equal((await lastAssistant(c2)).content[0].text, "overflow answer");
+			release();
+			assert.equal((await s1.wait(ctx)).status, "done");
+			assert.equal(fauxes[0]!.state.callCount, 1);
+			const sk = t.app.ctx.db.get<any>("SELECT * FROM ops_route_attempts WHERE status = 'skipped' AND error_class = 'concurrency'");
+			assert.equal(sk.channel_id, channels[0].id);
+			assert.equal(gw.inflight(channels[0].id), 0);
+		} finally {
+			await close();
+		}
+		// Breaker: three consecutive server errors on a channel → it is skipped (circuit_open) until the window passes.
+		const err = () => fauxAssistantMessage([], { stopReason: "error", errorMessage: "500 internal server error" });
+		const br = await fauxModel(t, a.token, [
+			{ name: "flaky", responses: [err(), err(), err(), fauxAssistantMessage("flaky recovered")] },
+			{ name: "steady", responses: Array.from({ length: 4 }, () => fauxAssistantMessage("steady")) },
+		], { label: "Breaker" });
+		const d = await directHarness(t, spaceId);
+		try {
+			const conv = await d.harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: "workroom", modelId: br.pm.id } } }, ctx);
+			for (let i = 0; i < 4; i++) await ask(d.harness, conv, `q${i}`, `br${i}`);
+			assert.equal(br.fauxes[0]!.state.callCount, 3, "4th request skipped the open circuit");
+			const open = t.app.ctx.db.get<any>("SELECT * FROM ops_route_attempts WHERE error_class = 'circuit_open'");
+			assert.equal(open.channel_id, br.channels[0].id);
+			const ch = (await t.json("GET", "/api/admin/channels", { token: a.token })).channels.find((c: any) => c.id === br.channels[0].id);
+			assert.equal(ch.health, "circuit_open");
+			br.gw.now = () => Date.now() + 31_000; // window elapsed → half-open: tried again
+			await ask(d.harness, conv, "q5", "br5");
+			assert.equal((await lastAssistant(conv)).content[0].text, "flaky recovered");
+		} finally {
+			await d.close();
+		}
+	} finally {
+		await t.dispose();
+	}
+});
