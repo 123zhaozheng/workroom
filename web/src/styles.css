@@ -1,0 +1,323 @@
+/* Workroom web — design tokens and base styles.
+ * Fonts: bundled Inter (Latin, via @fontsource, served from /assets) + local system CJK faces.
+ * No network font requests: there is no Google Fonts / CDN anywhere in the app. */
+@import "tailwindcss";
+@import "@fontsource-variable/inter/wght.css";
+
+/* Streamdown renders with Tailwind utility classes; let Tailwind see them. */
+@source "../../node_modules/streamdown/dist/*.js";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+	--bg: #fafaf9;
+	--surface: #ffffff;
+	--surface-2: #f3f3f1;
+	--surface-3: #ebebe8;
+	--border: #e5e5e2;
+	--border-strong: #d4d4cf;
+	--fg: #1c1d1f;
+	--fg-muted: #5d6066;
+	--fg-subtle: #8a8d93;
+	--accent: #1f2125;
+	--accent-fg: #ffffff;
+	--info: #2458c6;
+	--info-soft: #eaf0fc;
+	--success: #18794e;
+	--success-soft: #e6f4ec;
+	--warning: #a35200;
+	--warning-soft: #fdf1e3;
+	--danger: #c0362c;
+	--danger-soft: #fcebea;
+	--ring: #2458c6;
+	--overlay: rgb(20 20 22 / 0.32);
+	--shadow-pop: 0 8px 28px rgb(20 20 22 / 0.1), 0 1px 3px rgb(20 20 22 / 0.08);
+	--radius: 10px;
+	--sidebar-w: 264px;
+	--panel-w: min(46vw, 720px);
+	--content-w: 760px;
+	color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+	--bg: #161719;
+	--surface: #1d1e21;
+	--surface-2: #25262a;
+	--surface-3: #2e3034;
+	--border: #2f3135;
+	--border-strong: #3d4045;
+	--fg: #ececeb;
+	--fg-muted: #a5a8ad;
+	--fg-subtle: #7c8086;
+	--accent: #ececeb;
+	--accent-fg: #161719;
+	--info: #7aa2f7;
+	--info-soft: #1f2a40;
+	--success: #5cc98f;
+	--success-soft: #17302a;
+	--warning: #e8a456;
+	--warning-soft: #362a1b;
+	--danger: #f07a70;
+	--danger-soft: #3a2120;
+	--ring: #7aa2f7;
+	--overlay: rgb(0 0 0 / 0.5);
+	--shadow-pop: 0 8px 28px rgb(0 0 0 / 0.45), 0 1px 3px rgb(0 0 0 / 0.4);
+	color-scheme: dark;
+}
+
+@theme inline {
+	--font-sans: "Inter Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Micro Hei", system-ui, sans-serif;
+	--font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, "Noto Sans Mono CJK SC", monospace;
+	--color-bg: var(--bg);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-surface-3: var(--surface-3);
+	--color-border: var(--border);
+	--color-border-strong: var(--border-strong);
+	--color-fg: var(--fg);
+	--color-fg-muted: var(--fg-muted);
+	--color-fg-subtle: var(--fg-subtle);
+	--color-accent: var(--accent);
+	--color-accent-fg: var(--accent-fg);
+	--color-info: var(--info);
+	--color-info-soft: var(--info-soft);
+	--color-success: var(--success);
+	--color-success-soft: var(--success-soft);
+	--color-warning: var(--warning);
+	--color-warning-soft: var(--warning-soft);
+	--color-danger: var(--danger);
+	--color-danger-soft: var(--danger-soft);
+	--color-ring: var(--ring);
+	/* streamdown / shadcn-compatible aliases */
+	--color-background: var(--bg);
+	--color-foreground: var(--fg);
+	--color-muted: var(--surface-2);
+	--color-muted-foreground: var(--fg-muted);
+	--color-sidebar: var(--surface-2);
+	--color-primary: var(--accent);
+	--color-primary-foreground: var(--accent-fg);
+	--color-card: var(--surface);
+	--color-popover: var(--surface);
+	--color-input: var(--border);
+	--color-destructive: var(--danger);
+	--radius-lg: var(--radius);
+	--shadow-pop: var(--shadow-pop);
+}
+
+@layer base {
+	html,
+	body,
+	#root {
+		height: 100%;
+	}
+	body {
+		margin: 0;
+		background: var(--bg);
+		color: var(--fg);
+		font-family: var(--font-sans);
+		font-size: 14px;
+		line-height: 1.6;
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+	*,
+	::before,
+	::after {
+		border-color: var(--border);
+	}
+	:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	button {
+		cursor: pointer;
+	}
+	button:disabled {
+		cursor: not-allowed;
+	}
+	::selection {
+		background: color-mix(in srgb, var(--info) 22%, transparent);
+	}
+}
+
+/* ---------- Reduced motion: system setting OR in-app toggle (html[data-reduce-motion]) ---------- */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	::before,
+	::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] ::before,
+html[data-reduce-motion="true"] ::after {
+	animation-duration: 0.001ms !important;
+	animation-iteration-count: 1 !important;
+	transition-duration: 0.001ms !important;
+	scroll-behavior: auto !important;
+}
+
+/* ---------- small state animations (only while a state is active; never ambient) ---------- */
+@keyframes wr-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.35;
+	}
+}
+@keyframes wr-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@keyframes wr-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(3px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+@keyframes wr-slide-in-right {
+	from {
+		transform: translateX(16px);
+		opacity: 0;
+	}
+	to {
+		transform: none;
+		opacity: 1;
+	}
+}
+@keyframes wr-slide-in-left {
+	from {
+		transform: translateX(-16px);
+		opacity: 0;
+	}
+	to {
+		transform: none;
+		opacity: 1;
+	}
+}
+.wr-pulse {
+	animation: wr-pulse 1.4s ease-in-out infinite;
+}
+.wr-spin {
+	animation: wr-spin 0.9s linear infinite;
+}
+.wr-fade-in {
+	animation: wr-fade-in 0.18s ease-out both;
+}
+.wr-drawer-right {
+	animation: wr-slide-in-right 0.2s ease-out both;
+}
+.wr-drawer-left {
+	animation: wr-slide-in-left 0.2s ease-out both;
+}
+
+/* ---------- message prose ---------- */
+.wr-prose {
+	font-size: 15px;
+	line-height: 1.75;
+	color: var(--fg);
+	overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+	.wr-prose {
+		font-size: 16px;
+		line-height: 1.7;
+	}
+}
+.wr-prose > :first-child {
+	margin-top: 0;
+}
+.wr-prose > :last-child {
+	margin-bottom: 0;
+}
+.wr-prose p {
+	margin: 0.6em 0;
+}
+.wr-prose h1,
+.wr-prose h2,
+.wr-prose h3,
+.wr-prose h4 {
+	font-weight: 600;
+	margin: 1em 0 0.4em;
+	line-height: 1.35;
+}
+.wr-prose h1 {
+	font-size: 1.45em;
+}
+.wr-prose h2 {
+	font-size: 1.25em;
+}
+.wr-prose h3 {
+	font-size: 1.1em;
+}
+.wr-prose ul,
+.wr-prose ol {
+	padding-left: 1.4em;
+	margin: 0.5em 0;
+}
+.wr-prose ul {
+	list-style: disc;
+}
+.wr-prose ol {
+	list-style: decimal;
+}
+.wr-prose li {
+	margin: 0.2em 0;
+}
+.wr-prose a {
+	color: var(--info);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.wr-prose blockquote {
+	border-left: 3px solid var(--border-strong);
+	padding-left: 0.9em;
+	color: var(--fg-muted);
+	margin: 0.6em 0;
+}
+.wr-prose :not(pre) > code {
+	font-family: var(--font-mono);
+	font-size: 0.88em;
+	background: var(--surface-2);
+	border-radius: 5px;
+	padding: 0.1em 0.35em;
+}
+.wr-prose pre {
+	font-family: var(--font-mono);
+	font-size: 13px;
+	line-height: 1.6;
+}
+.wr-prose table {
+	border-collapse: collapse;
+	font-size: 14px;
+}
+.wr-prose th,
+.wr-prose td {
+	border: 1px solid var(--border);
+	padding: 0.35em 0.7em;
+}
+.wr-prose th {
+	background: var(--surface-2);
+	font-weight: 500;
+	font-size: 13px;
+}
+.wr-prose hr {
+	border: 0;
+	border-top: 1px solid var(--border);
+	margin: 1.2em 0;
+}
+
+.wr-scroll {
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+}
