@@ -9,3 +9,4 @@
 - 新增 `npm run acceptance`（M18-C 固定回归：集成者闭环验收 + 纵向证明 + 浏览器 e2e）。
 - 2026-11-09 07:16 UTC 第二轮集成验收（合并树）：server/web typecheck 通过；`npm test` 131/131；`npm run acceptance`：闭环+证明 4/4，浏览器 e2e 110/110（core-loop 36、states 24、pages 31、round2 19）。集成者审查 e2e：`check(…,true)` 均位于会抛错的 wait 之后；已要求并确认移除“未连接即通过”的回退分支。
   第二轮新增：消息级结果、服务端标题、交接摘要（M09-B，派生自 pi 状态，无新事实表）、审批/外部写审计、模型可用性检查、模拟用量标注、空闲回收、后台作业（M14-C）、浏览器接管、DNS 重绑定防护、工具策略、PPTX 渲染、密钥轮换、Webhook SSRF 防护、跨模块 trace、子 Agent 知识范围、引用失效批量查询、可操作的自动化/管理/能力页面。
+- 2026-11-09 独立安全审查（新 Agent，未参与开发）：确认 2 个可复现漏洞并由集成者修复——Critical：OIDC 按邮箱把外部身份关联到任意已有账号（跨组织接管）；High：IPv4 映射 IPv6 十六进制写法绕过 SSRF 过滤。复现测试转为常驻回归（server/test/review/）。

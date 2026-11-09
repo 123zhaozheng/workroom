@@ -185,8 +185,21 @@ export function registerOidcRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 		if (!userId) {
 			if (!email || !domainOk) throw new HttpError(403, "oidc_domain_not_allowed", "该账号的邮箱域不允许加入此组织");
 			const existing = db.get<any>("SELECT id FROM id_users WHERE email = ?", email);
-			if (existing) userId = existing.id;
-			else userId = id.createUser({ email, name: String(claims.name ?? email.split("@")[0]), password: null, orgId: prov.org_id, role: prov.auto_join_role }).userId;
+			if (existing) {
+				// Security: never link an external identity to an existing account by email alone — an org admin controls
+				// its own IdP and could otherwise assert any user's email (cross-org account takeover, see
+				// docs/security-review.md). Linking requires that this browser is already signed in as that same account.
+				const current = c.get("principal");
+				if (!current || current.userId !== existing.id) {
+					audit(db, prov.org_id, null, "auth.oidc_link_required", prov.id, { reason: "existing_account" }, { requestId: c.get("requestId") });
+					throw new HttpError(409, "oidc_link_required", "该邮箱已有账号：请先用原方式登录，再在设置中关联此身份源");
+				}
+				userId = existing.id;
+			} else {
+				// Auto-provisioning only for domain-scoped providers (the org declares which email domains it vouches for).
+				if (domains.length === 0) throw new HttpError(403, "oidc_provisioning_disabled", "此身份源未限定邮箱域，不能自动创建账号");
+				userId = id.createUser({ email, name: String(claims.name ?? email.split("@")[0]), password: null, orgId: prov.org_id, role: prov.auto_join_role }).userId;
+			}
 			db.run("INSERT INTO id_external_identities (provider_id, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?)", prov.id, String(claims.sub), userId!, email, nowIso());
 		}
 		const membership = db.get<any>("SELECT * FROM id_org_members WHERE org_id = ? AND user_id = ?", prov.org_id, userId!);

@@ -32,16 +32,58 @@ const V4_BLOCKS: [string, number][] = [
 	["224.0.0.0", 4],
 	["240.0.0.0", 4],
 ];
+/** Parse an IPv6 literal (compressed, with optional trailing dotted quad) into 8 hextets; null if malformed. */
+function parseV6(ip: string): number[] | null {
+	let s = ip.toLowerCase();
+	const pct = s.indexOf("%");
+	if (pct >= 0) s = s.slice(0, pct); // zone id
+	const halves = s.split("::");
+	if (halves.length > 2) return null;
+	const toHextets = (part: string): number[] | null => {
+		if (part === "") return [];
+		const out: number[] = [];
+		const groups = part.split(":");
+		for (let i = 0; i < groups.length; i++) {
+			const g = groups[i]!;
+			if (i === groups.length - 1 && g.includes(".")) {
+				if (isIP(g) !== 4) return null;
+				const n = v4ToInt(g);
+				out.push(n >>> 16, n & 0xffff);
+			} else if (/^[0-9a-f]{1,4}$/.test(g)) out.push(parseInt(g, 16));
+			else return null;
+		}
+		return out;
+	};
+	const head = toHextets(halves[0]!);
+	const tail = halves.length === 2 ? toHextets(halves[1]!) : [];
+	if (!head || !tail) return null;
+	if (halves.length === 1) return head.length === 8 ? head : null;
+	const fill = 8 - head.length - tail.length;
+	return fill < 1 ? null : [...head, ...new Array(fill).fill(0), ...tail];
+}
+const v4From = (hi: number, lo: number): string => [hi >>> 8, hi & 255, lo >>> 8, lo & 255].join(".");
+
 export function isPrivateAddress(ip: string): boolean {
 	if (isIP(ip) === 4) {
 		const n = v4ToInt(ip);
 		return V4_BLOCKS.some(([base, bits]) => (n & (bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0)) >>> 0 === v4ToInt(base));
 	}
-	const s = ip.toLowerCase();
-	if (s === "::" || s === "::1") return true;
-	const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(s);
-	if (mapped) return isPrivateAddress(mapped[1]!);
-	return /^(fc|fd|fe8|fe9|fea|feb|ff)/.test(s) || s.startsWith("64:ff9b:");
+	const h = parseV6(ip);
+	if (!h) return true; // unparseable → refuse
+	const zeros = (a: number, b: number) => h.slice(a, b).every((x) => x === 0);
+	if (zeros(0, 8)) return true; // ::
+	if (zeros(0, 7) && h[7] === 1) return true; // ::1
+	if (zeros(0, 5) && h[5] === 0xffff) return isPrivateAddress(v4From(h[6]!, h[7]!)); // ::ffff:a.b.c.d (any notation)
+	if (zeros(0, 6)) return true; // deprecated IPv4-compatible ::a.b.c.d — never needed for public egress
+	if (h[0] === 0x0064 && h[1] === 0xff9b) return true; // NAT64 well-known prefix (64:ff9b::/96, 64:ff9b:1::/48)
+	if (h[0] === 0x2002) return isPrivateAddress(v4From(h[1]!, h[2]!)); // 6to4 embeds an IPv4 address
+	if (h[0] === 0x2001 && h[1] === 0) return true; // Teredo (embeds an obfuscated IPv4 address)
+	if ((h[0]! & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
+	if ((h[0]! & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+	if ((h[0]! & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local (deprecated)
+	if ((h[0]! & 0xff00) === 0xff00) return true; // ff00::/8 multicast
+	if (h[0] === 0x2001 && h[1] === 0x0db8) return true; // documentation
+	return false;
 }
 
 function allowlist(): Set<string> {
