@@ -75,7 +75,7 @@ mkdir -p "$ROOT/etc" "$ROOT/work" "$ROOT/code" "$ROOT/tmp" "$ROOT/proc" "$ROOT/d
 for f in passwd group hosts nsswitch.conf ld.so.cache ld.so.conf localtime mime.types; do
   if [ -e "/etc/$f" ]; then touch "$ROOT/etc/$f" 2>/dev/null || true; [ -d "/etc/$f" ] || mount --bind "/etc/$f" "$ROOT/etc/$f"; fi
 done
-for d in ld.so.conf.d ssl alternatives fonts; do
+for d in ld.so.conf.d ssl alternatives fonts libreoffice; do
   if [ -d "/etc/$d" ]; then mkdir -p "$ROOT/etc/$d"; mount --rbind "/etc/$d" "$ROOT/etc/$d"; mount -o remount,bind,ro "$ROOT/etc/$d"; fi
 done
 mount --bind "$WORK" "$ROOT/work"
@@ -241,13 +241,25 @@ export class Sandbox {
 			"INSERT INTO tool_sandbox_runs (id, space_id, conversation_id, task_id, call_id, user_id, language, code, status, limits, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)",
 			id, input.space.id, input.conversationId ?? null, input.taskId ?? null, input.callId ?? null, input.principal.userId, input.language, input.code.slice(0, 200_000), JSON.stringify(limits), nowIso(),
 		);
-		const r = await this.#exec(input.space, wd, input.language, input.code, limits, id, input.signal, input.onSpawn);
+		const r = await this.#exec(this.root(input.space), wd, input.language, input.code, limits, id, input.signal, input.onSpawn);
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
 		return this.runDTO(id)!;
 	}
 
-	async #exec(space: Space, wd: string, language: Language, code: string, limits: SandboxLimitsDTO, runId: string, abortSignal?: AbortSignal, onSpawn?: (pid: number) => void): Promise<RunResult> {
-		const scratch = join(this.root(space), ".runs", runId);
+	/**
+	 * Run code isolated in an arbitrary working directory (server-internal jobs such as rendering untrusted documents).
+	 * Same namespace sandbox and limits; no run record.
+	 */
+	async execIsolated(workdir: string, language: Language, code: string, limits: Partial<SandboxLimitsDTO> = {}): Promise<RunResult> {
+		const iso = probeIsolation();
+		if (!iso.ok) throw new HttpError(503, "sandbox_unavailable", `沙箱不可用：${iso.detail}`);
+		mkdirSync(workdir, { recursive: true });
+		const timeoutMs = limits.timeoutMs ?? DEFAULT_LIMITS.timeoutMs;
+		return this.#exec(join(workdir, ".."), workdir, language, code, { ...DEFAULT_LIMITS, cpuSeconds: Math.ceil(timeoutMs / 1000), ...limits, timeoutMs }, newId("iso"));
+	}
+
+	async #exec(scratchBase: string, wd: string, language: Language, code: string, limits: SandboxLimitsDTO, runId: string, abortSignal?: AbortSignal, onSpawn?: (pid: number) => void): Promise<RunResult> {
+		const scratch = join(scratchBase, ".runs", runId);
 		const rootDir = join(scratch, "root");
 		const codeDir = join(scratch, "code");
 		mkdirSync(rootDir, { recursive: true });

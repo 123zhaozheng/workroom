@@ -14,6 +14,8 @@ export interface PreviewResponse {
 	readonly contentType: string;
 	readonly body: Uint8Array | string;
 	readonly csp: string | null;
+	/** pptx: "slides" (rendered images) or "outline" (text only). */
+	readonly renderMode?: "slides" | "outline";
 }
 
 const STYLE = `body{font:14px/1.6 system-ui,-apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;color:#1f2328;margin:0;padding:24px;max-width:960px}
@@ -29,7 +31,7 @@ export function page(title: string, body: string): string {
 
 const PASSTHROUGH_IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp"]);
 
-export async function renderPreview(mime: string, name: string, bytes: Uint8Array): Promise<PreviewResponse> {
+export async function renderPreview(mime: string, name: string, bytes: Uint8Array, opts: { slides?: readonly Uint8Array[]; slidesUnavailable?: string } = {}): Promise<PreviewResponse> {
 	const kind = previewKindOf(mime, name);
 	const html = (body: string): PreviewResponse => ({ kind, contentType: "text/html; charset=utf-8", body: page(name, body), csp: PREVIEW_CSP });
 	switch (kind) {
@@ -61,6 +63,16 @@ export async function renderPreview(mime: string, name: string, bytes: Uint8Arra
 		}
 		case "pptx": {
 			const slides = await readPptx(bytes);
+			if (opts.slides?.length) {
+				// Rendered slide images (LibreOffice in the sandbox) with each slide's text as alt text.
+				const body = opts.slides
+					.map((png, i) => {
+						const alt = slides[i]?.paragraphs.join(" / ") ?? "";
+						return `<section class="slide"><div class="n">第 ${i + 1} 页</div><img alt="${escapeHtml(alt)}" src="data:image/png;base64,${Buffer.from(png).toString("base64")}">${slides[i]?.notes.length ? `<p class="note">备注：${escapeHtml(slides[i]!.notes.join(" "))}</p>` : ""}</section>`;
+					})
+					.join("\n");
+				return { ...html(`<p class="note">共 ${opts.slides.length} 页</p>${body}`), renderMode: "slides" };
+			}
 			const body = slides
 				.map((s) => {
 					const [title, ...rest] = s.paragraphs;
@@ -68,7 +80,7 @@ export async function renderPreview(mime: string, name: string, bytes: Uint8Arra
 					return `<section class="slide"><div class="n">第 ${s.index} 页</div><h2>${escapeHtml(title ?? "")}</h2><ul>${rest.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>${notes}</section>`;
 				})
 				.join("\n");
-			return html(`<p class="note">演示稿大纲预览（文字与备注；版式请下载查看）</p>${body}`);
+			return { ...html(`<p class="note">演示稿大纲预览（文字与备注；版式请下载查看）${opts.slidesUnavailable ? `——版式渲染不可用：${escapeHtml(opts.slidesUnavailable)}` : ""}</p>${body}`), renderMode: "outline" };
 		}
 		default:
 			return html(`<p class="note">该格式（${escapeHtml(mime)}）暂不支持在线预览，请下载查看。</p>`);

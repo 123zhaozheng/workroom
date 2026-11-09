@@ -6,6 +6,7 @@ import { ToolCallLog, TOOL_CALL_MIGRATIONS } from "./calls.ts";
 import { BLOCKED_CONNECTORS, createToolSearch, McpManager, MCP_MIGRATIONS } from "./mcp.ts";
 import { ISOLATION_TEXT, probeIsolation, Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
 import { pdfFontStatus } from "../files/generate.ts";
+import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
@@ -277,7 +278,7 @@ export const toolsModule: WorkroomModule = {
 			const conns = await Promise.all(mgr.rows(p.orgId).filter((r) => r.scope === "system" || r.owner_user_id === p.userId).map((r) => mgr.dto(p, r)));
 			const sk = ctx.services.get("skills") as Skills;
 			return c.json({
-				deliverables: { formats: ["md", "html", "csv", "docx", "xlsx", "pptx", "pdf"], tools: ["file_create", "file_revise", "file_read", "file_list"], pdfCjkFont: pdfFontStatus() },
+				deliverables: { formats: ["md", "html", "csv", "docx", "xlsx", "pptx", "pdf"], tools: ["file_create", "file_revise", "file_read", "file_list"], pdfCjkFont: pdfFontStatus(), pptxSlideImages: slideRendererAvailable() },
 				policy: policyDTO(p.orgId).groups,
 				sandbox: { status: !policy.groups(p.orgId).sandbox ? "disabled_by_admin" : iso.ok ? "ready" : "unavailable", detail: iso.ok ? ISOLATION_TEXT : iso.detail, languages: ["shell", "python", "node"], network: false },
 				codemode: { status: "ready", detail: "QuickJS（WebAssembly）脚本，可调用会话中的工具" },

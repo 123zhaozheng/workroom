@@ -7,6 +7,8 @@ import { renderPreview } from "./preview.ts";
 import { extractText } from "./extract.ts";
 import { effectiveMime } from "./mime.ts";
 import { createFilesExtension } from "./extension.ts";
+import { renderSlides, SLIDE_MIGRATIONS } from "./slides.ts";
+import { previewKindOf } from "./mime.ts";
 import type { FileDetailResponse, FileListResponse, FileTextResponse, FileUploadResponse } from "../../../shared/files.ts";
 
 const MAX_UPLOAD = Number(process.env.WORKROOM_MAX_UPLOAD_MB ?? 100) * 1024 * 1024;
@@ -37,7 +39,7 @@ async function readUpload(c: HonoContext<AppEnv>): Promise<{ file: File; fields:
 
 export const filesModule: WorkroomModule = {
 	name: "files",
-	migrations: FILE_MIGRATIONS,
+	migrations: [...FILE_MIGRATIONS, ...SLIDE_MIGRATIONS],
 	init(ctx) {
 		ctx.services.provide("files", new Files(ctx));
 	},
@@ -126,7 +128,12 @@ export const filesModule: WorkroomModule = {
 			const { version, bytes } = await files.requireVersion(p, c.req.param("id"), c.req.param("vid"));
 			let pv;
 			try {
-				pv = await renderPreview(version.mime, version.name, bytes);
+				let slideOpts: { slides?: Uint8Array[]; slidesUnavailable?: string } = {};
+				if (previewKindOf(version.mime, version.name) === "pptx") {
+					const r = await renderSlides(ctx, version.sha256, bytes);
+					slideOpts = r.ok ? { slides: r.pages.map((h) => ctx.blobs.get(h)!).filter(Boolean) } : { slidesUnavailable: r.reason };
+				}
+				pv = await renderPreview(version.mime, version.name, bytes, slideOpts);
 			} catch (e: any) {
 				throw new HttpError(422, "preview_failed", `无法生成预览：${String(e?.message ?? e).slice(0, 200)}`);
 			}
@@ -139,6 +146,7 @@ export const filesModule: WorkroomModule = {
 				"referrer-policy": "no-referrer",
 			};
 			if (pv.csp) headers["content-security-policy"] = pv.csp;
+			if (pv.renderMode) headers["x-preview-render"] = pv.renderMode;
 			return new Response(pv.body as string | Uint8Array<ArrayBuffer>, { headers });
 		});
 

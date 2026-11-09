@@ -51,7 +51,7 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 | csv / text / json / 代码 | 表格 / `<pre>` |
 | docx | mammoth → HTML |
 | xlsx | exceljs → 每个工作表一张表（≤500 行 × 60 列） |
-| pptx | 解压 `ppt/slides/slideN.xml` → 每页标题 + 要点 + 备注（大纲；版式需下载查看） |
+| pptx | **幻灯片图片**：LibreOffice（headless）→ PDF → pdftoppm PNG（60 dpi，≤60 页），在命名空间沙箱内运行（不可信文档、无网络），按内容 sha256 缓存（`file_preview_cache`）；图片以 data: 内联，alt = 该页文字，附备注；响应头 `x-preview-render: slides`。渲染器不可用时回退为解压 `ppt/slides/slideN.xml` 的文字大纲并写明原因（`x-preview-render: outline`）。测试 `server/test/files-pptx.test.ts` |
 | 图片 / PDF | 直通 |
 | 其他 | 提示下载 |
 
@@ -210,6 +210,6 @@ Playwright + Chromium（主机预装，`/opt/node-tools/node_modules/playwright`
 - 真实第三方连接器（邮箱、日历、网盘、Slack/Teams/飞书/钉钉）：没有 OAuth 应用与凭据 → 在 `/connectors` 的 `blocked` 中列出，未伪造。MCP 的 OAuth 授权流（SDK `authProvider`）未接入；需要令牌的 HTTP 连接以密钥头方式配置。
 - 音视频生成/理解：无模型或服务凭据（blocked）。长任务的异步状态/取消/预算目前由沙箱运行（运行记录、取消即杀进程、时间/CPU/内存限额）与运行内核的任务机制提供。
 - 沙箱网络：不提供（策略决定）；需要网络的技能不能运行。
-- pptx 预览只有文字大纲，不是版式渲染；docx 预览经 mammoth，复杂版式会丢失。
+- docx/xlsx 预览仍是 mammoth/exceljs 的 HTML 转换（复杂版式会丢失）；pptx 已渲染为图片（依赖主机 LibreOffice + pdftoppm）。
 - 浏览器接管是“截图 + 动作”模式（每次动作后刷新截图），不是实时视频流；会话只在拥有该空间租约的进程内存中，服务重启后不保留。
 - 多 worker：沙箱与 MCP 连接池在拥有该空间租约的进程内；未做跨进程路由。
