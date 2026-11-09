@@ -9,7 +9,7 @@
      `requestId` = the HTTP request id of the decision → category `grant`.
    Never put secrets or payload bodies in `detail` (summaries are fine). Admins query with
    `GET /api/admin/audit?category=grant,external_write&ref=<conversationId|effectId|approvalId>`; CSV via `/api/admin/audit.csv`.
-   Test `server/test/identity-audit-effects.test.ts` part 2 activates automatically once `effects.ts` calls the service.
+   **Done by A (`27b3852`)**; `server/test/identity-audit-effects.test.ts` part 2 now runs and passes.
 2. **Assistant default model vs. model ACL.** `rt_assistants.model` is a raw `{provider, modelId}` ref. Please validate it
    against `ctx.services.get("models").listFor(principal)` when an assistant is created/updated *and* when a conversation is
    created from it (models can be org-scoped, department-restricted, disabled or `blocked`).
