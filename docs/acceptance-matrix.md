@@ -21,21 +21,21 @@
 | M05-A | 提示词预设、仅上下文 Skill、可执行 Skill 分别展示能力和依赖 | D | planned | | |
 | M05-B | 技能版本可固定、升级、停用、回滚；任务记录实际使用版本 | D | planned | | |
 | M05-C | 从成功任务整理技能：预览指令、资源、所需授权，用样例验证后发布 | D | planned | | |
-| M06-A | 上传后展示处理中/可检索/失败及重试；不把“上传成功”显示为“知识可用” | C+B | planned | | |
-| M06-B | 回答引用定位到文件和版本；有页码显示页码，否则段落/章节/原文片段 | C | planned | | |
-| M06-C | 知识源删除、更新、撤权后新检索与缓存遵守新状态；已有回答保留来源快照与失效提示 | C | planned | | |
-| M07-A | 知识可见范围：个人、指定项目成员、部门、企业；检索阶段执行权限过滤 | C+E | planned | | |
-| M07-B | 制度与模板有责任人、版本、生效状态、更新时间；过期资料可下架或替换 | C | planned | | |
-| M07-C | 检索调试与问答评估样例；无证据、索引未就绪、权限不足、模型错误分开反馈 | C | planned | | |
+| M06-A | 上传后展示处理中/可检索/失败及重试；不把“上传成功”显示为“知识可用” | C+B | partial | `server/src/knowledge/pipeline.ts`, `service.ts#docDTO`, `GET /api/kb/:id/docs`, `POST …/retry` | `server/test/knowledge.test.ts` › "processing: explicit add, queued → parsing → indexing → ready, failures … and retry"、"processing survives restart"。服务端 verified（availability 与 latest.status 分开；失败码+可重试+重试）；UI 展示属 B |
+| M06-B | 回答引用定位到文件和版本；有页码显示页码，否则段落/章节/原文片段 | C | verified | `service.ts#search/#citation`, `chunker.ts#locatorOf`, `shared/knowledge.ts#CitationDTO` | `server/test/knowledge.test.ts` › "citations point to the exact file version and PDF page; locators for md/csv"（versionId 可下载同一字节、PDF 第 2 页）；`server/test/knowledge-ocr.test.ts`（扫描页“第 2 页（OCR 识别）”）；`server/test/knowledge-extension.test.ts` › kb_search 编号引用 |
+| M06-C | 知识源删除、更新、撤权后新检索与缓存遵守新状态；已有回答保留来源快照与失效提示 | C | verified | `pipeline.ts#index`（新版本就绪时 tombstone 旧分片）, `service.ts#deleteDoc/fileDeleted/citationStatus`, `GET /api/kb/citations/:chunkId/status` | `server/test/knowledge.test.ts` › "new file version re-indexes … v1 citation reports superseded; delete removes from search and cache"（含缓存不复用、文件删除）、"ACL: … removal revokes the next search" |
+| M07-A | 知识可见范围：个人、指定项目成员、部门、企业；检索阶段执行权限过滤 | C+E | verified | `acl.ts#ACCESSIBLE_KB_SQL`（检索 SQL 内过滤）, ACL resolver kind "kb" | `server/test/knowledge.test.ts` › "ACL: project/personal/department/org scopes are enforced inside retrieval; removal revokes the next search"、"same-named file in two projects stays isolated"、"KB management: maintainers …" |
+| M07-B | 制度与模板有责任人、版本、生效状态、更新时间；过期资料可下架或替换 | C | verified | `service.ts#updateGovernance`, `GOV_FILTER`, `PATCH /api/kb/:id/docs/:docId/governance` | `server/test/knowledge.test.ts` › "governance: owner, version label, effective/expired/withdrawn; inactive docs excluded by default; replacement" |
+| M07-C | 检索调试与问答评估样例；无证据、索引未就绪、权限不足、模型错误分开反馈 | C | verified | `service.ts#search`（diagnostics.reason）, `POST /api/kb/search {debug}`, `eval.ts`, `eval-samples.ts`, `POST /api/kb/eval` | `server/test/knowledge-eval.test.ts`（16/16，recall@5=1，MRR=1；无权用户全部 forbidden；debug 计划）；`server/test/knowledge.test.ts`（no_evidence / index_not_ready / forbidden）。模型错误由运行时以 `unanswered/model_error` 反馈（A） |
 | M08-A | 已发布成果进入文件库，可反查来源任务、run、创建者、输入资料、生成时间 | D | planned | | |
 | M08-B | 继续修改保留旧版本，新版本关联变更说明；可预览、下载、切换 | D+B | planned | | |
-| M08-C | 文件加入知识库是显式选择并经解析/索引；文件存储状态与知识可用状态分开 | C+D | planned | | |
+| M08-C | 文件加入知识库是显式选择并经解析/索引；文件存储状态与知识可用状态分开 | C+D | verified | `POST /api/kb/:id/docs`（显式加入，按调用者校验文件读权限）, `GET /api/kb/files/:fileId/status` | `server/test/knowledge.test.ts` › "processing: explicit add …"（上传后不可检索、文件知识状态为空，加入后经解析/索引才 ready） |
 | M09-A | 项目所有者/编辑者/查看者角色分别限制会话、文件、知识和操作 | E | planned | | |
 | M09-B | 成员在授权范围内接手任务，知道已有决策、进展、待确认项、交付位置 | A+E | planned | | |
 | M09-C | 外部只读分享与内部协作不同权限模型；撤销成员后重新校验相关资源 | E | planned | | |
-| M10-A | 记忆可查看、修改、删除，并标识来源及作用范围 | C | planned | | |
-| M10-B | 私人记忆、项目共享背景、企业知识不交叉泄露；切换范围后上下文同步变化 | C | planned | | |
-| M10-C | 压缩与恢复后仍能追溯关键约束；用户纠正的信息有明确更新结果 | C+A | planned | | |
+| M10-A | 记忆可查看、修改、删除，并标识来源及作用范围 | C | verified | `memory.ts`, `/api/memory*`（source user/extracted/corrected、scope、history） | `server/test/knowledge-memory.test.ts` › "memory CRUD: scope + source labels, permissions per scope, history"；`server/test/knowledge-extension.test.ts` › memory_save 记录 extracted + sourceRef |
+| M10-B | 私人记忆、项目共享背景、企业知识不交叉泄露；切换范围后上下文同步变化 | C | verified | `memory.ts#contextFor`, 提示词段 `memory`/`knowledge_scope`（`extension.ts`）, `GET /api/memory/context` | `server/test/knowledge-memory.test.ts` › "memory isolation: private memory never enters project context; switching space switches context"；`server/test/knowledge-extension.test.ts` › "memory section + memory_save …"（真实运行时 pi.system 段）、kb_search 项目默认范围 |
+| M10-C | 压缩与恢复后仍能追溯关键约束；用户纠正的信息有明确更新结果 | C+A | verified | `memory.ts#correct`, 记忆段每次请求渲染（压缩后重写） | `server/test/knowledge-memory.test.ts` › "memory correction: visible update result …"；`server/test/knowledge-extension.test.ts` › "compaction: key constraints from memory are still in the prompt …"、分叉后看到纠正后的记忆 |
 | M11-A | 普通 Web 用户无需安装执行依赖即可完成服务端任务 | D | planned | | |
 | M11-B | 可按需查看执行页面、目录、输出、错误；预览与接管入口权限一致 | D+B | planned | | |
 | M11-C | 任务环境隔离，资源配额、生命周期、文件持久化规则明确；到期前可发布成果 | D | planned | | |
