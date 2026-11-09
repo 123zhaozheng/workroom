@@ -14,7 +14,8 @@
     "start": "node --disable-warning=ExperimentalWarning server/src/main.ts",
     "typecheck": "tsc -p server/tsconfig.json --noEmit && npm run -w web typecheck",
     "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 'server/test/**/*.test.ts'",
-    "build:web": "npm run -w web build"
+    "build:web": "npm run -w web build",
+    "acceptance": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/test/acceptance-loop.test.ts server/test/proof.test.ts && npm run build:web && npm run -w web e2e"
   },
   "dependencies": {
     "@earendil-works/chord": "1.5.0",
