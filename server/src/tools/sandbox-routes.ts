@@ -11,6 +11,7 @@ import type { SandboxRunsResponse } from "../../../shared/files.ts";
 import type { SandboxDriverAdminDTO, SandboxDriverStatusDTO, SandboxDriverUpdate, WorkspaceFilesResponse } from "../../../shared/sandbox.ts";
 import type { BrowserService } from "./browser.ts";
 import { DEFAULT_LIMITS, type Sandbox } from "./sandbox.ts";
+import { requirePermission } from "./sandbox/perm.ts";
 import { isInlineImage } from "./sandbox/workspace.ts";
 import { noneDriver } from "./sandbox/none.ts";
 import type { DriverStatus, SandboxDriver } from "./sandbox/driver.ts";
@@ -44,10 +45,13 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 	const acl = ctx.services.get("acl");
 	const authz = () => (ctx.services.has("authz") ? ctx.services.get("authz") : undefined);
 
+	// Driver settings: the catalog permission `sandbox.policy.manage` (owner/admin hold it by default; roles can grant or deny it). Only when the
+	// authz service is absent (unit harnesses) does it fall back to the org role.
 	const canManage = async (p: Principal): Promise<boolean> => {
-		if (p.orgRole === "owner" || p.orgRole === "admin") return true;
+		const a = authz();
+		if (!a) return p.orgRole === "owner" || p.orgRole === "admin";
 		try {
-			return (await authz()?.has(p, "sandbox.policy.manage")) ?? false;
+			return await a.has(p, "sandbox.policy.manage");
 		} catch {
 			return false;
 		}
@@ -119,7 +123,7 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 		const space = ctx.services.get("identity").space(c.req.param("spaceId"));
 		if (!space) throw new HttpError(404, "space_not_found", "空间不存在");
 		await acl.require(p, action, { kind: "space", id: space.id });
-		if (action === "write" && authz() && !(await authz()!.has(p, "sandbox.use"))) throw new HttpError(403, "forbidden", "没有使用沙箱的权限（sandbox.use）");
+		if (action === "write") await requirePermission(ctx, p, "sandbox.use");
 		const cid = c.req.query("conversationId");
 		const conversationId = cid === undefined || cid === "" ? undefined : Number(cid);
 		if (conversationId !== undefined && !Number.isInteger(conversationId)) throw new HttpError(400, "invalid", "conversationId 无效");

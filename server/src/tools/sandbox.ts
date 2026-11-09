@@ -15,6 +15,7 @@ import { killStaleNamespaces, NAMESPACES_NOTES, probeNamespaces } from "./sandbo
 import { SandboxDrivers } from "./sandbox/registry.ts";
 import { SandboxService, type SandboxServiceInfo } from "./sandbox/services.ts";
 import * as ws from "./sandbox/workspace.ts";
+import { requirePermission } from "./sandbox/perm.ts";
 
 export type { Language, RunResult, SandboxMount, SandboxService };
 export { SandboxDrivers };
@@ -290,8 +291,9 @@ export class Sandbox {
 		return out;
 	}
 
-	async #networkAllowed(driver: SandboxDriver, want: boolean | undefined): Promise<boolean> {
+	async #networkAllowed(driver: SandboxDriver, want: boolean | undefined, p?: Principal): Promise<boolean> {
 		if (!want) return false;
+		if (p) await requirePermission(this.#ctx, p, "sandbox.network");
 		if (this.drivers.settings().network !== "allowed") throw new HttpError(403, "network_disabled", "沙箱默认不允许联网；管理员未开启“允许沙箱联网”");
 		if (!driver.capabilities.network) throw new HttpError(403, "network_unsupported", `当前沙箱驱动（${driver.label}）无法提供网络；请使用 Docker 驱动`);
 		return true;
@@ -302,7 +304,7 @@ export class Sandbox {
 	async run(input: RunInput): Promise<SandboxRunDTO> {
 		if (!["shell", "python", "node"].includes(input.language)) throw new HttpError(400, "bad_language", "language 必须是 shell、python 或 node");
 		const driver = await this.#driver();
-		const network = await this.#networkAllowed(driver, input.network);
+		const network = await this.#networkAllowed(driver, input.network, input.principal);
 		const timeoutMs = Math.min(Math.max(input.timeoutMs ?? DEFAULT_LIMITS.timeoutMs, 1000), input.maxTimeoutMs ?? MAX_TIMEOUT_MS);
 		const cpuSeconds = Math.max(1, Math.min(input.cpuSeconds ?? Math.ceil(timeoutMs / 1000), Math.ceil(timeoutMs / 1000)));
 		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, timeoutMs, cpuSeconds, network };
@@ -364,7 +366,7 @@ export class Sandbox {
 		if (!["node", "python", "shell"].includes(input.runtime)) throw new HttpError(400, "invalid", "runtime 必须是 node、python 或 shell");
 		const maxServices = Number(process.env.WORKROOM_SANDBOX_MAX_SERVICES ?? 16);
 		if ([...this.#services.values()].filter((s) => s.running).length >= maxServices) throw new HttpError(429, "too_many_services", `常驻沙箱服务已达上限 ${maxServices}`);
-		const network = await this.#networkAllowed(driver, input.network);
+		const network = await this.#networkAllowed(driver, input.network, input.principal);
 		const mounts = await this.#collectMounts(input, input.mounts);
 		await this.#reaped;
 		const id = newId("svc");

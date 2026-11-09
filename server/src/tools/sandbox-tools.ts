@@ -3,7 +3,7 @@
 // model an `interrupted` error result instead of running it again. The file helpers are "safe" (idempotent overwrite/read),
 // and sandbox_publish is "safe" because its library write uses idempotencyKey = tool call key.
 import type { Context } from "@earendil-works/chord/context";
-import { defineExtension, defineTool, type ToolExecutionApi } from "@earendil-works/pi-durable";
+import { defineExtension, defineTool, hook, ToolTask, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { int, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import type { AppContext, ToolActor } from "../core/contracts.ts";
 import { runtimeActorResolver, toolCallKey, type ActorResolver } from "../files/actor.ts";
@@ -11,6 +11,7 @@ import { effectiveMime } from "../files/mime.ts";
 import type { Files } from "../files/service.ts";
 import type { ToolCallLog } from "./calls.ts";
 import { MAX_TIMEOUT_MS, RETENTION_HOURS, type Sandbox } from "./sandbox.ts";
+import { hasPermission, permissionForTool, requirePermission } from "./sandbox/perm.ts";
 
 export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: ActorResolver } = {}) {
 	const resolve = opts.resolveActor ?? runtimeActorResolver(ctx);
@@ -21,6 +22,7 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 	async function withActor<T>(tool: string, api: ToolExecutionApi<any>, args: unknown, context: Context, write: boolean, fn: (a: ToolActor) => Promise<T>, summarize?: (r: T) => string): Promise<T> {
 		const actor = await resolve(api, context);
 		return log().around({ tool, actor, args }, async () => {
+			await requirePermission(ctx, actor.principal, "sandbox.use");
 			if (write) await acl().require(actor.principal, "write", { kind: "space", id: actor.space.id });
 			return fn(actor);
 		}, summarize);
@@ -126,5 +128,21 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 
 export function createSandboxExtension(ctx: AppContext, opts: { resolveActor?: ActorResolver } = {}) {
 	const t = createSandboxTools(ctx, opts);
-	return defineExtension({ name: "wr.sandbox", tools: [t.exec, t.writeFile, t.readFile, t.list, t.publish, t.importFile] });
+	const resolve = opts.resolveActor ?? runtimeActorResolver(ctx);
+	// beforeTool gate for every call — including code mode itself (QuickJS orchestration) and nested calls made from it: a role without the
+	// permission (e.g. 访客 has no sandbox.use) gets a refusal instead of an execution.
+	const gate = hook(ToolTask, {
+		beforeTool: async (call: { name: string }, api: any, context: Context) => {
+			const perm = permissionForTool(call.name);
+			if (!perm || !ctx.services.has("authz")) return undefined;
+			let actor;
+			try {
+				actor = await resolve(api, context);
+			} catch {
+				return undefined; // the tool's own actor resolution fails the same way
+			}
+			return (await hasPermission(ctx, actor.principal, perm)) ? undefined : { block: `没有权限：${perm === "sandbox.browser" ? "使用浏览器工具" : "使用沙箱"}（${perm}），本次调用未执行` };
+		},
+	} as any);
+	return defineExtension({ name: "wr.sandbox", tools: [t.exec, t.writeFile, t.readFile, t.list, t.publish, t.importFile], hooks: [gate] });
 }

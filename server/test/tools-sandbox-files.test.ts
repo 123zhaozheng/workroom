@@ -277,3 +277,76 @@ test("driver admin API: status for everyone, settings only for admins; disabling
 		await t.dispose();
 	}
 });
+
+test("RBAC: the 访客 role (no sandbox.use / sandbox.browser) is refused by sandbox tools, code mode, browser tools, job_start and the write routes; driver settings need sandbox.policy.manage", async () => {
+	const { CodemodeSandbox } = await import("@earendil-works/pi-codemode");
+	const { createCodemodeExtension } = await import("@earendil-works/pi-durable/codemode");
+	const { createBrowserExtension } = await import("../src/tools/browser.ts");
+	const { createJobsExtension } = await import("../src/tools/jobs.ts");
+	const { fakeApi, context } = await import("./fixtures/tool-harness.ts");
+	const t = await startTestApp();
+	const cm = new CodemodeSandbox({ memoryLimitBytes: 64 * 1024 * 1024, timeoutMs: 30_000 });
+	try {
+		const owner = await t.user("rbacowner@example.com");
+		const mk = async (email: string, base?: string) => {
+			const u = await orgMember(t, owner, email);
+			if (base) await t.json("POST", "/api/admin/role-assignments", { token: owner.token, json: { subject: { kind: "user", id: u.me.userId }, roleId: base, scope: { kind: "org" } } });
+			return u;
+		};
+		const guest = await mk("rbacguest@example.com", "builtin:guest");
+		const member = await mk("rbacmember@example.com");
+		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { name: "RBAC" } });
+		for (const e of ["rbacguest@example.com", "rbacmember@example.com"]) await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: e, role: "editor" } });
+		const sp = project.spaceId as string;
+		const ctx = t.app.ctx;
+		const authz = ctx.services.get("authz");
+		const pr = async (u: any) => (await ctx.services.get("identity").principalFor(u.me.userId, u.me.orgId))!;
+		assert.equal(await authz.has(await pr(guest), "sandbox.use"), false, "precondition: the guest role lacks sandbox.use");
+		assert.equal(await authz.has(await pr(member), "sandbox.use"), true);
+
+		// Routes: the guest is a project editor (space ACL would allow writes) but the role forbids the sandbox.
+		const url = (path: string) => `/api/sandbox/${sp}/${path}`;
+		const gput = await t.req("PUT", `${url("file?path=a.txt")}&conversationId=1`, { token: guest.token, body: "x" });
+		assert.equal(gput.status, 403);
+		assert.match((await gput.json()).error.message, /sandbox\.use/);
+		assert.equal((await t.req("POST", url("mkdir"), { token: guest.token, json: { conversationId: 1, path: "d" } })).status, 403);
+		assert.equal((await t.req("PUT", `${url("file?path=a.txt")}&conversationId=1`, { token: member.token, body: "x" })).status, 200, "a plain member (sandbox.use) can");
+		assert.equal((await t.req("GET", `${url("files")}?conversationId=1`, { token: guest.token })).status, 200, "reading the workspace of a conversation the guest may read stays allowed");
+		// Driver settings: sandbox.policy.manage only (members and guests cannot, owner can).
+		for (const u of [guest, member]) await t.json("PUT", "/api/sandbox/driver", { token: u.token, json: { network: "allowed" }, expect: 403 });
+		assert.equal((await t.json("GET", "/api/sandbox/driver", { token: guest.token })).canManage, false);
+		await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "allowed" } });
+
+		// Tools through the real tool machinery: every sandbox tool and code mode are blocked for the guest, allowed for the member.
+		const run = async (u: any, calls: ReturnType<typeof call>[]) => {
+			const h = await toolHarness([createSandboxExtension(ctx, { resolveActor: fixedActor(ctx, u.me.userId, u.me.orgId, sp) }), createCodemodeExtension({ sandbox: cm, models: false })], [...calls, answer("done")]);
+			await h.run("go");
+			const r = await h.results();
+			await h.close();
+			return r;
+		};
+		const calls = () => [call("sandbox_exec", { language: "shell", code: "echo hi" }, "g1"), call("sandbox_write_file", { path: "g.txt", content: "x" }, "g2"), call("sandbox_list", {}, "g3"), call("codemode", { code: "console.log(1)" }, "g4")];
+		const gr = await run(guest, calls());
+		assert.equal(gr.length, 4);
+		assert.ok(gr.every((x) => x.isError), JSON.stringify(gr.map((x) => [x.name, x.isError, x.text.slice(0, 60)])));
+		assert.ok(gr.every((x) => /sandbox\.use|没有权限/.test(x.text)), JSON.stringify(gr.map((x) => x.text)));
+		assert.ok(gr.find((x) => x.name === "codemode"), "code mode itself is refused, not only its nested calls");
+		const mr = await run(member, [call("sandbox_write_file", { path: "m.txt", content: "x" }, "m1"), call("sandbox_list", {}, "m2"), call("codemode", { code: "console.log('qjs ok')" }, "m3")]);
+		assert.ok(mr.every((x) => !x.isError), JSON.stringify(mr.map((x) => x.text)));
+
+		// Browser tools and background jobs: direct execution refuses for the guest before doing anything.
+		const bt = createBrowserExtension(ctx, { resolveActor: fixedActor(ctx, guest.me.userId, guest.me.orgId, sp) }).tools![0]!;
+		await assert.rejects(bt.execute({ url: "http://example.com/" } as any, fakeApi({ conversationId: 1, taskId: 1, callId: "b" }), context), /sandbox\.browser/);
+		const jt = createJobsExtension(ctx, { resolveActor: fixedActor(ctx, guest.me.userId, guest.me.orgId, sp) }).tools!.find((x: any) => x.name === "job_start")!;
+		await assert.rejects(jt.execute({ kind: "sandbox", sandbox: { language: "shell", code: "true" } } as any, fakeApi({ conversationId: 1, taskId: 2, callId: "j" }), context), /sandbox\.use/);
+
+		// Network egress needs sandbox.network on top of the admin switch: a member has sandbox.use but not sandbox.network.
+		const sb = ctx.services.get("sandbox") as Sandbox;
+		const space = ctx.services.get("identity").space(sp)!;
+		await assert.rejects(sb.run({ principal: await pr(member), space, conversationId: 1, language: "shell", code: "true", network: true }), (e: any) => e.status === 403 && /sandbox\.network/.test(e.message));
+		await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "none" } });
+	} finally {
+		await cm.close();
+		await t.dispose();
+	}
+});

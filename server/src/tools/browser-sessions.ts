@@ -12,6 +12,7 @@ import { runtimeActorResolver, type ActorResolver } from "../files/actor.ts";
 import { guardContext, type BrowserService } from "./browser.ts";
 import type { ToolCallLog } from "./calls.ts";
 import { checkUrl } from "./netpolicy.ts";
+import { requirePermission } from "./sandbox/perm.ts";
 
 const VIEWPORT = { width: 1280, height: 800 };
 export const SESSION_IDLE_MS = Number(process.env.WORKROOM_BROWSER_IDLE_MS ?? 15 * 60_000);
@@ -114,6 +115,7 @@ export class BrowserSessions {
 
 	/** Open (or reuse) the conversation's session and navigate to `url`. */
 	async open(p: Principal, spaceId: string, conversationId: number, url: string, by: "agent" | "user"): Promise<Session> {
+		await requirePermission(this.#ctx, p, "sandbox.browser");
 		const existing = [...this.#sessions.values()].find((s) => s.spaceId === spaceId && s.conversationId === conversationId);
 		if (existing) {
 			await this.act(p, existing.id, { type: "navigate", url }, by);
@@ -147,6 +149,7 @@ export class BrowserSessions {
 	}
 
 	async act(p: Principal, id: string, a: BrowserActionRequest, by: "agent" | "user"): Promise<Session> {
+		await requirePermission(this.#ctx, p, "sandbox.browser");
 		const s = this.#sessions.get(id);
 		if (!s) throw new HttpError(404, "not_found", "浏览会话不存在或已关闭");
 		if (by === "agent" && s.controller.kind === "user") throw new HttpError(409, "taken_over", `用户 ${s.controller.name ?? s.controller.userId} 正在接管该浏览器，Agent 暂不能操作`);
@@ -255,6 +258,7 @@ export function createBrowserSessionExtension(ctx: AppContext, opts: { resolveAc
 	const withActor = async <T>(tool: string, api: any, args: unknown, context: Context, fn: (a: any) => Promise<T>) => {
 		const actor = await resolve(api, context);
 		return log().around({ tool, actor, args }, async () => {
+			await requirePermission(ctx, actor.principal, "sandbox.browser");
 			await ctx.services.get("acl").require(actor.principal, "write", { kind: "space", id: actor.space.id });
 			return fn(actor);
 		});

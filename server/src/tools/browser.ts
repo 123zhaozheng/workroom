@@ -14,6 +14,7 @@ import type { Files } from "../files/service.ts";
 import type { BrowseResultDTO } from "../../../shared/files.ts";
 import type { ToolCallLog } from "./calls.ts";
 import { checkUrl, pinnedRequest } from "./netpolicy.ts";
+import { requirePermission } from "./sandbox/perm.ts";
 
 const MAX_RESPONSE = 25 * 1024 * 1024;
 
@@ -213,6 +214,7 @@ export function createBrowserExtension(ctx: AppContext, opts: { resolveActor?: A
 		async execute(args, api, context: Context) {
 			const actor = await resolve(api, context);
 			const r = await (ctx.services.get("toolCalls") as ToolCallLog).around({ tool: "browse", actor, args }, async () => {
+				await requirePermission(ctx, actor.principal, "sandbox.browser");
 				if (args.screenshot) await ctx.services.get("acl").require(actor.principal, "write", { kind: "space", id: actor.space.id });
 				return (ctx.services.get("browser") as BrowserService).browse({ url: args.url, screenshot: args.screenshot, maxChars: args.maxChars, principal: actor.principal, space: actor.space, save: { conversationId: actor.conversationId, taskId: actor.taskId, callId: actor.callId, idempotencyKey: toolCallKey(actor, "screenshot") } });
 			}, (x) => `${x.status} ${x.finalUrl}`);

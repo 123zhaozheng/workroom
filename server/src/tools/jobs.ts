@@ -19,6 +19,7 @@ import { effectiveMime, extOf } from "../files/mime.ts";
 import type { Files } from "../files/service.ts";
 import type { BrowserService } from "./browser.ts";
 import type { ToolCallLog } from "./calls.ts";
+import { requirePermission } from "./sandbox/perm.ts";
 import { DEFAULT_LIMITS, JOB_MAX_TIMEOUT_MS, killStaleSandbox, type Sandbox } from "./sandbox.ts";
 
 export const JOB_MIGRATIONS: Migration[] = [
@@ -345,6 +346,8 @@ export function createJobsExtension(ctx: AppContext, opts: { resolveActor?: Acto
 			const actor = await resolve(api, context);
 			const r = await log().around({ tool: "job_start", actor, args: { ...args, sandbox: args.sandbox ? { language: args.sandbox.language, code: `${args.sandbox.code.length} 字符`, publish: args.sandbox.publish } : undefined } }, async () => {
 				await ctx.services.get("acl").require(actor.principal, "write", { kind: "space", id: actor.space.id });
+				if (args.kind === "sandbox") await requirePermission(ctx, actor.principal, "sandbox.use");
+				if (args.kind === "browse") await requirePermission(ctx, actor.principal, "sandbox.browser");
 				const row = jobs().create(actor.principal, actor.space, actor.conversationId, `${actor.conversationId}:${actor.taskId}:${actor.callId}`, args as JobInput);
 				if (row.task_id === null) {
 					const remembered = await api.memo<number>("jobTask", context);
