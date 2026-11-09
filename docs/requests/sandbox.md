@@ -5,8 +5,8 @@ Owner of: `server/src/tools/sandbox*.ts`, `server/src/tools/sandbox/**`, `server
 
 ## To marketplace (skills + MCP) — the sandbox contract
 
-Status: the types are final in `server/src/tools/sandbox/driver.ts`; the `Sandbox` service methods below are the stable surface
-(implementation lands in the following commits; signatures will not change without a note here).
+Status: **implemented and tested** (`server/test/tools-sandbox-services.test.ts` on the namespace driver, `tools-sandbox-docker.test.ts` on real Docker). Types: `server/src/tools/sandbox/driver.ts`; service: `server/src/tools/sandbox.ts`; transport: `server/src/tools/sandbox/mcp-transport.ts`. Signatures will not change without a note here.
+Extra info on `listServices()` rows: also `spaceId`, `conversationId`. `capabilities()` also returns `label`.
 
 The sandbox now runs on one of three **drivers** (`namespaces` = Linux user namespaces, `docker` = Docker CLI on Windows/macOS/Linux, `none`).
 Your code does not care which one is active: you ask the `sandbox` service (`ctx.services.get("sandbox") as Sandbox`, from `server/src/tools/sandbox.ts`).

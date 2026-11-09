@@ -16,10 +16,29 @@ import { DockerDriver } from "../src/tools/sandbox/docker.ts";
 import { serviceTransport } from "../src/tools/sandbox/mcp-transport.ts";
 import type { DriverStatus, SandboxDriver } from "../src/tools/sandbox/driver.ts";
 
-const probe = new DockerDriver();
-const status = await probe.detect(true);
-const facts = probe.facts();
-const SKIP = status.state === "ready" ? false : `no usable Docker daemon/image here: ${status.summary} — docker-driver verification is PENDING on a real Docker host`;
+// WORKROOM_TEST_DOCKER=1 → these tests must run for real and FAIL if Docker is missing; =0 → always skip; unset → run when a daemon
+// is reachable and the small public images are present locally, otherwise skip with the reason (never pass vacuously, never fail on a
+// machine without Docker). Availability is re-checked at the start of every test (a daemon can go away between tests).
+const MODE = process.env.WORKROOM_TEST_DOCKER;
+let facts: ReturnType<DockerDriver["facts"]>;
+async function unavailable(needFull = false): Promise<string | undefined> {
+	if (MODE === "0") return "WORKROOM_TEST_DOCKER=0";
+	const probe = new DockerDriver();
+	const st = await probe.detect(true);
+	facts = probe.facts();
+	if (st.state === "unavailable") return `no docker daemon reachable (${st.summary}) — docker-driver verification is PENDING on a real Docker host`;
+	if (!facts || !(facts.images.python && facts.images.node)) return "docker is reachable but python:3.12-slim / node:22-slim are not pulled locally (docker pull them, or run with autoPull) — real-Docker verification skipped";
+	if (needFull && !facts.images.primary) return "workroom/sandbox:1 is not built on this Docker host (node server/sandbox/build-image.mjs)";
+	return undefined;
+}
+/** true → the test was skipped (or failed, in forced mode) and must return. */
+async function guard(t: { skip(msg?: string): void }, needFull = false): Promise<boolean> {
+	const why = await unavailable(needFull);
+	if (!why) return false;
+	if (MODE === "1") assert.fail(`WORKROOM_TEST_DOCKER=1 but Docker is not usable: ${why}`);
+	t.skip(why);
+	return true;
+}
 const ECHO = fileURLToPath(new URL("./fixtures/mcp-echo.py", import.meta.url));
 
 const noNs: SandboxDriver = {
@@ -56,7 +75,8 @@ async function setup(dataDir?: string, fullImage = false) {
 	return { t, sb, principal, space };
 }
 
-test("docker (real): container isolation, persistence in /work, no network, read-only root, non-root", { skip: SKIP, timeout: 180_000 }, async () => {
+test("docker (real): container isolation, persistence in /work, no network, read-only root, non-root", { timeout: 180_000 }, async (t0) => {
+	if (await guard(t0)) return;
 	const { t, sb, principal, space } = await setup();
 	try {
 		assert.equal((await sb.capabilities()).driver, "docker");
@@ -108,7 +128,8 @@ print("exists", os.path.exists("/home/user/workroom"), os.path.exists(${JSON.str
 	}
 });
 
-test("docker (real): the full sandbox image has the data/document libraries and CJK fonts (needs `docker build -t workroom/sandbox:1 server/sandbox`)", { skip: SKIP || (facts?.images.primary ? false : "workroom/sandbox:1 is not built on this Docker host"), timeout: 240_000 }, async () => {
+test("docker (real): the full sandbox image has the data/document libraries and CJK fonts (needs `docker build -t workroom/sandbox:1 server/sandbox`)", { timeout: 240_000 }, async (t0) => {
+	if (await guard(t0, true)) return;
 	const { t, sb, principal, space } = await setup(undefined, true);
 	try {
 		{
@@ -124,7 +145,8 @@ test("docker (real): the full sandbox image has the data/document libraries and 
 	}
 });
 
-test("docker (real): memory limit, pids limit, timeout and cancellation leave no container behind", { skip: SKIP, timeout: 240_000 }, async () => {
+test("docker (real): memory limit, pids limit, timeout and cancellation leave no container behind", { timeout: 240_000 }, async (t0) => {
+	if (await guard(t0)) return;
 	const { t, sb, principal, space } = await setup();
 	try {
 		const oom = await sb.run({ principal, space, conversationId: 2, language: "python", timeoutMs: 60_000, code: "b = bytearray(2 * 1024**3)\nfor i in range(0, len(b), 4096): b[i] = 1\nprint('survived')" });
@@ -156,7 +178,8 @@ test("docker (real): memory limit, pids limit, timeout and cancellation leave no
 	}
 });
 
-test("docker (real): read-only mounts, writable workspace mount, host paths with spaces/commas/unicode, mount provider", { skip: SKIP, timeout: 120_000 }, async () => {
+test("docker (real): read-only mounts, writable workspace mount, host paths with spaces/commas/unicode, mount provider", { timeout: 120_000 }, async (t0) => {
+	if (await guard(t0)) return;
 	const base = mkdtempSync(join(tmpdir(), "wr dock, ü-"));
 	const { t, sb, principal, space } = await setup(join(base, "data dir"));
 	try {
@@ -195,7 +218,8 @@ test("docker (real): read-only mounts, writable workspace mount, host paths with
 	}
 });
 
-test("docker (real): service mode — MCP stdio server inside a container over stdin/stdout, env, mounts, idle timeout, stop removes the container", { skip: SKIP, timeout: 180_000 }, async () => {
+test("docker (real): service mode — MCP stdio server inside a container over stdin/stdout, env, mounts, idle timeout, stop removes the container", { timeout: 180_000 }, async (t0) => {
+	if (await guard(t0)) return;
 	const { t, sb, principal, space } = await setup();
 	try {
 		const dir = join(sb.mountsRoot(), "mcp", "echo");
@@ -240,7 +264,8 @@ test("docker (real): service mode — MCP stdio server inside a container over s
 	}
 });
 
-test("docker (real): startup reaper removes a container orphaned by a crashed server", { skip: SKIP, timeout: 120_000 }, async () => {
+test("docker (real): startup reaper removes a container orphaned by a crashed server", { timeout: 120_000 }, async (t0) => {
+	if (await guard(t0)) return;
 	const { t, sb, principal, space } = await setup();
 	try {
 		// Simulate a crash: start a labelled container the way the driver does, then never clean it up.
