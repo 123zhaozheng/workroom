@@ -28,18 +28,18 @@ try {
 	await page.waitForSelector('[data-testid="slash-menu"]');
 	await shot(page, "1440-composer-slash-menu");
 	await input.press("Enter"); // first item: 引用知识库
-	if (kbOk) {
+	{
 		await page.getByRole("button", { name: /制度库/ }).click();
 		await page.waitForSelector('[data-testid="chip-kb"]');
 	}
 	await input.fill("根据附件和制度库整理要点 [[reply 已阅读附件与知识库引用。]]");
 	await shot(page, "1440-composer-chips");
-	check("composer: file chip + knowledge chip in one input", (await page.locator('[data-testid="chip-file"]').count()) === 1 && (!kbOk || (await page.locator('[data-testid="chip-kb"]').count()) === 1));
+	check("composer: file chip + knowledge chip in one input", (await page.locator('[data-testid="chip-file"]').count()) === 1 && (await page.locator('[data-testid="chip-kb"]').count()) === 1);
 	await page.click('[data-testid="send"]');
 	await page.waitForURL(/\/c\//);
 	await page.waitForSelector('[data-testid="assistant-message"]', { timeout: 20000 });
 	const userText = await page.locator('[data-testid="user-message"]').first().innerText();
-	check("chat: sent message carries attachment and knowledge references", userText.includes("会议纪要.txt") && (!kbOk || userText.includes("制度库")), userText.slice(0, 80));
+	check("chat: sent message carries attachment and knowledge references", userText.includes("会议纪要.txt") && userText.includes("制度库"), userText.slice(0, 80));
 	const convUrl = page.url();
 
 	// ---------------------------------------------------------------- M01-C: code / table / formula; streaming == history
@@ -115,7 +115,7 @@ try {
 	await page.click('[data-testid="close-panel"]');
 
 	// ---------------------------------------------------------------- knowledge failure is shown honestly (M06-A)
-	if (kbOk) {
+	{
 		const kb = await kbRes.json();
 		const kbId = (kb.kb ?? kb).id;
 		await page.goto(`${base}/knowledge/${kbId}`);
@@ -144,7 +144,9 @@ try {
 		await shot(page, `1440-${name}`);
 		check(`page ${path}: renders without a UI fault`, (await page.locator('[data-testid="render-error"]').count()) === 0);
 	}
-	if (me.me.orgRole === "owner") check("admin entry visible for org owner", true);
+	await page.click('[data-testid="user-menu"]');
+	check("admin entry visible for org owner", me.me.orgRole === "owner" && (await page.locator('[data-testid="menu-admin"]').count()) === 1);
+	await page.keyboard.press("Escape");
 
 	// ---------------------------------------------------------------- dark theme
 	const dark = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: "dark", storageState: await ctx.storageState() });

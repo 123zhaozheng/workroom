@@ -3,7 +3,8 @@
 import { Bot, Download, ExternalLink, FolderOpen, Globe, Plug, SquareTerminal, Users, X } from "lucide-react";
 import { Link } from "react-router";
 import type { EntriesPage, MemberType, SubagentDTO, TasksResponse } from "@shared/chat";
-import type { SandboxFilesResponse, SandboxInfoDTO, SandboxRunsResponse } from "@shared/files";
+import type { ConversationWorkDTO, SandboxFilesResponse, SandboxInfoDTO, SandboxRunsResponse } from "@shared/files";
+import { BrowserSessionView, JobCard } from "./live";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { cn, durationText, formatBytes, isSimulatedUsage, relTime, SIMULATED_USAGE } from "@/lib/utils";
@@ -67,7 +68,31 @@ export default function WorkPanel({ state, onClose }: { state: Extract<PanelStat
 	);
 }
 
+function useWork(spaceId: string, conversationId: number) {
+	return useApi<{ work: ConversationWorkDTO }>(`/work/${spaceId}/${conversationId}`, { pollMs: 2000 });
+}
+
 function TasksTab({ spaceId, conversationId }: { spaceId: string; conversationId: number }) {
+	const work = useWork(spaceId, conversationId);
+	const jobs = work.data?.work.jobs ?? [];
+	return (
+		<div className="space-y-5">
+			{jobs.length ? (
+				<section>
+					<h3 className="mb-2 text-[12.5px] font-medium text-fg-muted">后台任务（有时间/算力预算，可取消）</h3>
+					<div className="space-y-2">
+						{jobs.map((j) => (
+							<JobCard key={j.id} job={j} onChanged={work.reload} />
+						))}
+					</div>
+				</section>
+			) : null}
+			<SubagentsSection spaceId={spaceId} conversationId={conversationId} />
+		</div>
+	);
+}
+
+function SubagentsSection({ spaceId, conversationId }: { spaceId: string; conversationId: number }) {
 	const res = useApi<TasksResponse>(`/conversations/${spaceId}/${conversationId}/tasks`, { pollMs: 2500 });
 	const { me } = useSession();
 	const subs = res.data?.subagents ?? [];
@@ -198,11 +223,20 @@ function TerminalTab({ spaceId, conversationId }: { spaceId: string; conversatio
 }
 
 function BrowserTab({ spaceId, conversationId }: { spaceId: string; conversationId: number }) {
+	const work = useWork(spaceId, conversationId);
 	const res = useApi<EntriesPage>(`/conversations/${spaceId}/${conversationId}/entries?limit=200`, { pollMs: 4000 });
 	const pages = (res.data?.items ?? []).flatMap((e) => (e.kind === "tool_result" ? [{ e, b: browseOf(e.details) }] : [])).filter((x) => x.b);
+	const sessions = work.data?.work.browserSessions ?? [];
 	return (
 		<Loadable state={res} what="浏览记录" need="A 组：GET .../entries">
-			{pages.length === 0 ? (
+			{sessions.length ? (
+				<div className="mb-4 space-y-3">
+					{sessions.map((s) => (
+						<BrowserSessionView key={s.id} s={s} onChanged={work.reload} />
+					))}
+				</div>
+			) : null}
+			{pages.length === 0 && sessions.length === 0 ? (
 				<EmptyState icon={<Globe />} title="还没有打开过网页">
 					助手使用浏览工具打开网页时，页面标题、地址、截图和提取的正文会显示在这里。
 				</EmptyState>

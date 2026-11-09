@@ -2,6 +2,7 @@ import { BookOpen, Check, ChevronLeft, ChevronRight, Copy, Download, FileText, F
 import { useState, type ReactNode } from "react";
 import { FIXTURE_LABEL, type ConversationSummary, type UserEntryDTO } from "@shared/chat";
 import { copyText, cn, downloadText, isSimulatedUsage, SIMULATED_USAGE } from "@/lib/utils";
+import { reasonText, SUBMISSION_LABEL } from "./status";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Tip } from "@/components/ui/overlay";
@@ -11,6 +12,7 @@ import { Markdown } from "@/features/markdown/Markdown";
 import { Citations, ErrorNote, FileCard } from "./Cards";
 import { turnMarkdown, type AssistantTurn } from "./model";
 import { StepChain } from "./Steps";
+import { JobChip } from "@/features/work/live";
 
 function ActionButton({ label, onClick, children, testId }: { label: string; onClick: () => void; children: ReactNode; testId?: string }) {
 	return (
@@ -91,6 +93,7 @@ export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEn
 						</div>
 					) : null}
 					<div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-surface-3 px-4 py-2.5 text-[15px] leading-relaxed">{entry.text}</div>
+					<MessageOutcome entry={entry} />
 					<div className="mt-1 flex h-7 items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
 						{via ? <span className="mr-1 text-xs text-fg-subtle">{via}</span> : null}
 						{entry.authorName ? <span className="mr-1 text-xs text-fg-subtle">{entry.authorName}</span> : null}
@@ -109,6 +112,26 @@ export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEn
 				</>
 			)}
 		</div>
+	);
+}
+
+/** Outcome of this exact message (M02-C), re-read from the server on every load; only shown when it is not simply answered. */
+function MessageOutcome({ entry }: { entry: UserEntryDTO }) {
+	const sub = entry.submission;
+	if (entry.placed === false)
+		return (
+			<p data-testid="message-outcome" data-status={sub?.status ?? "withdrawn"} className="mt-1 text-xs text-danger">
+				未送达模型：{sub ? `${SUBMISSION_LABEL[sub.status]}${sub.reason ? `（${reasonText(sub.reason)}）` : ""}` : "已撤回"}
+			</p>
+		);
+	if (!sub || sub.status === "done" || sub.status === "applied") return null;
+	const bad = sub.status === "unanswered" || sub.status === "withdrawn";
+	return (
+		<p data-testid="message-outcome" data-status={sub.status} className={cn("mt-1 text-xs", bad ? "text-danger" : "text-info")}>
+			{bad ? "这条消息没有得到回复：" : ""}
+			{SUBMISSION_LABEL[sub.status]}
+			{sub.reason ? `（${reasonText(sub.reason)}）` : ""}
+		</p>
 	);
 }
 
@@ -148,6 +171,13 @@ export function AssistantMessage({
 					<div className="mt-3 flex flex-col gap-2">
 						{turn.artifacts.map((a) => (
 							<FileCard key={a.versionId} file={a} />
+						))}
+					</div>
+				) : null}
+				{turn.jobs.length ? (
+					<div className="mt-3 flex flex-col items-start gap-1.5">
+						{turn.jobs.map((j) => (
+							<JobChip key={j.id} jobId={j.id} initial={j} />
 						))}
 					</div>
 				) : null}

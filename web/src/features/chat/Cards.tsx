@@ -1,9 +1,9 @@
 import { AlertTriangle, BookMarked, Download, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Hand, Presentation, ShieldAlert } from "lucide-react";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { m } from "motion/react";
 import type { ApprovalDTO, EffectDTO } from "@shared/chat";
 import type { FileVersionRefDTO } from "@shared/files";
-import type { CitationDTO } from "@shared/knowledge";
+import type { CitationDTO, CitationStatusDTO } from "@shared/knowledge";
 import { errorText, post } from "@/lib/api";
 import { cn, formatBytes } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -166,9 +166,15 @@ export function ReconcileCard({ effect, base }: { effect: EffectDTO; base: strin
 	);
 }
 
-/** Answer citations: file + version + locator (page / section / paragraph / snippet). Click opens that version. */
+/** Current validity of cited chunks for the open conversation (C: …/citation-status). Absent → snapshot only. */
+export const CitationStatusContext = createContext<Record<string, CitationStatusDTO> | undefined>(undefined);
+
+/** Answer citations: file + version + locator (page / section / paragraph / snippet). Click opens that version.
+ * Old answers keep their snapshot; when the source changed since, a 失效提示 says how (updated / deleted / withdrawn /
+ * expired / no access). Without access the snippet and link are hidden. */
 export function Citations({ citations }: { citations: CitationDTO[] }) {
 	const { openPreview } = usePanel();
+	const statuses = useContext(CitationStatusContext);
 	if (!citations.length) return null;
 	return (
 		<div data-testid="citations" className="mt-3">
@@ -177,8 +183,28 @@ export function Citations({ citations }: { citations: CitationDTO[] }) {
 				引用来源
 			</div>
 			<ol className="space-y-1">
-				{citations.map((c, i) => (
-					<li key={c.chunkId}>
+				{citations.map((c, i) => {
+					const st = statuses?.[c.chunkId];
+					if (st && st.status === "forbidden")
+						return (
+							<li key={c.chunkId} data-testid="citation" data-status={st.status} className="flex items-start gap-2 px-2 py-1 text-[12.5px] text-fg-muted">
+								<span className="font-mono text-fg-subtle">[{c.n ?? i + 1}]</span>
+								<span className="text-warning">{st.message}</span>
+							</li>
+						);
+					return (
+					<li key={c.chunkId} data-testid="citation" data-status={st?.status ?? "snapshot"}>
+						{st && st.status !== "valid" ? (
+							<div className="ml-8 mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-warning" data-testid="citation-stale">
+								<AlertTriangle className="size-3" />
+								{st.message}
+								{st.status === "superseded" && st.current ? (
+									<button className="text-info hover:underline" onClick={() => openPreview({ fileId: c.fileId, versionId: st.current!.versionId, name: c.fileName })}>
+										查看当前 v{st.current.versionNo}
+									</button>
+								) : null}
+							</div>
+						) : null}
 						<button
 							onClick={() => openPreview({ fileId: c.fileId, versionId: c.versionId, name: c.fileName })}
 							className="group flex w-full items-start gap-2 rounded-lg px-2 py-1 text-left text-[12.5px] hover:bg-surface-2"
@@ -195,7 +221,8 @@ export function Citations({ citations }: { citations: CitationDTO[] }) {
 							</span>
 						</button>
 					</li>
-				))}
+					);
+				})}
 			</ol>
 		</div>
 	);

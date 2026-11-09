@@ -1,8 +1,10 @@
-import { ArrowDown, ChevronDown, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ChevronDown, ClipboardList, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { FIXTURE_LABEL, type BranchResponse, type ConversationSummary, type EntryDTO, type SendMessageResponse } from "@shared/chat";
 import { ApiError, errorText, post, uuid } from "@/lib/api";
+import { useApi } from "@/lib/useApi";
+import type { Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { usePanel, type WorkTab } from "@/components/shell/panel";
@@ -10,11 +12,14 @@ import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip } from "@/comp
 import { Button } from "@/components/ui/button";
 import { ErrorState, Spinner, Unavailable } from "@/components/ui/misc";
 import { Composer, type ComposerSubmit } from "@/features/chat/Composer";
-import { ApprovalCard, ReconcileCard } from "@/features/chat/Cards";
+import { ApprovalCard, CitationStatusContext, ReconcileCard } from "@/features/chat/Cards";
+import type { ConversationCitationStatus } from "@shared/knowledge";
 import { AssistantMessage, BranchPointSwitcher, UserMessage } from "@/features/chat/Messages";
 import { buildTurns, type Turn } from "@/features/chat/model";
 import { RUN_LABEL, RunIcon, SUBMISSION_LABEL, reasonText } from "@/features/chat/status";
 import { useConversationDetail, useConversationStream, useEarlierEntries, useSubmissionTracker } from "@/features/chat/useConversation";
+
+const HandoffDialog = lazy(() => import("@/features/handoff/Handoff").then((m) => ({ default: m.ConversationHandoffDialog })));
 
 const firstId = (t: Turn): number => (t.kind === "user" ? t.entry.id : t.kind === "marker" ? t.entry.id : (t.firstEntryId ?? Number.POSITIVE_INFINITY));
 
@@ -36,13 +41,24 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const [actionErr, setActionErr] = useState<string>();
 	const [stopping, setStopping] = useState(false);
 	const [continuing, setContinuing] = useState(false);
+	const [handoff, setHandoff] = useState(false);
 
 	const conv = state?.conversation ?? detail?.conversation;
 	const agent = state?.agent ?? detail?.agent;
 	const live = state?.live;
 	const runStatus = live?.status ?? conv?.status ?? "idle";
 	const busy = !!live?.busy;
-	const readOnly = conv?.kind === "subagent";
+	// Project role decides what this user may do here (the server enforces it as well).
+	const projects = useApi<{ projects: Project[] }>(conv?.projectId ? "/projects" : null);
+	const projectRole = conv?.projectId ? (projects.data?.projects.find((p) => p.id === conv.projectId)?.role ?? null) : undefined;
+	const viewer = projectRole === "viewer";
+	const readOnly = conv?.kind === "subagent" || viewer;
+	// Current validity of everything this conversation cited (old answers keep their snapshot + a 失效提示).
+	const citeStatus = useApi<ConversationCitationStatus>(`/kb/conversations/${spaceId}/${id}/citation-status`);
+	const reloadCites = citeStatus.reload;
+	useEffect(() => {
+		if (runStatus !== "running") reloadCites();
+	}, [runStatus, reloadCites]);
 
 	const entries = useMemo(() => {
 		const seen = new Set<string>();
@@ -215,8 +231,13 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 								</button>
 							</MenuTrigger>
 							<MenuContent align="end" className="w-60">
+								<MenuItem data-testid="open-handoff" onSelect={() => setHandoff(true)}>
+									<ClipboardList />
+									交接摘要（决定 / 进展 / 待处理 / 成果）
+								</MenuItem>
 								<MenuItem
 									data-testid="make-skill"
+									disabled={readOnly}
 									onSelect={() =>
 										act(async () => {
 											const r = await post<{ draft: { id: string } }>("/skills/drafts", { spaceId, conversationId: id });
@@ -278,6 +299,12 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 							</Button>
 						</div>
 					) : null}
+					{citeStatus.data?.stale ? (
+						<div data-testid="citations-stale-banner" className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-[12.5px] text-warning">
+							这个对话里有 {citeStatus.data.stale} 处引用的资料已变化（更新、删除、下架或无权访问）；旧回答保留原引用，并在对应位置标出。
+						</div>
+					) : null}
+					<CitationStatusContext.Provider value={citeStatus.data?.byChunkId}>
 					<div className="flex flex-col gap-6">
 						{turns.map((t, i) => {
 							const prevMax = i > 0 ? firstId(turns[i - 1]!) : Number.NEGATIVE_INFINITY;
@@ -289,14 +316,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 										<BranchPointSwitcher key={p.entryId} options={p.options} currentId={id} onSelect={goBranch} />
 									))}
 									{t.kind === "user" ? (
-										<>
-											<UserMessage entry={t.entry} readOnly={readOnly} onFork={() => fork(t.entry.id)} onEdit={(text) => edit(t.entry.id, text)} />
-											{turns[i + 1]?.kind === "user" ? <p className="text-right text-xs text-fg-subtle">这条消息没有得到单独回复（可能被取消、合并处理或运行失败）</p> : null}
-										</>
+										<UserMessage entry={t.entry} readOnly={readOnly} onFork={() => fork(t.entry.id)} onEdit={(text) => edit(t.entry.id, text)} />
 									) : t.kind === "marker" ? (
 										<div className="flex items-center gap-3 text-xs text-fg-subtle">
 											<span className="h-px flex-1 bg-border" />
-											{t.entry.kind === "compaction" ? "较早的上下文已压缩为摘要" : "上下文已重置"}
+											{t.entry.kind === "compaction" ? "较早的上下文已压缩为摘要" : t.entry.kind === "notice" ? (t.entry.text ?? "系统提示") : "上下文已重置"}
 											<span className="h-px flex-1 bg-border" />
 										</div>
 									) : (
@@ -313,12 +337,13 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 							);
 						})}
 					</div>
+					</CitationStatusContext.Provider>
 					{state && turns.length === 0 && !busy ? <p className="py-16 text-center text-[13px] text-fg-subtle">这个对话还没有消息。</p> : null}
 
 					{pendingApprovals.length || reconcile.length ? (
 						<div className="mt-5 flex flex-col gap-3 sm:pl-[38px]">
 							{pendingApprovals.map((a) => (
-								<ApprovalCard key={a.approvalId} approval={a} base={base} />
+								<ApprovalCard key={a.approvalId} approval={a} base={base} canDecide={!readOnly} />
 							))}
 							{reconcile.map((e) => (
 								<ReconcileCard key={e.effectId} effect={e} base={base} />
@@ -366,7 +391,9 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 					</p>
 				) : null}
 				{readOnly ? (
-					<p className="rounded-xl border border-border bg-surface-2 px-4 py-3 text-[13px] text-fg-muted">这是子任务的对话记录，只读。</p>
+					<p data-testid="read-only-note" className="rounded-xl border border-border bg-surface-2 px-4 py-3 text-[13px] text-fg-muted">
+						{viewer ? "你在这个项目中是查看者：可以查看对话、成果和交接摘要，但不能发消息、确认操作或创建分支。" : "这是子任务的对话记录，只读。"}
+					</p>
 				) : (
 					<Composer
 						spaceId={spaceId}
@@ -394,6 +421,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 					/>
 				)}
 			</div>
+			{handoff ? (
+				<Suspense fallback={null}>
+					<HandoffDialog spaceId={spaceId} conversationId={id} open={handoff} onOpenChange={setHandoff} />
+				</Suspense>
+			) : null}
 		</div>
 	);
 }

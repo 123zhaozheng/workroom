@@ -46,7 +46,7 @@ try {
 		check("home: model picker label not duplicated", (pick.match(/测试模型/g) ?? []).length <= 1, pick);
 		await shot(page, "1440-home-model-picker");
 		await page.keyboard.press("Escape");
-	} else check("home: model list unavailable → picker hidden (no fake models)", (await page.locator('[data-testid="model-picker"]').count()) === 0);
+	} else check("home: model list available from E (GET /api/models)", false, "no models returned");
 
 	// ---------------------------------------------------------------- chat: tool step + file card
 	await sendMessage(page, '帮我写一份项目周报 [[call file_create {"name":"项目周报","format":"md","title":"项目周报","content":"# 本周进展\\n- 完成需求评审\\n- 完成原型\\n\\n# 风险\\n- 暂无"}]]');
@@ -155,11 +155,8 @@ try {
 	// ---------------------------------------------------------------- knowledge: processing → searchable
 	await page.goto(`${base}/knowledge`);
 	await page.waitForLoadState("networkidle");
-	const kbUnavailable = (await page.locator('[data-testid="unavailable"]').count()) > 0;
-	if (kbUnavailable) {
-		check("knowledge: page shows honest 未连接 state (C routes absent)", true);
-		await shot(page, "1440-knowledge-unavailable");
-	} else {
+	check("knowledge: page is connected (C routes present)", (await page.locator('[data-testid="unavailable"]').count()) === 0);
+	{
 		await page.getByRole("button", { name: "新建知识库" }).first().click();
 		await page.fill("#kbname", "产品资料");
 		await page.getByRole("button", { name: "创建" }).click();

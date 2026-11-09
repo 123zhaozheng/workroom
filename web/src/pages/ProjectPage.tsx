@@ -1,17 +1,16 @@
 import { FolderOpen, MessageSquare, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import type { ConversationSummary } from "@shared/chat";
-import { errorText, put, qs } from "@/lib/api";
+import { errorText, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { Project, ProjectMember, ProjectRole } from "@/lib/types";
-import { relTime } from "@/lib/utils";
 import { useSession } from "@/lib/session";
 import { TopBar } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Badge, EmptyState, Loadable, Page } from "@/components/ui/misc";
 import { Composer } from "@/features/chat/Composer";
+import { ProjectHandoffSummary } from "@/features/handoff/Handoff";
 import { useStartConversation } from "@/features/chat/useStartConversation";
 
 export const ROLE: Record<ProjectRole, string> = { owner: "所有者", editor: "编辑者", viewer: "查看者" };
@@ -22,7 +21,6 @@ export default function ProjectPage() {
 	const projects = useApi<{ projects: Project[] }>("/projects");
 	const project = projects.data?.projects.find((p) => p.id === projectId);
 	const members = useApi<{ members: ProjectMember[] }>(`/projects/${projectId}/members`);
-	const convs = useApi<{ conversations: ConversationSummary[] }>(`/conversations${qs({ projectId, limit: 30 })}`, { pollMs: 10000 });
 	const start = useStartConversation();
 	const isOwner = project?.role === "owner";
 	const canWrite = project?.role === "owner" || project?.role === "editor";
@@ -55,20 +53,9 @@ export default function ProjectPage() {
 									<section>
 										<h2 className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-fg-muted">
 											<MessageSquare className="size-4" />
-											项目对话
+											项目对话与待处理
 										</h2>
-										<Loadable state={convs} what="项目对话" need="A 组：GET /conversations?projectId=">
-											{(convs.data?.conversations ?? []).length === 0 ? (
-												<p className="text-[13px] text-fg-subtle">还没有对话。</p>
-											) : (
-												convs.data!.conversations.map((c) => (
-													<Link key={c.conversationId} to={`/c/${c.spaceId}/${c.conversationId}`} className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-surface-2">
-														<span className="min-w-0 flex-1 truncate text-sm">{c.title || "未命名对话"}</span>
-														<span className="text-xs text-fg-subtle">{relTime(c.updatedAt)}</span>
-													</Link>
-												))
-											)}
-										</Loadable>
+										<ProjectHandoffSummary projectId={project.id} />
 										<Link to={`/files?projectId=${project.id}`} className="mt-4 inline-flex items-center gap-1 text-[13px] text-info hover:underline">
 											<FolderOpen className="size-4" />
 											查看项目文件

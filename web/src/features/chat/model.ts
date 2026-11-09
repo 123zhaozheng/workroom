@@ -1,6 +1,6 @@
 // View model: pi entries (+ live partial) → user turns and assistant turns with an embedded step chain.
 import type { ApprovalDTO, AssistantEntryDTO, ConversationState, EntryDTO, LiveToolDTO, MarkerEntryDTO, ToolCallDTO, ToolResultEntryDTO, UsageDTO, UserEntryDTO } from "@shared/chat";
-import type { BrowseResultDTO, FileVersionRefDTO } from "@shared/files";
+import type { BrowseResultDTO, FileVersionRefDTO, JobDTO } from "@shared/files";
 import type { CitationDTO } from "@shared/knowledge";
 
 export type Step =
@@ -19,6 +19,8 @@ export interface AssistantTurn {
 	streaming: boolean;
 	artifacts: FileVersionRefDTO[];
 	citations: CitationDTO[];
+	/** Background jobs started in this turn (job_start → details.job). */
+	jobs: JobDTO[];
 	error?: string;
 	stopReason?: string;
 	fixture: boolean;
@@ -79,7 +81,7 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 	let cur: AssistantTurn | null = null;
 	const open = (key: string): AssistantTurn => {
 		if (!cur) {
-			cur = { kind: "assistant", key, steps: [], streaming: false, artifacts: [], citations: [], fixture: false };
+			cur = { kind: "assistant", key, steps: [], streaming: false, artifacts: [], citations: [], jobs: [], fixture: false };
 			turns.push(cur);
 		}
 		return cur;
@@ -115,6 +117,8 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 						if (r) {
 							t.artifacts.push(...artifactsOf(r.details));
 							t.citations.push(...citationsOf(r.details));
+							const job = isRecord(r.details) && isRecord(r.details.job) && typeof r.details.job.id === "string" ? (r.details.job as unknown as JobDTO) : null;
+							if (job) t.jobs.push(job);
 						}
 					}
 				} else if (e.text.trim()) {
@@ -130,6 +134,7 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 				break; // attached to its call above
 			case "reset":
 			case "compaction":
+			case "notice":
 				close();
 				turns.push({ kind: "marker", key: `m${e.id}`, entry: e });
 				break;

@@ -159,11 +159,11 @@ try {
 	await page.waitForSelector('[data-testid="draft-checks"]', { timeout: 60000 });
 	const ok = await page.locator('[data-testid="draft-checks"]').getAttribute("data-ok");
 	await shot(page, "1440-skill-draft-validated");
-	if (ok === "true") {
-		await page.click('[data-testid="draft-publish"]');
-		await page.waitForFunction(() => document.querySelectorAll('[data-testid="skill"]').length >= 2, null, { timeout: 15000 });
-		check("draft: validated sample → published and installed", true);
-	} else check("draft: validation result shown; publish stays disabled when it fails", await page.locator('[data-testid="draft-publish"]').isDisabled(), "validation not ok");
+	check("draft: sample validation passes", ok === "true", `ok=${ok}`);
+	check("draft: publish enabled only after a passing validation", !(await page.locator('[data-testid="draft-publish"]').isDisabled()));
+	await page.click('[data-testid="draft-publish"]');
+	await page.waitForFunction(() => document.querySelectorAll('[data-testid="skill"]').length >= 2, null, { timeout: 15000 });
+	check("draft: published and installed", true);
 
 	// ---------------------------------------------------------------- 能力: connectors
 	const cr = await page.request.post(`${base}/api/connectors`, { data: { name: "测试笔记服务", scope: "system", transport: "stdio", command: process.execPath, args: MCP_ARGS } });
