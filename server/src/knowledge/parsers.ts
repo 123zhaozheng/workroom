@@ -382,12 +382,12 @@ function parseJson(text: string): Block[] {
 	const walk = (v: unknown, path: string, group: string) => {
 		if (v !== null && typeof v === "object") {
 			const entries = Array.isArray(v) ? v.map((x, i) => [`[${i}]`, x] as const) : Object.entries(v).map(([k, x]) => [/^[\w$]+$/.test(k) ? `.${k}` : `[${JSON.stringify(k)}]`, x] as const);
-			if (!entries.length) add(group || "$", `${path || "$"}: ${Array.isArray(v) ? "[]" : "{}"}`);
+			if (!entries.length) add(group || "$", `${path.replace(/^\./, "") || "$"}: ${Array.isArray(v) ? "[]" : "{}"}`);
 			for (const [k, x] of entries) {
 				const p = `${path}${k}`;
 				walk(x, p, group || p);
 			}
-		} else add(group || "$", `${path || "$"}: ${String(v)}`);
+		} else add(group || "$", `${path.replace(/^\./, "") || "$"}: ${String(v)}`);
 	};
 	walk(data, "", "");
 	const out: Block[] = [];
