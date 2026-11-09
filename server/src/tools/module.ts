@@ -7,6 +7,7 @@ import { BLOCKED_CONNECTORS, createToolSearch, McpManager, MCP_MIGRATIONS } from
 import { Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
+import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { contentDisposition } from "../files/module.ts";
@@ -27,18 +28,35 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	};
 }
 
+const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "browse", "skill_list", "skill_load", "skill_run", "tool_search", "codemode"];
+/** Tool names a skill may require: the runtime registry when available, else D's own tools plus discovered MCP tools. */
+export function knownToolNames(ctx: AppContext): string[] {
+	const names = new Set(D_TOOLS);
+	try {
+		const rt = ctx.services.has("runtime") ? (ctx.services.get("runtime") as any) : null;
+		const reg = rt?.registry ?? rt?.manager?.registry;
+		for (const t of reg?.snapshot?.().tools?.() ?? []) names.add(t.tool?.name ?? t.name);
+	} catch {
+		/* fall back to the static list */
+	}
+	for (const t of (ctx.services.get("mcp") as McpManager).piTools()) names.add(t.name);
+	return [...names];
+}
+
 export const toolsModule: WorkroomModule = {
 	name: "tools",
 	migrations: [
 		...TOOL_CALL_MIGRATIONS,
 		...MCP_MIGRATIONS.map((m) => ({ ...m, version: m.version + 100 })),
 		...SANDBOX_MIGRATIONS.map((m) => ({ ...m, version: m.version + 200 })),
+		...SKILL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 300 })),
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
 		ctx.services.provide("mcp", new McpManager(ctx));
 		ctx.services.provide("sandbox", new Sandbox(ctx));
 		ctx.services.provide("browser", new BrowserService(ctx));
+		ctx.services.provide("skills", new Skills(ctx));
 	},
 	extensions(ctx) {
 		const mgr = ctx.services.get("mcp") as McpManager;
@@ -57,7 +75,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), codemode];
+		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		(ctx.services.get("mcp") as McpManager).start();
@@ -131,6 +149,82 @@ export const toolsModule: WorkroomModule = {
 			const name = b.name ?? f.name;
 			const ref = await (ctx.services.get("files") as unknown as Files).putVersion(p, { fileId: b.fileId, name, mime: effectiveMime(undefined, name), bytes: f.bytes, provenance: { createdBy: p.userId, spaceId: space.id, conversationId: b.conversationId, changeNote: b.changeNote ?? `从沙箱 /work/${b.path} 发布`, origin: "upload", tool: "sandbox_publish" } as any });
 			return c.json({ version: ref });
+		});
+
+		// ---- skills ----
+		const skills = ctx.services.get("skills") as Skills;
+		(ctx.services.get("identity") as any).registerResolver?.("skill", (p: Principal, action: string, res: { id: string }) => skills.decide(p, action, res.id));
+		const skillOr404 = async (c: any, action: "read" | "use" | "write") => {
+			const p = principalOf(c);
+			const s = skills.skill(c.req.param("id"));
+			if (!s) throw new HttpError(404, "not_found", "技能不存在");
+			await acl.require(p, action, { kind: "skill", id: s.id });
+			return { p, s };
+		};
+		api.get("/skills", async (c) => {
+			const p = principalOf(c);
+			return c.json({ skills: await Promise.all(skills.visible(p).map((s) => skills.dto(p, s))) });
+		});
+		api.post("/skills", async (c) => {
+			const p = principalOf(c);
+			const s = skills.createSkill(p, await jsonBody<SkillInput>(c));
+			if (c.req.query("install") !== "0") await skills.installFor(p, s.id);
+			return c.json({ skill: await skills.dto(p, s, true) });
+		});
+		api.post("/skills/drafts", async (c) => {
+			const p = principalOf(c);
+			const b = await jsonBody<{ spaceId: string; conversationId: number; name?: string }>(c);
+			return c.json({ draft: await skills.draftFromConversation(p, b.spaceId, Number(b.conversationId), b.name) });
+		});
+		api.get("/skills/drafts/:id", (c) => c.json({ draft: skills.draftDTO(skills.draftRow(principalOf(c), c.req.param("id"))) }));
+		api.patch("/skills/drafts/:id", async (c) => c.json({ draft: skills.updateDraft(principalOf(c), c.req.param("id"), await jsonBody(c)) }));
+		api.post("/skills/drafts/:id/validate", async (c) => c.json({ draft: await skills.validateDraft(principalOf(c), c.req.param("id"), () => knownToolNames(ctx)) }));
+		api.post("/skills/drafts/:id/publish", async (c) => {
+			const p = principalOf(c);
+			const b = await jsonBody<{ scope?: "personal" | "org" }>(c).catch(() => ({}) as { scope?: "personal" | "org" });
+			const s = await skills.publishDraft(p, c.req.param("id"), b.scope);
+			return c.json({ skill: await skills.dto(p, s, true) });
+		});
+		api.get("/skills/:id", async (c) => {
+			const { p, s } = await skillOr404(c, "read");
+			return c.json({ skill: await skills.dto(p, s, true) });
+		});
+		api.post("/skills/:id/versions", async (c) => {
+			const p = principalOf(c);
+			await skills.addVersion(p, c.req.param("id"), await jsonBody(c));
+			return c.json({ skill: await skills.dto(p, skills.skill(c.req.param("id"))!, true) });
+		});
+		api.post("/skills/:id/install", async (c) => {
+			const { p, s } = await skillOr404(c, "use");
+			const b = await jsonBody<{ pinVersionNo?: number | null }>(c).catch(() => ({}) as { pinVersionNo?: number | null });
+			await skills.installFor(p, s.id, b.pinVersionNo ?? null);
+			return c.json({ skill: await skills.dto(p, skills.skill(s.id)!) });
+		});
+		api.patch("/skills/:id/install", async (c) => {
+			const { p, s } = await skillOr404(c, "use");
+			await skills.setInstall(p, s.id, await jsonBody(c));
+			return c.json({ skill: await skills.dto(p, skills.skill(s.id)!) });
+		});
+		api.post("/skills/:id/install/upgrade", async (c) => {
+			const { p, s } = await skillOr404(c, "use");
+			await skills.upgrade(p, s.id);
+			return c.json({ skill: await skills.dto(p, skills.skill(s.id)!) });
+		});
+		api.post("/skills/:id/install/rollback", async (c) => {
+			const { p, s } = await skillOr404(c, "use");
+			await skills.rollback(p, s.id);
+			return c.json({ skill: await skills.dto(p, skills.skill(s.id)!) });
+		});
+		api.post("/skills/:id/grants", async (c) => {
+			const { p, s } = await skillOr404(c, "use");
+			const b = await jsonBody<{ versionNo: number; permissions: string[] }>(c);
+			await skills.grant(p, s.id, Number(b.versionNo), b.permissions ?? []);
+			return c.json({ skill: await skills.dto(p, skills.skill(s.id)!) });
+		});
+		api.get("/skills/:id/runs", async (c) => {
+			const { p, s } = await skillOr404(c, "read");
+			const manage = (await skills.decide(p, "write", s.id)).allow;
+			return c.json({ runs: skills.runs(s.id, manage ? undefined : p.userId) });
 		});
 
 		// ---- connectors ----
