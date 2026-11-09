@@ -233,6 +233,27 @@ export interface BudgetGate {
 	checkSubmit(principal: Principal, spaceId: string, projectId?: string): Promise<{ allow: true } | { allow: false; reason: string }>;
 }
 
+// ---------- fine-grained authorization (round 4; implemented by the RBAC group in server/src/identity) ----------
+/** Where a permission applies. Department scope includes sub-departments. */
+export type AuthzScope =
+	| { readonly kind: "org" }
+	| { readonly kind: "department"; readonly id: string }
+	| { readonly kind: "project"; readonly id: string };
+
+export interface AuthzExplanation {
+	readonly allow: boolean;
+	/** Each rule that contributed: role grants (with scope), user grants/denies, built-in owner rule. Deny beats allow. */
+	readonly because: readonly { readonly source: "role" | "user_grant" | "user_deny" | "owner" | "default"; readonly detail: string; readonly effect: "allow" | "deny" }[];
+}
+
+export interface AuthzService {
+	/** Permission ids come from the catalog in shared/permissions.ts, e.g. "member.disable", "skill.review", "model.provider.manage". Always evaluated against current state. */
+	has(principal: Principal, permission: string, scope?: AuthzScope): Promise<boolean>;
+	/** Throws HttpError(403) when not granted. */
+	require(principal: Principal, permission: string, scope?: AuthzScope): Promise<void>;
+	explain(principal: Principal, permission: string, scope?: AuthzScope): Promise<AuthzExplanation>;
+}
+
 // ---------- module system ----------
 export interface Services {
 	identity: IdentityService;
@@ -243,6 +264,8 @@ export interface Services {
 	files: FileService;
 	effects: EffectsApi;
 	budget: BudgetGate;
+	/** Optional until the RBAC group lands it: callers fall back to orgRole owner/admin checks when absent. */
+	authz: AuthzService;
 	[name: string]: unknown;
 }
 
