@@ -35,8 +35,10 @@ export function validTimezone(tz: string): boolean {
 	}
 }
 
+/** "YYYY-MM-DD HH:mm:ss <zone>" in the automation's timezone, e.g. "2026-03-09 09:00:00 EDT" / "… GMT+8". */
 export function localTime(iso: string, tz: string): string {
-	return new Intl.DateTimeFormat("sv-SE", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZoneName: "short" }).format(new Date(iso));
+	const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZoneName: "short" }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+	return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ${parts.timeZoneName}`;
 }
 
 /** Scheduled time of a run (manual/webhook runs use their creation time). */
@@ -203,7 +205,7 @@ export class AutomationService {
 			JSON.stringify(dest),
 			Math.max(1, Math.min(input.maxConcurrent ?? 1, 10)),
 			input.missedPolicy ?? "skip",
-			Math.max(10_000, Math.min(input.maxDurationMs ?? 30 * 60_000, 24 * 3600_000)),
+			Math.max(1000, Math.min(input.maxDurationMs ?? 30 * 60_000, 24 * 3600_000)),
 			input.enabled === false ? 0 : 1,
 			token ? sha256Hex(token) : null,
 			next,
