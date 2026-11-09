@@ -64,6 +64,15 @@ test("X-LOOP: goal → knowledge citation → approval → file v1 → v2 → re
 		const { conversation } = await t.json("POST", "/api/conversations", { token: alice.token, json: { projectId: project.id, title: "Q3 复盘" } });
 		const sp = conversation.spaceId as string;
 		const cid = conversation.conversationId as number;
+		// M01-A: same conversation, no workflow choice — plain chat, then an attachment, then a knowledge reference.
+		await send(t, alice.token, sp, cid, "你好，先简单聊两句");
+		let plain = await idle(t, alice.token, sp, cid, "plain chat");
+		assert.ok(plain.entries.some((e: any) => e.kind === "assistant" && e.text && e.toolCalls.length === 0), "plain chat answered without tools");
+		await send(t, alice.token, sp, cid, `看看附件 [[call file_read {"versionId":"${src.version.versionId}"}]]`, { attachments: [{ fileId: src.file.id, versionId: src.version.versionId, name: "销售数据说明.md" }] });
+		plain = await idle(t, alice.token, sp, cid, "attachment run");
+		const att = plain.entries.filter((e: any) => e.kind === "user").at(-1);
+		assert.equal(att.attachments?.[0]?.versionId, src.version.versionId, "attachment recorded on the user message");
+		assert.match(toolResults(plain, "file_read")[0].text, /87\.5%/, "agent read the attached file");
 		await send(t, alice.token, sp, cid, `帮我做一份华东区复盘 [[call kb_search {"query":"回款率"}]]`, { knowledgeRefs: [{ kbId: kb.id, name: "复盘资料" }] });
 		let s = await idle(t, alice.token, sp, cid, "kb_search run");
 		const kr = toolResults(s, "kb_search")[0];
