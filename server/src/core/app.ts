@@ -36,7 +36,7 @@ export interface App {
 export async function createApp(config: AppConfig, modules: readonly WorkroomModule[]): Promise<App> {
 	const db = new AppDb(join(config.dataDir, "app.sqlite"));
 	const blobs = new LocalBlobStore(join(config.dataDir, "blobs"));
-	const ctx: AppContext = { config, db, blobs, services: new Registry() };
+	const ctx: AppContext = { config, db, blobs, services: new Registry(), modules };
 	for (const m of modules) db.migrate(m.name, m.migrations ?? []);
 	for (const m of modules) await m.init?.(ctx);
 

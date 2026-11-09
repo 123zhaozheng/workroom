@@ -9,6 +9,7 @@ import type { Hono } from "hono";
 import type { Extension, Harness } from "@earendil-works/pi-durable";
 import type { Context as ChordContext } from "@earendil-works/chord/context";
 import type { AppDb, Migration } from "./db.ts";
+import type { JsonValue } from "@earendil-works/pi-ai";
 import type { BlobStore } from "./blobs.ts";
 import type { AppConfig } from "./config.ts";
 
@@ -185,6 +186,45 @@ export interface FileService {
 	getVersion(principal: Principal, versionId: string): Promise<{ ref: FileVersionRef; bytes: Uint8Array; provenance: FileProvenance } | null>;
 }
 
+// ---------- approvals & external effects (provided by group A, consumed by D and others) ----------
+/** Minimal view of pi-durable's ToolExecutionApi needed by effects (pass the real `api`). */
+export type ToolApiLike = import("@earendil-works/pi-durable").ToolExecutionApi;
+
+export interface ApprovalRequest {
+	readonly title: string;
+	/** Exactly what will happen if approved (shown to the user verbatim). */
+	readonly summary: string;
+	readonly detail?: JsonValue;
+	readonly risk: "low" | "medium" | "high";
+	/** Who may decide; default: any principal with write access to the conversation's space. */
+	readonly approverUserIds?: readonly string[];
+}
+export interface ApprovalDecision {
+	readonly decision: "approved" | "rejected";
+	readonly by: string;
+	readonly at: string;
+	readonly note?: string;
+}
+export type EffectOutcome<T> =
+	| { readonly status: "done"; readonly receipt: T; readonly replayed: boolean }
+	| { readonly status: "needs_reconciliation"; readonly detail: string; readonly effectId: string };
+
+export interface EffectsApi {
+	/** Durable approval: stored in a `wr.approvals` doc (fork: "initial"); survives restarts; a replay-safe tool rerun reattaches by callId. */
+	requestApproval(api: ToolApiLike, request: ApprovalRequest, context: ChordContext): Promise<ApprovalDecision>;
+	/**
+	 * External write with intent → dispatching → receipt, recorded in a `wr.effects` doc before/after `perform`.
+	 * On replay: receipt present → returns it (replayed: true, perform NOT called);
+	 * dispatching without receipt → needs_reconciliation (perform NOT called again). Tools must be `replay: "safe"`.
+	 */
+	externalEffect<T extends JsonValue>(api: ToolApiLike, spec: { key: string; target: string; summary: string; idempotencyKey?: string }, perform: (idempotencyKey: string) => Promise<T>, context: ChordContext): Promise<EffectOutcome<T>>;
+}
+
+/** Optional budget gate (group E). Runtime calls it before admitting input / starting subagents. */
+export interface BudgetGate {
+	checkSubmit(principal: Principal, spaceId: string, projectId?: string): Promise<{ allow: true } | { allow: false; reason: string }>;
+}
+
 // ---------- module system ----------
 export interface Services {
 	identity: IdentityService;
@@ -193,6 +233,8 @@ export interface Services {
 	models: ModelGateway;
 	knowledge: KnowledgeService;
 	files: FileService;
+	effects: EffectsApi;
+	budget: BudgetGate;
 	[name: string]: unknown;
 }
 
@@ -201,6 +243,8 @@ export interface AppContext {
 	readonly db: AppDb;
 	readonly blobs: BlobStore;
 	readonly services: ServiceRegistry;
+	/** All loaded modules (runtime uses this to install every module's pi-durable extensions). */
+	readonly modules: readonly WorkroomModule[];
 }
 
 export interface ServiceRegistry {
