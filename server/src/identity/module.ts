@@ -9,6 +9,7 @@ import { HttpError, newId, nowIso } from "../core/http.ts";
 import type { AppDb } from "../core/db.ts";
 import { SecretBox, sha256Hex } from "./secrets.ts";
 import { registerIdentityRoutes } from "./routes.ts";
+import { Authz } from "./authz.ts";
 
 const MIGRATIONS: { version: number; name: string; sql: string }[] = [
 	{
@@ -60,6 +61,51 @@ CREATE INDEX id_share_links_res ON id_share_links(org_id, resource_kind, resourc
 CREATE TABLE id_oidc_providers (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, issuer TEXT NOT NULL, client_id TEXT NOT NULL, client_secret_enc TEXT, auto_join_role TEXT NOT NULL DEFAULT 'member', allowed_domains TEXT NOT NULL DEFAULT '[]', enabled INTEGER NOT NULL DEFAULT 1, created_by TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE id_oidc_states (state TEXT PRIMARY KEY, provider_id TEXT NOT NULL, nonce TEXT NOT NULL, code_verifier TEXT NOT NULL, redirect_uri TEXT NOT NULL, return_to TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT);
 CREATE TABLE id_external_identities (provider_id TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT, created_at TEXT NOT NULL, last_login_at TEXT, PRIMARY KEY (provider_id, subject));
+`,
+	},
+	{
+		version: 4,
+		name: "rbac: roles, assignments, direct grants, user groups; migrate orgRole to built-in role assignments",
+		sql: `
+CREATE TABLE id_roles (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', permissions TEXT NOT NULL DEFAULT '[]', created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
+CREATE UNIQUE INDEX id_roles_name ON id_roles(org_id, name) WHERE archived_at IS NULL;
+CREATE TABLE id_role_assignments (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, subject_kind TEXT NOT NULL, subject_id TEXT NOT NULL, role_id TEXT NOT NULL, scope_kind TEXT NOT NULL DEFAULT 'org', scope_id TEXT NOT NULL DEFAULT '', created_by TEXT, created_at TEXT NOT NULL, UNIQUE (org_id, subject_kind, subject_id, role_id, scope_kind, scope_id));
+CREATE INDEX id_ra_subject ON id_role_assignments(org_id, subject_kind, subject_id);
+CREATE INDEX id_ra_role ON id_role_assignments(org_id, role_id);
+CREATE TABLE id_user_grants (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, user_id TEXT NOT NULL, permission TEXT NOT NULL, effect TEXT NOT NULL, scope_kind TEXT NOT NULL DEFAULT 'org', scope_id TEXT NOT NULL DEFAULT '', reason TEXT, created_by TEXT, created_at TEXT NOT NULL, UNIQUE (org_id, user_id, permission, effect, scope_kind, scope_id));
+CREATE INDEX id_ug_user ON id_user_grants(org_id, user_id);
+CREATE TABLE id_groups (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', created_by TEXT, created_at TEXT NOT NULL, archived_at TEXT);
+CREATE TABLE id_group_members (group_id TEXT NOT NULL, user_id TEXT NOT NULL, created_at TEXT NOT NULL, removed_at TEXT, PRIMARY KEY (group_id, user_id));
+ALTER TABLE id_invites ADD COLUMN role_id TEXT;
+CREATE TABLE id_rbac_flags (k TEXT PRIMARY KEY, v TEXT);
+
+-- Migration of existing orgs: every live member gets exactly one base role assignment derived from the legacy orgRole.
+INSERT OR IGNORE INTO id_role_assignments (id, org_id, subject_kind, subject_id, role_id, scope_kind, scope_id, created_by, created_at)
+SELECT 'ra_' || lower(hex(randomblob(10))), org_id, 'user', user_id, 'builtin:' || CASE role WHEN 'owner' THEN 'owner' WHEN 'admin' THEN 'admin' ELSE 'member' END, 'org', '', 'migration', strftime('%Y-%m-%dT%H:%M:%fZ','now')
+FROM id_org_members WHERE removed_at IS NULL;
+
+-- Keep id_org_members.role (kept for Principal.orgRole compatibility) and the base assignment in step for writers that
+-- still use the column (createUser/addOrgMember, tests, other modules). RBAC code sets id_rbac_flags('sync') while it writes.
+CREATE TRIGGER id_om_rbac_ins AFTER INSERT ON id_org_members WHEN NEW.removed_at IS NULL BEGIN
+  INSERT OR IGNORE INTO id_role_assignments (id, org_id, subject_kind, subject_id, role_id, scope_kind, scope_id, created_by, created_at)
+  VALUES ('ra_' || lower(hex(randomblob(10))), NEW.org_id, 'user', NEW.user_id, 'builtin:' || CASE NEW.role WHEN 'owner' THEN 'owner' WHEN 'admin' THEN 'admin' ELSE 'member' END, 'org', '', 'system', strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+END;
+CREATE TRIGGER id_om_rbac_role AFTER UPDATE OF role ON id_org_members WHEN OLD.role IS NOT NEW.role AND NEW.removed_at IS NULL AND (SELECT v FROM id_rbac_flags WHERE k = 'sync') IS NULL BEGIN
+  DELETE FROM id_role_assignments WHERE org_id = NEW.org_id AND subject_kind = 'user' AND subject_id = NEW.user_id AND scope_kind = 'org' AND role_id IN ('builtin:owner', 'builtin:admin', 'builtin:member', 'builtin:guest');
+  INSERT OR IGNORE INTO id_role_assignments (id, org_id, subject_kind, subject_id, role_id, scope_kind, scope_id, created_by, created_at)
+  VALUES ('ra_' || lower(hex(randomblob(10))), NEW.org_id, 'user', NEW.user_id, 'builtin:' || CASE NEW.role WHEN 'owner' THEN 'owner' WHEN 'admin' THEN 'admin' ELSE 'member' END, 'org', '', 'system', strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+END;
+-- Leaving the org drops every role assignment and direct grant; re-joining starts from the base role again (no stale elevation).
+CREATE TRIGGER id_om_rbac_removed AFTER UPDATE OF removed_at ON id_org_members WHEN NEW.removed_at IS NOT NULL AND OLD.removed_at IS NULL BEGIN
+  DELETE FROM id_role_assignments WHERE org_id = NEW.org_id AND subject_kind = 'user' AND subject_id = NEW.user_id;
+  DELETE FROM id_user_grants WHERE org_id = NEW.org_id AND user_id = NEW.user_id;
+  UPDATE id_group_members SET removed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE user_id = NEW.user_id AND removed_at IS NULL AND group_id IN (SELECT id FROM id_groups WHERE org_id = NEW.org_id);
+END;
+CREATE TRIGGER id_om_rbac_readd AFTER UPDATE OF removed_at ON id_org_members WHEN NEW.removed_at IS NULL AND OLD.removed_at IS NOT NULL BEGIN
+  DELETE FROM id_role_assignments WHERE org_id = NEW.org_id AND subject_kind = 'user' AND subject_id = NEW.user_id;
+  INSERT OR IGNORE INTO id_role_assignments (id, org_id, subject_kind, subject_id, role_id, scope_kind, scope_id, created_by, created_at)
+  VALUES ('ra_' || lower(hex(randomblob(10))), NEW.org_id, 'user', NEW.user_id, 'builtin:' || CASE NEW.role WHEN 'owner' THEN 'owner' WHEN 'admin' THEN 'admin' ELSE 'member' END, 'org', '', 'system', strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+END;
 `,
 	},
 ];
@@ -137,11 +183,14 @@ export class Identity implements IdentityService, AccessControl {
 	readonly #resolvers = new Map<string, Resolver>();
 	readonly #shareRenderers = new Map<string, ShareRenderer>();
 	readonly secrets: SecretBox;
+	/** Fine-grained authorization (service "authz"). */
+	readonly authz: Authz;
 	/** Injectable clock (tests). */
 	now: () => number = () => Date.now();
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
 		this.secrets = new SecretBox(ctx.config.secretKey);
+		this.authz = new Authz(ctx, this);
 	}
 	get db(): AppDb {
 		return this.#ctx.db;
@@ -246,7 +295,8 @@ export class Identity implements IdentityService, AccessControl {
 			case "org":
 				if (resource.id !== live.orgId) return { allow: false, reason: "other_org" };
 				if (action === "read" || action === "use") return { allow: true, reason: "member" };
-				return live.orgRole === "member" ? { allow: false, reason: "not_admin" } : { allow: true, reason: live.orgRole };
+				// Org-level "admin"/"write"/"share"/"delete" = may change organisation settings (RBAC: org.settings.manage).
+				return this.authz.hasSync(live, "org.settings.manage") ? { allow: true, reason: live.orgRole === "member" ? "rbac" : live.orgRole } : { allow: false, reason: "not_admin" };
 			case "space":
 				return this.spaceDecision(live, action, this.space(resource.id));
 			case "conversation":
@@ -412,6 +462,7 @@ export const identityModule: WorkroomModule = {
 		const id = new Identity(ctx);
 		ctx.services.provide("identity", id);
 		ctx.services.provide("acl", id);
+		ctx.services.provide("authz", id.authz);
 		ctx.services.provide("audit", { record: (input: Parameters<AuditService["record"]>[0]) => id.audit(input) } satisfies AuditService);
 		// Built-in share renderer for projects (name + description only; no member data leaves the org).
 		id.registerShareRenderer("project", async (res) => {
