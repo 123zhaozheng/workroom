@@ -186,6 +186,8 @@ test("assistant default model is checked against the gateway list; a later-unava
 	try {
 		if (!t.app.ctx.services.has("models")) return tc.skip("model gateway not loaded");
 		const a = await t.user("team-model@example.com");
+		// A provider without a key is listed as "blocked" (the old env-seeded Claude/GPT placeholders no longer exist).
+		await t.json("POST", "/api/admin/model-providers", { token: a.token, json: { name: "未配置密钥", type: "openai-completions", baseUrl: "https://api.example.invalid/v1", models: [{ id: "no-key-model", name: "未配置密钥的模型" }] } });
 		const blocked = (await t.json("GET", "/api/models", { token: a.token })).models.find((m: any) => m.status === "blocked");
 		assert.ok(blocked, "the gateway lists a blocked (no credentials) model");
 		const r1 = await t.json("POST", "/api/assistants", { token: a.token, json: { name: "x", model: blocked.ref, members: [] }, expect: 409 });

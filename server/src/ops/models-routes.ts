@@ -11,6 +11,7 @@ import type { AppContext, AppEnv, Principal } from "../core/contracts.ts";
 import { HttpError, jsonBody, principalOf } from "../core/http.ts";
 import { audit, type Identity } from "../identity/module.ts";
 import type { Gateway } from "./gateway.ts";
+import { configReport } from "./models-bootstrap.ts";
 import { PRESETS } from "./models-presets.ts";
 import { adminModelDto, createProviderRow, deleteProviderRow, providerDto, removeEntry, saveEntry, updateProviderRow, validateSpec, type EntryPatch, type ProviderInput } from "./models-service.ts";
 import type { ProviderRow } from "./models-types.ts";
@@ -126,7 +127,7 @@ export function registerModelRoutes(api: Hono<AppEnv>, ctx: AppContext, gw: Gate
 			const out: Record<string, unknown> = { providers: rows.map((r) => providerDto(gw, r, p.orgId)) };
 			if (mode === "admin") {
 				out.fixture = gw.fixtureListed() ? { id: "fixture", name: "测试模型（Fixture）", detail: "确定性脚本回复；不是真实 AI，费用恒为 0。由 WORKROOM_FIXTURE_MODEL=0 关闭。" } : null;
-				out.settings = { personalProviders: gw.personalProvidersAllowed(p.orgId), defaultModel: gw.orgDefault(p.orgId) ?? null, secretKeyConfigured: gw.secrets.available };
+				out.settings = { personalProviders: gw.personalProvidersAllowed(p.orgId), defaultModel: gw.orgDefault(p.orgId) ?? null, secretKeyConfigured: gw.secrets.available, config: { path: configReport.path ?? null, providers: configReport.providers, errors: configReport.errors } };
 			}
 			out.presets = PRESETS.filter((x) => mode === "admin" || x.type !== "builtin");
 			if (mode === "admin") out.builtins = [...gw.builtinProviders().values()].map((b) => ({ id: b.id, name: b.name, baseUrl: b.baseUrl, models: b.getModels().length, auth: Object.keys(b.auth), configured: !!gw.rowOf(b.id) })).sort((a, b) => a.name.localeCompare(b.name));

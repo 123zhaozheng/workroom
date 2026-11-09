@@ -1,96 +1,96 @@
-// 模型与渠道 tab. Owned by the MODELS group from round 4 (the admin shell only mounts it).
-import { KeyRound, Wifi } from "lucide-react";
-import { useState } from "react";
-import type { AdminPlatformModelDTO, ChannelDTO } from "@shared/ops";
-import { errorText, patch, post } from "@/lib/api";
+// 模型与渠道 tab (MODELS group, round 4): pi-ai native 模型服务商. Providers (OpenAI-compatible Chat Completions, OpenAI Responses,
+// Claude-compatible Messages, pi-ai built-ins) → test connection → 获取模型列表 → enable models / set visibility.
+// The admin shell mounts <ModelsAdmin /> only.
+import { FlaskConical, Info } from "lucide-react";
+import type { ModelProvidersResponse, PlatformModelDTO } from "@shared/ops";
+import { put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { useAct, Table, Row } from "@/features/admin/common";
+import { useAct } from "@/features/admin/common";
+import { useViewerPerms } from "@/features/admin/rbac-ui";
+import { ProviderPanel } from "./ProviderPanel";
+
+export { PersonalProviders } from "./PersonalProviders";
 
 export function ModelsAdmin() {
-	const models = useApi<{ models: AdminPlatformModelDTO[] }>("/admin/models");
-	const channels = useApi<{ channels: ChannelDTO[] }>("/admin/channels");
+	const perms = useViewerPerms();
+	const canProviders = perms.org.has("model.provider.manage");
+	const canModels = perms.org.has("model.manage");
+	const res = useApi<ModelProvidersResponse>("/admin/model-providers");
+	const models = useApi<{ models: PlatformModelDTO[]; defaultModelId?: string }>("/models");
 	const { busy, run, note } = useAct(() => {
+		res.reload();
 		models.reload();
-		channels.reload();
 	});
-	const [tests, setTests] = useState<Record<string, string>>({});
+	const settings = res.data?.settings;
+	const choices = (models.data?.models ?? []).filter((m) => !m.fixture && !m.personal && !(m as { legacy?: boolean }).legacy && m.status === "ready");
 	return (
-		<div className="space-y-6">
+		<div className="space-y-6" data-testid="models-admin">
 			{note}
-			<section>
-				<h3 className="mb-2 text-[13px] font-medium text-fg-muted">平台模型（用户可选）</h3>
-				<Loadable state={models} what="模型" need="E 组：GET /api/admin/models">
-					<Table testId="admin-models">
-						{(models.data?.models ?? []).map((m) => (
-							<div key={m.id}>
-								<Row>
-									<span className="min-w-0 flex-1">
-										<span className="block font-medium">{m.fixture ? "测试模型（非真实 AI）" : m.label}</span>
-										<span className="block truncate text-xs text-fg-subtle">
-											{m.routes.length} 条路由 · {m.capabilities.join("/")}
-											{m.statusDetail ? ` · ${m.statusDetail}` : ""}
-										</span>
-									</span>
-									<Badge tone={m.status === "ready" ? "success" : m.status === "fixture" ? "warning" : "danger"}>{m.status === "ready" ? "可用" : m.status === "fixture" ? "测试" : "不可用"}</Badge>
-									<label className="flex items-center gap-1.5 text-xs text-fg-muted">
-										<input type="checkbox" checked={m.enabled} disabled={busy} onChange={(e) => run(() => patch(`/admin/models/${m.id}`, { enabled: e.target.checked }))} />
-										对成员开放
-									</label>
-								</Row>
-							</div>
-						))}
-					</Table>
-				</Loadable>
+			<section className="rounded-xl border border-border bg-surface p-3 text-[13px]" data-testid="model-settings">
+				<div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+					<label className="flex items-center gap-2">
+						<span className="text-fg-muted">组织默认模型</span>
+						<Select
+							value={models.data?.defaultModelId && choices.some((m) => m.id === models.data?.defaultModelId) ? models.data.defaultModelId : ""}
+							disabled={busy || !canModels}
+							className="h-8 max-w-64 text-[13px]"
+							data-testid="default-model"
+							onChange={(e) => {
+								const m = choices.find((x) => x.id === e.target.value);
+								void run(() => put("/admin/model-settings", { defaultModel: m ? { provider: m.ref.provider, modelId: m.ref.modelId } : null }));
+							}}
+						>
+							<option value="">自动（第一个可用模型）</option>
+							{choices.map((m) => (
+								<option key={m.id} value={m.id}>
+									{m.label}
+								</option>
+							))}
+						</Select>
+					</label>
+					<label className="flex items-center gap-1.5">
+						<input type="checkbox" checked={!!settings?.personalProviders} disabled={busy || !canProviders} onChange={(e) => run(() => put("/admin/model-settings", { personalProviders: e.target.checked }))} data-testid="personal-providers-toggle" />
+						允许成员自带密钥（个人服务商，仅本人可见可用）
+					</label>
+				</div>
+				{settings && !settings.secretKeyConfigured ? <p className="mt-2 text-xs text-warning">服务端未配置 WORKROOM_SECRET_KEY：无法直接保存密钥。可改用“引用环境变量名”的方式（WORKROOM_ 开头）。</p> : null}
+				{settings?.config.path ? (
+					<p className="mt-2 flex items-start gap-1 text-xs text-fg-subtle">
+						<Info className="mt-0.5 size-3.5 shrink-0" />
+						<span>
+							配置文件 <code>{settings.config.path}</code>：已加载 {settings.config.providers.length} 个服务商（只读）。
+							{settings.config.errors.length ? <span className="text-danger"> 问题：{settings.config.errors.join("；")}</span> : null}
+						</span>
+					</p>
+				) : null}
 			</section>
+
 			<section>
-				<h3 className="mb-2 text-[13px] font-medium text-fg-muted">上游渠道（凭据只在服务端；密钥从不返回）</h3>
-				<Loadable state={channels} what="渠道" need="E 组：GET /api/admin/channels">
-					<Table testId="admin-channels">
-						{(channels.data?.channels ?? []).map((c) => (
-							<div key={c.id}>
-								<Row>
-									<span className="min-w-0 flex-1">
-										<span className="block font-medium">{c.name}</span>
-										<span className="block truncate text-xs text-fg-subtle">
-											{c.provider}
-											{c.baseUrl ? ` · ${c.baseUrl}` : ""} · 凭据：{c.credential.kind === "env" ? `环境变量 ${c.credential.envVar ?? ""}` : c.credential.kind === "stored" ? `已加密保存${c.credential.hint ? `（${c.credential.hint}）` : ""}` : "无"}
-											{c.healthDetail ? ` · ${c.healthDetail}` : ""}
-										</span>
-										{tests[c.id] ? <span className="block text-xs text-fg-muted">测试：{tests[c.id]}</span> : null}
-									</span>
-									<Badge tone={c.health === "ready" ? "success" : c.health === "circuit_open" ? "warning" : "danger"}>{c.health === "ready" ? "就绪" : c.health === "circuit_open" ? "熔断中" : "不可用"}</Badge>
-									<Button
-										size="sm"
-										disabled={busy}
-										onClick={() =>
-											run(async () => {
-												try {
-													const r = await post<Record<string, unknown>>(`/admin/channels/${c.id}/test`);
-													setTests((t) => ({ ...t, [c.id]: r.ok === false ? `失败 ${String(r.error ?? r.errorMessage ?? "")}` : `成功${r.latencyMs ? `（${r.latencyMs} ms）` : ""}` }));
-												} catch (e) {
-													setTests((t) => ({ ...t, [c.id]: `失败：${errorText(e)}` }));
-												}
-											})
-										}
-									>
-										<Wifi />
-										测试连通
-									</Button>
-									<label className="flex items-center gap-1.5 text-xs text-fg-muted">
-										<input type="checkbox" checked={c.status === "enabled"} disabled={busy} onChange={(e) => run(() => patch(`/admin/channels/${c.id}`, { status: e.target.checked ? "enabled" : "disabled" }))} />
-										启用
-									</label>
-								</Row>
-							</div>
-						))}
-					</Table>
+				<h3 className="mb-2 text-[13px] font-medium text-fg-muted">模型服务商（每个都是一个 pi-ai provider；密钥只在服务端，从不返回浏览器）</h3>
+				<Loadable state={res} what="模型服务商" need="GET /api/admin/model-providers">
+					<ProviderPanel
+						base="/admin/model-providers"
+						canProviders={canProviders}
+						canModels={canModels}
+						catalog={res.data}
+						providers={res.data?.providers ?? []}
+						defaultModelId={models.data?.defaultModelId}
+						reload={() => {
+							res.reload();
+							models.reload();
+						}}
+					/>
+					{res.data?.fixture ? (
+						<p className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2 text-xs text-fg-muted" data-testid="fixture-note">
+							<FlaskConical className="size-4 shrink-0" />
+							<span>
+								<Badge tone="warning">测试模型，非真实 AI</Badge> {res.data.fixture.detail}
+							</span>
+						</p>
+					) : null}
 				</Loadable>
-				<p className="mt-2 flex items-center gap-1 text-xs text-fg-subtle">
-					<KeyRound className="size-3.5" />
-					新增渠道或保存密钥需要服务端配置 WORKROOM_SECRET_KEY；未配置时服务端会拒绝保存密钥。
-				</p>
 			</section>
 		</div>
 	);

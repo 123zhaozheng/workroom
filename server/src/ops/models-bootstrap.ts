@@ -10,7 +10,7 @@ import type { AppContext } from "../core/contracts.ts";
 import { nowIso } from "../core/http.ts";
 import type { Gateway } from "./gateway.ts";
 import { logEvent } from "./log.ts";
-import { createProviderRow, saveEntry, updateProviderRow, validateEnvRef, type ProviderInput } from "./models-service.ts";
+import { createProviderRow, saveEntry, updateProviderRow, validateEnvRef, validateSpec, type ProviderInput } from "./models-service.ts";
 import { GENERIC_TYPES, json, type ModelSpec, type ProviderRow } from "./models-types.ts";
 
 export interface ConfigReport {
@@ -242,6 +242,17 @@ export async function applyConfigFile(ctx: AppContext, gw: Gateway): Promise<voi
 				const type = (d.builtin ? "builtin" : (d.type ?? d.api)) as ProviderInput["type"];
 				if (type !== "builtin" && !(GENERIC_TYPES as readonly string[]).includes(type ?? "")) throw new Error(`type 取值 ${GENERIC_TYPES.join(" / ")}（或 builtin 字段）`);
 				const pid = type === "builtin" ? d.builtin! : id;
+				// validate every model BEFORE touching the DB: an invalid provider is skipped as a whole
+				const api = type === "builtin" ? (gw.builtinProviders().get(pid)?.getModels()[0]?.api ?? "openai-completions") : (type as string);
+				for (const m of d.models ?? []) {
+					const { id: mid, enabled: _e, visibility: _v, fallbacks: _f, defaultThinking: _d, description: _ds, sort: _s, ...spec } = m as Record<string, any>;
+					if (typeof mid !== "string") throw new Error(`models[]: 缺少 id`);
+					try {
+						validateSpec(api, spec);
+					} catch (e) {
+						throw new Error(`模型「${mid}」：${(e as Error).message}`);
+					}
+				}
 				const row = await upsertInstanceProvider(gw, pid, { name: d.name ?? id, type, builtinId: d.builtin, preset: d.preset, baseUrl: d.baseUrl, apiKeyEnv: d.apiKeyEnv ?? null, headers: resolveRefs(`${id}.headers`, d.headers) ?? null, env: resolveRefs(`${id}.env`, d.env) ?? null, authStyle: d.authStyle ?? "default", keyless: !!d.keyless, timeoutMs: d.timeoutMs ?? null }, "config", { anyEnv: true });
 				wanted.add(pid);
 				await gw.reload(row.id);
