@@ -33,7 +33,7 @@ export function ModelsAdmin() {
 					<label className="flex items-center gap-2">
 						<span className="text-fg-muted">组织默认模型</span>
 						<Select
-							value={models.data?.defaultModelId && choices.some((m) => m.id === models.data?.defaultModelId) ? models.data.defaultModelId : ""}
+							value={settings?.defaultModel && choices.some((m) => m.ref.provider === settings.defaultModel!.provider && m.ref.modelId === settings.defaultModel!.modelId) ? `${settings.defaultModel.provider}/${settings.defaultModel.modelId}` : ""}
 							disabled={busy || !canModels}
 							className="h-8 max-w-64 text-[13px]"
 							data-testid="default-model"
