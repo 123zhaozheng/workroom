@@ -14,6 +14,9 @@
 
 ## To A (runtime)
 
+Status (2026-11-09): items 1 and 3 are done on A's side (`actorForToolCall`, `reinstallExtension`, every module's extensions installed);
+D's e2e test `server/test/tools-e2e.test.ts` passes through the real runtime (file tools + MCP write via durable approval/effects).
+
 1. **Install D's extensions** from `filesModule.extensions(ctx)` (`wr.files`: file_create, file_revise, file_read, file_list) and
    `toolsModule.extensions(ctx)` (`wr.mcp`, `wr.skills`, `wr.sandbox`, `wr.browser`). All tools resolve their actor through
    `runtime.actorForTool(api, spaceId, context)`; D passes `""` for spaceId when it cannot tell (A's implementation then reads its
@@ -27,8 +30,12 @@
    exists) so the scheduler notices; without it the lazy getter still serves the new list on the next request preparation.
 4. **Effects** (`ctx.services.get("effects")`): MCP tools whose policy is `write` call `requestApproval` then `externalEffect` with
    key `mcp:<connector>:<tool>:<callId>`. If `effects` is not provided, those calls fail closed (no external write happens).
-5. **Fixture e2e**: D's e2e test drives `[[call file_create {...}]]` through `POST /conversations/:spaceId/:id/messages` once the
-   runtime module is loadable; it is skipped (with a reason) while `services.has("runtime")` is false.
+5. **Fixture e2e**: D's e2e test drives `[[call file_create {...}]]` through `POST /conversations/:spaceId/:id/messages` (passing).
+6. **Sandbox cancellation**: `sandbox_exec` kills its namespace when the tool's `context.abortSignal` fires; please keep aborting
+   running tool tasks on conversation abort so a user's "stop" reaches long sandbox runs.
+7. **Per-org tool visibility (future)**: the registry is process-wide, so D marks MCP tools `callers: ["model"]` (code mode scripts
+   cannot call them) and filters `tool_search` by org/user. A per-org registry or per-conversation extension selection would let
+   code mode call connector tools safely.
 
 ## To C (knowledge)
 
