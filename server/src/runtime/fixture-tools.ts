@@ -6,7 +6,7 @@ import { appendFileSync, closeSync, fsyncSync, mkdirSync, openSync } from "node:
 import { join } from "node:path";
 import type { Context } from "@earendil-works/chord/context";
 import { defineExtension, defineTool, type Extension } from "@earendil-works/pi-durable";
-import { num, obj, opt, str } from "@earendil-works/pi-schema";
+import { bool, num, obj, opt, str } from "@earendil-works/pi-schema";
 import type { Effects } from "./effects.ts";
 import type { Runtime } from "./service.ts";
 
@@ -65,7 +65,7 @@ export function createFixtureTools(rt: Runtime, effects: Effects): Extension {
 	const effect = defineTool({
 		name: "wr_fixture_effect",
 		description: "[test tool] Perform a fake external write through the effects protocol (intent → dispatching → receipt).",
-		parameters: obj({ key: str(), holdMs: opt(num()), holdAfterMs: opt(num()), target: opt(str()) }),
+		parameters: obj({ key: str(), holdMs: opt(num()), holdAfterMs: opt(num()), target: opt(str()), unknownOutcome: opt(bool()) }),
 		replay: "safe",
 		execute: async (args, api, context) => {
 			const actor = await rt.actorForTool(api, "", context);
@@ -80,6 +80,7 @@ export function createFixtureTools(rt: Runtime, effects: Effects): Extension {
 					fsyncSync(fd);
 					closeSync(fd);
 					if (args.holdMs) await sleep(args.holdMs, context);
+					if (args.unknownOutcome) throw new Error("fixture: target timed out after the request was sent (outcome unknown)");
 					return { sent: args.key, idempotencyKey, at: new Date().toISOString() };
 				},
 				context,

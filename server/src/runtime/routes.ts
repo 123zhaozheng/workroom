@@ -11,6 +11,7 @@ import { ApprovalsDoc, EffectsDoc, TeamDoc } from "./docs.ts";
 import type { Effects } from "./effects.ts";
 import type { Runtime } from "./service.ts";
 import type { AssistantStore } from "./assistants.ts";
+import { Handoff } from "./handoff.ts";
 
 export interface SseOptions {
 	throttleMs: number;
@@ -27,6 +28,7 @@ function convId(raw: string): number {
 }
 
 export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effects, assistants: AssistantStore, sse: SseOptions): void {
+	const handoff = new Handoff(rt);
 	// ------------------------------------------------------------ conversations
 	api.get("/conversations", async (c) => {
 		const p = principalOf(c);
@@ -250,6 +252,10 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		const p = principalOf(c);
 		return c.json(await rt.tasks(p, c.req.param("spaceId"), convId(c.req.param("id")), ctx0));
 	});
+
+	// ------------------------------------------------------------ handoff (M09-B)
+	api.get("/conversations/:spaceId/:id/handoff", async (c) => c.json(await handoff.conversation(principalOf(c), c.req.param("spaceId"), convId(c.req.param("id")), ctx0)));
+	api.get("/projects/:projectId/handoff", async (c) => c.json(await handoff.project(principalOf(c), c.req.param("projectId"), ctx0)));
 
 	// ------------------------------------------------------------ assistants (M03-A)
 	api.get("/assistants", async (c) => c.json({ assistants: assistants.list(principalOf(c)) }));

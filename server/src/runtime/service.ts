@@ -543,7 +543,7 @@ export class Runtime implements RuntimeService {
 				const rec = recs[k];
 				if (!rec) return;
 				const s = submissionDTO(rec);
-				(dtos[l.i] as any).submission = { submissionId: s.submissionId, status: s.status, ...(s.reason ? { reason: s.reason } : {}) };
+				(dtos[l.i] as any).submission = { submissionId: s.submissionId, status: s.status, ...(s.reason ? { reason: s.reason } : {}), ...(s.answerEntryId !== undefined ? { answerEntryId: s.answerEntryId } : {}) };
 			});
 		}
 		return dtos;

@@ -87,7 +87,7 @@ export interface UserEntryDTO extends EntryBase {
 	 * applied (run working on it) · done · unanswered (+reason: aborted, model_error, turn_limit, …) · withdrawn.
 	 * Absent for entries written before outcomes were recorded.
 	 */
-	readonly submission?: { readonly submissionId: number; readonly status: SubmissionStatus; readonly reason?: string };
+	readonly submission?: { readonly submissionId: number; readonly status: SubmissionStatus; readonly reason?: string; readonly answerEntryId?: number };
 	/** false = the input never reached the model (withdrawn / aborted while queued); shown as a marker of what was sent. */
 	readonly placed?: boolean;
 }
@@ -383,6 +383,110 @@ export interface TaskNodeDTO {
 export interface TasksResponse {
 	readonly tasks: readonly TaskNodeDTO[];
 	readonly subagents: readonly SubagentDTO[];
+}
+
+// ---------------------------------------------------------------- handoff (M09-B)
+
+/** A decision already taken in the conversation (decided approval). */
+export interface HandoffDecision {
+	readonly approvalId: string;
+	readonly conversationId: number;
+	readonly title: string;
+	readonly summary: string;
+	readonly toolName?: string;
+	readonly decision: "approved" | "rejected";
+	readonly decidedBy: string;
+	readonly decidedByName?: string;
+	readonly decidedAt: string;
+	readonly note?: string;
+}
+
+/** One user input and what became of it (progress). */
+export interface HandoffRun {
+	readonly submissionId?: number;
+	readonly entryId: number;
+	readonly requestedBy?: string;
+	readonly requestedByName?: string;
+	readonly text: string;
+	readonly status?: SubmissionStatus;
+	readonly reason?: string;
+	readonly answerExcerpt?: string;
+	readonly via?: UserEntryDTO["via"];
+	readonly placed?: boolean;
+}
+
+export interface HandoffPending {
+	readonly approvals: readonly ApprovalDTO[];
+	/** External writes whose outcome is unknown (待核对). */
+	readonly effects: readonly EffectDTO[];
+	readonly queued: readonly QueuedInputDTO[];
+	/** Present when the last run ended without an answer and can be resumed with POST …/continue. */
+	readonly continuable?: { readonly reason: string; readonly detail?: string };
+	readonly runningSubagents: readonly SubagentDTO[];
+}
+
+/** A file version whose provenance points at this conversation. */
+export interface HandoffDeliverable {
+	readonly fileId: string;
+	readonly versionId: string;
+	readonly versionNo: number;
+	readonly name: string;
+	readonly mime: string;
+	readonly createdAt: string;
+	readonly createdBy: string;
+	readonly createdByName?: string;
+	readonly conversationId?: number;
+	readonly downloadUrl?: string;
+	readonly previewUrl?: string;
+}
+
+export interface HandoffParticipant {
+	readonly userId: string;
+	readonly name?: string;
+	/** Current project role ("owner" of a personal space); null = no longer a member. */
+	readonly role: "owner" | "editor" | "viewer" | null;
+	readonly messages: number;
+	readonly decisions: number;
+}
+
+/** GET /conversations/:spaceId/:id/handoff — everything derived from pi-durable state + the files service. */
+export interface ConversationHandoff {
+	readonly conversation: ConversationSummary;
+	readonly status: RunStatus;
+	readonly generatedAt: string;
+	readonly decisions: readonly HandoffDecision[];
+	readonly runs: readonly HandoffRun[];
+	readonly pending: HandoffPending;
+	readonly deliverables: readonly HandoffDeliverable[];
+	/** Set when the files service is unavailable (deliverables could not be listed). */
+	readonly deliverablesUnavailable?: string;
+	readonly participants: readonly HandoffParticipant[];
+	readonly subagents: readonly SubagentDTO[];
+	readonly lastAnswer?: string;
+	/** What the caller may do now (current ACL). */
+	readonly access: { readonly canWrite: boolean; readonly reason: string };
+}
+
+export interface ProjectHandoffConversation {
+	readonly conversation: ConversationSummary;
+	readonly status: RunStatus;
+	readonly pendingApprovals: number;
+	readonly needsReconciliation: number;
+	readonly queued: number;
+	readonly continuable: boolean;
+	readonly deliverables: number;
+	readonly lastAnswer?: string;
+}
+
+/** GET /projects/:projectId/handoff */
+export interface ProjectHandoff {
+	readonly project: { readonly id: string; readonly name: string; readonly description?: string; readonly spaceId: string };
+	readonly generatedAt: string;
+	readonly members: readonly HandoffParticipant[];
+	readonly conversations: readonly ProjectHandoffConversation[];
+	readonly deliverables: readonly HandoffDeliverable[];
+	readonly deliverablesUnavailable?: string;
+	readonly access: { readonly canWrite: boolean; readonly reason: string };
 }
 
 // ---------------------------------------------------------------- SSE
