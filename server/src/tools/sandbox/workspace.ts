@@ -47,14 +47,16 @@ export function isInside(root: string, p: string): boolean {
 
 /**
  * Resolve `rel` inside `workdir`. Every existing component is checked: a symlink (created by sandboxed code!) that resolves outside
- * the workdir is refused, for reads and writes alike. Returns the absolute path and the clean relative path.
+ * the workdir is refused, for reads and writes alike (`followFinal: false` lets delete/rename act on a final symlink itself). Returns the absolute path and the clean relative path.
  */
-export function resolveIn(workdir: string, rel: unknown): { abs: string; rel: string } {
+export function resolveIn(workdir: string, rel: unknown, opts: { followFinal?: boolean } = {}): { abs: string; rel: string } {
 	const clean = cleanPath(rel);
 	const realRoot = realpathSync.native(workdir);
 	let cur = workdir;
-	for (const seg of clean ? clean.split("/") : []) {
+	const segs = clean ? clean.split("/") : [];
+	for (const [i, seg] of segs.entries()) {
 		cur = join(cur, seg);
+		if (i === segs.length - 1 && opts.followFinal === false) break; // deleting/renaming a symlink acts on the link itself, never its target
 		let st;
 		try {
 			st = lstatSync(cur);
@@ -176,6 +178,16 @@ export function readBytes(workdir: string, rel: string, maxBytes: number, opts: 
 	}
 }
 
+/** Size of the regular file at `rel` (0 when absent) — an overwrite only adds the difference to the quota. */
+export function existingSize(workdir: string, rel: string): number {
+	try {
+		const st = lstatSync(resolveIn(workdir, rel).abs);
+		return st.isFile() ? st.size : 0;
+	} catch {
+		return 0;
+	}
+}
+
 export function preview(workdir: string, rel: string, retentionHours: number): WorkspacePreviewDTO {
 	const f = readBytes(workdir, rel, Infinity, { head: PREVIEW_BYTES + 4 });
 	const mime = effectiveMime(undefined, f.name);
@@ -234,7 +246,7 @@ export function writeBytes(workdir: string, rel: string, bytes: Uint8Array, owne
 }
 
 export function remove(workdir: string, rel: string): { removed: string; kind: "file" | "directory" } {
-	const { abs, rel: clean } = resolveIn(workdir, rel);
+	const { abs, rel: clean } = resolveIn(workdir, rel, { followFinal: false });
 	if (!clean) throw bad("不能删除工作目录本身");
 	let st;
 	try {
@@ -248,7 +260,7 @@ export function remove(workdir: string, rel: string): { removed: string; kind: "
 }
 
 export function move(workdir: string, from: string, to: string): { from: string; to: string } {
-	const a = resolveIn(workdir, from);
+	const a = resolveIn(workdir, from, { followFinal: false });
 	const b = resolveIn(workdir, to);
 	if (!a.rel || !b.rel) throw bad("需要源路径和目标路径");
 	if (!existsSync(a.abs)) throw new HttpError(404, "not_found", "源文件不存在");

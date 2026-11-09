@@ -173,9 +173,9 @@ export class Sandbox {
 	#reaped: Promise<void> = Promise.resolve();
 	#stopped = false;
 
-	constructor(ctx: AppContext) {
+	constructor(ctx: AppContext, opts: { drivers?: SandboxDrivers } = {}) {
 		this.#ctx = ctx;
-		this.drivers = new SandboxDrivers(ctx);
+		this.drivers = opts.drivers ?? new SandboxDrivers(ctx);
 		this.#slots = new Semaphore(this.drivers.settings().maxConcurrent);
 	}
 
@@ -341,7 +341,7 @@ export class Sandbox {
 		let driver: SandboxDriver;
 		if (opts.hostTools) {
 			if (r.statuses.namespaces.state !== "ready") throw new HttpError(503, "sandbox_unavailable", `该任务需要宿主机上的程序，只有命名空间驱动能提供（${r.statuses.namespaces.summary}）`);
-			driver = (await import("./sandbox/namespaces.ts")).namespaceDriver;
+			driver = this.drivers.namespaces;
 		} else driver = await this.#driver();
 		mkdirSync(workdir, { recursive: true });
 		const timeoutMs = limits.timeoutMs ?? DEFAULT_LIMITS.timeoutMs;
@@ -457,14 +457,15 @@ export class Sandbox {
 		const f = ws.readBytes(this.workdir(space, conversationId), path, 100 * 1024 * 1024);
 		return { bytes: f.bytes, name: f.name };
 	}
-	#checkQuota(space: Space, incoming: number): void {
+	#checkQuota(space: Space, incoming: number, replacing = 0): void {
 		if (incoming > DEFAULT_LIMITS.maxFileBytes) throw new HttpError(413, "too_large", `单个文件不能超过 ${Math.round(DEFAULT_LIMITS.maxFileBytes / 1048576)} MB`);
 		const used = ws.dirSize(this.root(space)).bytes;
-		if (used + incoming > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录配额不足：已用 ${Math.round(used / 1048576)} MB，配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并删除不需要的文件`);
+		if (used - replacing + incoming > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录配额不足：已用 ${Math.round(used / 1048576)} MB，配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并删除不需要的文件`);
 	}
 	writeFile(space: Space, conversationId: number | undefined, path: string, bytes: Uint8Array): string {
-		this.#checkQuota(space, bytes.length);
-		return ws.writeBytes(this.workdir(space, conversationId), path, bytes, this.#owner());
+		const wd = this.workdir(space, conversationId);
+		this.#checkQuota(space, bytes.length, ws.existingSize(wd, path));
+		return ws.writeBytes(wd, path, bytes, this.#owner());
 	}
 	mkdir(space: Space, conversationId: number | undefined, path: string): string {
 		const wd = this.workdir(space, conversationId);

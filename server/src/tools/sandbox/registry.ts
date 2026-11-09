@@ -37,8 +37,12 @@ export class SandboxDrivers {
 	#last: Resolution | undefined;
 	#resolving: Promise<Resolution> | undefined;
 
-	constructor(ctx: AppContext) {
+	readonly #ns: SandboxDriver;
+
+	/** `opts.namespaces` replaces the namespace driver (tests simulate hosts without user namespaces). */
+	constructor(ctx: AppContext, opts: { namespaces?: SandboxDriver } = {}) {
 		this.#ctx = ctx;
+		this.#ns = opts.namespaces ?? namespaceDriver;
 		this.#settings = this.#load();
 		let key = ctx.config.dataDir;
 		try {
@@ -81,6 +85,10 @@ export class SandboxDrivers {
 		}
 	}
 
+	/** The namespace driver in use (real one unless injected). */
+	get namespaces(): SandboxDriver {
+		return this.#ns;
+	}
 	settings(): SandboxSettings {
 		return this.#settings;
 	}
@@ -149,16 +157,16 @@ export class SandboxDrivers {
 	}
 
 	async #resolve(force: boolean): Promise<Resolution> {
-		const [ns, dk] = await Promise.all([namespaceDriver.detect(force), this.docker.detect(force)]);
+		const [ns, dk] = await Promise.all([this.#ns.detect(force), this.docker.detect(force)]);
 		const statuses = { namespaces: ns, docker: dk };
 		const { driver: want } = this.#settings;
 		const pick = (d: SandboxDriver, reason: string): Resolution => (this.#last = { driver: d, effective: d.id, reason, statuses, at: Date.now() });
 		const none = (reason: string) => pick(noneDriver(() => reason), reason);
 		if (want === "none") return none("管理员已关闭沙箱（driver=none）。");
-		if (want === "namespaces") return ns.state === "ready" ? pick(namespaceDriver, "管理员选择了命名空间驱动") : none(`已选择命名空间驱动，但不可用：${ns.summary}（${ns.details.join("；")}）`);
+		if (want === "namespaces") return ns.state === "ready" ? pick(this.#ns, "管理员选择了命名空间驱动") : none(`已选择命名空间驱动，但不可用：${ns.summary}（${ns.details.join("；")}）`);
 		if (want === "docker") return dk.state === "ready" ? pick(this.docker, "管理员选择了 Docker 驱动") : none(`已选择 Docker 驱动，但${dk.state === "needs_setup" ? "镜像未准备" : "不可用"}：${dk.summary}。${dk.howToEnable ?? ""}`);
 		// auto
-		if (ns.state === "ready") return pick(namespaceDriver, "自动：此主机支持 Linux 命名空间");
+		if (ns.state === "ready") return pick(this.#ns, "自动：此主机支持 Linux 命名空间");
 		if (dk.state === "ready") return pick(this.docker, "自动：命名空间不可用，改用 Docker");
 		if (dk.state === "needs_setup" && this.#settings.docker.autoPull) {
 			// The first run pulls the public images itself (DockerDriver.#imageFor); route there rather than refusing.

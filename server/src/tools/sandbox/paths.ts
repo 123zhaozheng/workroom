@@ -1,7 +1,7 @@
 // Host-side path helpers shared by the sandbox drivers (and usable by other modules that must locate host tools):
 // executable lookup that works on Windows (PATHEXT, Program Files), and translation of host paths for `docker --mount`.
 import { accessSync, constants, existsSync, statSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { delimiter, join, posix, win32 } from "node:path";
 import { homedir } from "node:os";
 
 const isWin = (platform: NodeJS.Platform) => platform === "win32";
@@ -48,17 +48,17 @@ export function findExecutable(name: string, extraDirs: readonly string[] = [], 
 export function dockerSearchDirs(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
 	if (platform === "win32") {
 		const pf = env.ProgramFiles ?? "C:\\Program Files";
-		return [join(pf, "Docker", "Docker", "resources", "bin"), join(env.LOCALAPPDATA ?? "", "Programs", "Rancher Desktop", "resources", "resources", "win32", "bin"), join(homedir(), ".rd", "bin")].filter((d) => d && !d.startsWith("Programs"));
+		return [win32.join(pf, "Docker", "Docker", "resources", "bin"), ...(env.LOCALAPPDATA ? [win32.join(env.LOCALAPPDATA, "Programs", "Rancher Desktop", "resources", "resources", "win32", "bin")] : []), win32.join(homedir(), ".rd", "bin")];
 	}
-	if (platform === "darwin") return ["/usr/local/bin", "/opt/homebrew/bin", "/Applications/Docker.app/Contents/Resources/bin", join(homedir(), ".docker", "bin"), join(homedir(), ".rd", "bin"), join(homedir(), ".orbstack", "bin")];
+	if (platform === "darwin") return ["/usr/local/bin", "/opt/homebrew/bin", "/Applications/Docker.app/Contents/Resources/bin", posix.join(homedir(), ".docker", "bin"), posix.join(homedir(), ".rd", "bin"), posix.join(homedir(), ".orbstack", "bin")];
 	return ["/usr/local/bin", "/usr/bin", "/snap/bin"];
 }
 
 /** Directories searched for LibreOffice's `soffice` (Linux/macOS/Windows). Used by files/slides.ts (see docs/requests/sandbox.md). */
 export function sofficeCandidates(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
 	if (platform === "win32") {
-		const dirs = [env.ProgramFiles, env["ProgramFiles(x86)"], env.ProgramW6432, "C:\\Program Files", "C:\\Program Files (x86)", env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs") : undefined].filter(Boolean) as string[];
-		return [...new Set(dirs)].flatMap((d) => ["LibreOffice", "LibreOffice 7", "LibreOffice 24", "LibreOffice 25"].map((v) => join(d, v, "program", "soffice.exe")));
+		const dirs = [env.ProgramFiles, env["ProgramFiles(x86)"], env.ProgramW6432, "C:\\Program Files", "C:\\Program Files (x86)", env.LOCALAPPDATA ? win32.join(env.LOCALAPPDATA, "Programs") : undefined].filter(Boolean) as string[];
+		return [...new Set(dirs)].flatMap((d) => ["LibreOffice", "LibreOffice 7", "LibreOffice 24", "LibreOffice 25"].map((v) => win32.join(d, v, "program", "soffice.exe")));
 	}
 	if (platform === "darwin") return ["/Applications/LibreOffice.app/Contents/MacOS/soffice", "/opt/homebrew/bin/soffice", "/usr/local/bin/soffice"];
 	return ["/usr/bin/soffice", "/usr/local/bin/soffice", "/usr/lib/libreoffice/program/soffice", "/opt/libreoffice/program/soffice", "/snap/bin/libreoffice"];

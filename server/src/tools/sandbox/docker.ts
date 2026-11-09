@@ -6,7 +6,7 @@
 // `--network none` unless the admin allows network, memory/CPU/pids limits (cgroups), read-only root fs, non-root user, all capabilities
 // dropped + no-new-privileges, `/work` = the conversation workspace (bind), `/tmp` = tmpfs, `/code` (and extra mounts) read-only.
 // The container is always removed (explicit `rm -f` after every run, a startup reaper for orphans labelled `workroom.sandbox=1`).
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { chownSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HttpError } from "../../core/http.ts";
@@ -304,8 +304,26 @@ export class DockerDriver implements SandboxDriver {
 		this.#live.delete(name);
 		await this.#cli(["rm", "-f", "-v", name], { timeoutMs: 20_000 });
 	}
-	async #kill(name: string): Promise<void> {
-		await this.#cli(["kill", name], { timeoutMs: 10_000 });
+	/**
+	 * Stop a container that may not exist yet. `docker run` can still be pulling/creating/starting (slow image copy on vfs, a busy daemon)
+	 * when a timeout or cancellation fires, so a single `docker kill` misses it — and `docker rm -f` on a name that does not exist yet
+	 * *succeeds silently* and killing the CLI at that moment would leave the daemon to finish creating an orphan. So: poll until the container
+	 * exists, remove it (kill + delete), and only then let the attached CLI end (it exits by itself once its container is gone).
+	 */
+	async #terminate(name: string, child: ChildProcess, closed: () => boolean): Promise<void> {
+		const t0 = Date.now();
+		let removedAt = 0;
+		while (!closed() && Date.now() - t0 < 90_000) {
+			const ex = await this.#cli(["container", "inspect", "--format", "{{.Id}}", name], { timeoutMs: 10_000 });
+			if (closed()) return;
+			if (ex.code === 0) {
+				await this.#cli(["rm", "-f", "-v", name], { timeoutMs: 20_000 });
+				removedAt ||= Date.now();
+			}
+			if (removedAt && Date.now() - removedAt > 3000) child.kill("SIGKILL");
+			await new Promise((res) => setTimeout(res, 100));
+		}
+		if (!closed()) child.kill("SIGKILL");
 	}
 	static #infraFailure(stderr: string): boolean {
 		return /Cannot connect to the Docker daemon|error during connect|Is the docker daemon running|pipe\/docker_engine|dockerDesktopLinuxEngine|Unable to find image|No such image|pull access denied/i.test(stderr);
@@ -336,7 +354,9 @@ export class DockerDriver implements SandboxDriver {
 			child.stderr.on("data", (b: Buffer) => err.push(b));
 			let timedOut = false;
 			let cancelled = false;
-			const stop = () => this.#kill(name);
+			let closed = false;
+			let terminating: Promise<void> | undefined;
+			const stop = () => (terminating ??= this.#terminate(name, child, () => closed));
 			const timer = setTimeout(() => {
 				timedOut = true;
 				void stop();
@@ -349,10 +369,11 @@ export class DockerDriver implements SandboxDriver {
 			spec.signal?.addEventListener("abort", onAbort, { once: true });
 			const { code: exitCode, signal } = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((res) => {
 				child.on("error", (e) => (err.push(Buffer.from(`${e.message}\n`)), res({ code: 125, signal: null })));
-				child.on("close", (c, s) => res({ code: c, signal: s }));
+				child.on("close", (c, s) => ((closed = true), res({ code: c, signal: s })));
 			});
 			clearTimeout(timer);
 			spec.signal?.removeEventListener("abort", onAbort);
+			await terminating;
 			let oom = false;
 			if (exitCode === 137 && !timedOut && !cancelled) {
 				const r = await this.#cli(["inspect", "--format", "{{.State.OOMKilled}}", name], { timeoutMs: 10_000 });
@@ -399,10 +420,11 @@ export class DockerDriver implements SandboxDriver {
 		spec.onSpawn?.(ref);
 		child.stdin.on("error", () => {});
 		let removed: Promise<void> | undefined;
+		let closed = false;
 		const cleanup = () => (removed ??= this.#remove(name).then(() => rmSync(scratch, { recursive: true, force: true })));
 		const exited = new Promise<{ exitCode: number | null; signal: string | null }>((res) => {
-			child.on("error", () => res({ exitCode: 125, signal: null }));
-			child.on("close", (c, s) => res({ exitCode: c, signal: s }));
+			child.on("error", () => ((closed = true), res({ exitCode: 125, signal: null })));
+			child.on("close", (c, s) => ((closed = true), res({ exitCode: c, signal: s })));
 		}).then(async (r) => {
 			await cleanup();
 			return r;
@@ -414,10 +436,9 @@ export class DockerDriver implements SandboxDriver {
 			stderr: child.stderr!,
 			exited,
 			kill: async () => {
-				await this.#kill(name);
-				child.kill("SIGKILL");
-				await cleanup();
+				await this.#terminate(name, child, () => closed);
 				await exited;
+				await cleanup();
 			},
 		};
 	}
