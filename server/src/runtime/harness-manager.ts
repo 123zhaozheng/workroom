@@ -176,7 +176,11 @@ export class HarnessManager {
 				{
 					models: () => this.#models(),
 					registry: this.#registry,
-					settings: () => this.#opts.settings(),
+					// wrSpaceId lets the model gateway (group E) attribute requests to this space; the gateway strips it upstream.
+					settings: () => {
+						const base = this.#opts.settings();
+						return { ...base, stream: { ...base.stream, metadata: { ...base.stream?.metadata, wrSpaceId: spaceId } } };
+					},
 					identity: { attribution: { name: this.#ctx.config.brand.name } } as any,
 					onWake: (wake) => this.#onWake(entry, wake),
 					onReport: (report) => {
