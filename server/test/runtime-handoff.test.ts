@@ -109,3 +109,46 @@ test("M09-B handoff: editor takes over (reads handoff, approves, continues); vie
 		await t.dispose();
 	}
 });
+
+test("audit (M16-C/M02-B): approval decisions and external-effect transitions appear in the admin audit query with correlation ids", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("au-a@example.com");
+		const { conversation: c } = await t.json("POST", "/api/conversations", { token: a.token, json: {} });
+		// receipt path
+		const r1 = await t.json("POST", `${base(c)}/messages`, { token: a.token, json: { text: `[[call wr_fixture_effect {"key":"mail-1"}]]`, requestId: "req-effect-1" } });
+		await settle(t, a.token, c, r1.submissionId);
+		// unknown outcome → needs_reconciliation → reconciled by a human
+		await settle(t, a.token, c, (await send(t, a.token, c, `[[call wr_fixture_effect {"key":"crm-2","unknownOutcome":true}]]`)).submissionId);
+		const st = await t.json("GET", `${base(c)}/state`, { token: a.token });
+		const eff = st.effects.find((e: any) => e.key === "crm-2");
+		const rec = await t.req("POST", `${base(c)}/effects/${eff.effectId}/reconcile`, { token: a.token, json: { outcome: "failed", note: "对方系统无记录" }, headers: { "x-request-id": "req-reconcile-1" } });
+		assert.equal(rec.status, 200);
+		// approval decision
+		const r3 = await send(t, a.token, c, `[[call wr_fixture_approval {"title":"付款","summary":"支付 100 元"}]]`);
+		const ap = await waitFor(async () => (await t.json("GET", `${base(c)}/state`, { token: a.token })).approvals.find((x: any) => x.status === "pending"));
+		await t.req("POST", `${base(c)}/approvals/${ap.approvalId}`, { token: a.token, json: { decision: "rejected", note: "金额不对" }, headers: { "x-request-id": "req-approval-1" } });
+		await settle(t, a.token, c, r3.submissionId);
+
+		const ext = (await t.json("GET", "/api/admin/audit?category=external_write&limit=50", { token: a.token })).items as any[];
+		const actions = ext.map((x) => `${x.action}:${x.detail.key}`).sort();
+		assert.deepEqual(actions, ["effect.dispatching:crm-2", "effect.dispatching:mail-1", "effect.needs_reconciliation:crm-2", "effect.receipt:mail-1", "effect.reconciled:crm-2"]);
+		const disp = ext.find((x) => x.action === "effect.dispatching" && x.detail.key === "mail-1");
+		assert.equal(disp.requestId, "req-effect-1", "correlated with the submission's request id");
+		assert.equal(disp.actorUserId, a.me.userId);
+		assert.equal(disp.detail.conversationId, c.conversationId);
+		assert.ok(Number.isInteger(disp.detail.taskId) && disp.detail.callId);
+		assert.equal(ext.find((x) => x.action === "effect.reconciled").requestId, "req-reconcile-1");
+		const grants = (await t.json("GET", "/api/admin/audit?action=grant.approval_decided", { token: a.token })).items as any[];
+		assert.equal(grants.length, 1);
+		assert.equal(grants[0].detail.decision, "rejected");
+		assert.equal(grants[0].detail.conversationId, c.conversationId);
+		assert.equal(grants[0].requestId, "req-approval-1");
+		assert.equal(grants[0].category, "grant");
+		// correlation search by conversation-scoped effect id
+		const byRef = (await t.json("GET", `/api/admin/audit?ref=${eff.effectId}`, { token: a.token })).items as any[];
+		assert.ok(byRef.length >= 3);
+	} finally {
+		await t.dispose();
+	}
+});

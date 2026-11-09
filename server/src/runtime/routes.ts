@@ -241,12 +241,12 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 	api.post("/conversations/:spaceId/:id/approvals/:approvalId", async (c) => {
 		const p = principalOf(c);
 		const b = await jsonBody<{ decision: "approved" | "rejected"; note?: string }>(c);
-		return c.json({ approval: await effects.respond(p, c.req.param("spaceId"), convId(c.req.param("id")), c.req.param("approvalId"), b, ctx0) });
+		return c.json({ approval: await effects.respond(p, c.req.param("spaceId"), convId(c.req.param("id")), c.req.param("approvalId"), b, ctx0, c.get("requestId")) });
 	});
 	api.post("/conversations/:spaceId/:id/effects/:effectId/reconcile", async (c) => {
 		const p = principalOf(c);
 		const b = await jsonBody<{ outcome: "done" | "failed"; receipt?: unknown; note?: string }>(c);
-		return c.json({ effect: await effects.reconcile(p, c.req.param("spaceId"), convId(c.req.param("id")), c.req.param("effectId"), b, ctx0) });
+		return c.json({ effect: await effects.reconcile(p, c.req.param("spaceId"), convId(c.req.param("id")), c.req.param("effectId"), b, ctx0, c.get("requestId")) });
 	});
 	api.get("/conversations/:spaceId/:id/tasks", async (c) => {
 		const p = principalOf(c);
