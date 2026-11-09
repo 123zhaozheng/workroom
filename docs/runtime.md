@@ -33,6 +33,7 @@
 2. 模块 `start()`：先把所有模块的 `extensions(ctx)`（含本模块的 `wr-team`）装入共享 registry，再打开所有 `wake_active=1` 或 `wake_at` 已到期的 space 并 `resume()`；未来的 `wake_at` 设定时器。浏览器、SSE 都不参与。
 3. pi 恢复语义：进程死于模型请求中 → 该次请求计为失败尝试并按 `settings.retry` 重试（`WORKROOM_RT_RETRY_*`）；关闭（close）不是崩溃，请求会重发；工具调用只有 `replay: "safe"` 的会重跑，否则模型得到 `interrupted` 错误结果。
 4. 同一 `requestId` 重提交返回同一 submission，不新增条目（pi 按会话去重）。
+5. **唤醒定时器必须复核时钟（2026-11-09 修复的间歇性故障）。** 由于传入了 `onWake`，pi 不为 sleep 设定时器，而 pi 自己的定时器在触发时会复核时钟、早到则重新设定。本模块原先的定时器不复核：Node 定时器以事件循环缓存的时间为起点，在一段长的同步工作（如重启后的打开与恢复）之后会比 `Date.now()` **早约 1 ms** 触发；此时 `resume()` 发现 sleep 尚未到期，什么也不做，而 `wake()` 未变化所以 pi 不会再调用 `onWake`——该 sleep 被永久搁置（直到同一 space 有新活动或进程重启）。表现：硬杀后恢复的 run 停在重试退避里（`pi.live.generation.retry.at` 已过 30 s，`rt_space_runtime.wake_active=0`）。这不只影响测试：任何 sleep（真实模型 429/5xx/超时后的重试退避、压缩重试、扩展任务的 `sleepUntil`）都可能被搁置，进程内与重启后都会发生。修复：定时器多等 1 ms，触发时若 `Date.now() < at` 则重新设定（与 pi 自身定时器相同的规则）；空闲回收后的重开定时器同样处理；早到会记一条 `[runtime] sleep timer … fired Nms before the sleep was due; re-armed` 日志。证据：修复前压力循环 3/20 失败；去掉 1 ms 余量只保留复核时，20 次中 3 次记录到“早 1 ms 触发并重新设定”且 0 失败；最终代码 40/40 通过。回归：`WORKROOM_PROOF_STRESS=20 node --disable-warning=ExperimentalWarning --test server/test/proof-stress.test.ts`。
 
 ## 4. API 与 DTO（给 B）
 
@@ -152,8 +153,9 @@ node --disable-warning=ExperimentalWarning --test server/test/runtime-lease.test
 node --disable-warning=ExperimentalWarning --test server/test/runtime-team.test.ts   # 5
 node --disable-warning=ExperimentalWarning --test server/test/runtime-handoff.test.ts # 2
 node --disable-warning=ExperimentalWarning --test server/test/proof.test.ts          # 3（含子进程 SIGKILL）
+WORKROOM_PROOF_STRESS=20 node --disable-warning=ExperimentalWarning --test server/test/proof-stress.test.ts  # 硬杀场景压力循环（默认跳过）
 ```
 
 测试用环境变量：`WORKROOM_FIXTURE_TOOLS=1`、`WORKROOM_RT_RETRY_BASE_MS`、`WORKROOM_RT_RETRY_MAX`、`WORKROOM_SSE_THROTTLE_MS`、`WORKROOM_SSE_ACL_RECHECK_MS`、`WORKROOM_LEASE_TTL_MS`、`WORKROOM_RT_IDLE_MS`、`WORKROOM_RT_IDLE_SWEEP_MS`。测试辅助（SSE 读取器、waitFor）在 `server/src/runtime/testing.ts`，其他组可直接引用。
 
-Fixture 指令协议（最新用户消息中）：`[[call <tool> <json>]]`（可多个，同一轮发出）、`[[slow <ms>]]`、`[[fail]]`（不可重试的模型错误 → run 以 model_error 结束）、`[[fail transient]]`（可重试的 503 → pi 按 `settings.retry` 持久退避后重试）、`[[reply <text>]]`。工具结果返回后，fixture 回答一段逐条引用工具输出的确定性总结。无指令时：提到“知识/资料”且有 `kb_search` → 调用它；提到“生成/报告/文档”且有文件创建工具 → 调用它；提到“运行/执行/代码/终端/命令”且有 `sandbox_exec` → 固定演示脚本；“网页/浏览/打开/访问”+链接且有 `browse` → 浏览；参数按所提供工具的 JSON Schema 填写；否则回显。E 的模型网关通过 `createFixtureModel()`（`server/src/runtime/fixture-model.ts`）注册同一 provider。
+Fixture 指令协议（最新用户消息中）：`[[call <tool> <json>]]`（可多个，同一轮发出）、`[[slow <ms>]]`、`[[fail]]`（不可重试的模型错误 → run 以 model_error 结束）、`[[fail transient]]`（可重试的 503 → pi 按 `settings.retry` 持久退避后重试）、`[[fail timeout]]`（上游超时；pi 视为可重试，用尽重试后 run 状态为 `timeout`；测试用 `WORKROOM_RT_RETRY_MAX=0` 让首次超时即结束。注意 E 的网关在同一渠道连续失败后会打开熔断，最终错误变为 `circuit_open` → 状态 `failed`，这是真实行为）、`[[reply <text>]]`。工具结果返回后，fixture 回答一段逐条引用工具输出的确定性总结。无指令时：提到“知识/资料”且有 `kb_search` → 调用它；提到“生成/报告/文档”且有文件创建工具 → 调用它；提到“运行/执行/代码/终端/命令”且有 `sandbox_exec` → 固定演示脚本；“网页/浏览/打开/访问”+链接且有 `browse` → 浏览；参数按所提供工具的 JSON Schema 填写；否则回显。E 的模型网关通过 `createFixtureModel()`（`server/src/runtime/fixture-model.ts`）注册同一 provider。

@@ -259,14 +259,35 @@ export class HarnessManager {
 		}
 		if (entry.sleepTimer) clearTimeout(entry.sleepTimer);
 		entry.sleepTimer = undefined;
-		if (wake.at !== undefined) {
-			const delay = Math.max(0, Math.min(wake.at - Date.now(), 2_147_000_000));
-			entry.sleepTimer = setTimeout(() => {
-				if (!entry.closing && this.#open.get(entry.spaceId) === entry) entry.harness.resume();
-			}, delay);
-			entry.sleepTimer.unref?.();
-		}
+		if (wake.at !== undefined) this.#armSleep(entry, wake.at);
 	}
+
+	/**
+	 * Arm the host wakeup for a sleep due at `at` (pi arms none itself because we pass onWake). Node starts a timer from
+	 * the event loop's cached clock, which lags Date.now() after a long synchronous stretch (e.g. open + recovery), so
+	 * the timer can fire a few ms BEFORE `at`. pi's `resume()` then finds nothing due and, since `wake()` did not change,
+	 * never calls onWake again: the sleep would be stranded. So the callback rechecks the clock and re-arms when early,
+	 * as pi's own timer does.
+	 */
+	#armSleep(entry: Entry, at: number): void {
+		const delay = Math.max(1, Math.min(at - Date.now() + 1, 2_147_000_000));
+		entry.sleepTimer = setTimeout(() => {
+			entry.sleepTimer = undefined;
+			if (entry.closing || this.#open.get(entry.spaceId) !== entry) return;
+			const now = Date.now();
+			if (now < at) {
+				this.earlyWakeFires++;
+				console.warn(`[runtime] sleep timer for ${entry.spaceId} fired ${at - now}ms before the sleep was due; re-armed`);
+				this.#armSleep(entry, at);
+				return;
+			}
+			entry.harness.resume();
+		}, delay);
+		entry.sleepTimer.unref?.();
+	}
+
+	/** Times a sleep timer fired before its due time and was re-armed (observability / tests). */
+	earlyWakeFires = 0;
 
 	#ensureHeartbeat(): void {
 		if (!this.#heartbeat) {
@@ -325,8 +346,10 @@ export class HarnessManager {
 		const t = setTimeout(() => {
 			this.pendingWakeTimers.delete(spaceId);
 			this.#wakeTimers.delete(t);
+			// Same early-fire guard as #armSleep (an early reopen is harmless — onWake re-arms — but stay exact).
+			if (Date.now() < at) return void this.#armWake(spaceId, at);
 			this.get(spaceId).catch((err) => console.error(`[runtime] wake of ${spaceId} failed`, err?.message ?? err));
-		}, Math.max(0, Math.min(at - Date.now(), 2_147_000_000)));
+		}, Math.max(1, Math.min(at - Date.now() + 1, 2_147_000_000)));
 		t.unref();
 		this.#wakeTimers.add(t);
 	}
