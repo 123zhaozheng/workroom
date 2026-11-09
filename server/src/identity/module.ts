@@ -374,7 +374,7 @@ export class Identity implements IdentityService, AccessControl {
 	}
 
 	/** Consume an invite atomically. Returns the invite row or throws. */
-	consumeInvite(code: string, email: string | null): { org_id: string; role: OrgRole; department_id: string | null } {
+	consumeInvite(code: string, email: string | null): { org_id: string; role: OrgRole; department_id: string | null; role_id: string | null; created_by: string } {
 		const inv = this.db.get<any>("SELECT * FROM id_invites WHERE code = ?", code);
 		const now = nowIso();
 		if (!inv || inv.used_at || inv.revoked_at || inv.expires_at <= now) throw new HttpError(400, "bad_invite", "邀请码无效或已过期");

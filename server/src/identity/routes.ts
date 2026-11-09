@@ -112,6 +112,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 				const inv = id.consumeInvite(b.inviteCode!, b.email);
 				const r = id.createUser({ email: b.email, name: b.name ?? b.email, password: b.password, orgId: inv.org_id, role: inv.role });
 				if (inv.department_id) db.run("INSERT OR IGNORE INTO id_department_members (department_id, user_id, created_at) VALUES (?, ?, ?)", inv.department_id, r.userId, nowIso());
+				applyInviteRole(inv, r.userId);
 				audit(db, inv.org_id, r.userId, "auth.invite_accepted", b.inviteCode, { role: inv.role }, { requestId: rid(c) });
 				return r;
 			});
@@ -172,6 +173,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 			const inv = id.consumeInvite(b.inviteCode ?? "", p.email);
 			id.addOrgMember(inv.org_id, p.userId, inv.role);
 			if (inv.department_id) db.run("INSERT INTO id_department_members (department_id, user_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET removed_at = NULL", inv.department_id, p.userId, nowIso());
+			applyInviteRole(inv, p.userId);
 			audit(db, inv.org_id, p.userId, "auth.invite_accepted", b.inviteCode, { role: inv.role }, { requestId: rid(c) });
 			return inv;
 		});
