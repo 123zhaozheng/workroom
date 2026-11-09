@@ -18,7 +18,7 @@ mkdirSync(SHOTS, { recursive: true });
  * Set E2E_BASE to reuse an already running server instead.
  */
 export async function startServer({ port = 8802, fresh = true, env = {} } = {}) {
-	if (process.env.E2E_BASE) return { base: process.env.E2E_BASE, stop: async () => {} };
+	if (process.env.E2E_BASE) return { base: process.env.E2E_BASE, stop: async () => {}, kill: async () => {} };
 	const dataDir = join(ROOT, "data/dev-B", `e2e-${port}`);
 	if (fresh) rmSync(dataDir, { recursive: true, force: true });
 	mkdirSync(dataDir, { recursive: true });
@@ -44,6 +44,12 @@ export async function startServer({ port = 8802, fresh = true, env = {} } = {}) 
 	}
 	return {
 		base,
+		/** Hard kill (no graceful shutdown) — for crash/recovery checks. Restart with startServer({ port, fresh: false }). */
+		kill: async () => {
+			writeFileSync(log, out);
+			child.kill("SIGKILL");
+			await new Promise((r) => child.once("exit", r));
+		},
 		stop: async () => {
 			writeFileSync(log, out);
 			child.kill("SIGTERM");

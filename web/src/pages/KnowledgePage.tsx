@@ -308,29 +308,30 @@ function DocRow({ d, first, canWrite, kbId, onChanged, onPreview }: { d: KbDocDT
 					<span className="text-danger">
 						失败原因：{failedV.error ?? failedV.errorCode ?? "未知"}（已尝试 {failedV.attempts} 次）
 					</span>
-					{canWrite && failedV.retryable !== false ? (
-						<Button
-							size="sm"
-							data-testid="kb-retry"
-							disabled={busy}
-							onClick={async () => {
-								setBusy(true);
-								setErr(undefined);
-								try {
-									await post(`/kb/${encodeURIComponent(kbId)}/docs/${encodeURIComponent(d.id)}/retry`);
-									onChanged();
-								} catch (e) {
-									setErr(errorText(e));
-								} finally {
-									setBusy(false);
-								}
-							}}
-						>
-							<RotateCcw />
-							重试
-						</Button>
-					) : failedV.retryable === false ? (
-						<span className="text-fg-subtle">该错误无法通过重试解决</span>
+					{canWrite ? (
+						<>
+							{failedV.retryable === false ? <span className="text-fg-subtle">该错误重试多半仍会失败（例如文件本身损坏或格式不支持）</span> : null}
+							<Button
+								size="sm"
+								data-testid="kb-retry"
+								disabled={busy}
+								onClick={async () => {
+									setBusy(true);
+									setErr(undefined);
+									try {
+										await post(`/kb/${encodeURIComponent(kbId)}/docs/${encodeURIComponent(d.id)}/retry`);
+										onChanged();
+									} catch (e) {
+										setErr(errorText(e));
+									} finally {
+										setBusy(false);
+									}
+								}}
+							>
+								<RotateCcw />
+								{failedV.retryable === false ? "仍要重试" : "重试"}
+							</Button>
+						</>
 					) : null}
 				</div>
 			) : null}

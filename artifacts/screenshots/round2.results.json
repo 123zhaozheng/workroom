@@ -1,0 +1,90 @@
+{
+  "at": "2026-11-09T07:05:07.490Z",
+  "results": [
+    {
+      "name": "M01-A: plain chat, attachment and knowledge chip sent from the same composer, no workflow choice",
+      "ok": true,
+      "detail": "你好，先简单聊两句 [[reply 你好！有什么可以帮你？]] | 出差行程.txt | 报销制度库"
+    },
+    {
+      "name": "M01-A: knowledge answer carries citations (file · version · locator)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "citation 失效提示: old answer keeps its v1 snapshot and says the source was updated",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "per-message outcome survives reload on the exact message (未应用/已取消)",
+      "ok": true,
+      "detail": "这条消息没有得到回复：未应用（已被取消）"
+    },
+    {
+      "name": "待核对: unknown external write shown for verification, resolved by the user (no blind retry)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "terminal: real sandbox run (code, stdout/stderr, exit, duration) in the work panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "browser: fetched page (title, URL, screenshot, text) in the work panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "take-over: user controls the live session and the click reaches the page",
+      "ok": true,
+      "detail": "你在操作 已点击 上一步：用户：点击 (110, 204) 交还给助手 点击截图即在页面对应位置点击；接管期间助手的浏览操作会被拒绝"
+    },
+    {
+      "name": "take-over: released back to the assistant",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "job: long task runs in the background; the chat stays usable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "job: cancel → 已取消 (panel and in-message chip)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "knowledge retry: retry re-runs processing (attempt 2) and the honest failure stays visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "handoff (editor): decisions, progress and deliverables of the task, and may continue",
+      "ok": true,
+      "detail": "已完成 · 整理发布会清单 你可以接手继续 待处理 · 0 没有待处理事项 已做的决定 · 1 批准「预订场地」：向场地方提交 12 月 1 日的预订 · 负责人 · 2026/11/9 07:05:01 进展 · 2 负责人：整理发布会清"
+    },
+    {
+      "name": "viewer: no composer, no edit/regenerate/fork actions in the conversation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "viewer: the server refuses writes anyway",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "handoff (viewer): shows read-only access reason",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "viewer: project page shows status, not a composer",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
