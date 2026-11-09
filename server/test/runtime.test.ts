@@ -438,3 +438,35 @@ test("runtime: usage from the fixture is flagged simulated (totals, per model, p
 		await t.dispose();
 	}
 });
+
+test("default toolset policy: a default conversation gets every product tool (ACL-checked per call); demo mode fills the terminal panel", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("rt-tools@example.com");
+		const created = await t.json("POST", "/api/conversations", { token: a.token, json: {} });
+		const tools: string[] = created.agent.tools;
+		const s = t.app.ctx.services;
+		const expect = [
+			...(s.has("files") ? ["file_create", "file_revise", "file_read", "file_list"] : []),
+			...(s.has("knowledge") ? ["kb_search", "memory_save"] : []),
+			...(s.has("sandbox") ? ["sandbox_exec", "sandbox_publish", "codemode"] : []),
+			...(s.has("browser") ? ["browse"] : []),
+			...(s.has("mcp") ? ["tool_search"] : []),
+			"delegate",
+		];
+		for (const name of expect) assert.ok(tools.includes(name), `default conversation offers ${name}`);
+		// MCP connector tools are deferred (offered only via tool_search, per user); no raw mcp__ tool is offered by default
+		assert.ok(!tools.some((n) => n.startsWith("mcp__")));
+		if (!s.has("sandbox")) return;
+		const c = created.conversation;
+		const r = await t.json("POST", `${base(c)}/messages`, { token: a.token, json: { text: "帮我在终端运行一下", requestId: rid() } });
+		await settle(t, a.token, c, r.submissionId, 30_000);
+		const es = await entries(t, a.token, c);
+		const tr = es.find((e) => e.kind === "tool_result") as any;
+		assert.equal(tr.toolName, "sandbox_exec");
+		assert.equal(tr.isError, false, tr.text);
+		assert.match(tr.text, /sandbox ok/);
+	} finally {
+		await t.dispose();
+	}
+});

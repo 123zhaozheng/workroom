@@ -234,6 +234,17 @@ export function fixtureAnswer(messages: readonly Message[]): { message: Assistan
 			const args = { ...demoArgs(schemas.get("kb_search"), { title: plain.slice(0, 40), query: plain.slice(0, 200), content: plain.slice(0, 200) }), query: plain.slice(0, 200) };
 			return { message: fauxAssistantMessage([fauxToolCall("kb_search", args as ToolCall["arguments"], { id: callId("kb_search") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
 		}
+		// 运行/执行/代码/终端/命令 → sandbox_exec (fills the terminal panel with a real run); the command is a fixed,
+		// harmless demo script, never text taken from the message.
+		if (/运行|执行|代码|终端|命令/.test(plain) && tools.has("sandbox_exec")) {
+			const args = { language: "shell", code: "echo '【测试模型·演示】sandbox ok'; uname -s; date -u +%Y-%m-%dT%H:%M:%SZ" };
+			return { message: fauxAssistantMessage([fauxToolCall("sandbox_exec", args, { id: callId("sandbox_exec") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+		}
+		// 网页/浏览/打开 + an explicit http(s) URL in the message → browse (fills the browser panel).
+		const url = /https?:\/\/[^\s"'<>，。]+/.exec(plain)?.[0];
+		if (url && /网页|浏览|打开|访问/.test(plain) && tools.has("browse")) {
+			return { message: fauxAssistantMessage([fauxToolCall("browse", { url, screenshot: true }, { id: callId("browse") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+		}
 		if (/生成|报告|文档/.test(plain)) {
 			const fileTool = FILE_TOOL_PREFERENCE.find((n) => tools.has(n)) ?? [...tools].find((n) => /(create|generate).*(file|doc)|(file|doc).*(create|generate)/i.test(n));
 			if (fileTool) {

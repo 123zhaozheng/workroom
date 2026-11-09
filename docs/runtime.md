@@ -58,11 +58,19 @@
 | `POST .../approvals/:approvalId {decision, note?}` | 409 已处理；`approverUserIds` 限定审批人；子 Agent 的审批也可在父会话上处理 |
 | `POST .../effects/:effectId/reconcile {outcome: done\|failed, receipt?, note?}` | 人工核对 `needs_reconciliation` |
 | `GET .../tasks` | `TasksResponse`：该会话子树的 pi 任务图 + 委派（SubagentDTO） |
-| `GET/POST /assistants`，`GET/PATCH/DELETE /assistants/:id` | 助手身份（M03-A）；`scope: org` 需组织管理员 |
+| `GET/POST /assistants`，`GET/PATCH/DELETE /assistants/:id` | 助手身份（M03-A）；`scope: org` 需组织管理员；默认模型按 `models.listFor(principal)` 校验（不在列表 400 `model_not_allowed`，被阻塞 409 `model_blocked`）；返回 `modelAvailability` |
+| `GET .../handoff` | `ConversationHandoff`（M09-B）：决策（已处理审批）、进度（每条输入及结果）、待办（未决审批、待核对外部写、排队输入、可 continue 的失败 run、运行中的子任务）、成果（来源指向本会话的文件版本，经 files 服务按当前 ACL 列出）、参与者（当前项目角色）、`access.canWrite`。全部按读取时从 pi-durable + files 推导，无交接表 |
+| `GET /projects/:projectId/handoff` | `ProjectHandoff`：项目成员与角色、各会话状态与待办计数、项目成果；需项目 read |
 
 `RunStatus`（独立终态，M02-C）：`idle`、`running`、`waiting_approval`（等待用户）、`done`（成功）、`aborted`（取消）、`timeout`（`turn_limit` 或模型超时）、`failed`、`interrupted`（崩溃重试耗尽）。来源：`pi.live.run` / `runFailure` + 未决审批。
 
-Fixture 模型（`provider: "fixture"`, `modelId: "workroom-fixture"`）：`AgentDTO.fixture`、`AssistantEntryDTO.fixture`、`UsageDTO.fixture` 为 true，回答以“【测试模型·非真实AI】”开头。UI 必须标注“测试模型，非真实 AI”。
+Fixture 模型（`provider: "fixture"`, `modelId: "workroom-fixture"`，或网关中标注为测试模型的平台模型）：`AgentDTO.fixture`、`AssistantEntryDTO.fixture`、`UsageDTO.fixture`/`UsageDTO.simulated` 为 true，`UsageDTO.byModel[]` 逐模型标注 `simulated`；回答以“【测试模型·非真实AI】”开头。UI 必须标注“测试模型，非真实 AI”，且不得把 simulated 的 token 数当作真实用量展示。
+
+每条用户消息（`UserEntryDTO`）带 `submission: {submissionId, status, reason?, answerEntryId?}`：每次加载时按 `wr.input.data.requestId` 从 pi 的提交记录读取（applied / done / unanswered+reason / withdrawn）。在排队中被撤回或因停止而未应用的输入，pi 不留条目；运行时为它们追加一条仅展示的 `wr.input-unplaced`（模型看不到），DTO 为 `kind: "user"`、`placed: false`、`submission.status: "withdrawn"`。限制：只有经由本模块 withdraw/abort 路由撤回的输入有该痕迹；其他模块直接调用 pi `abort()` 撤回的排队输入没有。
+
+会话标题：首条有意义的消息（去掉 `[[...]]` 指令，JSON 感知）的第一行，≤40 字；只有仍是“新对话”时才设置，用户 PATCH 后不再覆盖。
+
+`MarkerEntryDTO.kind = "notice"`（`wr.notice`，模型看不到）：运行时提示，例如助手默认模型不可用时“本会话改用 X”，带 `code`（`model_not_allowed` / `model_blocked`）；`POST /conversations` 响应同时带 `notice`。
 
 ## 5. 工具身份与副作用契约（给 C / D / E）
 
@@ -70,6 +78,7 @@ Fixture 模型（`provider: "fixture"`, `modelId: "workroom-fixture"`）：`Agen
 - 额外（被 C/D 鸭子类型调用）：`actorForToolCall(api, ctx)` → `ToolActor & { input?: InputEntryData }`（含 run 输入的附件/知识引用）；`inputForTool(api, ctx)`；`spaceIdForTool(api, ctx)`；`promptScope(input, ctx)` → `{space, principal|null}`（null = 已撤权/无权，节不应渲染与用户相关的内容）；`reinstallExtension(ext)`。
 - 子 Agent 的成员声明快照在子会话 `wr.assistant.member`（含 `knowledgeScope.kbIds`），C 的检索可据此收窄范围。
 - `effects.requestApproval(api, request, ctx)`：approvalId = hash(conversationId, callId)，存 `wr.approvals`；replay-safe 工具重跑会重新挂到同一审批；等待用文档 watch；进程重启后仍在。
+- 审计（E 的 `audit` 服务存在时）：`grant.approval_decided`（审批人、决定、会话/父会话、callId、HTTP requestId）；`effect.dispatching`、`effect.receipt`、`effect.needs_reconciliation`、`effect.failed`、`effect.reconciled`（effectId、key、idempotencyKey、spaceId、conversationId、taskId、callId；requestId = 该 run 输入的 requestId，人工核对时为 HTTP requestId）。`effect.*` 自动归入 `external_write` 类别。外部写在记录 `dispatching` **之前**按当前 ACL 解析执行人；无权则不写任何记录、不调用 perform。
 - `effects.externalEffect(api, {key, target, summary, idempotencyKey?}, perform, ctx)`：effectId = hash(conversationId, callId, key)。`perform` 之前提交 `dispatching`，之后提交回执。重放：有回执 → `{status:"done", replayed:true}`，不调用 perform；`dispatching` 无回执 → `needs_reconciliation`，不调用 perform。`perform` 抛 `EffectRejected`（从 `runtime/effects.ts` 导出）表示目标明确拒绝 → 记录 `failed` 并重抛；其他异常 = 结果未知 → `needs_reconciliation`。工具必须声明 `replay: "safe"`。
 
 ## 6. 子 Agent / 小队（M03）
@@ -81,6 +90,23 @@ Fixture 模型（`provider: "fixture"`, `modelId: "workroom-fixture"`）：`Agen
 - foreground：工具调用的任务拥有子会话；等待并返回答案；失败时返回原因（如 `turn_limit`）和已完成部分。
 - background：后台 anchor 任务（`background: true`）拥有子会话；后台 reporter 任务投递任务并把结果作为 follow-up（`wr.input`，`via.kind = subagent_report`）回报父会话。父会话 abort、浏览器关闭都不影响；`abort {background:true}` 才会停止。
 - 委派记录 `wr.team.delegations`：来源（父会话、callId、taskId）、负责人（ownerUserId）、状态、结果摘要、失败原因、用量（M03-B）。
+
+## 6a. 默认工具集策略（与 D 协商，见 docs/files-tools.md）
+
+默认会话（无助手或助手未限定 `tools`）选择**全部已安装的产品扩展**；每个工具在每次调用时通过 `actorForTool`/`actorForToolCall` 按当前 ACL 重查，所以“默认可见”不等于“默认有权”：
+
+| 扩展 | 工具 | 说明 |
+|---|---|---|
+| `wr.files`（D） | file_create / file_revise / file_read / file_list | 成果入文件库（不可变版本、来源） |
+| `wr.knowledge`（C） | kb_search / memory_save | 检索阶段 ACL 过滤；记忆按作用域 |
+| `wr.sandbox`、`codemode`（D） | sandbox_exec / sandbox_* / codemode | 云端隔离执行；终端面板的数据来源 |
+| `wr.browser`、`wr.browser-session`（D） | browse / browser_* | 受 URL 策略约束；浏览器面板的数据来源 |
+| `wr.skills`、`wr.jobs`（D） | skill_* / job_* | 可执行技能需授权；长任务异步 |
+| `wr.mcp`（D） | tool_search（仅模型） | MCP 连接器工具全部 `deferred`，只通过 D 的按用户过滤的 tool_search 加载；**不**安装 pi 通用 tool_search |
+| `wr-team`（A） | delegate | 子 Agent 只拿成员声明的显式白名单 |
+| `wr-fixture-tools`（A） | wr_fixture_* | 仅 `WORKROOM_FIXTURE_TOOLS=1`（测试） |
+
+B 反馈“终端/浏览器面板永远没有真实数据”的原因不是工具缺失（默认会话一直有 sandbox_exec / browse），而是 fixture 演示模式从不调用它们。现在演示模式：提到“运行/执行/代码/终端/命令” → 调用 `sandbox_exec` 执行固定的无害演示脚本（不执行消息中的任意文本）；提到“网页/浏览/打开/访问”且消息里有 http(s) 链接 → `browse`。真实模型自行选择工具。
 
 ## 7. 哪些工具可安全重放（replay: "safe"）及理由
 
@@ -109,7 +135,7 @@ Fork / 编辑 / 再生成只是在 pi 中新建一个从某条目开始的会话
 ## 9. 已知限制
 
 - 无凭据时真实模型为 blocked；fixture 只验证契约，不代表模型质量。
-- Harness 打开后常驻，未做空闲回收（每个活跃 space 一个 SQLite 连接）。
+- 空闲回收：无活跃工作（`wake.active` 为假）、无 SSE 观察者、`WORKROOM_RT_IDLE_MS`（默认 10 分钟）内未被使用且没有在此期间到期的 sleep → 关闭该 space 的 Harness 并释放租约；`rt_space_runtime.wake_at` 保留，定时器在到期时重新打开，任何请求也会按需打开。其他模块若长期持有 `runtime.harness()` 返回的对象而不再调用 `harness()`，可能在回收后拿到已关闭的 Harness（应每次通过 `runtime.harness()` 获取）。
 - SSE 每次发送完整状态（窗口最多 100 条），未做增量 ops；大会话用 `/entries` 分页。
 - `GET /conversations` 的 `status`/`parent` 仅在该 space 已打开时填充（不为列表打开所有 space）。
 - 插话在工具等待审批期间保持 `received`，直到该工具轮结束才会应用（pi 的边界语义）；不像参考产品那样打断挂起的审批。
@@ -120,12 +146,13 @@ Fork / 编辑 / 再生成只是在 pi 中新建一个从某条目开始的会话
 ## 10. 测试
 
 ```
-node --disable-warning=ExperimentalWarning --test server/test/runtime.test.ts        # 11
-node --disable-warning=ExperimentalWarning --test server/test/runtime-lease.test.ts  # 5
-node --disable-warning=ExperimentalWarning --test server/test/runtime-team.test.ts   # 4
+node --disable-warning=ExperimentalWarning --test server/test/runtime.test.ts        # 16
+node --disable-warning=ExperimentalWarning --test server/test/runtime-lease.test.ts  # 6
+node --disable-warning=ExperimentalWarning --test server/test/runtime-team.test.ts   # 5
+node --disable-warning=ExperimentalWarning --test server/test/runtime-handoff.test.ts # 2
 node --disable-warning=ExperimentalWarning --test server/test/proof.test.ts          # 3（含子进程 SIGKILL）
 ```
 
-测试用环境变量：`WORKROOM_FIXTURE_TOOLS=1`、`WORKROOM_RT_RETRY_BASE_MS`、`WORKROOM_RT_RETRY_MAX`、`WORKROOM_SSE_THROTTLE_MS`、`WORKROOM_SSE_ACL_RECHECK_MS`、`WORKROOM_LEASE_TTL_MS`。测试辅助（SSE 读取器、waitFor）在 `server/src/runtime/testing.ts`，其他组可直接引用。
+测试用环境变量：`WORKROOM_FIXTURE_TOOLS=1`、`WORKROOM_RT_RETRY_BASE_MS`、`WORKROOM_RT_RETRY_MAX`、`WORKROOM_SSE_THROTTLE_MS`、`WORKROOM_SSE_ACL_RECHECK_MS`、`WORKROOM_LEASE_TTL_MS`、`WORKROOM_RT_IDLE_MS`、`WORKROOM_RT_IDLE_SWEEP_MS`。测试辅助（SSE 读取器、waitFor）在 `server/src/runtime/testing.ts`，其他组可直接引用。
 
-Fixture 指令协议（最新用户消息中）：`[[call <tool> <json>]]`（可多个，同一轮发出）、`[[slow <ms>]]`、`[[fail]]`、`[[reply <text>]]`。工具结果返回后，fixture 回答一段逐条引用工具输出的确定性总结。无指令时：提到“知识/资料”且有 `kb_search` → 调用它；提到“生成/报告/文档”且有文件创建工具 → 调用它；否则回显。E 的模型网关通过 `createFixtureModel()`（`server/src/runtime/fixture-model.ts`）注册同一 provider。
+Fixture 指令协议（最新用户消息中）：`[[call <tool> <json>]]`（可多个，同一轮发出）、`[[slow <ms>]]`、`[[fail]]`（不可重试的模型错误 → run 以 model_error 结束）、`[[fail transient]]`（可重试的 503 → pi 按 `settings.retry` 持久退避后重试）、`[[reply <text>]]`。工具结果返回后，fixture 回答一段逐条引用工具输出的确定性总结。无指令时：提到“知识/资料”且有 `kb_search` → 调用它；提到“生成/报告/文档”且有文件创建工具 → 调用它；提到“运行/执行/代码/终端/命令”且有 `sandbox_exec` → 固定演示脚本；“网页/浏览/打开/访问”+链接且有 `browse` → 浏览；参数按所提供工具的 JSON Schema 填写；否则回显。E 的模型网关通过 `createFixtureModel()`（`server/src/runtime/fixture-model.ts`）注册同一 provider。
