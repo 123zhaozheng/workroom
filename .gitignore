@@ -5,3 +5,4 @@ web/dist/
 .npm.lock
 .git.lock
 artifacts/tmp/
+artifacts/backups/
