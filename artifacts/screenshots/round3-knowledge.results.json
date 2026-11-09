@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T07:34:14.679Z",
+  "at": "2026-11-09T11:58:20.535Z",
   "results": [
     {
       "name": "M07-A: personal / project / department / org scopes chosen in the UI",
@@ -24,7 +24,7 @@
     {
       "name": "M07-C: no_evidence / index_not_ready / forbidden have different messages",
       "ok": true,
-      "detail": "没有找到相关证据 · 知识库中没有与问题相关的内容 · 4.2 ms | 索引尚未就绪 · 1 个文档处理失败，没有可检索的内容 · 2.7 ms | 无权访问"
+      "detail": "没有找到相关证据 · 知识库中没有与问题相关的内容 · 4.9 ms | 索引尚未就绪 · 1 个文档处理失败，没有可检索的内容 · 2.2 ms | 无权访问"
     },
     {
       "name": "M07-C: model errors are reported as model errors (not as missing evidence)",
@@ -69,7 +69,7 @@
     {
       "name": "M10-C: correction shows before / after and that the old version is superseded",
       "ok": true,
-      "detail": "已纠正，从现在起助手按新内容理解 之前：周报使用英文 现在：周报使用中文 2026/11/9 07:34:14 · 团队统一用中文 · 旧版本 v1 已标记为被替代"
+      "detail": "已纠正，从现在起助手按新内容理解 之前：周报使用英文 现在：周报使用中文 2026/11/9 11:58:20 · 团队统一用中文 · 旧版本 v1 已标记为被替代"
     },
     {
       "name": "M10-A: edit and delete work from the memory page",

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationDetailResponse, ConversationState, EntriesPage, EntryDTO, SubmissionDTO } from "@shared/chat";
 import { ApiError, get } from "@/lib/api";
 
-export type StreamStatus = "connecting" | "live" | "reconnecting" | "closed";
+export type StreamStatus = "connecting" | "live" | "reconnecting" | "offline" | "closed";
 
 /**
  * Live conversation state over SSE (`snapshot` on connect, `state` on change). Closing the page only stops
@@ -60,9 +60,26 @@ export function useConversationStream(spaceId: string, conversationId: number) {
 			es.onopen = () => setStatus("live");
 		};
 		connect();
+		// A dropped network can leave an SSE connection hanging silently: react to the browser's own signal,
+		// say so, and open a fresh stream (→ full snapshot) as soon as the network is back.
+		const onOffline = () => {
+			setStatus("offline");
+		};
+		const onOnline = () => {
+			if (disposed) return;
+			es?.close();
+			if (retry) clearTimeout(retry);
+			attempts = 0;
+			setStatus("reconnecting");
+			connect();
+		};
+		window.addEventListener("offline", onOffline);
+		window.addEventListener("online", onOnline);
 		return () => {
 			disposed = true;
 			if (retry) clearTimeout(retry);
+			window.removeEventListener("offline", onOffline);
+			window.removeEventListener("online", onOnline);
 			es?.close();
 		};
 	}, [spaceId, conversationId]);

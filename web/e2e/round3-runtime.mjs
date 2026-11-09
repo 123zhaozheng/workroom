@@ -67,7 +67,19 @@ try {
 	await page.waitForURL(/\/c\//);
 	const runUrl = page.url();
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 10000 });
-	await ctx.close(); // the browser is gone; the server keeps working
+	// network loss first: the page says so, the run keeps going on the server, and it catches up when back online
+	await ctx.setOffline(true);
+	await page.waitForSelector('[data-testid="stream-notice"][data-stream="offline"]', { timeout: 15000 });
+	check("M02-A: losing the network is shown honestly (the task keeps running on the server)", (await page.locator('[data-testid="stream-notice"]').innerText()).includes("任务仍在服务端运行"));
+	await shot(page, "1440-offline-notice");
+	await sleep(7000); // the run finishes on the server while this browser is offline
+	await ctx.setOffline(false);
+	await page.waitForSelector('[data-testid="stream-notice"]', { state: "detached", timeout: 20000 });
+	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
+	check("M02-A: back online, the page reconnects and shows the result produced while it was offline", (await page.locator('[data-testid="stop"]').count()) === 0);
+	await sendMessage(page, '[[slow 6000]] 再做一份 [[call file_create {"name":"会议纪要二","format":"md","content":"# 纪要二\n- 结论二"}]]');
+	await page.waitForSelector('[data-testid="stop"]', { timeout: 10000 });
+	await ctx.close(); // then the browser is gone altogether; the server keeps working
 	await sleep(9000);
 	const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 	const p2 = await ctx2.newPage();

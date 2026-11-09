@@ -480,10 +480,14 @@ function RunBar({
 	const show = status !== "idle" && status !== "done";
 	return (
 		<div className="mb-2 flex flex-col gap-1.5">
-			{stream === "reconnecting" || streamError ? (
-				<div className="flex items-center gap-2 text-[12.5px] text-warning">
+			{stream === "reconnecting" || stream === "offline" || streamError ? (
+				<div data-testid="stream-notice" data-stream={stream} className="flex items-center gap-2 text-[12.5px] text-warning">
 					<WifiOff className="size-3.5" />
-					{streamError ? `实时连接已断开：${streamError}（任务仍在服务端运行，刷新页面可重新查看）` : "实时连接中断，正在重连…任务不受影响"}
+					{streamError
+						? `实时连接已断开：${streamError}（任务仍在服务端运行，刷新页面可重新查看）`
+						: stream === "offline"
+							? "网络已断开：任务仍在服务端运行，网络恢复后会自动重新连接并显示最新状态"
+							: "实时连接中断，正在重连…任务不受影响"}
 				</div>
 			) : null}
 			{show ? (

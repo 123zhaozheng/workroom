@@ -18,7 +18,17 @@ mkdirSync(SHOTS, { recursive: true });
  * Set E2E_BASE to reuse an already running server instead.
  */
 export async function startServer({ port = 8802, fresh = true, env = {} } = {}) {
-	if (process.env.E2E_BASE) return { base: process.env.E2E_BASE, stop: async () => {}, kill: async () => {} };
+	if (process.env.E2E_BASE) {
+		// An external server cannot be crashed or restarted from here: crash/recovery checks must fail, never pass vacuously.
+		if (!fresh) throw new Error("restart after a crash needs a child server; unset E2E_BASE");
+		return {
+			base: process.env.E2E_BASE,
+			stop: async () => {},
+			kill: async () => {
+				throw new Error("crash tests need a child server; unset E2E_BASE");
+			},
+		};
+	}
 	const dataDir = join(ROOT, "data/dev-B", `e2e-${port}`);
 	if (fresh) rmSync(dataDir, { recursive: true, force: true });
 	mkdirSync(dataDir, { recursive: true });
