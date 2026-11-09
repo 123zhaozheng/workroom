@@ -1,0 +1,200 @@
+{
+  "at": "2026-11-09T23:43:29.009Z",
+  "results": [
+    {
+      "name": "setup: reviewer holds the 技能审核员 role (skill.review / mcp.connector.review)",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "tabs: an ordinary member has 技能市场 / 我的技能 / MCP 市场 / 我的连接 but no 待审核",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "upload: dropping a .zip uploads it and shows the automated check result",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "upload: a zip-slip archive is rejected with a visible reason",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "upload: only the valid skill exists",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "submit: the submission is pending review in 我的提交",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: the reviewer sees the 待审核 tab with a count of 1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: shows manifest, and automated checks",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: diff tab lists the new files (first version → all added)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: file tree + viewer show SKILL.md content",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: approve is disabled until… the reviewer is not the submitter, so it is enabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: reject needs a comment (disabled while empty)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: approved item leaves the queue",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "self-review: the submitter cannot decide their own (no queue entry for a published item)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "market: the published skill is listed for a member, with version and author",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "market: search by keyword",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "detail: permissions tab explains no extra permission is needed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "detail: changelog lists the published version",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "install: org-wide target is disabled for an ordinary member",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "install: installed for me",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "update: v2 (adds a script and file.write) uploaded",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "update: v2 submitted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "re-review: diff vs the approved v1 shows the added script and the changed SKILL.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "re-review: newly requested permissions are highlighted (新增)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "re-review: after approval the market shows v1.1.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mcp: a pasted server.json is imported as a draft with its install option",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mcp review: reviewer sees the URL and secret NAMES only",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mcp install: the secret input is a password field",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mcp install: connected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "connectors: installed connector is 可用, tools listed, secret value not shown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "connectors: a user can switch a tool off for themselves",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval policy: a new personal connector is pending and not connected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval policy: the card says it is waiting for review",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval policy: after approval the connector connects",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile 390: market tab has no horizontal page scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile 390: mine tab has no horizontal page scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile 390: review tab has no horizontal page scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile 390: mcp tab has no horizontal page scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile 390: connectors tab has no horizontal page scroll",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
