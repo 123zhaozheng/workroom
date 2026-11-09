@@ -7,6 +7,7 @@ import { AutomationService } from "./automation.ts";
 import { FIXTURE_MODEL_ID, FIXTURE_PI_PROVIDER, Gateway } from "./gateway.ts";
 import { NotifyService } from "./notify.ts";
 import { registerOpsRoutes } from "./routes.ts";
+import { TraceService } from "./trace.ts";
 import { OPS_MIGRATIONS } from "./schema.ts";
 import { UsageService, type RuntimeDocs } from "./usage.ts";
 
@@ -16,6 +17,7 @@ export interface OpsState {
 	notify: NotifyService;
 	automation: AutomationService;
 	docs: RuntimeDocs;
+	trace: TraceService;
 }
 const states = new WeakMap<AppContext, OpsState>();
 export function opsState(ctx: AppContext): OpsState {
@@ -104,12 +106,14 @@ export const opsModule: WorkroomModule = {
 		}
 		usage.docs = docs;
 		gateway.onRequestFinished = (l) => usage.markDirty(l.spaceId, l.conversationId);
-		states.set(ctx, { gateway, usage, notify, automation, docs });
+		const trace = new TraceService(ctx);
+		states.set(ctx, { gateway, usage, notify, automation, docs, trace });
 		ctx.services.provide("models", gateway);
 		ctx.services.provide("budget", usage);
 		ctx.services.provide("usage", usage);
 		ctx.services.provide("automation", automation);
 		ctx.services.provide("notify", notify);
+		ctx.services.provide("trace", trace);
 
 		const id = ctx.services.get("identity") as Identity;
 		// Model ACL: visible platform models may be used/read; org admins administer their org's models.

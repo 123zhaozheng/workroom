@@ -703,8 +703,10 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		const q = c.req.query("q")?.trim() ?? "";
 		if (!q) throw new HttpError(400, "invalid", "q 必填：requestId / runId / requestKey / <spaceId>:<conversationId> / automationId");
 		await usage.importDirty({ orgId: p.orgId });
-		const [spaceId, convStr] = q.includes(":") && !q.startsWith("auto:") ? q.split(":") : [undefined, undefined];
+		// q forms: requestId | runId | automationId | requestKey | callId | <spaceId>:<conversationId>[:<taskId>]
+		const [spaceId, convStr, taskStr] = q.includes(":") && !q.startsWith("auto:") ? q.split(":") : [undefined, undefined, undefined];
 		const conv = convStr ? Number(convStr) : undefined;
+		const taskId = c.req.query("taskId") ? Number(c.req.query("taskId")) : taskStr ? Number(taskStr) : undefined;
 		const auditRows = db.all<any>("SELECT a.*, u.name AS actor_name FROM id_audit a LEFT JOIN id_users u ON u.id = a.actor_user_id WHERE a.org_id = ? AND (a.request_id = ? OR a.target = ? OR a.detail LIKE ? ESCAPE '\\') ORDER BY a.at LIMIT 200", p.orgId, q, q, `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
 		const runs = db.all<any>("SELECT * FROM auto_runs WHERE org_id = ? AND (id = ? OR automation_id = ? OR request_id = ? OR (space_id = ? AND conversation_id = ?)) ORDER BY created_at LIMIT 200", p.orgId, q, q, q, spaceId ?? "", conv ?? -1);
 		const convs = new Set<string>(runs.filter((r) => r.conversation_id != null).map((r) => `${r.space_id}:${r.conversation_id}`));
@@ -718,11 +720,18 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 			ledger.push(...db.all<any>("SELECT * FROM usage_ledger WHERE space_id = ? AND conversation_id = ? ORDER BY entry_id", sp, Number(cid)));
 		}
 		const notes = runs.length ? db.all<any>(`SELECT * FROM ops_notifications WHERE run_id IN (${runs.map(() => "?").join(",")})`, ...runs.map((r) => r.id)) : [];
+		const linked = [...convs].map((k) => k.split(":")).filter(([sp]) => id().space(sp!)?.orgId === p.orgId).map(([sp, cid]) => ({ spaceId: sp!, conversationId: Number(cid) }));
+		const ownSpace = !!spaceId && id().space(spaceId)?.orgId === p.orgId;
+		const contributed = await s.trace.collect({ orgId: p.orgId, q, requestId: q, spaceId: ownSpace ? spaceId : undefined, conversationId: ownSpace ? conv : undefined, taskId: ownSpace ? taskId : undefined, callId: q, conversations: linked, limit: 500 });
+		const filterTask = <T extends { task_id?: number | null }>(rows: T[]) => (taskId === undefined ? rows : rows.filter((r) => r.task_id == null || r.task_id === taskId));
 		return c.json({
 			query: q,
 			audit: auditRows.map((r) => ({ id: r.id, at: r.at, action: r.action, category: r.category, actorUserId: r.actor_user_id ?? undefined, actorName: r.actor_name ?? undefined, target: r.target ?? undefined, detail: r.detail ? JSON.parse(r.detail) : undefined, requestId: r.request_id ?? undefined })),
-			routeAttempts: attempts.map(attemptDto),
-			ledger: ledger.map(ledgerDto),
+			routeAttempts: filterTask(attempts).map(attemptDto),
+			ledger: filterTask(ledger).map(ledgerDto),
+			events: contributed.items,
+			eventErrors: contributed.errors.length ? contributed.errors : undefined,
+			sources: s.trace.sources(),
 			automationRuns: runs.map(runDto),
 			notifications: notes.map(notificationDto),
 		});

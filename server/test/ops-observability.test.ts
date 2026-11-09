@@ -153,3 +153,49 @@ test("online backup of a live data volume → verify → restore into an empty d
 		rmSync(restored, { recursive: true, force: true });
 	}
 });
+
+test("trace merges other modules' events (D tool calls, contributed retrieval events) by conversation/task, redacted and tenant-scoped", async (tt) => {
+	const t = await startTestApp({ config: { secretKey: SECRET } });
+	try {
+		if (!t.app.ctx.services.has("runtime")) return tt.skip("runtime module not loaded");
+		const a = await t.user("admin@a.example");
+		const { conversation } = await t.json("POST", "/api/conversations", { token: a.token, json: {} });
+		const base = `/api/conversations/${conversation.spaceId}/${conversation.conversationId}`;
+		const sent = await t.json("POST", `${base}/messages`, { token: a.token, json: { text: `[[call file_create {"name":"report","format":"md","content":"# 报告 api_key=sk-ant-api03-SECRETSECRET1234"}]]`, requestId: "tr1" } });
+		await waitFor(async () => ["done", "unanswered"].includes((await t.json("GET", `${base}/submissions/${sent.submissionId}`, { token: a.token })).status));
+		// A contributed source (shape C's retrieval lookup will use): receives the tenant + correlation keys.
+		const seen: any[] = [];
+		(t.app.ctx.services.get("trace") as any).register("retrieval-test", (q: any) => {
+			seen.push(q);
+			if (q.orgId !== a.me.orgId) return [];
+			return [{ source: "retrieval", kind: "retrieval", id: "ret_1", at: new Date().toISOString(), spaceId: conversation.spaceId, conversationId: conversation.conversationId, summary: "kb_search → no_evidence", detail: { query: "token=ghp_ABCDEFGHIJKLMNOPQRSTUVWX" } }];
+		});
+		(t.app.ctx.services.get("trace") as any).register("broken", () => {
+			throw new Error("boom");
+		});
+		const tr = await t.json("GET", `/api/admin/trace?q=${conversation.spaceId}:${conversation.conversationId}`, { token: a.token });
+		const tool = tr.events.find((e: any) => e.kind === "tool_call" && e.detail.tool === "file_create");
+		assert.ok(tool, JSON.stringify(tr.events));
+		assert.equal(tool.conversationId, conversation.conversationId);
+		assert.ok(tool.taskId > 0 && tool.callId);
+		const ret = tr.events.find((e: any) => e.kind === "retrieval");
+		assert.equal(ret.summary, "kb_search → no_evidence");
+		assert.ok(!JSON.stringify(tr.events).includes("SECRETSECRET") && !JSON.stringify(tr.events).includes("ghp_ABCDEFGHIJ"), "redacted");
+		assert.equal(seen.at(-1).conversationId, conversation.conversationId);
+		assert.deepEqual(tr.eventErrors, [{ source: "broken", error: "boom" }]);
+		assert.ok(tr.sources.includes("tools"));
+		// Narrow by task id; look up by call id.
+		const byTask = await t.json("GET", `/api/admin/trace?q=${conversation.spaceId}:${conversation.conversationId}:${tool.taskId}`, { token: a.token });
+		assert.ok(byTask.events.some((e: any) => e.id === tool.id));
+		const byCall = await t.json("GET", `/api/admin/trace?q=${encodeURIComponent(tool.callId)}`, { token: a.token });
+		assert.ok(byCall.events.some((e: any) => e.id === tool.id));
+		// Another org's admin gets nothing from D's records and the contributor is called with *their* org.
+		const b = await t.user("b@b.example");
+		const other = await t.json("GET", `/api/admin/trace?q=${conversation.spaceId}:${conversation.conversationId}`, { token: b.token });
+		assert.deepEqual(other.events.filter((e: any) => e.source !== "broken"), []);
+		assert.equal(seen.at(-1).orgId, b.me.orgId);
+		assert.equal(seen.at(-1).conversationId, undefined, "another org's space ids are never passed to contributors");
+	} finally {
+		await t.dispose();
+	}
+});

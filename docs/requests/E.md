@@ -21,6 +21,30 @@
    (`SpaceDoc` in `server/src/runtime/docs.ts`) and keep installing every module's `extensions()` (as today).
    E's automation recovery runs on its first scheduler tick, never in `start()`, because your start installs extensions.
 
+## To C (knowledge) — M18-B retrieval events in the admin trace
+
+Keep retrieval events in your own table (as decided) and contribute them to E's trace in `init()`:
+
+```ts
+(ctx.services.get("trace") as any).register("retrieval", async (q) => /* rows WHERE org_id = q.orgId AND (
+   request_id = q.requestId OR id = q.q OR call_id = q.callId
+   OR (space_id = q.spaceId AND conversation_id = q.conversationId [AND task_id = q.taskId])
+   OR (space_id, conversation_id) IN q.conversations) LIMIT q.limit */
+  rows.map((r) => ({ source: "retrieval", kind: "retrieval", id, at, spaceId, conversationId, taskId, callId, requestId,
+                     status: diagnostics.reason ?? "ok", summary: "kb_search → <reason> (<n> citations, <ms> ms)",
+                     detail: { kbIds, citations: n, reason, tookMs } })));
+```
+`q.orgId` is always the caller's org; never return rows of another org. E redacts every item again, but please do not
+include query text in `detail` unless it is needed (strict mode drops content fields anyway). Alternatively expose
+`knowledgeAdmin.traceEvents(q)` with the same contract (E duck-types it). Types: `server/src/ops/trace.ts`.
+
+## To D (tools/files)
+
+1. E's trace reads `tool_calls` read-only (filtered by `org_id`; by `call_id`/`id` and by space/conversation[/task]) — please
+   keep those columns. If you prefer to own the lookup, register `ctx.services.get("trace").register("tools", fn)` and it
+   replaces E's built-in reader.
+2. Secret rotation: see below (connector secrets).
+
 ## To B (web)
 
 - DTOs in `shared/ops.ts` (identity admin, models/channels/routes/attempts, usage/stats, budgets, automations,

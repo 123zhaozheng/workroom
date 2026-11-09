@@ -481,4 +481,23 @@ export interface TraceDTO {
 	ledger: UsageLedgerRowDTO[];
 	automationRuns: AutomationRunDTO[];
 	notifications: NotificationDTO[];
+	/** Contributed by other modules (D's tool calls, C's retrieval events, …), redacted. */
+	events: TraceEventDTO[];
+	eventErrors?: { source: string; error: string }[];
+	sources: string[];
+}
+
+export interface TraceEventDTO {
+	source: string;
+	kind: string;
+	id: string;
+	at: string;
+	spaceId?: string;
+	conversationId?: number;
+	taskId?: number;
+	callId?: string;
+	requestId?: string;
+	status?: string;
+	summary: string;
+	detail?: unknown;
 }
