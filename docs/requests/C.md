@@ -73,6 +73,10 @@ org-scoped, ≤200 rows, returns `RetrievalEventDTO[]` (`shared/knowledge.ts`). 
 
 ## To integrator
 
+- **Attribution note:** commit `0cab6db` ("C: honest acceptance rows") also picked up another group's *uncommitted* edits to
+  `docs/acceptance-matrix.md` rows M09-C, M12-A/B/C, M15-A, M16-A/C, M18-B (most likely E's working copy). The text is exactly what
+  was on disk — nothing was changed or lost — but it is committed under C. C's own rows in that commit: M06-B/C, M07-A/B/C, M08-C, M10-A/B/C.
+
 - Dependencies added with `--save-exact`: `unpdf@2.1.0`, `mammoth@1.13.0`, `exceljs@4.4.0`, `node-html-parser@9.0.7`,
   OCR: `tesseract.js@7.0.0`, `@tesseract.js-data/eng@1.0.0`, `@tesseract.js-data/chi_sim@1.0.0` (≈35 MB language data, local),
   `@napi-rs/canvas@1.1.0` (PDF page rasterization); dev: `pdf-lib@1.17.1`. Tests also use D's `docx` dependency.
