@@ -36,6 +36,7 @@ const stop = async () => {
 };
 
 const browser = await chromium.launch();
+let page0;
 const idle = (page, t = 60000) => page.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: t });
 const newUser = async (admin, name, role = "member") => {
 	const code = (await (await admin.request.post(`${base}/api/admin/invites`, { data: { role, ttlHours: 24 } })).json()).invite.code;
@@ -72,6 +73,7 @@ const pyFail = "import sys\nprint('处理到一半')\nsys.stderr.write('Tracebac
 try {
 	const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, locale: "zh-CN" });
 	const a = await ctx.newPage();
+	page0 = a;
 	await register(a, base, { email: `sb-${Date.now()}@example.com`, name: "沙箱用户" });
 	const viewer = await newUser(a, "只读成员");
 	const outsider = await newUser(a, "外部成员");
@@ -139,11 +141,9 @@ try {
 	check("files: download returns the exact bytes as an attachment", dl.status() === 200 && (await dl.text()) === "月份,收入\n1月,120\n2月,150\n" && /attachment/.test(dl.headers()["content-disposition"] ?? ""), `${dl.status()} ${dl.headers()["content-disposition"]}`);
 
 	// ---------------------------------------------------------------- upload, new folder, delete, publish
-	const upPath = join(dataDir, "上传的数据.csv");
-	writeFileSync(upPath, "id,name\n1,甲\n2,乙\n");
-	await entry("out").click(); // select the folder → upload goes into it (collapse state irrelevant)
-	await a.setInputFiles('[data-testid="ws-upload-input"]', upPath);
-	await a.waitForSelector('[data-testid="ws-note"]:has-text("已上传 1 个文件")', { timeout: 10000 });
+		await entry("out").click(); // select the folder → upload goes into it (collapse state irrelevant)
+	await a.setInputFiles('[data-testid="ws-upload-input"]', { name: '上传的数据.csv', mimeType: 'text/csv', buffer: Buffer.from('id,name\n1,甲\n2,乙\n') });
+		await a.waitForSelector('[data-testid="ws-note"]:has-text("已上传 1 个文件")', { timeout: 5000 });
 	await entry("out/上传的数据.csv").waitFor({ timeout: 10000 });
 	const upl = await a.request.get(`${base}/api/sandbox/${spaceId}/file?path=${encodeURIComponent("out/上传的数据.csv")}&conversationId=${convId}`);
 	check("files: upload (user) lands in the selected folder with the exact content", (await upl.text()) === "id,name\n1,甲\n2,乙\n");
@@ -223,6 +223,7 @@ try {
 } catch (e) {
 	check(`unexpected error: ${String(e?.message ?? e).split("\n")[0]}`, false);
 	console.error(e);
+	await shot(page0, "sandbox-failure-debug").catch(() => {});
 } finally {
 	await browser.close();
 	await stop();

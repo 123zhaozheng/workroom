@@ -57,6 +57,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 	const u = files.data?.usage;
 	const pct = u ? Math.min(100, Math.round((u.spaceBytes / Math.max(1, u.quotaBytes)) * 100)) : 0;
 
+	const reveal = (dir: string) => setExpanded((s) => new Set([...s, ...dir.split("/").filter(Boolean).map((_, i, a) => a.slice(0, i + 1).join("/"))]));
 	const run = async (fn: () => Promise<unknown>, ok: string) => {
 		setBusy(true);
 		setNote(undefined);
@@ -108,6 +109,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 							if (!list.length) return;
 							void run(async () => {
 								for (const f of list) await uploadFile(spaceId, conversationId, join(targetDir, f.name), f);
+								reveal(targetDir);
 							}, `已上传 ${list.length} 个文件到 /work${targetDir ? `/${targetDir}` : ""}`);
 						}}
 					/>
@@ -137,6 +139,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 							void run(async () => {
 								await post(`${base(spaceId)}/mkdir`, { conversationId, path: join(targetDir, name) });
 								setNewDir(null);
+								reveal(targetDir);
 							}, `已创建文件夹 ${join(targetDir, name)}`);
 						}}
 					>

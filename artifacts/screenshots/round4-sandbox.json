@@ -1,0 +1,140 @@
+{
+  "at": "2026-11-09T23:29:34.125Z",
+  "results": [
+    {
+      "name": "terminal: runs are listed oldest first with the command, stdout and an exit line",
+      "ok": true,
+      "detail": "$ python3 main.py 成功 刚刚 已写入 4 个文件 ['blob.bin', 'notes.md', 'out'] [exit 0 · 295 ms · namespaces]"
+    },
+    {
+      "name": "terminal: a failing run shows stdout, stderr and a non-zero exit code",
+      "ok": true,
+      "detail": "$ python3 main.py 出错 刚刚 import sys print('处理到一半') sys.stderr.write('Traceback: boom\\n') sys.exit(3) 处理到一半 Traceback: boom [exit 3 · 436 ms · namespaces]"
+    },
+    {
+      "name": "terminal: the log scrolls (bounded height, overflow auto) and is monospace",
+      "ok": true,
+      "detail": "{\"overflowY\":\"auto\",\"maxH\":\"512px\"}"
+    },
+    {
+      "name": "terminal: the active sandbox driver and its limits are shown",
+      "ok": true,
+      "detail": "Linux 命名空间 · 超时 30 秒 · 内存 512.0 MB · 网络关闭 · 只有 /work 可写 隔离范围与限制"
+    },
+    {
+      "name": "files: the workspace tree shows what the agent wrote (folders first, children hidden until expanded)",
+      "ok": true,
+      "detail": "out,blob.bin,notes.md"
+    },
+    {
+      "name": "files: expanding a folder reveals its files",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: quota, usage and the retention rule are always shown",
+      "ok": true,
+      "detail": "本会话 519 B · 4 个文件 空间已用 519 B / 配额 512.0 MB 文件在最后修改后闲置 72 小时会被自动清理；需要长期保留的成果请「发布到文件库」。单个文件上限 64.0 MB。"
+    },
+    {
+      "name": "files: text preview",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: preview shows size, modified time and when the file expires",
+      "ok": true,
+      "detail": "40 B 修改于 2026/11/9 23:29:21 闲置到期 3天后 # 分析笔记 - 收入同比增长 25% "
+    },
+    {
+      "name": "files: image preview renders inline (120×60 PNG written by the sandbox)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: a binary file says it cannot be previewed and offers download",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: download returns the exact bytes as an attachment",
+      "ok": true,
+      "detail": "200 attachment; filename=\"report.csv\"; filename*=UTF-8''report.csv"
+    },
+    {
+      "name": "files: upload (user) lands in the selected folder with the exact content",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: new folder is created in the selected folder",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: publish to the library creates a file version (shown as a file card) that outlives the workspace",
+      "ok": true,
+      "detail": "上传的数据.csv v1 表格 · 20 B · 点击预览"
+    },
+    {
+      "name": "files: delete asks for confirmation first (nothing is deleted yet)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: delete removes the file from the workspace (the published library copy stays)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: path traversal (../ and ..\\) is refused by the server",
+      "ok": true,
+      "detail": "400 400"
+    },
+    {
+      "name": "viewer: sees the same tree and previews, upload/new-folder are disabled and the panel says 只读",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "viewer: delete and publish are disabled, download stays available",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "viewer: the server enforces it — write 403, delete 403, read 200",
+      "ok": true,
+      "detail": "403 403 200"
+    },
+    {
+      "name": "non-member: 403 for listing and writing",
+      "ok": true,
+      "detail": "403 403"
+    },
+    {
+      "name": "admin: the driver setting can be changed (PUT /api/sandbox/driver)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "unavailable: the terminal says 沙箱不可用 and explains how to enable it (Docker Desktop / namespaces)",
+      "ok": true,
+      "detail": "沙箱不可用 管理员已关闭沙箱（driver=none）。 启用方法：在 Linux 上请允许非特权 user namespace 并安装 util-linux（命名空间驱动），或安装 Docker Engine（docker 驱动），然后由管理员在“沙箱”设置中重新检测。"
+    },
+    {
+      "name": "unavailable: the workspace files stay browsable and downloadable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: switching back to auto re-enables the sandbox",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "narrow screen: the files tab fits without horizontal page scroll",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
