@@ -89,7 +89,7 @@ export interface InputEntryData {
 	readonly attachments?: readonly { fileId: string; versionId: string; name: string }[];
 	/** Knowledge bases / docs referenced with chips. */
 	readonly knowledgeRefs?: readonly { kbId: string; docId?: string; name: string }[];
-	readonly via?: { kind: "automation"; automationId: string; runId: string };
+	readonly via?: { kind: "automation"; automationId: string; runId: string } | { kind: "delegate" | "subagent_report"; id: string };
 }
 
 /** Who a tool call acts for: resolved from the run's inputs, then re-checked against current ACL. */
@@ -110,7 +110,15 @@ export interface RuntimeService {
 	spaceOfConversation(spaceId: string, conversationId: number): Promise<Space | null>;
 	/** Admit a user input on behalf of a principal (used by API and automations). requestId dedupes. */
 	submitInput(principal: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string; whenBusy?: "steer" | "followUp" | "reject" }, context: ChordContext): Promise<{ submissionId: number }>;
-	createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef }, context: ChordContext): Promise<{ conversationId: number }>;
+	createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: ChordContext): Promise<{ conversationId: number }>;
+	/** Like actorForTool, resolving the space from the storage's `wr.space` doc; `input` = first placed input of the current run. */
+	actorForToolCall(api: ToolApiLike, context: ChordContext): Promise<ToolActor & { input?: InputEntryData }>;
+	inputForTool(api: ToolApiLike, context: ChordContext): Promise<InputEntryData | undefined>;
+	spaceIdForTool(api: Pick<ToolApiLike, "snapshot">, context: ChordContext): Promise<string>;
+	/** Scope for system-prompt sections; principal null = revoked. */
+	promptScope(input: import("@earendil-works/pi-durable").PromptInput, context: ChordContext): Promise<{ space: Space; principal: Principal | null } | null>;
+	/** Re-install an extension in every open harness (e.g. after MCP tool discovery). */
+	reinstallExtension(ext: Extension): void;
 }
 
 // ---------- models / usage (group E, server/src/ops) ----------
