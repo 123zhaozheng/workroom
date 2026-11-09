@@ -1,6 +1,8 @@
 // Module registration order (owner: integrator). Groups add their module export here via the integrator,
 // or append one line in their own marked slot below. Order matters only for init (service provision).
 import type { WorkroomModule } from "./core/contracts.ts";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { identityModule } from "./identity/module.ts";
 
 export async function loadModules(): Promise<WorkroomModule[]> {
@@ -14,12 +16,10 @@ export async function loadModules(): Promise<WorkroomModule[]> {
 		"./runtime/module.ts", // A: pi-durable harness owner, conversations, branches, subagents (installs every module's extensions)
 	];
 	for (const path of optional) {
-		try {
-			const m = await import(path);
-			for (const v of Object.values(m)) if (v && typeof v === "object" && "name" in v && ("init" in v || "routes" in v || "migrations" in v)) mods.push(v as WorkroomModule);
-		} catch (e: any) {
-			if (e?.code !== "ERR_MODULE_NOT_FOUND" || !String(e.message).includes(path.slice(2))) throw e;
-		}
+		// Skip only when the module file itself is absent; any error inside a present module is fatal (never silently disable a module).
+		if (!existsSync(fileURLToPath(new URL(path, import.meta.url)))) continue;
+		const m = await import(path);
+		for (const v of Object.values(m)) if (v && typeof v === "object" && "name" in v && ("init" in v || "routes" in v || "migrations" in v)) mods.push(v as WorkroomModule);
 	}
 	return mods;
 }
