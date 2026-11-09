@@ -10,6 +10,8 @@ import { createSandboxExtension } from "./sandbox-tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
 import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
+import { BrowserSessions, createBrowserSessionExtension } from "./browser-sessions.ts";
+import type { BrowserActionRequest, ConversationWorkDTO } from "../../../shared/files.ts";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { contentDisposition } from "../files/module.ts";
@@ -61,6 +63,12 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("browser", new BrowserService(ctx));
 		ctx.services.provide("skills", new Skills(ctx));
 		ctx.services.provide("jobs", new Jobs(ctx));
+		const sessions = new BrowserSessions(ctx);
+		ctx.services.provide("browserSessions", sessions);
+		// Work items of a conversation (for ConversationState.work — see docs/requests/D.md).
+		ctx.services.provide("work", {
+			forConversation: (spaceId: string, conversationId: number): ConversationWorkDTO => ({ jobs: (ctx.services.get("jobs") as Jobs).forConversation(spaceId, conversationId), browserSessions: sessions.forConversation(spaceId, conversationId) }),
+		});
 	},
 	extensions(ctx) {
 		const mgr = ctx.services.get("mcp") as McpManager;
@@ -79,15 +87,17 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createJobsExtension(ctx), codemode];
+		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		(ctx.services.get("mcp") as McpManager).start();
 		(ctx.services.get("sandbox") as Sandbox).start();
+		(ctx.services.get("browserSessions") as BrowserSessions).start();
 	},
 	async stop(ctx) {
 		await (ctx.services.get("mcp") as McpManager).stop();
 		(ctx.services.get("sandbox") as Sandbox).stop();
+		await (ctx.services.get("browserSessions") as BrowserSessions).stop();
 		await (ctx.services.get("browser") as BrowserService).stop();
 		await codemodeSandboxes.get(ctx)?.close().catch(() => {});
 		codemodeSandboxes.delete(ctx);
@@ -178,6 +188,70 @@ export const toolsModule: WorkroomModule = {
 			return c.json({ job: jobs.dto(r, (await acl.check(p, "write", { kind: "space", id: r.space_id })).allow) });
 		});
 		api.post("/jobs/:id/cancel", async (c) => c.json({ job: await jobs.cancel(principalOf(c), c.req.param("id")) }));
+
+		// ---- interactive browser sessions (M11-B): watch = space read; act / take over / close = space write ----
+		const bs = ctx.services.get("browserSessions") as BrowserSessions;
+		const sessionFor = async (c: any, action: "read" | "write") => {
+			const p = principalOf(c);
+			const s = bs.get(c.req.param("id"));
+			if (!s) throw new HttpError(404, "not_found", "浏览会话不存在或已关闭");
+			await acl.require(p, action, { kind: "space", id: s.spaceId });
+			return { p, s };
+		};
+		const canWrite = async (p: Principal, spaceId: string) => (await acl.check(p, "write", { kind: "space", id: spaceId })).allow;
+		api.get("/browser-sessions", async (c) => {
+			const p = principalOf(c);
+			const q = c.req.query();
+			let spaceIds: string[];
+			if (q.spaceId) {
+				await acl.require(p, "read", { kind: "space", id: q.spaceId });
+				spaceIds = [q.spaceId];
+			} else spaceIds = (await acl.readableSpaces(p)).map((s) => s.id);
+			const list = bs.list(spaceIds, q.conversationId ? Number(q.conversationId) : undefined);
+			return c.json({ sessions: await Promise.all(list.map(async (s) => bs.dto(s, await canWrite(p, s.spaceId)))) });
+		});
+		api.post("/browser-sessions", async (c) => {
+			const p = principalOf(c);
+			const b = await jsonBody<{ spaceId: string; conversationId: number; url: string }>(c);
+			await acl.require(p, "write", { kind: "space", id: b.spaceId });
+			const s = await bs.open(p, b.spaceId, Number(b.conversationId), b.url, "user");
+			return c.json({ session: bs.dto(s, true) });
+		});
+		api.get("/browser-sessions/:id", async (c) => {
+			const { p, s } = await sessionFor(c, "read");
+			return c.json({ session: bs.dto(s, await canWrite(p, s.spaceId)) });
+		});
+		api.get("/browser-sessions/:id/screenshot", async (c) => {
+			const { s } = await sessionFor(c, "read");
+			return new Response(bs.screenshot(s.id) as unknown as Uint8Array<ArrayBuffer>, { headers: { "content-type": "image/png", "cache-control": "private, no-store", "x-content-type-options": "nosniff", "x-session-version": String(s.version) } });
+		});
+		api.post("/browser-sessions/:id/actions", async (c) => {
+			const { p, s } = await sessionFor(c, "write");
+			const updated = await bs.act(p, s.id, await jsonBody<BrowserActionRequest>(c), "user");
+			return c.json({ session: bs.dto(updated, true) });
+		});
+		api.post("/browser-sessions/:id/takeover", async (c) => {
+			const { p, s } = await sessionFor(c, "write");
+			return c.json({ session: bs.dto(bs.takeover(p, s.id), true) });
+		});
+		api.post("/browser-sessions/:id/release", async (c) => {
+			const { p, s } = await sessionFor(c, "write");
+			return c.json({ session: bs.dto(bs.release(p, s.id), true) });
+		});
+		api.delete("/browser-sessions/:id", async (c) => {
+			const { s } = await sessionFor(c, "write");
+			await bs.close(s.id);
+			return c.json({ ok: true });
+		});
+		api.get("/work/:spaceId/:conversationId", async (c) => {
+			const p = principalOf(c);
+			const spaceId = c.req.param("spaceId");
+			await acl.require(p, "read", { kind: "space", id: spaceId });
+			const cid = Number(c.req.param("conversationId"));
+			const w = (ctx.services.get("work") as { forConversation(s: string, c: number): ConversationWorkDTO }).forConversation(spaceId, cid);
+			const cw = await canWrite(p, spaceId);
+			return c.json({ work: { jobs: w.jobs.map((j) => ({ ...j, canCancel: cw })), browserSessions: w.browserSessions.map((x) => ({ ...x, canControl: cw })) } });
+		});
 
 		// ---- capabilities (M14-A, tools side): what this user can use right now, and what is unavailable and why ----
 		api.get("/tools/capabilities", async (c) => {

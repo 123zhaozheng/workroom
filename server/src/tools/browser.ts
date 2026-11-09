@@ -91,6 +91,10 @@ export class BrowserService {
 		this.#browser = pw.chromium.launch();
 		return this.#browser;
 	}
+	/** Shared Chromium for interactive sessions (each session gets its own guarded context). */
+	browserForSessions(): Promise<Browser> {
+		return this.#get();
+	}
 	async stop(): Promise<void> {
 		const b = await this.#browser?.catch(() => null);
 		this.#browser = null;
