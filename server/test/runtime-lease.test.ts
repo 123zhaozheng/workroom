@@ -84,3 +84,56 @@ test("wake state: rt_space_runtime mirrors onWake (active while a run works, ina
 		await t.dispose();
 	}
 });
+
+test("recovery: a storage write after the in-memory lease expired fails the Harness; it is reopened and the run finishes", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("reopen@example.com");
+		const { conversation: c } = await t.json("POST", "/api/conversations", { token: a.token, json: {} });
+		const m = runtimeState(t.app.ctx).manager;
+		const r = await t.json("POST", `/api/conversations/${c.spaceId}/${c.conversationId}/messages`, { token: a.token, json: { text: "[[slow 500]] [[reply 重新打开后完成]]", requestId: rid() } });
+		const h1 = m.openHarness(c.spaceId)!;
+		m.expireLeaseInMemory(c.spaceId); // the next commit (the answer) is refused by the storage guard
+		const end = await h1.closed;
+		assert.equal(end.kind, "failed");
+		assert.match(String((end as any).error?.message ?? (end as any).error), /lease/);
+		await waitFor(() => m.openHarness(c.spaceId) && m.openHarness(c.spaceId) !== h1, { what: "reopened" });
+		const s = await waitFor(async () => {
+			const x = await t.json("GET", `/api/conversations/${c.spaceId}/${c.conversationId}/submissions/${r.submissionId}`, { token: a.token });
+			return x.status === "done" ? x : undefined;
+		}, { what: "run finishes after reopen" });
+		assert.equal(s.status, "done");
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("recovery: start() reopens spaces with due work and arms a timer for a future sleep", async () => {
+	const dataDir = mkdtempSync(join(tmpdir(), "wr-wake-"));
+	let t = await startTestApp({ dataDir });
+	try {
+		const a = await t.user("sleep@example.com");
+		const { conversation: c } = await t.json("POST", "/api/conversations", { token: a.token, json: {} });
+		await t.stop();
+		// as if the last process had recorded a sleep due in 400 ms
+		const { AppDb } = await import("../src/core/db.ts");
+		const db = new AppDb(join(dataDir, "app.sqlite"));
+		db.run("UPDATE rt_space_runtime SET wake_active = 0, wake_at = ? WHERE space_id = ?", Date.now() + 400, c.spaceId);
+		db.close();
+		t = await startTestApp({ dataDir });
+		const m = runtimeState(t.app.ctx).manager;
+		assert.equal(m.isOpen(c.spaceId), false);
+		assert.ok(m.pendingWakeTimers.has(c.spaceId));
+		await waitFor(() => m.isOpen(c.spaceId), { what: "opened when the sleep is due" });
+		// due immediately → opened during start()
+		await t.stop();
+		const db2 = new AppDb(join(dataDir, "app.sqlite"));
+		db2.run("UPDATE rt_space_runtime SET wake_active = 1, wake_at = NULL WHERE space_id = ?", c.spaceId);
+		db2.close();
+		t = await startTestApp({ dataDir });
+		assert.ok(runtimeState(t.app.ctx).manager.isOpen(c.spaceId));
+	} finally {
+		await t.dispose();
+		rmSync(dataDir, { recursive: true, force: true });
+	}
+});

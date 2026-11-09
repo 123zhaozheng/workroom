@@ -203,7 +203,7 @@ export function createFixtureModel(options: { tokensPerSecond?: number } = {}): 
 		// Keep the faux queue topped up: every request consumes one step and adds one.
 		faux.appendResponses([factory]);
 		const { message, slowMs } = fixtureAnswer(context.messages);
-		// [[slow]] applies only to the first answer for an input (not to a retry after the answer started).
+		// [[slow]] delays every answer whose newest message is that user input (also a retry after a crash).
 		if (slowMs) await sleep(slowMs, streamOptions?.signal);
 		return message;
 	};

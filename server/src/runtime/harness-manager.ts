@@ -51,6 +51,7 @@ export class HarnessManager {
 	readonly #models: () => Models;
 	readonly fixture: FixtureModel;
 	#heartbeat?: NodeJS.Timeout;
+	readonly #wakeTimers = new Set<NodeJS.Timeout>();
 	#stopping = false;
 
 	constructor(ctx: AppContext, registry: Registry, opts: HarnessManagerOptions) {
@@ -284,10 +285,14 @@ export class HarnessManager {
 					skipped.push({ spaceId: r.space_id, reason: err?.code ?? err?.message ?? String(err) });
 				}
 			} else if (r.wake_at !== null) {
+				this.pendingWakeTimers.add(r.space_id);
 				const t = setTimeout(() => {
+					this.pendingWakeTimers.delete(r.space_id);
+					this.#wakeTimers.delete(t);
 					this.get(r.space_id).catch((err) => console.error(`[runtime] wake of ${r.space_id} failed`, err?.message ?? err));
 				}, Math.min(r.wake_at - now, 2_147_000_000));
 				t.unref();
+				this.#wakeTimers.add(t);
 				armed.push(r.space_id);
 			}
 		}
@@ -297,9 +302,24 @@ export class HarnessManager {
 	async stop(): Promise<void> {
 		this.#stopping = true;
 		if (this.#heartbeat) clearInterval(this.#heartbeat);
+		for (const t of this.#wakeTimers) clearTimeout(t);
+		this.#wakeTimers.clear();
 		await Promise.allSettled([...this.#opening.values()]);
 		await Promise.all([...this.#open.keys()].map((id) => this.#close(id, "stop")));
 	}
+
+	/**
+	 * Test/ops hook: forget the in-memory lease expiry of an open space without touching the row, as if this process
+	 * had stalled past it. The next storage write is refused (LeaseLost) → the Harness fails → it is reopened under a
+	 * freshly acquired lease (if no other owner holds it).
+	 */
+	expireLeaseInMemory(spaceId: string): void {
+		const e = this.#open.get(spaceId);
+		if (e) e.leaseExpiresAt = 0;
+	}
+
+	/** Test/ops hook: whether a timer is armed for a space's future sleep (rt_space_runtime.wake_at). */
+	readonly pendingWakeTimers = new Set<string>();
 
 	get context(): Context {
 		return BACKGROUND_CONTEXT;

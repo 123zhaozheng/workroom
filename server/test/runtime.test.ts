@@ -254,3 +254,44 @@ test("runtime: approvals are durable docs; decision via API resumes the tool", a
 		await t.dispose();
 	}
 });
+
+test("runtime M09-B / M13-C: a project member takes over — sees the same state (two devices), decides the pending approval; a viewer cannot", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("rt-hand-a@example.com");
+		const { invite } = await t.json("POST", "/api/admin/invites", { token: a.token, json: { role: "member" } });
+		const b = await t.user("rt-hand-b@example.com", { inviteCode: invite.code });
+		const v = await t.user("rt-hand-v@example.com", { inviteCode: (await t.json("POST", "/api/admin/invites", { token: a.token, json: { role: "member" } })).invite.code });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "交接" } });
+		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "rt-hand-b@example.com", role: "editor" } });
+		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "rt-hand-v@example.com", role: "viewer" } });
+		const c = await newChat(t, a.token, { projectId: project.id });
+		const r = await send(t, a.token, c, `[[call wr_fixture_approval {"title":"发布","summary":"发布季度报告到官网"}]]`);
+		const sa = sseReader(await t.req("GET", `${base(c)}/events`, { token: a.token }));
+		const sb = sseReader(await t.req("GET", `${base(c)}/events`, { token: b.token }));
+		const stA = await sa.state((s) => s.approvals.some((x) => x.status === "pending"));
+		const stB = await sb.state((s) => s.approvals.some((x) => x.status === "pending"));
+		assert.deepEqual(stB.approvals, stA.approvals);
+		assert.deepEqual(stB.entries.map((e) => e.id), stA.entries.map((e) => e.id));
+		assert.equal(stB.live.status, "waiting_approval");
+		// the viewer can read but not decide or send
+		await t.json("GET", `${base(c)}/state`, { token: v.token });
+		await t.json("POST", `${base(c)}/approvals/${stA.approvals[0]!.approvalId}`, { token: v.token, json: { decision: "approved" }, expect: 403 });
+		await t.json("POST", `${base(c)}/messages`, { token: v.token, json: { text: "x", requestId: rid() }, expect: 403 });
+		// B (editor) takes over: decides and continues the work
+		await t.json("POST", `${base(c)}/approvals/${stA.approvals[0]!.approvalId}`, { token: b.token, json: { decision: "approved", note: "B 接手批准" } });
+		await settle(t, a.token, c, r.submissionId);
+		const doneA = await sa.state((s) => s.live.status === "done");
+		const doneB = await sb.state((s) => s.live.status === "done");
+		assert.equal(doneA.approvals[0]!.decidedBy, b.me.userId);
+		assert.deepEqual(doneB.entries.map((e) => e.id), doneA.entries.map((e) => e.id));
+		const r2 = await send(t, b.token, c, "我来继续 [[reply 交接完成]]");
+		await settle(t, b.token, c, r2.submissionId);
+		const es = await entries(t, a.token, c);
+		assert.equal((es.filter((e) => e.kind === "user").at(-1) as any).userId, b.me.userId);
+		await sa.close();
+		await sb.close();
+	} finally {
+		await t.dispose();
+	}
+});
