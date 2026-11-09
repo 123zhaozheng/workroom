@@ -10,7 +10,7 @@ import { startTestApp, type TestApp } from "./helpers/app.ts";
 import { nextRuns, type AutomationService } from "../src/ops/automation.ts";
 import type { NotifyService } from "../src/ops/notify.ts";
 
-process.env.WORKROOM_WEBHOOK_ALLOW_PRIVATE = "1";
+process.env.WORKROOM_WEBHOOK_ALLOWLIST = "127.0.0.1"; // instance allowlist: tests talk to a local server
 process.env.WORKROOM_AUTOMATION_TICK_MS = "0"; // tests drive the scheduler with a fake clock
 const SECRET = "test-secret-key-for-automation-0123456789";
 
@@ -261,7 +261,7 @@ test("notifications: webhook delivered with HMAC signature; webhook failure reco
 		// Private-address guard (when not explicitly allowed)
 		delete process.env.WORKROOM_WEBHOOK_ALLOW_PRIVATE;
 		await t.json("POST", "/api/notify-channels", { token: a.token, json: { kind: "webhook", name: "x", target: "http://169.254.169.254/latest" }, expect: 400 });
-		process.env.WORKROOM_WEBHOOK_ALLOW_PRIVATE = "1";
+		process.env.WORKROOM_WEBHOOK_ALLOWLIST = "127.0.0.1"; // instance allowlist: tests talk to a local server
 	} finally {
 		await t.dispose();
 		server.close();

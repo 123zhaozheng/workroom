@@ -10,6 +10,7 @@ import { localTime, nextRuns, runWhen, validTimezone, type Condition, type Desti
 import type { ChannelKind, ChannelRow, PlatformModelRow, RouteRow } from "./gateway.ts";
 import type { OpsState } from "./module.ts";
 import { channelDto, deliveryDto, notificationDto, validateWebhookUrl } from "./notify.ts";
+import { Allowlist } from "./egress.ts";
 import { ledgerDto, newBudgetId, type StatsScope } from "./usage.ts";
 
 const CAPS = ["text", "image", "tools", "reasoning"];
@@ -383,6 +384,21 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		audit(db, p.orgId, p.userId, "settings.savings_basis", p.orgId, b, { requestId: rid(c) });
 		return c.json({ ok: true });
 	});
+	/** Org egress allowlist for notification webhooks (IPs, CIDRs, hostnames). Cannot unlock cloud metadata. */
+	api.get("/admin/settings/webhook-allowlist", async (c) => {
+		const p = await admin(c);
+		return c.json({ entries: notify.orgAllowlistEntries(p.orgId), instance: (process.env.WORKROOM_WEBHOOK_ALLOWLIST ?? "").split(",").filter(Boolean) });
+	});
+	api.put("/admin/settings/webhook-allowlist", async (c) => {
+		const p = await admin(c);
+		const b = await jsonBody<{ entries: string[] }>(c);
+		if (!Array.isArray(b.entries) || b.entries.length > 100 || b.entries.some((e) => typeof e !== "string")) throw new HttpError(400, "invalid", "entries 需为字符串数组（≤100）");
+		const entries = b.entries.map((e) => e.trim()).filter(Boolean);
+		new Allowlist(entries); // validates
+		db.run("INSERT INTO ops_settings (org_id, key, value, updated_by, updated_at) VALUES (?, 'webhook_allowlist', ?, ?, ?) ON CONFLICT(org_id, key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at", p.orgId, JSON.stringify(entries), p.userId, nowIso());
+		audit(db, p.orgId, p.userId, "settings.webhook_allowlist", p.orgId, { entries }, { requestId: rid(c), category: "security" });
+		return c.json({ entries });
+	});
 	const spaceInOrg = async (p: Principal, spaceId: string) => {
 		const sp = id().space(spaceId);
 		if (!sp || sp.orgId !== p.orgId) throw new HttpError(404, "space_not_found", "空间不存在");
@@ -679,7 +695,7 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		const p = principalOf(c);
 		const b = await jsonBody<{ kind: "webhook" | "email"; name: string; target: string; secret?: string; shared?: boolean }>(c);
 		if (!["webhook", "email"].includes(b.kind) || !b.name?.trim() || !b.target) throw new HttpError(400, "invalid", "渠道类型、名称、目标必填");
-		if (b.kind === "webhook") validateWebhookUrl(b.target);
+		if (b.kind === "webhook") await validateWebhookUrl(notify, b.target, p.orgId);
 		if (b.kind === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.target)) throw new HttpError(400, "invalid", "邮箱地址无效");
 		if (b.shared) await requireOrgAdmin(id(), p);
 		const secretEnc = b.secret ? notify.secrets.seal(b.secret) : null;

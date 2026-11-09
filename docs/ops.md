@@ -173,7 +173,7 @@ pi-durable 是唯一权威（每会话 `pi.usage`，含失败与中止的尝试�
 ### 4.3 通知（M12-C）
 
 - 站内：`ops_notifications`，携带任务链接（`/c/<spaceId>/<conversationId>`）、状态、引用（运行、会话、该次运行在会话中产生的文件版本）。`GET /notifications?unread=1`、`POST /notifications/:id/read`、`/read-all`。
-- Webhook：真实 HTTP POST，`x-workroom-signature: sha256=HMAC(secret, "<timestamp>.<body>")`、`x-workroom-timestamp`、`idempotency-key`；失败重试（默认 1 s、5 s 后两次；4xx（除 408/429）不重试），每次尝试更新 `ops_notify_deliveries`；手动重试 `POST /notifications/deliveries/:id/retry`。默认拒绝内网/本机/元数据地址（`WORKROOM_WEBHOOK_ALLOW_PRIVATE=1` 可放开；DNS 重绑定未防护）。
+- Webhook：真实 HTTP POST，`x-workroom-signature: sha256=HMAC(secret, "<timestamp>.<body>")`、`x-workroom-timestamp`、`idempotency-key`；失败重试（默认 1 s、5 s 后两次；4xx（除 408/429）不重试），每次尝试更新 `ops_notify_deliveries`；手动重试 `POST /notifications/deliveries/:id/retry`。出站策略（`server/src/ops/egress.ts`）：每次尝试都重新解析域名，**所有**解析结果必须被允许，然后把连接**固定到已校验的 IP**（TLS 仍按原域名校验证书），因此 DNS 重绑定无法把请求引到内网；内网/回环/链路本地/CGNAT/保留/组播地址默认拒绝，云元数据地址（169.254.169.254 等、metadata.google.internal）始终拒绝（仅实例级允许列表精确列出时例外）；不跟随重定向（3xx 记为投递失败）；策略拒绝不重试。允许列表：实例级 `WORKROOM_WEBHOOK_ALLOWLIST`（IP/CIDR/主机名，逗号分隔），组织级 `GET|PUT /admin/settings/webhook-allowlist {entries}`（管理员，记审计 `security`，只作用于本组织）。创建渠道时也做同样校验。
 - 邮件：**blocked**（无 SMTP 凭据），投递记录为 `blocked` 并写明原因。
 - **投递失败与任务失败分开记录**：运行状态只取决于任务本身；投递结果在 `deliveries` 中（测试：webhook 500 → 投递 failed，运行仍 succeeded）。
 
@@ -205,4 +205,3 @@ pi-durable 是唯一权威（每会话 `pi.usage`，含失败与中止的尝试�
 | 邮件通知 | blocked | SMTP 凭据 |
 | 真实企业 IdP（OIDC） | partial | 仅对测试内自建 IdP 验证；SAML 未实现 |
 | 多进程限流/熔断 | 未实现 | 计数在进程内（单 owner 部署） |
-| Webhook DNS 重绑定防护 | 未实现 | 仅按主机名/字面 IP 拦截 |

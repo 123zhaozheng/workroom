@@ -31,7 +31,7 @@ npm start
 | `WORKROOM_LOG` | `info` / `debug` / `silent` | `info` |
 | `WORKROOM_USAGE_IMPORT_MS` | 用量投影导入周期 | 30000 |
 | `WORKROOM_AUTOMATION_TICK_MS` | 自动化调度周期（0 = 关闭） | 15000 |
-| `WORKROOM_WEBHOOK_ALLOW_PRIVATE` | `1` 允许向内网地址发送 Webhook | 关 |
+| `WORKROOM_WEBHOOK_ALLOWLIST` | 实例级 Webhook 出站允许列表（IP/CIDR/主机名，逗号分隔）；组织管理员另有本组织列表 | 空（内网全部拒绝） |
 | `WORKROOM_SMTP_URL` | 预留；邮件发送未实现（blocked） | 无 |
 | `WORKROOM_LEASE_TTL_MS` | space 单 owner 租约 TTL（运行内核） | 30000 |
 

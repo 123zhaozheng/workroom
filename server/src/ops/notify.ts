@@ -2,11 +2,11 @@
 // webhook (real HTTP POST, HMAC-signed, retried, every attempt recorded) and email (blocked: no SMTP credentials).
 // Delivery failures are recorded in ops_notify_deliveries, separately from the task/run outcome.
 import { createHmac } from "node:crypto";
-import { isIP } from "node:net";
 import type { AppContext, Principal } from "../core/contracts.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
 import { SecretBox } from "../identity/secrets.ts";
 import { logEvent, redactText } from "./log.ts";
+import { Allowlist, pinnedPost, resolveTarget, systemResolver, type Resolver } from "./egress.ts";
 
 export interface NotificationRef {
 	kind: "conversation" | "file" | "run";
@@ -15,26 +15,9 @@ export interface NotificationRef {
 	spaceId?: string;
 }
 
-function isPrivateHost(host: string): boolean {
-	const h = host.replace(/^\[|\]$/g, "").toLowerCase();
-	if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") || h === "metadata.google.internal") return true;
-	if (isIP(h) === 4) {
-		const [a, b] = h.split(".").map(Number) as [number, number];
-		return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
-	}
-	if (isIP(h) === 6) return h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80") || h === "::";
-	return false;
-}
-
-export function validateWebhookUrl(url: string): void {
-	let u: URL;
-	try {
-		u = new URL(url);
-	} catch {
-		throw new HttpError(400, "invalid_url", "Webhook 地址无效");
-	}
-	if (u.protocol !== "https:" && u.protocol !== "http:") throw new HttpError(400, "invalid_url", "Webhook 仅支持 http(s)");
-	if (isPrivateHost(u.hostname) && process.env.WORKROOM_WEBHOOK_ALLOW_PRIVATE !== "1") throw new HttpError(400, "private_address", "不允许向内网/本机地址发送 Webhook（可设置 WORKROOM_WEBHOOK_ALLOW_PRIVATE=1）");
+/** Validate a webhook URL against the egress policy (DNS resolved, private/metadata refused unless allowlisted). */
+export async function validateWebhookUrl(svc: NotifyService, url: string, orgId: string): Promise<void> {
+	await resolveTarget(url, svc.orgAllowlist(orgId), svc.resolver);
 }
 
 export class NotifyService {
@@ -44,6 +27,8 @@ export class NotifyService {
 	retryDelaysMs = [1000, 5000];
 	timeoutMs = 10_000;
 	readonly #pending = new Set<Promise<unknown>>();
+	/** DNS resolver (injectable for rebinding tests). */
+	resolver: Resolver = systemResolver;
 
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
@@ -51,6 +36,18 @@ export class NotifyService {
 	}
 	get db() {
 		return this.#ctx.db;
+	}
+
+	orgAllowlistEntries(orgId: string): string[] {
+		const r = this.db.get<{ value: string }>("SELECT value FROM ops_settings WHERE org_id = ? AND key = 'webhook_allowlist'", orgId);
+		try {
+			return r ? (JSON.parse(r.value) as string[]) : [];
+		} catch {
+			return [];
+		}
+	}
+	orgAllowlist(orgId: string): Allowlist {
+		return new Allowlist(this.orgAllowlistEntries(orgId));
 	}
 
 	/** Wait for in-flight deliveries (tests, shutdown). */
@@ -99,24 +96,27 @@ export class NotifyService {
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			let status: number | null = null;
 			let error: string | null = null;
+			let blocked = false;
 			try {
-				validateWebhookUrl(ch.target);
+				// Re-resolved and re-checked on EVERY attempt, then the socket is pinned to the checked address.
+				const target = await resolveTarget(ch.target, this.orgAllowlist(ch.org_id), this.resolver);
 				const ts = Math.floor(Date.now() / 1000).toString();
 				const headers: Record<string, string> = { "content-type": "application/json", "user-agent": "Workroom-Webhook/1", "x-workroom-delivery": deliveryId, "x-workroom-timestamp": ts, "idempotency-key": deliveryId };
 				if (secret) headers["x-workroom-signature"] = `sha256=${createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex")}`;
-				const res = await fetch(ch.target, { method: "POST", headers, body, redirect: "manual", signal: AbortSignal.timeout(this.timeoutMs) });
-				status = res.status;
-				await res.arrayBuffer().catch(() => undefined);
-				if (res.status >= 200 && res.status < 300) {
+				status = await pinnedPost(target, headers, body, this.timeoutMs);
+				if (status >= 300 && status < 400) error = `HTTP ${status} (redirects are not followed)`;
+				if (status >= 200 && status < 300) {
 					this.db.run("UPDATE ops_notify_deliveries SET status = 'sent', attempt = ?, http_status = ?, error = NULL, delivered_at = ? WHERE id = ?", attempt, status, nowIso(), deliveryId);
 					logEvent("info", "notify.webhook_sent", { deliveryId, channelId: ch.id, status });
 					return;
 				}
-				error = `HTTP ${res.status}`;
+				error ??= `HTTP ${status}`;
 			} catch (e) {
 				error = (e as Error).message;
+				// A policy refusal is final (retrying cannot change it); DNS/network failures are retried.
+				if ((e as HttpError).code === "blocked_address" || (e as HttpError).code === "invalid_url") blocked = true;
 			}
-			const final = attempt === maxAttempts || (status !== null && status >= 400 && status < 500 && status !== 408 && status !== 429);
+			const final = attempt === maxAttempts || blocked || (status !== null && ((status >= 400 && status < 500 && status !== 408 && status !== 429) || (status >= 300 && status < 400)));
 			this.db.run("UPDATE ops_notify_deliveries SET status = ?, attempt = ?, http_status = ?, error = ? WHERE id = ?", final ? "failed" : "pending", attempt, status, redactText(error ?? "").slice(0, 500), deliveryId);
 			logEvent("warn", "notify.webhook_failed", { deliveryId, channelId: ch.id, status, attempt, final, error });
 			if (final) return;
