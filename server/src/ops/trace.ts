@@ -42,6 +42,35 @@ export class TraceService {
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
 		this.register("tools", (q) => this.#toolCalls(q));
+		this.register("retrieval", (q) => this.#retrieval(q));
+	}
+
+	/** C's retrieval events (`knowledgeAdmin.retrievalEvents(orgId, q)`, org-scoped, ≤200 per call). */
+	#retrieval(q: TraceQuery): TraceItem[] {
+		if (!this.#ctx.services.has("knowledgeAdmin")) return [];
+		const k = this.#ctx.services.get("knowledgeAdmin") as { retrievalEvents?: (orgId: string, q: string) => any[] };
+		if (typeof k.retrievalEvents !== "function") return [];
+		const keys = new Set<string>([q.q]);
+		if (q.spaceId && q.conversationId !== undefined) keys.add(`${q.spaceId}:${q.conversationId}`);
+		for (const c of q.conversations) keys.add(`${c.spaceId}:${c.conversationId}`);
+		const seen = new Map<string, any>();
+		for (const key of keys) for (const e of k.retrievalEvents(q.orgId, key)) seen.set(e.id, e);
+		return [...seen.values()]
+			.filter((e) => q.taskId === undefined || e.taskId === undefined || e.taskId === q.taskId)
+			.map((e) => ({
+				source: "retrieval",
+				kind: "retrieval",
+				id: e.id,
+				at: e.at,
+				spaceId: e.spaceId,
+				conversationId: e.conversationId,
+				taskId: e.taskId,
+				callId: e.callId,
+				requestId: e.requestId,
+				status: e.reason ?? "ok",
+				summary: `kb_search(${e.source}) → ${e.reason ?? "ok"} · ${e.hitCount} hits · ${e.latencyMs} ms${e.cached ? " · cached" : ""}`,
+				detail: { userId: e.userId, kbIds: e.kbIds, forbiddenKbIds: e.forbiddenKbIds, hitCount: e.hitCount, strategy: e.strategy, queryHash: e.queryHash, queryLength: e.queryLength, query: e.query },
+			}));
 	}
 
 	/** Register (or replace) a contributor. */
@@ -57,8 +86,8 @@ export class TraceService {
 		const errors: { source: string; error: string }[] = [];
 		const lookups = new Map(this.#sources);
 		// Duck-typed lookups for modules that expose a method instead of registering.
-		for (const [svc, method, source] of [["knowledgeAdmin", "traceEvents", "retrieval"], ["knowledge", "traceEvents", "retrieval"], ["toolCalls", "traceEvents", "tools"]] as const) {
-			if (lookups.has(source) && source !== "tools") continue;
+		// A module may instead expose `traceEvents(q)`; it then replaces the built-in reader for its source.
+		for (const [svc, method, source] of [["knowledgeAdmin", "traceEvents", "retrieval"], ["toolCalls", "traceEvents", "tools"]] as const) {
 			if (!this.#ctx.services.has(svc)) continue;
 			const s = this.#ctx.services.get(svc) as Record<string, unknown>;
 			if (typeof s?.[method] === "function") lookups.set(source, (qq) => (s[method] as TraceLookup).call(s, qq));

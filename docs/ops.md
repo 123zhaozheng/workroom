@@ -182,7 +182,7 @@ pi-durable 是唯一权威（每会话 `pi.usage`，含失败与中止的尝试�
 ## 5. 可观测性（M18-B）
 
 - 关联 ID：HTTP `x-request-id`（审计 `request_id`）→ 自动化运行（`request_id = auto:…`、`conversation_id`）→ 路由尝试（`request_key`、`conversation_id`、`task_id`）→ 用量行（`conversation_id`、`entry_id`、`task_id`、`automation_id`）→ 通知/投递（`run_id`）。
-- `GET /admin/trace?q=<requestId|runId|automationId|requestKey|spaceId:conversationId>`：一次返回相关审计、路由尝试、用量行、自动化运行、通知（仅本组织）。
+- `GET /admin/trace?q=<requestId|runId|automationId|requestKey|callId|spaceId:conversationId[:taskId]>`：一次返回相关审计、路由尝试、用量行、自动化运行、通知，以及其他模块贡献的 `events`（D 的 `tool_calls`、C 的检索事件 `kb_retrieval_events`），均限本组织并再次脱敏。贡献接口：`ctx.services.get("trace").register(source, lookup)`（`server/src/ops/trace.ts`）。
 - 结构化日志（JSON 行）：`model.route_attempt`、`model.route_failed`、`automation.*`、`notify.*`、`usage.*`，字段含上述 ID。`WORKROOM_LOG=info|debug|silent`。
 - 脱敏 `WORKROOM_REDACT`：`standard`（默认：API Key、Bearer、JWT、密码/密钥字段、云凭据）、`strict`（另外遮蔽邮箱、URL 查询串，丢弃 prompt/text/content 等内容字段）、`off`（仅开发）。路由错误信息、用量错误信息、投递错误在入库前同样脱敏。
 

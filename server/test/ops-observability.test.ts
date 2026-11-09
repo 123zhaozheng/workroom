@@ -163,6 +163,9 @@ test("trace merges other modules' events (D tool calls, contributed retrieval ev
 		const base = `/api/conversations/${conversation.spaceId}/${conversation.conversationId}`;
 		const sent = await t.json("POST", `${base}/messages`, { token: a.token, json: { text: `[[call file_create {"name":"report","format":"md","content":"# 报告 api_key=sk-ant-api03-SECRETSECRET1234"}]]`, requestId: "tr1" } });
 		await waitFor(async () => ["done", "unanswered"].includes((await t.json("GET", `${base}/submissions/${sent.submissionId}`, { token: a.token })).status));
+		// A real kb_search through C (C records the retrieval event; E merges it by conversation).
+		const ks = await t.json("POST", `${base}/messages`, { token: a.token, json: { text: `[[call kb_search {"query":"季度报告 password=hunter2hunter2"}]]`, requestId: "tr2" } });
+		await waitFor(async () => ["done", "unanswered"].includes((await t.json("GET", `${base}/submissions/${ks.submissionId}`, { token: a.token })).status));
 		// A contributed source (shape C's retrieval lookup will use): receives the tenant + correlation keys.
 		const seen: any[] = [];
 		(t.app.ctx.services.get("trace") as any).register("retrieval-test", (q: any) => {
@@ -178,12 +181,20 @@ test("trace merges other modules' events (D tool calls, contributed retrieval ev
 		assert.ok(tool, JSON.stringify(tr.events));
 		assert.equal(tool.conversationId, conversation.conversationId);
 		assert.ok(tool.taskId > 0 && tool.callId);
-		const ret = tr.events.find((e: any) => e.kind === "retrieval");
+		const ret = tr.events.find((e: any) => e.kind === "retrieval" && e.id === "ret_1");
 		assert.equal(ret.summary, "kb_search → no_evidence");
+		const real = tr.events.find((e: any) => e.kind === "retrieval" && e.source === "retrieval" && e.id !== "ret_1");
+		if (t.app.ctx.services.has("knowledgeAdmin") && typeof (t.app.ctx.services.get("knowledgeAdmin") as any).retrievalEvents === "function") {
+			assert.ok(real, JSON.stringify(tr.events.map((e: any) => [e.source, e.kind, e.summary])));
+			assert.equal(real.conversationId, conversation.conversationId);
+			assert.ok(real.callId && real.taskId > 0);
+			assert.match(real.summary, /^kb_search\(tool\)/);
+			assert.ok(!JSON.stringify(real).includes("hunter2hunter2"), "query redacted");
+		}
 		assert.ok(!JSON.stringify(tr.events).includes("SECRETSECRET") && !JSON.stringify(tr.events).includes("ghp_ABCDEFGHIJ"), "redacted");
 		assert.equal(seen.at(-1).conversationId, conversation.conversationId);
 		assert.deepEqual(tr.eventErrors, [{ source: "broken", error: "boom" }]);
-		assert.ok(tr.sources.includes("tools"));
+		assert.ok(tr.sources.includes("tools") && tr.sources.includes("retrieval"));
 		// Narrow by task id; look up by call id.
 		const byTask = await t.json("GET", `/api/admin/trace?q=${conversation.spaceId}:${conversation.conversationId}:${tool.taskId}`, { token: a.token });
 		assert.ok(byTask.events.some((e: any) => e.id === tool.id));

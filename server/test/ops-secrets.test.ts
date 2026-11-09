@@ -21,6 +21,7 @@ test("rotate WORKROOM_SECRET_KEY: transactional, verified, idempotent; refuses w
 	try {
 		const a = await t.user("a@a.example");
 		ids.channel = (await t.json("POST", "/api/admin/channels", { token: a.token, json: { name: "anthropic", provider: "anthropic", apiKey: "sk-ant-api03-ROTATEME-ROTATEME" } })).channel.id;
+		(t.app.ctx.services.get("notify") as any).resolver = async () => [{ address: "93.184.216.34", family: 4 }]; // no external DNS in tests
 		ids.webhook = (await t.json("POST", "/api/notify-channels", { token: a.token, json: { kind: "webhook", name: "hook", target: "https://hooks.example.com/x", secret: "whsec-rotate" } })).channel.id;
 		ids.oidc = (await t.json("POST", "/api/admin/oidc", { token: a.token, json: { name: "Corp", issuer: "https://idp.example.com", clientId: "c1", clientSecret: "oidc-secret-rotate" } })).provider.id;
 		const setup = await t.json("POST", "/api/me/2fa/setup", { token: a.token });

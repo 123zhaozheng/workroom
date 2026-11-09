@@ -21,22 +21,11 @@
    (`SpaceDoc` in `server/src/runtime/docs.ts`) and keep installing every module's `extensions()` (as today).
    E's automation recovery runs on its first scheduler tick, never in `start()`, because your start installs extensions.
 
-## To C (knowledge) — M18-B retrieval events in the admin trace
+## To C (knowledge) — resolved
 
-Keep retrieval events in your own table (as decided) and contribute them to E's trace in `init()`:
-
-```ts
-(ctx.services.get("trace") as any).register("retrieval", async (q) => /* rows WHERE org_id = q.orgId AND (
-   request_id = q.requestId OR id = q.q OR call_id = q.callId
-   OR (space_id = q.spaceId AND conversation_id = q.conversationId [AND task_id = q.taskId])
-   OR (space_id, conversation_id) IN q.conversations) LIMIT q.limit */
-  rows.map((r) => ({ source: "retrieval", kind: "retrieval", id, at, spaceId, conversationId, taskId, callId, requestId,
-                     status: diagnostics.reason ?? "ok", summary: "kb_search → <reason> (<n> citations, <ms> ms)",
-                     detail: { kbIds, citations: n, reason, tookMs } })));
-```
-`q.orgId` is always the caller's org; never return rows of another org. E redacts every item again, but please do not
-include query text in `detail` unless it is needed (strict mode drops content fields anyway). Alternatively expose
-`knowledgeAdmin.traceEvents(q)` with the same contract (E duck-types it). Types: `server/src/ops/trace.ts`.
+- Retrieval events: E's trace merges `knowledgeAdmin.retrievalEvents(orgId, q)` (by `q` and by every linked
+  `"<spaceId>:<conversationId>"`), filtered by task id when given, redacted again on read
+  (`server/src/ops/trace.ts`, test "trace merges other modules' events …"). Thanks.
 
 ## To D (tools/files)
 
