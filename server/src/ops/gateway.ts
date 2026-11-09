@@ -659,7 +659,8 @@ export class Gateway implements ModelGateway {
 			return fail(`gateway: all routes for ${pm.id} are saturated (concurrency/rate limits)`, "concurrency");
 		}
 		// Final message: platform identity, upstream route recorded in responseModel, usage = every actual attempt.
-		const msg: AssistantMessage = { ...last.msg, provider: pm.pi_provider, model: pm.id, api: ROUTE_API, responseModel: `${last.cand.upstream.provider}/${last.cand.upstream.id}`, usage: spent };
+		// timestamp/durationMs: the whole routed request as the user experienced it (including failed attempts).
+		const msg: AssistantMessage = { ...last.msg, provider: pm.pi_provider, model: pm.id, api: ROUTE_API, responseModel: `${last.cand.upstream.provider}/${last.cand.upstream.id}`, usage: spent, timestamp: t0, durationMs: this.now() - t0 };
 		if (msg.stopReason === "error" || msg.stopReason === "aborted") out.push({ type: "error", reason: msg.stopReason, error: msg });
 		else out.push({ type: "done", reason: msg.stopReason as "stop" | "length" | "toolUse" | "deferred", message: msg });
 		out.end(msg);

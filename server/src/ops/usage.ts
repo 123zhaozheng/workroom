@@ -291,7 +291,14 @@ export class UsageService implements BudgetGate {
 			else if (live.runFailure) closeRun("failed");
 			else closeRun("in_progress");
 		}
-		for (const t of pendingInputs) t.outcome = live.runFailure === "aborted" ? "cancelled" : "in_progress";
+		// Inputs no assistant entry answered: a run that is still working, or one that ended before any output
+		// (e.g. aborted while waiting for the first token). Such a run is keyed by its first input entry.
+		if (pendingInputs.length && (live.busy || live.runFailure)) {
+			const outcome: Outcome = live.busy ? (live.pendingApproval ? "awaiting_approval" : "in_progress") : live.runFailure === "aborted" ? "cancelled" : live.runFailure === "turn_limit" ? "timeout" : "failed";
+			const first = pendingInputs[0]!;
+			for (const t of pendingInputs) t.outcome = outcome;
+			if (rows.includes(first)) rows.push({ ...first, kind: "run", outcome, usage: undefined });
+		}
 		return rows;
 	}
 
