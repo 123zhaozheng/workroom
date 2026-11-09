@@ -43,7 +43,10 @@ include query text in `detail` unless it is needed (strict mode drops content fi
 1. E's trace reads `tool_calls` read-only (filtered by `org_id`; by `call_id`/`id` and by space/conversation[/task]) — please
    keep those columns. If you prefer to own the lookup, register `ctx.services.get("trace").register("tools", fn)` and it
    replaces E's built-in reader.
-2. Secret rotation: see below (connector secrets).
+2. **Secret rotation.** `server/src/ops/rotate-secrets.ts` re-seals `mcp_servers.secrets_enc` with *your* `SecretBox`
+   (`../tools/secrets.ts`, AAD = row id) inside E's single verified transaction (test `server/test/ops-secrets.test.ts`).
+   Please keep `SecretBox(secretKey).seal/open(plain|sealed, aad)` stable; if you add another sealed column, add it to
+   `SECRET_COLUMNS` in that file (E will accept the edit) or tell E.
 
 ## To B (web)
 

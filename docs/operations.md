@@ -89,9 +89,24 @@ WORKROOM_DATA_DIR=/srv/workroom/data-restored WORKROOM_SECRET_KEY=<原密钥> np
 5. 停服 → 部署新版本 → 启动（迁移自动执行）→ 观察日志中的 `migration`/`automation.*`/`model.route_*` 事件。
 6. 回滚：停服，恢复升级前的备份到新目录并以旧版本启动（迁移不可逆，不要用新版本写过的库回退旧版本）。
 
-## 7. 已知限制
+## 7. 轮换 `WORKROOM_SECRET_KEY`
+
+```bash
+# 1) 停服并备份（见 §3）  2) 轮换（密钥只经环境变量传入，不出现在命令行参数/历史中）
+WORKROOM_OLD_SECRET_KEY=<旧> WORKROOM_NEW_SECRET_KEY=<新> \
+  node --disable-warning=ExperimentalWarning server/src/ops/rotate-secrets-cli.ts "$WORKROOM_DATA_DIR" --dry-run
+WORKROOM_OLD_SECRET_KEY=<旧> WORKROOM_NEW_SECRET_KEY=<新> \
+  node --disable-warning=ExperimentalWarning server/src/ops/rotate-secrets-cli.ts "$WORKROOM_DATA_DIR" [--seal-plaintext-totp]
+# 3) 以 WORKROOM_SECRET_KEY=<新> 启动
+```
+
+覆盖：模型渠道 API Key、通知 Webhook 签名密钥、OIDC client secret、TOTP 种子（E），MCP 连接器密钥（D 的 `mcp_servers`，用 D 的编码与行绑定 AAD）。
+在一个 `BEGIN EXCLUSIVE` 事务中完成；提交前逐条用新密钥解密核对明文且确认旧密钥已无法解密；任一失败（例如旧密钥错误）整体回滚、不写任何数据。
+已是新密钥的值会被跳过（可重复执行）。检测到未过期的 space 租约（服务仍在运行）时拒绝执行（`--force` 可跳过）。
+`--seal-plaintext-totp` 会把此前无密钥时明文存储的 TOTP 种子加密。验证：`server/test/ops-secrets.test.ts`。
+
+## 8. 已知限制
 
 - 单 owner：限流、并发、熔断计数在进程内；多 worker 需按 spaceId 路由（未实现）。
 - 租约不是严格 fencing token（见 `docs/architecture.md`）。
-- `WORKROOM_SECRET_KEY` 轮换未实现：更换后需重新录入已存储的凭据（渠道 Key、OIDC secret、Webhook 签名密钥），TOTP 用户需重新绑定。
 - 被阻塞：真实模型凭据、支付、SMTP、真实企业 IdP（详见 `docs/ops.md` §8）。

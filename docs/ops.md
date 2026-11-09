@@ -206,4 +206,3 @@ pi-durable 是唯一权威（每会话 `pi.usage`，含失败与中止的尝试�
 | 真实企业 IdP（OIDC） | partial | 仅对测试内自建 IdP 验证；SAML 未实现 |
 | 多进程限流/熔断 | 未实现 | 计数在进程内（单 owner 部署） |
 | Webhook DNS 重绑定防护 | 未实现 | 仅按主机名/字面 IP 拦截 |
-| 密钥轮换（`WORKROOM_SECRET_KEY` 更换） | 未实现 | 需重新录入已存储凭据 |
