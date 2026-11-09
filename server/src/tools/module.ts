@@ -11,6 +11,9 @@ import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
+import { Market, MARKET_MIGRATIONS } from "./market.ts"; // marketplace group
+import { McpMarket, MCP_MARKET_MIGRATIONS } from "./mcp-market.ts"; // marketplace group
+import { registerMarketRoutes } from "./market-routes.ts"; // marketplace group
 import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
 import { BrowserSessions, createBrowserSessionExtension } from "./browser-sessions.ts";
 import { createPolicyExtension, POLICY_MIGRATIONS, TOOL_GROUPS, ToolPolicy } from "./policy.ts";
@@ -35,7 +38,7 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	};
 }
 
-const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill_list", "skill_load", "skill_run", "tool_search", "codemode"];
+const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
 /** Tool names a skill may require: the runtime registry when available, else D's own tools plus discovered MCP tools. */
 export function knownToolNames(ctx: AppContext): string[] {
 	const names = new Set(D_TOOLS);
@@ -59,6 +62,8 @@ export const toolsModule: WorkroomModule = {
 		...SKILL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 300 })),
 		...JOB_MIGRATIONS.map((m) => ({ ...m, version: m.version + 400 })),
 		...POLICY_MIGRATIONS.map((m) => ({ ...m, version: m.version + 500 })),
+		...MARKET_MIGRATIONS.map((m) => ({ ...m, version: m.version + 600 })), // marketplace group
+		...MCP_MARKET_MIGRATIONS.map((m) => ({ ...m, version: m.version + 700 })), // marketplace group
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -66,6 +71,8 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("sandbox", new Sandbox(ctx));
 		ctx.services.provide("browser", new BrowserService(ctx));
 		ctx.services.provide("skills", new Skills(ctx));
+		ctx.services.provide("market", new Market(ctx)); // marketplace group
+		ctx.services.provide("mcpMarket", new McpMarket(ctx)); // marketplace group
 		ctx.services.provide("jobs", new Jobs(ctx));
 		ctx.services.provide("toolPolicy", new ToolPolicy(ctx));
 		const sessions = new BrowserSessions(ctx);
@@ -97,9 +104,11 @@ export const toolsModule: WorkroomModule = {
 	async start(ctx) {
 		(ctx.services.get("mcp") as McpManager).start();
 		(ctx.services.get("sandbox") as Sandbox).start();
+		(ctx.services.get("market") as Market).start(); // marketplace group: skills mount provider
 		(ctx.services.get("browserSessions") as BrowserSessions).start();
 	},
 	async stop(ctx) {
+		(ctx.services.get("market") as Market).stop(); // marketplace group
 		await (ctx.services.get("mcp") as McpManager).stop();
 		await (ctx.services.get("sandbox") as Sandbox).stop();
 		await (ctx.services.get("browserSessions") as BrowserSessions).stop();
@@ -245,7 +254,7 @@ export const toolsModule: WorkroomModule = {
 				browser: { status: br.ok ? "ready" : "unavailable", detail: br.detail },
 				connectors: conns.map((x) => ({ id: x.id, name: x.name, status: x.status, statusDetail: x.statusDetail, access: x.access, enabledForMe: x.enabledForMe, tools: x.tools.length, usable: x.access === "allowed" && x.enabledForMe && (x.status === "ready" || x.status === "needs_reconnect") })),
 				blockedConnectors: BLOCKED_CONNECTORS,
-				skills: sk.active(p).map(({ skill, version }) => {
+				skills: (await sk.active(p)).map(({ skill, version }) => {
 					const need: string[] = JSON.parse(version.required_permissions);
 					const have = sk.granted(version.id, p.userId);
 					return { id: skill.id, name: skill.name, kind: skill.kind, versionNo: version.version_no, missingGrants: need.filter((x) => !have.includes(x)) };
@@ -260,6 +269,8 @@ export const toolsModule: WorkroomModule = {
 
 		// ---- skills ----
 		const skills = ctx.services.get("skills") as Skills;
+		const market = ctx.services.get("market") as Market;
+		registerMarketRoutes(api, ctx); // marketplace group: /market/*, per-user connector credentials and tool settings
 		(ctx.services.get("identity") as any).registerResolver?.("skill", (p: Principal, action: string, res: { id: string }) => skills.decide(p, action, res.id));
 		const skillOr404 = async (c: any, action: "read" | "use" | "write") => {
 			const p = principalOf(c);
@@ -270,11 +281,13 @@ export const toolsModule: WorkroomModule = {
 		};
 		api.get("/skills", async (c) => {
 			const p = principalOf(c);
-			return c.json({ skills: await Promise.all(skills.visible(p).map((s) => skills.dto(p, s))) });
+			return c.json({ skills: await Promise.all((await skills.visible(p)).map((s) => skills.dto(p, s))) });
 		});
 		api.post("/skills", async (c) => {
 			const p = principalOf(c);
-			const s = skills.createSkill(p, await jsonBody<SkillInput>(c));
+			const input = await jsonBody<SkillInput>(c);
+			if (input.scope === "org") await market.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以直接发布组织技能；成员请上传技能包并提交审核");
+			const s = await skills.createSkill(p, input);
 			if (c.req.query("install") !== "0") await skills.installFor(p, s.id);
 			return c.json({ skill: await skills.dto(p, s, true) });
 		});
@@ -356,9 +369,20 @@ export const toolsModule: WorkroomModule = {
 		api.post("/connectors", async (c) => {
 			const p = principalOf(c);
 			const b = await jsonBody<ConnectorCreateRequest & { check?: boolean; access?: "members" | "admins" }>(c);
-			const row = mgr.create(p, b);
-			const checked = b.check === false ? row : await mgr.check(row.id);
-			return c.json({ connector: await mgr.dto(p, checked) });
+			// Marketplace policy: personal connectors may need a reviewer's approval before the first connection.
+			const mkt = ctx.services.get("market") as Market;
+			let approval: "approved" | "pending" = "approved";
+			if (b.scope === "personal") {
+				await mkt.require(p, "mcp.connector.add_personal", undefined, "没有添加个人连接器的权限");
+				const pol = mkt.policy(p.orgId).personalMcp;
+				if (pol === "disabled") throw new HttpError(403, "policy_disabled", "组织策略不允许添加个人连接器");
+				if (pol === "approval") approval = "pending";
+			} else if (b.scope === "system") await mkt.require(p, "mcp.connector.add_org", undefined, "没有添加组织连接器的权限（mcp.connector.add_org）");
+			const row = mgr.create(p, b, { approval });
+			let submissionId: string | undefined;
+			if (approval === "pending") submissionId = await (ctx.services.get("mcpMarket") as McpMarket).requestConnectorApproval(p, row);
+			const checked = b.check === false || approval === "pending" ? row : await mgr.check(row.id, p.userId);
+			return c.json({ connector: await mgr.dto(p, checked), submissionId });
 		});
 		api.get("/connectors/:id", async (c) => {
 			const p = principalOf(c);
@@ -384,7 +408,7 @@ export const toolsModule: WorkroomModule = {
 			const row = mgr.row(c.req.param("id"));
 			if (!row) throw new HttpError(404, "not_found", "连接不存在");
 			await acl.require(p, "use", { kind: "connector", id: row.id });
-			return c.json({ connector: await mgr.dto(p, await mgr.check(row.id)) });
+			return c.json({ connector: await mgr.dto(p, await mgr.check(row.id, p.userId)) });
 		});
 		// Reconnect: managers may supply new credentials; anyone who may use it can re-run the connection check.
 		api.post("/connectors/:id/reconnect", async (c) => {
@@ -398,7 +422,7 @@ export const toolsModule: WorkroomModule = {
 				row = mgr.update(p, row, { secrets: b.secrets });
 			}
 			await mgr.disconnect(row.id);
-			return c.json({ connector: await mgr.dto(p, await mgr.check(row.id)) });
+			return c.json({ connector: await mgr.dto(p, await mgr.check(row.id, p.userId)) });
 		});
 		api.put("/connectors/:id/enablement", async (c) => {
 			const p = principalOf(c);

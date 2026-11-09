@@ -105,6 +105,9 @@ export interface ConnectorToolDTO {
 	readonly description: string;
 	readonly policy: "read" | "write";
 	readonly inputSchema: unknown;
+	/** Switched off by the manager (policy "disabled") or by the caller (override): the model never sees it. */
+	readonly disabled?: boolean;
+	readonly userOverride?: "ask" | "disabled";
 }
 
 export interface ConnectorDTO {
@@ -127,6 +130,8 @@ export interface ConnectorDTO {
 	readonly accessReason?: string;
 	readonly enabledForMe: boolean;
 	readonly canManage: boolean;
+	/** Marketplace round: approval state of personal connectors, sandbox execution, per-user credentials. */
+	readonly market?: ConnectorMarketInfoDTO;
 }
 /** GET /connectors → { connectors, secretStorage } */
 export interface ConnectorListResponse {
@@ -193,8 +198,10 @@ export interface SkillVersionDTO {
 	readonly changeNote?: string;
 	readonly createdAt: string;
 	readonly createdBy: string;
-	readonly source: "manual" | "from_task";
+	readonly source: "manual" | "from_task" | "package";
 	readonly validation?: SkillValidationDTO;
+	/** Package versions: author-declared semantic version and approval for distribution. */
+	readonly semver?: string;
 }
 
 export interface SkillValidationDTO {
@@ -207,9 +214,16 @@ export interface SkillDTO {
 	readonly id: string;
 	readonly name: string;
 	readonly kind: SkillKind;
-	readonly scope: "personal" | "org";
+	readonly scope: MarketScope;
+	/** Directory name under /skills/ in the sandbox. */
+	readonly slug?: string;
 	readonly ownerUserId: string;
+	/** Newest version the caller can move to (authors: newest upload; others: newest approved). */
 	readonly latestVersionNo: number;
+	readonly publishedVersionNo?: number;
+	readonly listed?: boolean;
+	/** Active for the caller because an org / department / project install applies (not only a personal install). */
+	readonly viaScope?: readonly ("org" | "department" | "project")[];
 	readonly status: "active" | "archived";
 	readonly versions?: SkillVersionDTO[];
 	/** Caller's installation (absent when not installed). */
@@ -403,4 +417,269 @@ export interface BrowserSessionListResponse {
 export interface ConversationWorkDTO {
 	readonly jobs: JobDTO[];
 	readonly browserSessions: BrowserSessionDTO[];
+}
+
+// ---------------- skills & MCP marketplace (round 4, MARKETPLACE group) ----------------
+// A skill/MCP entry has a *scope* (who may use it) and versions that are immutable. Non-personal scopes are only
+// distributed after a reviewer approved that exact version (the package sha256 is the version identity).
+export type MarketScope = "personal" | "project" | "department" | "org";
+export type SubmissionState = "checks_failed" | "pending_review" | "changes_requested" | "rejected" | "approved" | "published" | "unpublished" | "withdrawn" | "superseded";
+export type SubmissionKind = "skill" | "mcp_catalog" | "mcp_connector";
+
+export interface PackageFindingDTO {
+	readonly severity: "error" | "warn" | "info";
+	readonly code: string;
+	readonly message: string;
+	readonly path?: string;
+	readonly line?: number;
+}
+export interface PackageCheckDTO {
+	readonly ok: boolean;
+	readonly at: string;
+	readonly findings: readonly PackageFindingDTO[];
+	readonly stats: { readonly fileCount: number; readonly totalBytes: number; readonly packageBytes: number; readonly scriptCount: number };
+}
+export interface SkillManifestDTO {
+	/** Slug: also the directory name under /skills/<slug>/ inside the sandbox. */
+	readonly name: string;
+	readonly title?: string;
+	readonly description: string;
+	/** Semantic version declared by the author (the immutable version number is separate: versionNo). */
+	readonly version: string;
+	readonly license?: string;
+	readonly compatibility?: string;
+	readonly category?: string;
+	readonly tags: readonly string[];
+	readonly entry?: string;
+	readonly kind: SkillKind;
+	readonly requiredTools: readonly string[];
+	readonly requiredPermissions: readonly SkillPermission[];
+	readonly allowedTools?: string;
+	readonly metadata: Readonly<Record<string, string>>;
+}
+export interface PackageFileDTO {
+	readonly path: string;
+	readonly size: number;
+	readonly sha256: string;
+}
+
+export interface MarketSkillSummaryDTO {
+	readonly id: string;
+	readonly slug: string;
+	readonly name: string;
+	readonly description: string;
+	readonly scope: MarketScope;
+	readonly scopeRef?: string;
+	readonly category?: string;
+	readonly tags: readonly string[];
+	readonly kind: SkillKind;
+	readonly ownerUserId: string;
+	readonly ownerName?: string;
+	/** Latest approved (published) semver; absent for a personal skill that was never reviewed. */
+	readonly version?: string;
+	readonly versionNo?: number;
+	readonly requiredPermissions: readonly SkillPermission[];
+	readonly installCount: number;
+	readonly ratingAvg?: number;
+	readonly ratingCount: number;
+	readonly listed: boolean;
+	readonly updatedAt: string;
+	/** Caller's installs: "me" and/or scopes the caller manages. */
+	readonly installedFor: readonly { readonly target: "me" | "project" | "department" | "org"; readonly scopeRef?: string; readonly versionNo: number | null }[];
+}
+export interface MarketVersionDTO {
+	readonly versionNo: number;
+	readonly semver?: string;
+	readonly packageSha256?: string;
+	readonly packageSize?: number;
+	readonly changeNote?: string;
+	readonly createdAt: string;
+	readonly createdBy: string;
+	/** Approved for distribution at the skill's scope. */
+	readonly approved: boolean;
+	readonly submissionState?: SubmissionState;
+	readonly checks?: PackageCheckDTO;
+}
+export interface MarketSkillDetailDTO extends MarketSkillSummaryDTO {
+	readonly manifest?: SkillManifestDTO;
+	readonly readme: string;
+	readonly files: readonly PackageFileDTO[];
+	readonly versions: readonly MarketVersionDTO[];
+	readonly myRating?: { readonly stars: number; readonly comment?: string };
+	readonly ratings: readonly { readonly stars: number; readonly comment?: string; readonly userName?: string; readonly at: string }[];
+	readonly canManage: boolean;
+	readonly canInstallOrg: boolean;
+	readonly canSubmit: boolean;
+	readonly unpublishedReason?: string;
+	readonly latestVersionNo: number;
+}
+
+export interface SubmissionEventDTO {
+	readonly at: string;
+	readonly actorId: string;
+	readonly actorName?: string;
+	readonly action: string;
+	readonly fromState?: SubmissionState;
+	readonly toState?: SubmissionState;
+	readonly comment?: string;
+}
+export interface SubmissionDTO {
+	readonly id: string;
+	readonly kind: SubmissionKind;
+	readonly subjectId: string;
+	readonly subjectName: string;
+	readonly versionNo?: number;
+	readonly semver?: string;
+	readonly targetScope: MarketScope;
+	readonly targetRef?: string;
+	readonly submitterId: string;
+	readonly submitterName?: string;
+	readonly state: SubmissionState;
+	readonly note?: string;
+	readonly forced: boolean;
+	readonly decidedBy?: string;
+	readonly decisionComment?: string;
+	readonly createdAt: string;
+	readonly updatedAt: string;
+	readonly warnCount: number;
+	readonly errorCount: number;
+	/** The caller may decide this submission (scoped permission and not the submitter). */
+	readonly canDecide: boolean;
+}
+export interface SubmissionDetailDTO extends SubmissionDTO {
+	readonly manifest?: SkillManifestDTO;
+	readonly checks?: PackageCheckDTO;
+	readonly files: readonly PackageFileDTO[];
+	/** Permissions newly requested compared with the previous approved version. */
+	readonly permissionDelta: { readonly added: readonly string[]; readonly removed: readonly string[] };
+	readonly previousVersionNo?: number;
+	readonly diff: readonly {
+		readonly path: string;
+		readonly status: "added" | "removed" | "modified" | "unchanged";
+		readonly binary?: boolean;
+		readonly tooLarge?: boolean;
+		readonly added?: number;
+		readonly removed?: number;
+		readonly hunks?: readonly { readonly oldStart: number; readonly newStart: number; readonly lines: readonly { readonly t: " " | "+" | "-"; readonly s: string }[] }[];
+	}[];
+	readonly events: readonly SubmissionEventDTO[];
+	/** MCP submissions: summary of what would be installed. */
+	readonly mcp?: McpSubmissionInfoDTO;
+}
+
+export interface MarketPolicyDTO {
+	/** Personal skills: free = usable right after upload; review = need approval first; disabled = not allowed. */
+	readonly personalSkill: "free" | "review" | "disabled";
+	/** Personal MCP connectors: free = usable right after adding; approval = reviewer must approve before the first connection. */
+	readonly personalMcp: "free" | "approval" | "disabled";
+}
+export interface MarketMeDTO {
+	readonly canUploadSkill: boolean;
+	readonly canReviewSkills: boolean;
+	readonly canReviewMcp: boolean;
+	readonly canManageMarket: boolean;
+	readonly canPublishOrg: boolean;
+	readonly canAddOrgConnector: boolean;
+	readonly policy: MarketPolicyDTO;
+	readonly sandbox: { readonly state: string; readonly detail?: string; readonly mounts: boolean; readonly services: boolean };
+	readonly limits: { readonly uploadBytes: number; readonly totalBytes: number; readonly fileBytes: number; readonly files: number };
+}
+
+// ---- MCP catalog (server.json of the official MCP Registry, https://static.modelcontextprotocol.io/schemas/…/server.schema.json)
+export interface ServerJsonInput {
+	readonly name: string;
+	readonly description?: string;
+	readonly isRequired?: boolean;
+	readonly isSecret?: boolean;
+	readonly default?: string;
+	readonly choices?: readonly string[];
+	readonly value?: string;
+}
+export interface ServerJson {
+	readonly $schema?: string;
+	/** Reverse-DNS namespace + slash + name, e.g. io.github.user/weather. */
+	readonly name: string;
+	readonly description: string;
+	readonly title?: string;
+	readonly version: string;
+	readonly websiteUrl?: string;
+	readonly repository?: { readonly url: string; readonly source?: string; readonly subfolder?: string };
+	readonly packages?: readonly {
+		readonly registryType: string;
+		readonly registryBaseUrl?: string;
+		readonly identifier: string;
+		readonly version?: string;
+		readonly fileSha256?: string;
+		readonly runtimeHint?: string;
+		readonly transport?: { readonly type: string; readonly url?: string };
+		readonly runtimeArguments?: readonly { readonly type?: string; readonly name?: string; readonly value?: string; readonly valueHint?: string }[];
+		readonly packageArguments?: readonly { readonly type?: string; readonly name?: string; readonly value?: string; readonly valueHint?: string }[];
+		readonly environmentVariables?: readonly ServerJsonInput[];
+	}[];
+	readonly remotes?: readonly {
+		readonly type: string;
+		readonly url: string;
+		readonly headers?: readonly ServerJsonInput[];
+		readonly variables?: Readonly<Record<string, Omit<ServerJsonInput, "name">>>;
+	}[];
+	readonly _meta?: Readonly<Record<string, unknown>>;
+}
+/** One way to run/connect an entry, derived from server.json for the install dialog. */
+export interface McpInstallOptionDTO {
+	readonly index: number;
+	readonly kind: "remote" | "package";
+	readonly label: string;
+	readonly transport: "http" | "stdio";
+	readonly url?: string;
+	readonly registryType?: string;
+	readonly identifier?: string;
+	readonly inputs: readonly { readonly name: string; readonly description?: string; readonly secret: boolean; readonly required: boolean; readonly where: "env" | "header" | "variable" }[];
+	/** Why it cannot be installed here (e.g. stdio package needs sandbox network; sandbox unavailable). */
+	readonly blocked?: string;
+}
+export interface McpSubmissionInfoDTO {
+	readonly name: string;
+	readonly transport: "http" | "stdio";
+	readonly url?: string;
+	readonly command?: string;
+	readonly secretNames: readonly string[];
+	readonly execMode?: "host" | "sandbox";
+}
+export interface McpCatalogSummaryDTO {
+	readonly id: string;
+	readonly name: string;
+	readonly title: string;
+	readonly description: string;
+	readonly scope: MarketScope;
+	readonly category?: string;
+	readonly tags: readonly string[];
+	readonly version?: string;
+	readonly versionNo?: number;
+	readonly transports: readonly ("http" | "stdio")[];
+	readonly installCount: number;
+	readonly listed: boolean;
+	readonly ownerUserId: string;
+	readonly updatedAt: string;
+	readonly installed: boolean;
+	readonly status: "published" | "pending_review" | "draft" | "unpublished";
+}
+export interface McpCatalogDetailDTO extends McpCatalogSummaryDTO {
+	readonly serverJson: ServerJson;
+	readonly options: readonly McpInstallOptionDTO[];
+	readonly versions: readonly { readonly versionNo: number; readonly semver: string; readonly createdAt: string; readonly approved: boolean; readonly changeNote?: string }[];
+	readonly canManage: boolean;
+	readonly canSubmit: boolean;
+	readonly latestVersionNo: number;
+}
+export interface ConnectorMarketInfoDTO {
+	readonly approvalState: "approved" | "pending" | "rejected";
+	readonly submissionId?: string;
+	readonly execMode: "host" | "sandbox";
+	readonly credentialMode: "shared" | "per_user";
+	readonly catalogId?: string;
+	/** Names of secrets the caller has stored for this connector (values are never returned). */
+	readonly mySecretNames: readonly string[];
+	readonly toolOverrides: Readonly<Record<string, "ask" | "disabled">>;
+	/** Secret names a per-user connector needs from each user. */
+	readonly requiredSecretNames: readonly string[];
 }

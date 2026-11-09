@@ -5,11 +5,15 @@ import { defineTool, type ToolExecutionApi, type ToolExecutionResult, type ToolR
 import { num, obj, opt, str } from "@earendil-works/pi-schema";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { AppContext, Decision, EffectsApi, Principal, ToolActor } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
 import type { ConnectorDTO, ConnectorStatus, ConnectorToolDTO } from "../../../shared/files.ts";
+import type { Market } from "./market.ts";
+import type { Sandbox } from "./sandbox.ts";
+import { serviceTransport } from "./sandbox/mcp-transport.ts";
 import { runtimeActorResolver, type ActorResolver } from "../files/actor.ts";
 import { redactText, summarizeArgs, type ToolCallLog } from "./calls.ts";
 import { checkUrl, pinnedFetch } from "./netpolicy.ts";
@@ -85,6 +89,23 @@ export interface McpServerRow {
 	created_at: string;
 	updated_at: string;
 	deleted_at: string | null;
+	/** Marketplace round: personal connectors may need a reviewer's approval before the first connection. */
+	approval_state: "approved" | "pending" | "rejected";
+	/** host = process on the server (operator allowlist, admin only, legacy); sandbox = stdio server inside the sandbox service mode. */
+	exec_mode: "host" | "sandbox";
+	/** shared = one credential set (connector row); per_user = every user stores their own (mcp_user_settings.secrets_enc). */
+	credential_mode: "shared" | "per_user";
+	catalog_version_id: string | null;
+	/** Sandbox stdio: { runtime, argv, bundle?: { sha256, slug }, network } */
+	package_json: string | null;
+}
+
+export interface SandboxPackage {
+	runtime: "node" | "python" | "shell";
+	argv: string[];
+	/** Catalog version whose uploaded bundle (server code) is mounted read-only at /mcp/<slug>. */
+	bundleVersionId?: string;
+	network?: boolean;
 }
 
 interface DiscoveredTool {
@@ -180,15 +201,26 @@ export class McpManager {
 	}
 	async stop(): Promise<void> {
 		clearInterval(this.#timer);
-		for (const id of [...this.#live.keys()]) await this.disconnect(id);
+		for (const k of [...this.#live.keys()]) await this.disconnect(k.split(":")[0]!);
 	}
 	#reapIdle(): void {
-		for (const [id, l] of this.#live) if (Date.now() - l.lastUsed > 5 * 60_000) void this.disconnect(id);
+		for (const [k, l] of this.#live) if (Date.now() - l.lastUsed > 5 * 60_000) {
+			this.#live.delete(k);
+			void l.client.close().catch(() => {});
+		}
 	}
-	async disconnect(id: string): Promise<void> {
-		const l = this.#live.get(id);
-		this.#live.delete(id);
-		if (l) await l.client.close().catch(() => {});
+	/** Close the connection(s) of a connector (all users', or just one user's). */
+	async disconnect(id: string, userId?: string): Promise<void> {
+		const keys = [...this.#live.keys()].filter((k) => (userId ? k === `${id}:${userId}` : k === id || k.startsWith(`${id}:`)));
+		for (const k of keys) {
+			const l = this.#live.get(k);
+			this.#live.delete(k);
+			if (l) await l.client.close().catch(() => {});
+		}
+	}
+	/** One live connection per connector, except where credentials or the sandbox process are per user. */
+	#key(row: McpServerRow, userId?: string): string {
+		return (row.credential_mode === "per_user" || row.exec_mode === "sandbox") && userId ? `${row.id}:${userId}` : row.id;
 	}
 
 	row(id: string): McpServerRow | undefined {
@@ -201,17 +233,63 @@ export class McpManager {
 		return JSON.parse(row.tools_json) as DiscoveredTool[];
 	}
 	policyOf(row: McpServerRow, t: DiscoveredTool): "read" | "write" {
-		const o = (JSON.parse(row.tool_policies) as Record<string, "read" | "write">)[t.name];
+		const o = (JSON.parse(row.tool_policies) as Record<string, string>)[t.name];
 		if (o === "read" || o === "write") return o;
 		return t.annotations?.readOnlyHint === true ? "read" : "write";
 	}
-	secretValues(row: McpServerRow): string[] {
-		if (!row.secrets_enc) return [];
+	/** The manager switched this tool off: the model never sees it and calls are refused. */
+	toolDisabled(row: McpServerRow, tool: string): boolean {
+		return (JSON.parse(row.tool_policies) as Record<string, string>)[tool] === "disabled";
+	}
+	/** Per-user, stricter-only overrides: "ask" = always confirm, "disabled" = off for me. */
+	toolOverrides(row: McpServerRow, userId: string): Record<string, "ask" | "disabled"> {
+		const r = this.#ctx.db.get<{ tool_overrides: string | null }>("SELECT tool_overrides FROM mcp_user_settings WHERE server_id = ? AND user_id = ?", row.id, userId);
 		try {
-			return expandSecrets(Object.values(JSON.parse(this.box.open(row.secrets_enc, row.id)) as Record<string, string>));
+			return r?.tool_overrides ? JSON.parse(r.tool_overrides) : {};
 		} catch {
-			return [];
+			return {};
 		}
+	}
+	setToolOverrides(row: McpServerRow, userId: string, overrides: Record<string, "ask" | "disabled" | null>): Record<string, "ask" | "disabled"> {
+		const cur = this.toolOverrides(row, userId);
+		const known = new Set(this.tools(row).map((t) => t.name));
+		for (const [k, v] of Object.entries(overrides)) {
+			if (!known.has(k)) throw new HttpError(400, "unknown_tool", `连接没有工具 ${k}`);
+			if (v === null) delete cur[k];
+			else if (v === "ask" || v === "disabled") cur[k] = v;
+			else throw new HttpError(400, "invalid", "覆盖值必须是 ask、disabled 或 null");
+		}
+		this.#ctx.db.run("INSERT INTO mcp_user_settings (server_id, user_id, enabled, updated_at, tool_overrides) VALUES (?, ?, 1, ?, ?) ON CONFLICT(server_id, user_id) DO UPDATE SET tool_overrides = excluded.tool_overrides, updated_at = excluded.updated_at", row.id, userId, nowIso(), JSON.stringify(cur));
+		return cur;
+	}
+	/** Credentials the connection uses for `userId`: the connector's shared secrets, or (per_user) that user's own. Never exposed by any API. */
+	secretMap(row: McpServerRow, userId?: string): Record<string, string> {
+		try {
+			if (row.credential_mode === "per_user") {
+				const r = userId ? this.#ctx.db.get<{ secrets_enc: string | null }>("SELECT secrets_enc FROM mcp_user_settings WHERE server_id = ? AND user_id = ?", row.id, userId) : undefined;
+				return r?.secrets_enc ? (JSON.parse(this.box.open(r.secrets_enc, `${row.id}:${userId}`)) as Record<string, string>) : {};
+			}
+			return row.secrets_enc ? (JSON.parse(this.box.open(row.secrets_enc, row.id)) as Record<string, string>) : {};
+		} catch {
+			return {};
+		}
+	}
+	secretValues(row: McpServerRow, userId?: string): string[] {
+		return expandSecrets(Object.values(this.secretMap(row, userId)));
+	}
+	mySecretNames(row: McpServerRow, userId: string): string[] {
+		return Object.keys(this.secretMap(row, userId));
+	}
+	/** Store the caller's own credentials for a per_user connector (encrypted, AAD = connector + user). */
+	setMySecrets(row: McpServerRow, userId: string, secrets: Readonly<Record<string, string>>): void {
+		if (row.credential_mode !== "per_user") throw new HttpError(409, "shared_credentials", "该连接使用共享凭据，由管理员维护");
+		const required = new Set<string>(JSON.parse(row.secret_names));
+		for (const k of Object.keys(secrets)) if (!required.has(k)) throw new HttpError(400, "unknown_secret", `该连接不需要凭据 ${k}`);
+		const names = Object.keys(secrets);
+		const sealed = names.length ? this.box.seal(JSON.stringify(secrets), `${row.id}:${userId}`) : null; // throws without a secret key
+		this.#ctx.db.run("INSERT INTO mcp_user_settings (server_id, user_id, enabled, updated_at, secrets_enc) VALUES (?, ?, 1, ?, ?) ON CONFLICT(server_id, user_id) DO UPDATE SET secrets_enc = excluded.secrets_enc, updated_at = excluded.updated_at", row.id, userId, nowIso(), sealed);
+		void this.disconnect(row.id, userId);
+		this.#toolCache = null;
 	}
 
 	// ----- access -----
@@ -238,20 +316,36 @@ export class McpManager {
 		if (!d.allow) return { ok: false, reason: d.reason, message: `无权使用连接「${row.name}」（${d.reason}）` };
 		if (!row.enabled) return { ok: false, reason: "disabled", message: `连接「${row.name}」已被停用` };
 		if (!this.enabledFor(row, p.userId)) return { ok: false, reason: "user_disabled", message: `你已关闭连接「${row.name}」，在“连接”中启用后再试` };
+		if (row.approval_state === "pending") return { ok: false, reason: "pending_approval", message: `连接「${row.name}」正在等待审核，通过后才会连接` };
+		if (row.approval_state === "rejected") return { ok: false, reason: "rejected", message: `连接「${row.name}」未通过审核` };
+		if (row.credential_mode === "per_user") {
+			const need: string[] = JSON.parse(row.secret_names);
+			const have = this.mySecretNames(row, p.userId);
+			if (need.some((n) => !have.includes(n))) return { ok: false, reason: "no_credentials", message: `连接「${row.name}」需要你自己的凭据（${need.join("、")}），请在“我的连接”里填写` };
+		}
 		if (row.status === "unauthorized") return { ok: false, reason: "unauthorized", message: `连接「${row.name}」凭据被拒绝，需要重新授权` };
 		return { ok: true };
 	}
 
 	// ----- config -----
-	create(p: Principal, input: { name: string; scope: "system" | "personal"; transport: "stdio" | "http"; command?: string; args?: readonly string[]; url?: string; secrets?: Readonly<Record<string, string>>; env?: Readonly<Record<string, string>>; toolPolicies?: Readonly<Record<string, "read" | "write">>; access?: "members" | "admins" }): McpServerRow {
+	create(
+		p: Principal,
+		input: { name: string; scope: "system" | "personal"; transport: "stdio" | "http"; command?: string; args?: readonly string[]; url?: string; secrets?: Readonly<Record<string, string>>; env?: Readonly<Record<string, string>>; toolPolicies?: Readonly<Record<string, "read" | "write" | "disabled">>; access?: "members" | "admins" },
+		opts: { approval?: "approved" | "pending"; sandbox?: SandboxPackage; credentialMode?: "shared" | "per_user"; requiredSecretNames?: readonly string[]; catalogVersionId?: string } = {},
+	): McpServerRow {
 		const name = String(input.name ?? "").trim().slice(0, 80);
 		if (!name) throw new HttpError(400, "invalid", "连接名称必填");
 		if (input.scope !== "system" && input.scope !== "personal") throw new HttpError(400, "invalid", "scope 必须是 system 或 personal");
 		if (input.scope === "system" && p.orgRole === "member") throw new HttpError(403, "forbidden", "只有组织管理员可以添加系统连接");
 		if (input.transport === "stdio") {
-			if (input.scope !== "system") throw new HttpError(403, "stdio_forbidden", "个人连接只能使用 HTTP（stdio 会在服务器上启动进程，仅限管理员添加系统连接）");
-			if (!input.command) throw new HttpError(400, "invalid", "stdio 连接需要 command");
-			if (!stdioAllowed(input.command, input.args ?? [])) throw new HttpError(403, "stdio_not_allowlisted", "该命令不在运维允许列表（WORKROOM_MCP_STDIO_ALLOW）中");
+			if (opts.sandbox) {
+				// stdio inside the sandbox (service mode): allowed for personal and system connectors; never runs on the host.
+				if (!opts.sandbox.argv.length) throw new HttpError(400, "invalid", "沙箱 stdio 连接需要 argv");
+			} else {
+				if (input.scope !== "system") throw new HttpError(403, "stdio_forbidden", "个人连接只能使用 HTTP，或通过 MCP 市场安装在沙箱中运行的 stdio 服务器（裸 stdio 会在服务器主机上启动进程，仅限管理员添加系统连接）");
+				if (!input.command) throw new HttpError(400, "invalid", "stdio 连接需要 command");
+				if (!stdioAllowed(input.command, input.args ?? [])) throw new HttpError(403, "stdio_not_allowlisted", "该命令不在运维允许列表（WORKROOM_MCP_STDIO_ALLOW）中");
+			}
 		} else if (input.transport === "http") {
 			if (!input.url) throw new HttpError(400, "invalid", "HTTP 连接需要 url");
 			new URL(input.url);
@@ -259,21 +353,28 @@ export class McpManager {
 		const secrets = input.secrets ?? {};
 		const id = newId("mcp");
 		let sealed: string | null = null;
-		if (Object.keys(secrets).length) sealed = this.box.seal(JSON.stringify(secrets), id); // throws without a secret key
+		const perUser = opts.credentialMode === "per_user";
+		if (Object.keys(secrets).length && !perUser) sealed = this.box.seal(JSON.stringify(secrets), id); // throws without a secret key
+		if (perUser && Object.keys(secrets).length) throw new HttpError(400, "invalid", "每用户凭据的连接不在创建时保存凭据，请每位用户各自填写");
+		if (perUser && !this.box.available) throw new HttpError(400, "secret_storage_unavailable", "服务器未配置 WORKROOM_SECRET_KEY，无法安全保存每用户凭据");
+		const secretNames = perUser ? [...(opts.requiredSecretNames ?? [])] : Object.keys(secrets);
 		let handle = slug(name);
 		for (let n = 2; this.#ctx.db.get("SELECT 1 FROM mcp_servers WHERE handle = ?", handle); n++) handle = `${slug(name).slice(0, 17)}_${n}`;
 		const now = nowIso();
 		this.#ctx.db.run(
-			`INSERT INTO mcp_servers (id, org_id, scope, owner_user_id, handle, name, transport, command, args, url, env, secrets_enc, secret_names, tool_policies, access, created_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO mcp_servers (id, org_id, scope, owner_user_id, handle, name, transport, command, args, url, env, secrets_enc, secret_names, tool_policies, access, created_by, created_at, updated_at, approval_state, exec_mode, credential_mode, catalog_version_id, package_json)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id, p.orgId, input.scope, input.scope === "personal" ? p.userId : null, handle, name, input.transport, input.command ?? null, input.args ? JSON.stringify(input.args) : null, input.url ?? null,
-			input.env ? JSON.stringify(input.env) : null, sealed, JSON.stringify(Object.keys(secrets)), JSON.stringify(input.toolPolicies ?? {}), input.access === "admins" ? "admins" : "members", p.userId, now, now,
+			input.env ? JSON.stringify(input.env) : null, sealed, JSON.stringify(secretNames), JSON.stringify(input.toolPolicies ?? {}), input.access === "admins" ? "admins" : "members", p.userId, now, now,
+			opts.approval ?? "approved", opts.sandbox ? "sandbox" : "host", opts.credentialMode ?? "shared", opts.catalogVersionId ?? null, opts.sandbox ? JSON.stringify(opts.sandbox) : null,
 		);
-		this.#audit(p, "connector.create", id, { name, scope: input.scope, transport: input.transport, secretNames: Object.keys(secrets) });
+		this.#audit(p, "connector.create", id, { name, scope: input.scope, transport: input.transport, secretNames, approval: opts.approval ?? "approved", execMode: opts.sandbox ? "sandbox" : "host", credentialMode: opts.credentialMode ?? "shared" });
 		return this.row(id)!;
 	}
 
-	update(p: Principal, row: McpServerRow, patch: { name?: string; enabled?: boolean; secrets?: Readonly<Record<string, string>>; toolPolicies?: Readonly<Record<string, "read" | "write">>; access?: "members" | "admins"; url?: string }): McpServerRow {
+	update(p: Principal, row: McpServerRow, patch: { name?: string; enabled?: boolean; secrets?: Readonly<Record<string, string>>; toolPolicies?: Readonly<Record<string, "read" | "write" | "disabled">>; access?: "members" | "admins"; url?: string }): McpServerRow {
+		if (patch.toolPolicies) for (const [k, v] of Object.entries(patch.toolPolicies)) if (v !== "read" && v !== "write" && v !== "disabled") throw new HttpError(400, "invalid", `工具 ${k} 的策略必须是 read、write 或 disabled`);
+		if (patch.secrets !== undefined && row.credential_mode === "per_user") throw new HttpError(409, "per_user_credentials", "该连接使用每用户凭据，请每位用户在“我的连接”里各自填写");
 		const sets: string[] = [];
 		const vals: (string | number | null)[] = [];
 		if (patch.name !== undefined) (sets.push("name = ?"), vals.push(String(patch.name).trim().slice(0, 80) || row.name));
@@ -298,6 +399,7 @@ export class McpManager {
 
 	remove(p: Principal, row: McpServerRow): void {
 		this.#ctx.db.run("UPDATE mcp_servers SET deleted_at = ?, updated_at = ?, secrets_enc = NULL WHERE id = ?", nowIso(), nowIso(), row.id);
+		this.#ctx.db.run("UPDATE mcp_user_settings SET secrets_enc = NULL WHERE server_id = ?", row.id);
 		void this.disconnect(row.id);
 		this.#toolCache = null;
 		this.onToolsChanged?.();
@@ -329,9 +431,10 @@ export class McpManager {
 	}
 
 	// ----- connections -----
-	async #connect(row: McpServerRow): Promise<Live> {
+	async #connect(row: McpServerRow, userId?: string): Promise<Live> {
 		let secrets: Record<string, string> = {};
-		if (row.secrets_enc) {
+		if (row.credential_mode === "per_user") secrets = this.secretMap(row, userId);
+		else if (row.secrets_enc) {
 			try {
 				secrets = JSON.parse(this.box.open(row.secrets_enc, row.id));
 			} catch {
@@ -339,7 +442,9 @@ export class McpManager {
 			}
 		}
 		const client = new Client({ name: "workroom", version: "1.0.0" }, { capabilities: {} });
-		if (row.transport === "stdio") {
+		if (row.transport === "stdio" && row.exec_mode === "sandbox") {
+			await withTimeout(client.connect(await this.#sandboxTransport(row, userId, secrets)), 30_000, "连接");
+		} else if (row.transport === "stdio") {
 			if (!stdioAllowed(row.command!, JSON.parse(row.args ?? "[]"))) throw new Error("该命令已不在运维允许列表中");
 			const transport = new StdioClientTransport({
 				command: row.command!,
@@ -357,40 +462,72 @@ export class McpManager {
 			await withTimeout(client.connect(transport), 15_000, "连接");
 		}
 		const live: Live = { client, secrets: expandSecrets(Object.values(secrets)), stamp: row.updated_at, lastUsed: Date.now() };
+		const key = this.#key(row, userId);
 		client.onclose = () => {
-			if (this.#live.get(row.id) === live) this.#live.delete(row.id);
+			if (this.#live.get(key) === live) this.#live.delete(key);
 		};
 		return live;
 	}
 
-	async #client(row: McpServerRow): Promise<Live> {
-		const l = this.#live.get(row.id);
+	/** stdio MCP servers never run on the host: they run in the sandbox's service mode (read-only package mount, no network unless allowed). */
+	async #sandboxTransport(row: McpServerRow, userId: string | undefined, secrets: Record<string, string>): Promise<Transport> {
+		const pkg = JSON.parse(row.package_json ?? "null") as SandboxPackage | null;
+		if (!pkg) throw new Error("沙箱 stdio 连接缺少运行配置（package_json）");
+		const uid = userId ?? row.owner_user_id ?? row.created_by;
+		const principal = await this.#ctx.services.get("identity").principalFor(uid, row.org_id);
+		if (!principal) throw new Error("连接的使用者已不存在或已停用");
+		const space = this.#ctx.services.get("identity").personalSpace(principal.userId, principal.orgId);
+		const mounts: { hostPath: string; target: string; readOnly: boolean }[] = [];
+		let argv = pkg.argv;
+		if (pkg.bundleVersionId) {
+			const mm = this.#ctx.services.get("mcpMarket") as { materializeBundle(versionId: string): { dir: string; slug: string } };
+			const b = mm.materializeBundle(pkg.bundleVersionId);
+			mounts.push({ hostPath: b.dir, target: `/mcp/${b.slug}`, readOnly: true });
+			argv = argv.map((a) => a.replaceAll("${MCP_DIR}", `/mcp/${b.slug}`));
+		}
+		const svc = await this.sandboxOverride(row.id, uid, async (sb) =>
+			sb.acquireService(`mcp:${row.id}:${uid}`, { principal, space, runtime: pkg.runtime, argv, env: { ...(row.env ? JSON.parse(row.env) : {}), ...secrets }, mounts, network: pkg.network === true }),
+		);
+		return serviceTransport(svc);
+	}
+	/** Seam for tests: run the sandbox call through a replacement (a fake sandbox that spawns the process directly). */
+	sandboxOverride: (connectorId: string, userId: string, fn: (sb: Sandbox) => Promise<import("./sandbox/services.ts").SandboxService>) => Promise<import("./sandbox/services.ts").SandboxService> = (_id, _u, fn) => fn(this.#ctx.services.get("sandbox") as Sandbox);
+
+	async #client(row: McpServerRow, userId?: string): Promise<Live> {
+		const key = this.#key(row, userId);
+		const l = this.#live.get(key);
 		if (l && l.stamp === row.updated_at) {
 			l.lastUsed = Date.now();
 			return l;
 		}
-		if (l) await this.disconnect(row.id);
-		let p = this.#connecting.get(row.id);
+		if (l) await this.disconnect(row.id, userId);
+		let p = this.#connecting.get(key);
 		if (!p) {
-			p = this.#connect(row).finally(() => this.#connecting.delete(row.id));
-			this.#connecting.set(row.id, p);
+			p = this.#connect(row, userId).finally(() => this.#connecting.delete(key));
+			this.#connecting.set(key, p);
 		}
 		const live = await p;
-		this.#live.set(row.id, live);
+		this.#live.set(key, live);
 		return live;
 	}
 
 	/** Health check: connect, list tools, record status. Never throws. */
-	async check(id: string): Promise<McpServerRow> {
+	async check(id: string, userId?: string): Promise<McpServerRow> {
 		const row = this.row(id);
 		if (!row) throw new HttpError(404, "not_found", "连接不存在");
 		if (!row.enabled) {
 			this.#setStatus(id, "disabled", "已停用");
 			return this.row(id)!;
 		}
+		if (row.approval_state !== "approved") {
+			// Never connect (or probe a URL / start a process) for something a reviewer has not approved.
+			this.#setStatus(id, "unchecked", row.approval_state === "pending" ? "等待审核，通过后才会连接" : "未通过审核");
+			return this.row(id)!;
+		}
+		const uid = userId ?? (row.scope === "personal" ? row.owner_user_id ?? undefined : undefined);
 		try {
-			await this.disconnect(id);
-			const l = await this.#client(row);
+			await this.disconnect(id, row.credential_mode === "per_user" || row.exec_mode === "sandbox" ? uid : undefined);
+			const l = await this.#client(row, uid);
 			const tools: DiscoveredTool[] = [];
 			let cursor: string | undefined;
 			for (let page = 0; page < 50; page++) {
@@ -401,48 +538,58 @@ export class McpManager {
 			}
 			this.#setStatus(id, "ready", `${tools.length} 个工具`, tools);
 		} catch (e: any) {
-			await this.disconnect(id);
+			await this.disconnect(id, row.credential_mode === "per_user" || row.exec_mode === "sandbox" ? uid : undefined);
 			const c = e?.reconnect ? { status: "needs_reconnect" as const, detail: String(e.message) } : classify(e, row.ever_ready === 1);
-			this.#setStatus(id, c.status, redactText(c.detail, this.secretValues(row)));
+			this.#setStatus(id, c.status, redactText(c.detail, this.secretValues(row, uid)));
 		}
 		return this.row(id)!;
 	}
 
-	async callTool(row: McpServerRow, tool: string, args: Record<string, unknown>, opts: { idempotencyKey?: string; retry: boolean }): Promise<{ content: any[]; isError: boolean; structuredContent?: unknown }> {
+	async callTool(row: McpServerRow, tool: string, args: Record<string, unknown>, opts: { idempotencyKey?: string; retry: boolean; userId?: string }): Promise<{ content: any[]; isError: boolean; structuredContent?: unknown }> {
 		const attempt = async () => {
-			const l = await this.#client(row);
+			const l = await this.#client(row, opts.userId);
 			const r: any = await l.client.callTool({ name: tool, arguments: args, ...(opts.idempotencyKey ? { _meta: { idempotencyKey: opts.idempotencyKey } } : {}) }, undefined, { timeout: 60_000 });
 			return { content: (r.content ?? []) as any[], isError: !!r.isError, structuredContent: r.structuredContent };
 		};
 		try {
 			return await attempt();
 		} catch (e: any) {
-			await this.disconnect(row.id);
+			await this.disconnect(row.id, opts.userId && this.#key(row, opts.userId) !== row.id ? opts.userId : undefined);
 			if (/unauthori[sz]ed|\b401\b|\b403\b/i.test(String(e?.message)) || e?.code === 401) {
-				this.#setStatus(row.id, "unauthorized", redactText(String(e.message), this.secretValues(row)));
+				this.#setStatus(row.id, "unauthorized", redactText(String(e.message), this.secretValues(row, opts.userId)));
 				throw e;
 			}
 			if (!opts.retry) {
-				this.#setStatus(row.id, "needs_reconnect", redactText(String(e?.message ?? e), this.secretValues(row)));
+				this.#setStatus(row.id, "needs_reconnect", redactText(String(e?.message ?? e), this.secretValues(row, opts.userId)));
 				throw e;
 			}
 			try {
 				return await attempt();
 			} catch (e2: any) {
 				const c = classify(e2, true);
-				this.#setStatus(row.id, c.status, redactText(c.detail, this.secretValues(row)));
+				this.#setStatus(row.id, c.status, redactText(c.detail, this.secretValues(row, opts.userId)));
 				throw e2;
 			}
 		}
 	}
 
 	// ----- DTOs -----
-	toolDTOs(row: McpServerRow): ConnectorToolDTO[] {
-		return this.tools(row).map((t) => ({ name: piToolName(row.handle, t.name), tool: t.name, description: t.description, policy: this.policyOf(row, t), inputSchema: t.inputSchema }));
+	toolDTOs(row: McpServerRow, userId?: string): ConnectorToolDTO[] {
+		const ov = userId ? this.toolOverrides(row, userId) : {};
+		return this.tools(row).map((t) => ({
+			name: piToolName(row.handle, t.name),
+			tool: t.name,
+			description: t.description,
+			policy: this.policyOf(row, t),
+			inputSchema: t.inputSchema,
+			disabled: this.toolDisabled(row, t.name) || ov[t.name] === "disabled" || undefined,
+			userOverride: ov[t.name],
+		}));
 	}
 	async dto(p: Principal, row: McpServerRow): Promise<ConnectorDTO> {
 		const use = await this.decide(p, "use", row.id);
 		const manage = await this.decide(p, "admin", row.id);
+		const sub = this.#ctx.db.get<{ id: string }>("SELECT id FROM market_submissions WHERE kind = 'mcp_connector' AND subject_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1", row.id);
 		return {
 			id: row.id,
 			handle: row.handle,
@@ -456,11 +603,21 @@ export class McpManager {
 			status: row.enabled ? row.status : "disabled",
 			statusDetail: row.status_detail ?? undefined,
 			lastCheckedAt: row.last_checked_at ?? undefined,
-			tools: this.toolDTOs(row),
+			tools: this.toolDTOs(row, p.userId),
 			access: use.allow ? "allowed" : "forbidden",
 			accessReason: use.allow ? undefined : use.reason,
 			enabledForMe: this.enabledFor(row, p.userId),
 			canManage: manage.allow,
+			market: {
+				approvalState: row.approval_state,
+				submissionId: sub?.id,
+				execMode: row.exec_mode,
+				credentialMode: row.credential_mode,
+				catalogId: row.catalog_version_id ? (this.#ctx.db.get<{ catalog_id: string }>("SELECT catalog_id FROM mcp_catalog_versions WHERE id = ?", row.catalog_version_id)?.catalog_id ?? undefined) : undefined,
+				mySecretNames: row.credential_mode === "per_user" ? this.mySecretNames(row, p.userId) : [],
+				toolOverrides: this.toolOverrides(row, p.userId),
+				requiredSecretNames: row.credential_mode === "per_user" ? JSON.parse(row.secret_names) : [],
+			},
 		};
 	}
 
@@ -473,6 +630,7 @@ export class McpManager {
 		const tools: ToolRegistration[] = [];
 		const seen = new Set<string>();
 		for (const r of rows) for (const t of this.tools(r)) {
+			if (this.toolDisabled(r, t.name)) continue; // switched off by the manager: the model never sees it
 			const name = piToolName(r.handle, t.name);
 			if (seen.has(name)) continue;
 			seen.add(name);
@@ -505,7 +663,8 @@ export class McpManager {
 		const log = this.#ctx.services.get("toolCalls") as ToolCallLog;
 		const row = this.row(serverId);
 		const toolName = row ? piToolName(row.handle, tool) : `mcp__?__${tool}`;
-		const secrets = row ? this.secretValues(row) : [];
+		const uid = actor.principal.userId;
+		const secrets = row ? this.secretValues(row, uid) : [];
 		const recId = log.start({ tool: toolName, connectorId: serverId, actor, args, secrets });
 		const fail = (status: "error" | "denied" | "needs_reconciliation", message: string): ToolExecutionResult => {
 			log.finish(recId, { status, error: message, secrets });
@@ -515,10 +674,15 @@ export class McpManager {
 		const u = await this.usable(actor.principal, row);
 		if (!u.ok) return fail("denied", u.message);
 		if (!this.tools(row).some((x) => x.name === tool)) return fail("error", `连接「${row.name}」已不再提供工具 ${tool}，请重新检查连接`);
+		if (this.toolDisabled(row, tool)) return fail("denied", `管理员已关闭连接「${row.name}」的工具 ${tool}`);
+		const override = this.toolOverrides(row, uid)[tool];
+		if (override === "disabled") return fail("denied", `你已关闭连接「${row.name}」的工具 ${tool}（可在“我的连接”里重新开启）`);
+		// "ask" = the caller wants a confirmation even for tools the connector declares read-only.
+		const effective: "read" | "write" = override === "ask" ? "write" : policy;
 		try {
 			let result: { content: any[]; isError: boolean; structuredContent?: unknown };
-			if (policy === "read") {
-				result = await this.callTool(row, tool, args, { retry: true });
+			if (effective === "read") {
+				result = await this.callTool(row, tool, args, { retry: true, userId: uid });
 			} else {
 				const effects = this.effectsOverride ?? (this.#ctx.services.has("effects") ? (this.#ctx.services.get("effects") as EffectsApi) : null);
 				if (!effects) return fail("denied", "写操作需要审批与回执服务（运行内核未提供 effects），本次未执行");
@@ -526,7 +690,7 @@ export class McpManager {
 				const decision = await effects.requestApproval(api, { title: `确认外部操作：${row.name} / ${tool}`, summary, detail: JSON.parse(summarizeArgs(args, secrets)), risk: "medium" }, context);
 				if (decision.decision !== "approved") return fail("denied", `用户未批准此操作${decision.note ? `（${decision.note}）` : ""}，未执行`);
 				const outcome = await effects.externalEffect(api, { key: `mcp:${serverId}:${tool}:${actor.callId}`, target: `${row.name}/${tool}`, summary }, async (idempotencyKey) => {
-					const r = await this.callTool(row, tool, args, { idempotencyKey, retry: false });
+					const r = await this.callTool(row, tool, args, { idempotencyKey, retry: false, userId: uid });
 					return JSON.parse(JSON.stringify({ content: r.content, isError: r.isError })) as any;
 				}, context);
 				if (outcome.status === "needs_reconciliation") return fail("needs_reconciliation", `外部写操作结果不确定（进程在执行中断开），未自动重做，请人工核对：${outcome.detail}（effect ${outcome.effectId}）`);
@@ -535,7 +699,7 @@ export class McpManager {
 			const output = this.#content(result.content, secrets);
 			const text = output.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
 			log.finish(recId, { status: result.isError ? "error" : "ok", error: result.isError ? text.slice(0, 500) : undefined, result: text.slice(0, 300), secrets });
-			return { output: output.length ? output : [{ type: "text", text: "（无输出）" }], isError: result.isError, details: { connectorId: serverId, connector: row.name, tool, policy } };
+			return { output: output.length ? output : [{ type: "text", text: "（无输出）" }], isError: result.isError, details: { connectorId: serverId, connector: row.name, tool, policy: effective } };
 		} catch (e: any) {
 			const msg = redactText(String(e?.message ?? e), secrets);
 			log.finish(recId, { status: "error", error: msg, secrets });
@@ -588,7 +752,11 @@ export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 			const agent = await api.agent(context);
 			const allowedServers = new Map<string, boolean>();
 			const byPiName = new Map<string, McpServerRow>();
-			for (const r of mgr.rows(actor.principal.orgId)) for (const t of mgr.tools(r)) byPiName.set(piToolName(r.handle, t.name), r);
+			const rawName = new Map<string, string>();
+			for (const r of mgr.rows(actor.principal.orgId)) for (const t of mgr.tools(r)) {
+				byPiName.set(piToolName(r.handle, t.name), r);
+				rawName.set(piToolName(r.handle, t.name), t.name);
+			}
 			const candidates = [];
 			for (const t of agent.deferred) {
 				if (t.name.startsWith("mcp__")) {
@@ -596,6 +764,8 @@ export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 					if (!r) continue; // another org's connector: never shown
 					if (!allowedServers.has(r.id)) allowedServers.set(r.id, (await mgr.usable(actor.principal, r)).ok);
 					if (!allowedServers.get(r.id)) continue;
+					const raw = rawName.get(t.name)!;
+					if (mgr.toolDisabled(r, raw) || mgr.toolOverrides(r, actor.principal.userId)[raw] === "disabled") continue; // off for this user
 				}
 				candidates.push(t);
 			}
@@ -607,8 +777,19 @@ export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 				.slice(0, max)
 				.map((x) => x.t);
 			const loaded = ranked.map((t) => t.name);
-			const text = loaded.length ? `Loaded ${loaded.length} tool(s). They are available from your next call:\n${ranked.map((t) => `- ${t.name}: ${t.description.split("\n")[0]}`).join("\n")}` : "No matching tools found (or no connector you may use offers them).";
-			void ctx;
+			// Skills the user has active are discovered here too (they are loaded with skill_load, not as tools).
+			let skillHint = "";
+			try {
+				const sk = ctx?.services?.has("skills") ? (ctx.services.get("skills") as any) : null;
+				if (sk) {
+					const active = (await sk.active(actor.principal, actor.space)) as { skill: { name: string }; version: { description: string } }[];
+					const hits = active.map((a) => ({ a, s: score(query, `${a.skill.name} ${a.version.description}`) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 5);
+					if (hits.length) skillHint = `\n\nMatching skills (load one with skill_load):\n${hits.map((h) => `- ${h.a.skill.name}: ${h.a.version.description.slice(0, 120)}`).join("\n")}`;
+				}
+			} catch {
+				/* skills are optional here */
+			}
+			const text = (loaded.length ? `Loaded ${loaded.length} tool(s). They are available from your next call:\n${ranked.map((t) => `- ${t.name}: ${t.description.split("\n")[0]}`).join("\n")}` : "No matching tools found (or no connector you may use offers them).") + skillHint;
 			return { output: [{ type: "text", text }], details: { loaded }, ...(loaded.length ? { control: { addTools: loaded } } : {}) };
 		},
 	});
