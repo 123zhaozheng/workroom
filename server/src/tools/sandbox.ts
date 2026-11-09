@@ -1,15 +1,23 @@
-// Cloud execution sandbox (M11): per-space, per-conversation working directories; shell / Python / Node run inside
-// Linux namespaces (user + mount + pid + net + ipc + uts), pivot_root into a minimal read-only system image with only the
-// workspace writable, all capabilities dropped, no_new_privs, rlimits (address space, CPU, file size, open files,
-// processes), wall-clock timeout that kills the whole namespace, no network by default.
-// If the host cannot create these namespaces, execution is refused (never run unisolated).
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, lstatSync, realpathSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+// Cloud execution sandbox (M11, round 4: pluggable drivers). Per-space, per-conversation working directories (/work, persistent);
+// shell / Python / Node run through a driver chosen by the admin setting or auto-detection:
+//   namespaces — Linux user/mount/pid/net namespaces (no daemon)   docker — Docker CLI (Windows/macOS/Linux)   none — says how to enable one
+// This service owns policy (ACL is the caller's, quota, run records, concurrency, mounts, services, retention); drivers only isolate.
+// If no driver can isolate, execution is refused (never run unisolated).
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { AppContext, Principal, Space } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
-import type { SandboxEntryDTO, SandboxInfoDTO, SandboxLimitsDTO, SandboxRunDTO } from "../../../shared/files.ts";
+import type { SandboxEntryDTO, SandboxLimitsDTO, SandboxRunDTO } from "../../../shared/files.ts";
+import type { SandboxInfoDTO, WorkspaceFilesResponse, WorkspacePreviewDTO, WorkspaceUsageDTO } from "../../../shared/sandbox.ts";
+import { normalizeTarget, type DriverId, type DriverStatus, type Language, type ProcessRef, type RunResult, type SandboxDriver, type SandboxMount, type ServiceRuntime } from "./sandbox/driver.ts";
+import { killStaleNamespaces, NAMESPACES_NOTES, probeNamespaces } from "./sandbox/namespaces.ts";
+import { SandboxDrivers } from "./sandbox/registry.ts";
+import { SandboxService, type SandboxServiceInfo } from "./sandbox/services.ts";
+import * as ws from "./sandbox/workspace.ts";
+
+export type { Language, RunResult, SandboxMount, SandboxService };
+export { SandboxDrivers };
 
 export const SANDBOX_MIGRATIONS: Migration[] = [
 	{
@@ -38,9 +46,16 @@ CREATE TABLE tool_sandbox_runs (
 CREATE INDEX tool_sandbox_runs_conv ON tool_sandbox_runs(space_id, conversation_id, started_at);
 `,
 	},
+	{
+		version: 2,
+		name: "sandbox driver settings",
+		sql: `
+CREATE TABLE tool_sandbox_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL);
+ALTER TABLE tool_sandbox_runs ADD COLUMN driver TEXT;
+`,
+	},
 ];
 
-export type Language = "shell" | "python" | "node";
 export const DEFAULT_LIMITS: SandboxLimitsDTO = {
 	timeoutMs: 30_000,
 	memoryBytes: 512 * 1024 * 1024,
@@ -53,134 +68,118 @@ export const MAX_TIMEOUT_MS = 300_000;
 /** Background jobs (M14-C) may run longer, within their declared budget. */
 export const JOB_MAX_TIMEOUT_MS = Number(process.env.WORKROOM_JOB_MAX_TIMEOUT_MS ?? 3_600_000);
 export const RETENTION_HOURS = Number(process.env.WORKROOM_SANDBOX_RETENTION_HOURS ?? 72);
-export const QUOTA_BYTES = Number(process.env.WORKROOM_SANDBOX_QUOTA_MB ?? 512) * 1024 * 1024;
-const OUTPUT_CAP = 256 * 1024;
+/** Soft quota per space, read at call time so deployments (and tests) can change it without a restart. */
+export const quotaBytes = () => Number(process.env.WORKROOM_SANDBOX_QUOTA_MB ?? 512) * 1024 * 1024;
+export const QUOTA_BYTES = quotaBytes();
 
-export const ISOLATION_TEXT =
-	"Linux 命名空间：独立 user/mount/pid/net/ipc/uts；pivot_root 到最小只读系统镜像（/usr、必要的 /etc 文件、运行时），仅 /work（本会话工作目录）可写，/tmp 为内存盘；" +
-	"丢弃全部 capabilities 并设置 no_new_privs；rlimit 限制地址空间、CPU 秒、单文件大小、打开文件数与进程数；超时杀死整个 pid 命名空间；默认无网络（只有 lo）。" +
-	"不是虚拟机：与宿主共享内核，内核漏洞可逃逸；没有 cgroup 内存/IO 总量限制（单进程地址空间受限）；工作目录总量为运行前后检查的软配额。";
+export const isolationText = (n: { isolates: readonly string[]; doesNotIsolate: readonly string[] }) => `${n.isolates.join("；")}。未隔离/限制：${n.doesNotIsolate.join("；")}。`;
+/** Namespace-driver description (kept for callers that predate drivers; prefer `Sandbox.isolationFor`). */
+export const ISOLATION_TEXT = isolationText(NAMESPACES_NOTES);
 
-// The in-namespace bootstrap. Runs as uid 0 *inside* a fresh user namespace (mapped to the server's uid), builds the root,
-// pivots into it, drops every capability and execs the program with rlimits. Arguments: ROOT WORK CODE RUNTIME NPROC AS CPU FSIZE -- argv...
-const BOOT = String.raw`set -eu
-ROOT=$1; WORK=$2; CODE=$3; RUNTIME=$4; NPROC=$5; AS=$6; CPU=$7; FSIZE=$8; shift 8; [ "$1" = "--" ] && shift
-mount --make-rprivate /
-mount -t tmpfs -o size=16m,mode=755 tmpfs "$ROOT"
-for d in usr bin lib lib64 sbin; do
-  if [ -L "/$d" ]; then ln -s "$(readlink "/$d")" "$ROOT/$d";
-  elif [ -d "/$d" ]; then mkdir -p "$ROOT/$d"; mount --rbind "/$d" "$ROOT/$d"; mount -o remount,bind,ro "$ROOT/$d"; fi
-done
-mkdir -p "$ROOT/etc" "$ROOT/work" "$ROOT/code" "$ROOT/tmp" "$ROOT/proc" "$ROOT/dev" "$ROOT/runtime"
-for f in passwd group hosts nsswitch.conf ld.so.cache ld.so.conf localtime mime.types; do
-  if [ -e "/etc/$f" ]; then touch "$ROOT/etc/$f" 2>/dev/null || true; [ -d "/etc/$f" ] || mount --bind "/etc/$f" "$ROOT/etc/$f"; fi
-done
-for d in ld.so.conf.d ssl alternatives fonts libreoffice; do
-  if [ -d "/etc/$d" ]; then mkdir -p "$ROOT/etc/$d"; mount --rbind "/etc/$d" "$ROOT/etc/$d"; mount -o remount,bind,ro "$ROOT/etc/$d"; fi
-done
-mount --bind "$WORK" "$ROOT/work"
-mount --bind "$CODE" "$ROOT/code"; mount -o remount,bind,ro "$ROOT/code"
-if [ -n "$RUNTIME" ] && [ -d "$RUNTIME" ]; then mount --rbind "$RUNTIME" "$ROOT/runtime"; mount -o remount,bind,ro "$ROOT/runtime"; fi
-mount -t tmpfs -o size=64m tmpfs "$ROOT/tmp"
-mount -t proc -o nosuid,nodev,noexec proc "$ROOT/proc"
-for n in null zero urandom random; do touch "$ROOT/dev/$n"; mount --bind "/dev/$n" "$ROOT/dev/$n"; done
-mkdir -p "$ROOT/.old"; mount -o remount,ro "$ROOT"
-cd "$ROOT"; pivot_root . .old; umount -l /.old; cd /work
-# Not exec'd: the shell stays pid 1 so a program killed by a signal (e.g. SIGXCPU) yields a normal 128+N exit status.
-/usr/bin/env -i PATH=/runtime/bin:/usr/local/bin:/usr/bin:/bin HOME=/work TMPDIR=/tmp LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 \
-  /usr/bin/prlimit --nproc="$NPROC" --as="$AS" --cpu="$CPU:$((CPU + 2))" --fsize="$FSIZE" --nofile=256 --core=0 -- \
-  /usr/bin/setpriv --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all -- "$@"
-exit $?`;
-
-let probed: { ok: boolean; detail: string } | undefined;
-/** Whether this host can build the namespace sandbox (cached). */
-/** Kill a sandbox process group left behind by a previous process (crash/restart), if it is still ours. */
-export function killStaleSandbox(pid: number | null | undefined): boolean {
-	if (!pid) return false;
-	try {
-		const cmd = readFileSync(`/proc/${pid}/cmdline`, "utf8");
-		if (!cmd.includes("wr-sandbox")) return false;
-		process.kill(-pid, "SIGKILL");
-		return true;
-	} catch {
-		return false;
-	}
-}
-
+/** Whether this host can build the namespace sandbox (cached, synchronous). Docker is probed asynchronously through `Sandbox.drivers`. */
 export function probeIsolation(): { ok: boolean; detail: string } {
-	if (probed) return probed;
-	const tools = ["/usr/bin/unshare", "/usr/bin/prlimit", "/usr/bin/setpriv"].filter((p) => !existsSync(p));
-	if (tools.length) return (probed = { ok: false, detail: `缺少 ${tools.join(", ")}` });
-	const r = spawnSync("/usr/bin/unshare", ["--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "--ipc", "--uts", "--kill-child", "/bin/sh", "-c", "mount -t tmpfs tmpfs /mnt && echo ok"], { encoding: "utf8", timeout: 10_000 });
-	probed = r.stdout?.trim() === "ok" ? { ok: true, detail: "namespaces available" } : { ok: false, detail: `无法创建隔离命名空间：${(r.stderr || r.error?.message || "unknown").slice(0, 200)}` };
-	return probed;
+	return probeNamespaces();
+}
+/** Kill a namespace sandbox process group left behind by a previous process (crash/restart), if it is still ours. */
+export function killStaleSandbox(pid: number | null | undefined): boolean {
+	return killStaleNamespaces(pid);
 }
 
-/** Processes currently owned by our uid (RLIMIT_NPROC counts them all, so the limit is relative). */
-function ownProcessCount(): number {
-	const uid = process.getuid?.() ?? 0;
-	let n = 0;
-	for (const d of readdirSync("/proc")) {
-		if (!/^\d+$/.test(d)) continue;
-		try {
-			if (statSync(`/proc/${d}`).uid === uid) n++;
-		} catch {
-			/* raced */
-		}
+class Semaphore {
+	#free: number;
+	#capacity: number;
+	readonly #q: (() => void)[] = [];
+	constructor(n: number) {
+		this.#free = this.#capacity = n;
 	}
-	return n;
+	resize(n: number) {
+		this.#free += n - this.#capacity;
+		this.#capacity = n;
+		while (this.#free > 0 && this.#q.length) (this.#free--, this.#q.shift()!());
+	}
+	async acquire(): Promise<() => void> {
+		if (this.#free > 0) this.#free--;
+		else await new Promise<void>((r) => this.#q.push(r));
+		let done = false;
+		return () => {
+			if (done) return;
+			done = true;
+			if (this.#q.length && this.#free >= 0) this.#q.shift()!();
+			else this.#free++;
+		};
+	}
 }
 
-export interface RunResult {
-	status: "ok" | "error" | "timeout" | "killed";
-	exitCode: number | null;
-	stdout: string;
-	stderr: string;
-	durationMs: number;
+export interface MountContext {
+	principal: Principal;
+	space: Space;
+	conversationId?: number;
+}
+export type MountProvider = (c: MountContext) => readonly SandboxMount[] | Promise<readonly SandboxMount[]>;
+
+export interface RunInput {
+	principal: Principal;
+	space: Space;
+	conversationId?: number;
+	taskId?: number;
+	callId?: string;
+	language: Language;
+	code: string;
+	timeoutMs?: number;
+	network?: boolean;
+	signal?: AbortSignal;
+	maxTimeoutMs?: number;
+	cpuSeconds?: number;
+	onSpawn?: (pid: number) => void;
+	mounts?: readonly SandboxMount[];
+	env?: Readonly<Record<string, string>>;
 }
 
-function capped(): { push(b: Buffer): void; text(): string } {
-	const parts: Buffer[] = [];
-	let size = 0;
-	let dropped = 0;
-	return {
-		push(b) {
-			if (size >= OUTPUT_CAP) {
-				dropped += b.length;
-				return;
-			}
-			const take = b.subarray(0, OUTPUT_CAP - size);
-			parts.push(take);
-			size += take.length;
-			dropped += b.length - take.length;
-		},
-		text() {
-			const s = Buffer.concat(parts).toString("utf8");
-			return dropped ? `${s}\n…（输出过长，已截断 ${dropped} 字节）` : s;
-		},
-	};
+export interface StartServiceInput {
+	principal: Principal;
+	space: Space;
+	conversationId?: number;
+	runtime: ServiceRuntime;
+	argv: readonly string[];
+	cwd?: string;
+	env?: Readonly<Record<string, string>>;
+	mounts?: readonly SandboxMount[];
+	network?: boolean;
+	idleTimeoutMs?: number;
+	maxLifetimeMs?: number;
+	limits?: Partial<Pick<SandboxLimitsDTO, "memoryBytes" | "cpuSeconds" | "maxProcesses" | "maxFileBytes">>;
 }
 
-function dirSize(p: string): number {
-	let n = 0;
-	const walk = (d: string) => {
-		for (const e of readdirSync(d, { withFileTypes: true })) {
-			const f = join(d, e.name);
-			if (e.isDirectory()) walk(f);
-			else if (e.isFile()) n += lstatSync(f).size;
-		}
-	};
-	if (existsSync(p)) walk(p);
-	return n;
+export interface SandboxCapabilities {
+	driver: DriverId;
+	state: "ready" | "needs_setup" | "unavailable";
+	label: string;
+	detail: string;
+	network: { supported: boolean; allowed: boolean };
+	services: boolean;
+	mounts: boolean;
+	runtimes: ServiceRuntime[];
 }
 
 export class Sandbox {
 	readonly #ctx: AppContext;
+	readonly drivers: SandboxDrivers;
 	#timer: NodeJS.Timeout | undefined;
+	#slots: Semaphore;
+	readonly #providers = new Map<string, MountProvider>();
+	readonly #roots = new Set<string>();
+	readonly #services = new Map<string, SandboxService>();
+	readonly #starting = new Map<string, Promise<SandboxService>>();
+	#reaped: Promise<void> = Promise.resolve();
+	#stopped = false;
+
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
+		this.drivers = new SandboxDrivers(ctx);
+		this.#slots = new Semaphore(this.drivers.settings().maxConcurrent);
 	}
 
+	// ---------- paths ----------
 	root(space: Space): string {
 		return join(space.dir, "sandbox");
 	}
@@ -189,130 +188,218 @@ export class Sandbox {
 		mkdirSync(d, { recursive: true });
 		return d;
 	}
-	/** Resolve a path inside a workdir; refuses escapes (.., absolute, symlinks pointing outside). */
+	/** Resolve a path inside a workdir; refuses escapes (.., absolute, drive letters, symlinks pointing outside). */
 	resolveIn(workdir: string, rel: string): string {
-		const p = resolve(workdir, rel.replace(/^\/+(work\/?)?/, ""));
-		if (p !== workdir && !p.startsWith(workdir + sep)) throw new HttpError(400, "bad_path", "路径必须在工作目录内");
-		if (existsSync(p)) {
-			const real = realpathSync(p);
-			const realRoot = realpathSync(workdir);
-			if (real !== realRoot && !real.startsWith(realRoot + sep)) throw new HttpError(400, "bad_path", "路径指向工作目录之外");
-		}
-		return p;
+		return ws.resolveIn(workdir, rel).abs;
 	}
 
-	info(space: Space): SandboxInfoDTO {
-		const iso = probeIsolation();
-		return { spaceId: space.id, isolation: iso.ok ? "namespaces" : "unavailable", isolationDetail: iso.ok ? ISOLATION_TEXT : iso.detail, limits: DEFAULT_LIMITS, retentionHours: RETENTION_HOURS, usedBytes: dirSize(this.root(space)), quotaBytes: QUOTA_BYTES };
+	// ---------- drivers ----------
+	async #driver(): Promise<SandboxDriver> {
+		const r = await this.drivers.resolve();
+		if (r.effective === "none") await r.driver.run({} as never); // throws the 503 with the reason and how to enable
+		return r.driver;
+	}
+	isolationFor(id: DriverId): string {
+		const d = id === "docker" ? this.drivers.docker : id === "namespaces" ? NAMESPACES_NOTES : undefined;
+		return d ? isolationText("notes" in d ? d.notes : d) : "沙箱未启用";
 	}
 
-	entries(space: Space, conversationId: number | undefined): SandboxEntryDTO[] {
-		const wd = this.workdir(space, conversationId);
-		const out: SandboxEntryDTO[] = [];
-		const walk = (d: string) => {
-			for (const e of readdirSync(d, { withFileTypes: true })) {
-				if (out.length >= 2000) return;
-				const f = join(d, e.name);
-				const st = lstatSync(f);
-				const rel = relative(wd, f).split(sep).join("/");
-				out.push({ path: rel, kind: e.isDirectory() ? "directory" : "file", size: e.isDirectory() ? 0 : st.size, mtime: st.mtime.toISOString(), expiresAt: new Date(st.mtimeMs + RETENTION_HOURS * 3600_000).toISOString() });
-				if (e.isDirectory()) walk(f);
-			}
+	async capabilities(): Promise<SandboxCapabilities> {
+		const r = await this.drivers.resolve();
+		const st = r.effective === "none" ? await r.driver.detect() : r.statuses[r.effective];
+		const net = this.drivers.settings().network === "allowed";
+		return {
+			driver: r.effective,
+			state: r.effective === "none" ? "unavailable" : st.state,
+			label: r.driver.label,
+			detail: r.reason,
+			network: { supported: r.driver.capabilities.network, allowed: net && r.driver.capabilities.network },
+			services: r.driver.capabilities.services,
+			mounts: r.driver.capabilities.mounts,
+			runtimes: r.effective === "none" ? [] : ["shell", "python", "node"],
 		};
-		walk(wd);
+	}
+
+	async info(space: Space): Promise<SandboxInfoDTO> {
+		const r = await this.drivers.resolve();
+		const st: DriverStatus = r.effective === "none" ? await r.driver.detect() : r.statuses[r.effective];
+		const ok = r.effective !== "none";
+		const net = this.drivers.settings().network;
+		return {
+			spaceId: space.id,
+			isolation: ok ? (r.effective as "namespaces" | "docker") : "unavailable",
+			isolationDetail: ok ? `${r.driver.label}：${isolationText(r.driver.notes)}` : r.reason,
+			driver: { id: r.effective, label: r.driver.label, state: ok ? st.state : "unavailable", summary: ok ? st.summary : r.reason, howToEnable: ok ? undefined : st.howToEnable, network: net },
+			limits: { ...DEFAULT_LIMITS, network: ok && net === "allowed" && r.driver.capabilities.network },
+			retentionHours: RETENTION_HOURS,
+			usedBytes: ws.dirSize(this.root(space)).bytes,
+			quotaBytes: quotaBytes(),
+		};
+	}
+
+	// ---------- mounts ----------
+	/** Root below which skills / MCP packages may be materialised for read-only mounting: `<dataDir>/sandbox-mounts`. */
+	mountsRoot(): string {
+		const d = join(this.#ctx.config.dataDir, "sandbox-mounts");
+		mkdirSync(d, { recursive: true });
+		return d;
+	}
+	/** Allow another host directory tree as a mount source (call once at init). Mounts must be strictly below a registered root. */
+	registerMountRoot(dir: string): void {
+		mkdirSync(dir, { recursive: true });
+		this.#roots.add(realpathSync.native(dir));
+	}
+	/** Register a function that contributes mounts to every run/service of a conversation. Returns an unregister function. */
+	addMountProvider(name: string, fn: MountProvider): () => void {
+		this.#providers.set(name, fn);
+		return () => void this.#providers.delete(name);
+	}
+
+	async #collectMounts(c: MountContext, extra: readonly SandboxMount[] = []): Promise<SandboxMount[]> {
+		const all: SandboxMount[] = [...extra];
+		for (const [name, fn] of this.#providers) {
+			try {
+				all.push(...(await fn(c)));
+			} catch (e) {
+				console.error(`[sandbox] mount provider ${name} failed`, e);
+			}
+		}
+		const roots = [realpathSync.native(this.mountsRoot()), ...this.#roots];
+		const workRoot = existsSync(this.root(c.space)) ? realpathSync.native(this.root(c.space)) : undefined;
+		const seen = new Set<string>();
+		const out: SandboxMount[] = [];
+		for (const m of all) {
+			let target: string;
+			try {
+				target = normalizeTarget(m.target);
+			} catch (e: any) {
+				throw new HttpError(400, "bad_mount", e.message);
+			}
+			if (seen.has(target)) throw new HttpError(400, "bad_mount", `重复的挂载点 ${target}`);
+			seen.add(target);
+			if (!resolve(m.hostPath) || !existsSync(m.hostPath)) throw new HttpError(400, "bad_mount", `挂载源不存在：${m.hostPath}`);
+			const real = realpathSync.native(m.hostPath);
+			if (/[\t\r\n\0"]/.test(real)) throw new HttpError(400, "bad_mount", "挂载源路径含有非法字符");
+			const under = (root: string) => ws.isInside(root, real) && real.length > root.length;
+			const inRoot = roots.some(under);
+			const inWork = !!workRoot && under(workRoot);
+			if (!inRoot && !(inWork && !m.readOnly)) throw new HttpError(400, "bad_mount", `挂载源 ${m.hostPath} 不在允许的目录（${this.mountsRoot()}）内`);
+			if (!m.readOnly && !inWork) throw new HttpError(400, "bad_mount", "只有会话自己的工作区可以读写挂载；其余挂载必须 readOnly");
+			out.push({ hostPath: real, target, readOnly: m.readOnly });
+		}
 		return out;
 	}
 
+	async #networkAllowed(driver: SandboxDriver, want: boolean | undefined): Promise<boolean> {
+		if (!want) return false;
+		if (this.drivers.settings().network !== "allowed") throw new HttpError(403, "network_disabled", "沙箱默认不允许联网；管理员未开启“允许沙箱联网”");
+		if (!driver.capabilities.network) throw new HttpError(403, "network_unsupported", `当前沙箱驱动（${driver.label}）无法提供网络；请使用 Docker 驱动`);
+		return true;
+	}
+
+	// ---------- run ----------
 	/** Execute code in the sandbox. Records a run row (idempotent per tool call). */
-	async run(input: { principal: Principal; space: Space; conversationId?: number; taskId?: number; callId?: string; language: Language; code: string; timeoutMs?: number; network?: boolean; signal?: AbortSignal; maxTimeoutMs?: number; cpuSeconds?: number; onSpawn?: (pid: number) => void }): Promise<SandboxRunDTO> {
-		const iso = probeIsolation();
-		if (!iso.ok) throw new HttpError(503, "sandbox_unavailable", `沙箱不可用：${iso.detail}`);
-		if (input.network) throw new HttpError(403, "network_disabled", "沙箱默认不允许联网；本部署未开放沙箱网络");
+	async run(input: RunInput): Promise<SandboxRunDTO> {
 		if (!["shell", "python", "node"].includes(input.language)) throw new HttpError(400, "bad_language", "language 必须是 shell、python 或 node");
+		const driver = await this.#driver();
+		const network = await this.#networkAllowed(driver, input.network);
 		const timeoutMs = Math.min(Math.max(input.timeoutMs ?? DEFAULT_LIMITS.timeoutMs, 1000), input.maxTimeoutMs ?? MAX_TIMEOUT_MS);
 		const cpuSeconds = Math.max(1, Math.min(input.cpuSeconds ?? Math.ceil(timeoutMs / 1000), Math.ceil(timeoutMs / 1000)));
-		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, timeoutMs, cpuSeconds };
+		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, timeoutMs, cpuSeconds, network };
 		const wd = this.workdir(input.space, input.conversationId);
-		const used = dirSize(this.root(input.space));
-		if (used > QUOTA_BYTES) throw new HttpError(507, "sandbox_quota", `工作目录已用 ${Math.round(used / 1048576)} MB，超过配额 ${Math.round(QUOTA_BYTES / 1048576)} MB；请先发布需要的文件并清理`);
+		const used = ws.dirSize(this.root(input.space)).bytes;
+		if (used > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录已用 ${Math.round(used / 1048576)} MB，超过配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并清理`);
+		const mounts = await this.#collectMounts(input, input.mounts);
+		await this.#reaped;
 		const id = newId("run");
 		const started = Date.now();
 		this.#ctx.db.run(
-			"INSERT INTO tool_sandbox_runs (id, space_id, conversation_id, task_id, call_id, user_id, language, code, status, limits, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)",
-			id, input.space.id, input.conversationId ?? null, input.taskId ?? null, input.callId ?? null, input.principal.userId, input.language, input.code.slice(0, 200_000), JSON.stringify(limits), nowIso(),
+			"INSERT INTO tool_sandbox_runs (id, space_id, conversation_id, task_id, call_id, user_id, language, code, status, limits, started_at, driver) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)",
+			id, input.space.id, input.conversationId ?? null, input.taskId ?? null, input.callId ?? null, input.principal.userId, input.language, input.code.slice(0, 200_000), JSON.stringify(limits), nowIso(), driver.id,
 		);
-		const r = await this.#exec(this.root(input.space), wd, input.language, input.code, limits, id, input.signal, input.onSpawn);
+		let r: RunResult;
+		const release = await this.#slots.acquire();
+		try {
+			r = await driver.run({ runId: id, scratchBase: this.root(input.space), workdir: wd, exec: { language: input.language, code: input.code }, limits, mounts, env: input.env ?? {}, network, signal: input.signal, onSpawn: (ref: ProcessRef) => ref.pid && input.onSpawn?.(ref.pid) });
+		} catch (e: any) {
+			this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = 'error', stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", String(e?.message ?? e).slice(0, 4000), Date.now() - started, nowIso(), id);
+			throw e;
+		} finally {
+			release();
+		}
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
 		return this.runDTO(id)!;
 	}
 
 	/**
 	 * Run code isolated in an arbitrary working directory (server-internal jobs such as rendering untrusted documents).
-	 * Same namespace sandbox and limits; no run record.
+	 * Same driver and limits; no run record. `hostTools: true` means the command needs programs installed on the host (e.g. LibreOffice):
+	 * only the namespace driver provides them, so other drivers refuse.
 	 */
-	async execIsolated(workdir: string, language: Language, code: string, limits: Partial<SandboxLimitsDTO> = {}): Promise<RunResult> {
-		const iso = probeIsolation();
-		if (!iso.ok) throw new HttpError(503, "sandbox_unavailable", `沙箱不可用：${iso.detail}`);
+	async execIsolated(workdir: string, language: Language, code: string, limits: Partial<SandboxLimitsDTO> = {}, opts: { hostTools?: boolean } = {}): Promise<RunResult> {
+		const r = await this.drivers.resolve();
+		let driver: SandboxDriver;
+		if (opts.hostTools) {
+			if (r.statuses.namespaces.state !== "ready") throw new HttpError(503, "sandbox_unavailable", `该任务需要宿主机上的程序，只有命名空间驱动能提供（${r.statuses.namespaces.summary}）`);
+			driver = (await import("./sandbox/namespaces.ts")).namespaceDriver;
+		} else driver = await this.#driver();
 		mkdirSync(workdir, { recursive: true });
 		const timeoutMs = limits.timeoutMs ?? DEFAULT_LIMITS.timeoutMs;
-		return this.#exec(join(workdir, ".."), workdir, language, code, { ...DEFAULT_LIMITS, cpuSeconds: Math.ceil(timeoutMs / 1000), ...limits, timeoutMs }, newId("iso"));
+		const lim: SandboxLimitsDTO = { ...DEFAULT_LIMITS, cpuSeconds: Math.ceil(timeoutMs / 1000), ...limits, timeoutMs, network: false };
+		await this.#reaped;
+		const release = await this.#slots.acquire();
+		try {
+			return await driver.run({ runId: newId("iso"), scratchBase: join(workdir, ".."), workdir, exec: { language, code }, limits: lim, mounts: [], env: {}, network: false });
+		} finally {
+			release();
+		}
 	}
 
-	async #exec(scratchBase: string, wd: string, language: Language, code: string, limits: SandboxLimitsDTO, runId: string, abortSignal?: AbortSignal, onSpawn?: (pid: number) => void): Promise<RunResult> {
-		const scratch = join(scratchBase, ".runs", runId);
-		const rootDir = join(scratch, "root");
-		const codeDir = join(scratch, "code");
-		mkdirSync(rootDir, { recursive: true });
-		mkdirSync(codeDir, { recursive: true });
-		const file = language === "python" ? "main.py" : language === "node" ? "main.mjs" : "main.sh";
-		writeFileSync(join(codeDir, file), code);
-		const nodeRuntime = dirname(dirname(process.execPath));
-		const argv = language === "python" ? ["/usr/bin/env", "python3", "/code/main.py"] : language === "node" ? ["/runtime/bin/node", `--max-old-space-size=${Math.floor(limits.memoryBytes / 2 / 1048576)}`, "/code/main.mjs"] : ["/bin/sh", "/code/main.sh"];
-		const nproc = ownProcessCount() + limits.maxProcesses;
-		const args = [
-			"--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "--ipc", "--uts", "--kill-child",
-			"/bin/sh", "-c", BOOT, "wr-sandbox", rootDir, wd, codeDir, language === "node" ? nodeRuntime : "", String(nproc), String(language === "node" ? limits.memoryBytes * 2 : limits.memoryBytes), String(limits.cpuSeconds), String(limits.maxFileBytes), "--", ...argv,
-		];
-		const started = Date.now();
-		const out = capped();
-		const err = capped();
-		const child = spawn("/usr/bin/unshare", args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin" } });
-		if (child.pid) onSpawn?.(child.pid);
-		child.stdout.on("data", (b: Buffer) => out.push(b));
-		child.stderr.on("data", (b: Buffer) => err.push(b));
-		let timedOut = false;
-		const killAll = () => {
-			try {
-				process.kill(-child.pid!, "SIGKILL");
-			} catch {
-				/* gone */
-			}
-		};
-		const timer = setTimeout(() => {
-			timedOut = true;
-			killAll();
-		}, limits.timeoutMs);
-		// Cancellation (run aborted by the user / harness closing) kills the whole namespace too.
-		let cancelled = false;
-		const onAbort = () => {
-			cancelled = true;
-			killAll();
-		};
-		if (abortSignal?.aborted) onAbort();
-		abortSignal?.addEventListener("abort", onAbort, { once: true });
-		const { code: exitCode, signal } = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((res) => child.on("close", (c, s) => res({ code: c, signal: s })));
-		clearTimeout(timer);
-		abortSignal?.removeEventListener("abort", onAbort);
-		killAll();
-		rmSync(scratch, { recursive: true, force: true });
-		let stderr = err.text();
-		const status: RunResult["status"] = timedOut ? "timeout" : cancelled || signal ? "killed" : exitCode === 0 ? "ok" : exitCode === 137 || exitCode === 152 ? "killed" : "error";
-		if (timedOut) stderr += `\n[sandbox] 超过时间限制 ${limits.timeoutMs} ms，已终止整个进程组`;
-		else if (cancelled) stderr += "\n[sandbox] 运行已被取消，已终止整个进程组";
-		else if (exitCode === 152 || signal === "SIGXCPU") stderr += `\n[sandbox] 超过 CPU 时间限制 ${limits.cpuSeconds} 秒`;
-		return { status, exitCode, stdout: out.text(), stderr, durationMs: Date.now() - started };
+	// ---------- services ----------
+	async startService(input: StartServiceInput & { key?: string }): Promise<SandboxService> {
+		const driver = await this.#driver();
+		if (!driver.capabilities.services) throw new HttpError(503, "sandbox_unavailable", `当前沙箱驱动（${driver.label}）不支持常驻服务`);
+		await this.#ctx.services.get("acl").require(input.principal, "write", { kind: "space", id: input.space.id });
+		if (!Array.isArray(input.argv) || !input.argv.length || input.argv.some((a) => typeof a !== "string" || a.includes("\0"))) throw new HttpError(400, "invalid", "argv 必须是非空字符串数组");
+		if (!["node", "python", "shell"].includes(input.runtime)) throw new HttpError(400, "invalid", "runtime 必须是 node、python 或 shell");
+		const maxServices = Number(process.env.WORKROOM_SANDBOX_MAX_SERVICES ?? 16);
+		if ([...this.#services.values()].filter((s) => s.running).length >= maxServices) throw new HttpError(429, "too_many_services", `常驻沙箱服务已达上限 ${maxServices}`);
+		const network = await this.#networkAllowed(driver, input.network);
+		const mounts = await this.#collectMounts(input, input.mounts);
+		await this.#reaped;
+		const id = newId("svc");
+		const idleTimeoutMs = Math.max(1000, input.idleTimeoutMs ?? 15 * 60_000);
+		const maxLifetimeMs = Math.max(1000, input.maxLifetimeMs ?? 3600_000);
+		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, cpuSeconds: 4 * 3600, timeoutMs: maxLifetimeMs, ...input.limits, network };
+		const wd = this.workdir(input.space, input.conversationId);
+		const proc = await driver.startService({ serviceId: id, scratchBase: this.root(input.space), workdir: wd, argv: input.argv, runtime: input.runtime, cwd: input.cwd, limits, mounts, env: input.env ?? {}, network });
+		const key = input.key ?? id;
+		const svc = new SandboxService({ key, id, spaceId: input.space.id, conversationId: input.conversationId, runtime: input.runtime, driver: driver.id, proc, idleTimeoutMs, maxLifetimeMs, onGone: (s) => this.#services.get(`${s.spaceId}:${s.key}`) === s && this.#services.delete(`${s.spaceId}:${s.key}`) });
+		this.#services.set(`${input.space.id}:${key}`, svc);
+		return svc;
+	}
+	/** Same key → the running service is reused (start once per conversation/connector). */
+	async acquireService(key: string, input: StartServiceInput): Promise<SandboxService> {
+		const k = `${input.space.id}:${key}`;
+		const cur = this.#services.get(k);
+		if (cur?.running) return cur;
+		let p = this.#starting.get(k);
+		if (!p) {
+			p = this.startService({ ...input, key }).finally(() => this.#starting.delete(k));
+			this.#starting.set(k, p);
+		}
+		return p;
+	}
+	listServices(): SandboxServiceInfo[] {
+		return [...this.#services.values()].map((s) => s.info());
+	}
+	async stopServices(filter: (s: SandboxServiceInfo) => boolean = () => true): Promise<number> {
+		const victims = [...this.#services.values()].filter((s) => filter(s.info()));
+		await Promise.all(victims.map((s) => s.stop()));
+		return victims.length;
 	}
 
+	// ---------- records ----------
 	runDTO(id: string): SandboxRunDTO | null {
 		const r = this.#ctx.db.get<any>("SELECT * FROM tool_sandbox_runs WHERE id = ?", id);
 		if (!r) return null;
@@ -333,8 +420,9 @@ export class Sandbox {
 			startedAt: r.started_at,
 			finishedAt: r.finished_at ?? undefined,
 			limits: JSON.parse(r.limits),
-			isolation: ISOLATION_TEXT,
-		};
+			isolation: this.isolationFor((r.driver ?? "namespaces") as DriverId),
+			driver: r.driver ?? "namespaces",
+		} as SandboxRunDTO;
 	}
 	runByCall(spaceId: string, taskId: number, callId: string): SandboxRunDTO | null {
 		const r = this.#ctx.db.get<{ id: string }>("SELECT id FROM tool_sandbox_runs WHERE space_id = ? AND task_id = ? AND call_id = ?", spaceId, taskId, callId);
@@ -347,6 +435,57 @@ export class Sandbox {
 		return rows.map((r) => this.runDTO(r.id)!);
 	}
 
+	// ---------- workspace file API ----------
+	#owner() {
+		return this.drivers.current()?.effective === "docker" ? this.drivers.docker.workspaceOwner() : undefined;
+	}
+	usage(space: Space, conversationId: number | undefined): WorkspaceUsageDTO {
+		const conv = ws.dirSize(this.workdir(space, conversationId));
+		return { conversationBytes: conv.bytes, spaceBytes: ws.dirSize(this.root(space)).bytes, quotaBytes: quotaBytes(), maxFileBytes: DEFAULT_LIMITS.maxFileBytes, retentionHours: RETENTION_HOURS, fileCount: conv.files };
+	}
+	workspace(space: Space, conversationId: number | undefined): Omit<WorkspaceFilesResponse, "canWrite"> {
+		const { entries, truncated } = ws.listEntries(this.workdir(space, conversationId), RETENTION_HOURS);
+		return { entries, truncated, usage: this.usage(space, conversationId) };
+	}
+	entries(space: Space, conversationId: number | undefined): SandboxEntryDTO[] {
+		return ws.listEntries(this.workdir(space, conversationId), RETENTION_HOURS).entries;
+	}
+	preview(space: Space, conversationId: number | undefined, path: string): WorkspacePreviewDTO {
+		return ws.preview(this.workdir(space, conversationId), path, RETENTION_HOURS);
+	}
+	readFile(space: Space, conversationId: number | undefined, path: string): { bytes: Uint8Array; name: string } {
+		const f = ws.readBytes(this.workdir(space, conversationId), path, 100 * 1024 * 1024);
+		return { bytes: f.bytes, name: f.name };
+	}
+	#checkQuota(space: Space, incoming: number): void {
+		if (incoming > DEFAULT_LIMITS.maxFileBytes) throw new HttpError(413, "too_large", `单个文件不能超过 ${Math.round(DEFAULT_LIMITS.maxFileBytes / 1048576)} MB`);
+		const used = ws.dirSize(this.root(space)).bytes;
+		if (used + incoming > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录配额不足：已用 ${Math.round(used / 1048576)} MB，配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并删除不需要的文件`);
+	}
+	writeFile(space: Space, conversationId: number | undefined, path: string, bytes: Uint8Array): string {
+		this.#checkQuota(space, bytes.length);
+		return ws.writeBytes(this.workdir(space, conversationId), path, bytes, this.#owner());
+	}
+	mkdir(space: Space, conversationId: number | undefined, path: string): string {
+		const wd = this.workdir(space, conversationId);
+		const { rel } = ws.resolveIn(wd, path);
+		if (!rel) throw new HttpError(400, "bad_path", "需要目录路径");
+		ws.mkdirp(wd, rel, this.#owner());
+		return rel;
+	}
+	remove(space: Space, conversationId: number | undefined, path: string) {
+		return ws.remove(this.workdir(space, conversationId), path);
+	}
+	move(space: Space, conversationId: number | undefined, from: string, to: string) {
+		return ws.move(this.workdir(space, conversationId), from, to);
+	}
+
+	/** Re-read settings that live outside the drivers (concurrency). */
+	applySettings(): void {
+		this.#slots.resize(this.drivers.settings().maxConcurrent);
+	}
+
+	// ---------- lifecycle ----------
 	/** Lifecycle: delete workspace files idle longer than the retention period (published files live on in the library). */
 	reap(now = Date.now()): number {
 		let removed = 0;
@@ -379,7 +518,13 @@ export class Sandbox {
 		return removed;
 	}
 
+	/** Kill what a previous process left behind (job recovery): namespace process group by pid, docker container by name. */
+	async killStale(ref: ProcessRef): Promise<boolean> {
+		return ref.driver === "docker" ? this.drivers.docker.killStale(ref) : killStaleNamespaces(ref.pid);
+	}
+
 	start(): void {
+		this.#stopped = false;
 		this.#timer = setInterval(() => {
 			try {
 				this.reap();
@@ -388,22 +533,20 @@ export class Sandbox {
 			}
 		}, 3600_000);
 		this.#timer.unref();
+		// Orphaned containers of a previous server process are removed before the first run starts (bounded wait: a wedged daemon must not block runs).
+		const reap = (async () => {
+			const st = await this.drivers.docker.detect();
+			if (st.state !== "unavailable") {
+				const n = await this.drivers.docker.reapStale();
+				if (n) console.log(`[sandbox] removed ${n} orphaned container(s)`);
+			}
+		})().catch(() => {});
+		this.#reaped = Promise.race([reap, new Promise<void>((r) => setTimeout(r, 4000).unref())]);
 	}
-	stop(): void {
+	async stop(): Promise<void> {
+		this.#stopped = true;
 		clearInterval(this.#timer);
-	}
-
-	readFile(space: Space, conversationId: number | undefined, path: string): { bytes: Uint8Array; name: string } {
-		const p = this.resolveIn(this.workdir(space, conversationId), path);
-		if (!existsSync(p) || !statSync(p).isFile()) throw new HttpError(404, "not_found", "文件不存在");
-		if (statSync(p).size > 100 * 1024 * 1024) throw new HttpError(413, "too_large", "文件过大");
-		return { bytes: new Uint8Array(readFileSync(p)), name: p.split(sep).pop()! };
-	}
-	writeFile(space: Space, conversationId: number | undefined, path: string, bytes: Uint8Array): string {
-		const wd = this.workdir(space, conversationId);
-		const p = this.resolveIn(wd, path);
-		mkdirSync(dirname(p), { recursive: true });
-		writeFileSync(p, bytes);
-		return relative(wd, p).split(sep).join("/");
+		await Promise.all([...this.#services.values()].map((s) => s.stopFor("shutdown").catch(() => {})));
+		await this.drivers.docker.shutdown().catch(() => {});
 	}
 }

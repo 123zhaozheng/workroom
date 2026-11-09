@@ -4,7 +4,8 @@ import type { AppContext, Principal, WorkroomModule } from "../core/contracts.ts
 import { HttpError, jsonBody, principalOf } from "../core/http.ts";
 import { ToolCallLog, TOOL_CALL_MIGRATIONS } from "./calls.ts";
 import { BLOCKED_CONNECTORS, createToolSearch, McpManager, MCP_MIGRATIONS } from "./mcp.ts";
-import { ISOLATION_TEXT, probeIsolation, Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
+import { Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
+import { registerSandboxRoutes } from "./sandbox-routes.ts";
 import { pdfFontStatus } from "../files/generate.ts";
 import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
@@ -34,7 +35,7 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	};
 }
 
-const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "browse", "skill_list", "skill_load", "skill_run", "tool_search", "codemode"];
+const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill_list", "skill_load", "skill_run", "tool_search", "codemode"];
 /** Tool names a skill may require: the runtime registry when available, else D's own tools plus discovered MCP tools. */
 export function knownToolNames(ctx: AppContext): string[] {
 	const names = new Set(D_TOOLS);
@@ -100,7 +101,7 @@ export const toolsModule: WorkroomModule = {
 	},
 	async stop(ctx) {
 		await (ctx.services.get("mcp") as McpManager).stop();
-		(ctx.services.get("sandbox") as Sandbox).stop();
+		await (ctx.services.get("sandbox") as Sandbox).stop();
 		await (ctx.services.get("browserSessions") as BrowserSessions).stop();
 		await (ctx.services.get("browser") as BrowserService).stop();
 		await codemodeSandboxes.get(ctx)?.close().catch(() => {});
@@ -125,49 +126,8 @@ export const toolsModule: WorkroomModule = {
 			return c.json(out);
 		});
 
-		// ---- sandbox (work panel): same ACL as the space's conversations; publishing needs write ----
-		const sb = ctx.services.get("sandbox") as Sandbox;
-		const spaceFor = async (c: any, action: "read" | "write") => {
-			const p = principalOf(c);
-			const space = ctx.services.get("identity").space(c.req.param("spaceId"));
-			if (!space) throw new HttpError(404, "space_not_found", "空间不存在");
-			await acl.require(p, action, { kind: "space", id: space.id });
-			const cid = c.req.query("conversationId");
-			return { p, space, conversationId: cid === undefined || cid === "" ? undefined : Number(cid) };
-		};
-		api.get("/sandbox/:spaceId", async (c) => {
-			const { space } = await spaceFor(c, "read");
-			return c.json({ info: sb.info(space), browser: (ctx.services.get("browser") as BrowserService).available() });
-		});
-		api.get("/sandbox/:spaceId/files", async (c) => {
-			const { space, conversationId } = await spaceFor(c, "read");
-			const out: SandboxFilesResponse = { entries: sb.entries(space, conversationId) };
-			return c.json(out);
-		});
-		api.get("/sandbox/:spaceId/file", async (c) => {
-			const { space, conversationId } = await spaceFor(c, "read");
-			const f = sb.readFile(space, conversationId, c.req.query("path") ?? "");
-			return new Response(f.bytes as Uint8Array<ArrayBuffer>, { headers: { "content-type": effectiveMime(undefined, f.name), "content-disposition": contentDisposition("attachment", f.name), "x-content-type-options": "nosniff", "content-security-policy": "sandbox; default-src 'none'", "cache-control": "private, no-store" } });
-		});
-		api.get("/sandbox/:spaceId/runs", async (c) => {
-			const { space, conversationId } = await spaceFor(c, "read");
-			const out: SandboxRunsResponse = { runs: sb.runs(space.id, conversationId) };
-			return c.json(out);
-		});
-		api.get("/sandbox/:spaceId/runs/:runId", async (c) => {
-			const { space } = await spaceFor(c, "read");
-			const run = sb.runDTO(c.req.param("runId"));
-			if (!run || run.spaceId !== space.id) throw new HttpError(404, "not_found", "运行记录不存在");
-			return c.json({ run });
-		});
-		api.post("/sandbox/:spaceId/publish", async (c) => {
-			const { p, space } = await spaceFor(c, "write");
-			const b = await jsonBody<{ conversationId?: number; path: string; name?: string; fileId?: string; changeNote?: string }>(c);
-			const f = sb.readFile(space, b.conversationId, b.path);
-			const name = b.name ?? f.name;
-			const ref = await (ctx.services.get("files") as unknown as Files).putVersion(p, { fileId: b.fileId, name, mime: effectiveMime(undefined, name), bytes: f.bytes, provenance: { createdBy: p.userId, spaceId: space.id, conversationId: b.conversationId, changeNote: b.changeNote ?? `从沙箱 /work/${b.path} 发布`, origin: "upload", tool: "sandbox_publish" } as any });
-			return c.json({ version: ref });
-		});
+		// ---- sandbox: driver status/settings, workspace file API, runs, publish (server/src/tools/sandbox-routes.ts) ----
+		registerSandboxRoutes(api, ctx);
 
 		// ---- default toolset policy (per org; enforced per call in a beforeTool hook) ----
 		const policy = ctx.services.get("toolPolicy") as ToolPolicy;
@@ -273,14 +233,14 @@ export const toolsModule: WorkroomModule = {
 		// ---- capabilities (M14-A, tools side): what this user can use right now, and what is unavailable and why ----
 		api.get("/tools/capabilities", async (c) => {
 			const p = principalOf(c);
-			const iso = probeIsolation();
+			const cap = await (ctx.services.get("sandbox") as Sandbox).capabilities();
 			const br = (ctx.services.get("browser") as BrowserService).available();
 			const conns = await Promise.all(mgr.rows(p.orgId).filter((r) => r.scope === "system" || r.owner_user_id === p.userId).map((r) => mgr.dto(p, r)));
 			const sk = ctx.services.get("skills") as Skills;
 			return c.json({
 				deliverables: { formats: ["md", "html", "csv", "docx", "xlsx", "pptx", "pdf"], tools: ["file_create", "file_revise", "file_read", "file_list"], pdfCjkFont: pdfFontStatus(), pptxSlideImages: slideRendererAvailable() },
 				policy: policyDTO(p.orgId).groups,
-				sandbox: { status: !policy.groups(p.orgId).sandbox ? "disabled_by_admin" : iso.ok ? "ready" : "unavailable", detail: iso.ok ? ISOLATION_TEXT : iso.detail, languages: ["shell", "python", "node"], network: false },
+				sandbox: { status: !policy.groups(p.orgId).sandbox ? "disabled_by_admin" : cap.state === "ready" ? "ready" : cap.state === "needs_setup" ? "needs_setup" : "unavailable", detail: cap.state === "ready" ? `${cap.label}：${(ctx.services.get("sandbox") as Sandbox).isolationFor(cap.driver)}` : cap.detail, driver: cap.driver, languages: ["shell", "python", "node"], network: cap.network.allowed },
 				codemode: { status: "ready", detail: "QuickJS（WebAssembly）脚本，可调用会话中的工具" },
 				browser: { status: br.ok ? "ready" : "unavailable", detail: br.detail },
 				connectors: conns.map((x) => ({ id: x.id, name: x.name, status: x.status, statusDetail: x.statusDetail, access: x.access, enabledForMe: x.enabledForMe, tools: x.tools.length, usable: x.access === "allowed" && x.enabledForMe && (x.status === "ready" || x.status === "needs_reconnect") })),

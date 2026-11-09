@@ -30,8 +30,8 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 		name: "sandbox_exec",
 		description:
 			`Run shell, Python 3 or Node.js code on the server in an isolated sandbox. The working directory /work persists for this conversation ` +
-			`(files idle for ${RETENTION_HOURS} h are deleted — publish results with sandbox_publish or file_create). No network access. ` +
-			`Limits: wall time timeoutMs (default 30 s, max ${MAX_TIMEOUT_MS / 1000} s), 512 MB memory, 64 MB per file. Only /work is writable.`,
+			`(files idle for ${RETENTION_HOURS} h are deleted — publish results with sandbox_publish or file_create; bring library files in with sandbox_import). No network access by default. ` +
+			`Limits: wall time timeoutMs (default 30 s, max ${MAX_TIMEOUT_MS / 1000} s), 512 MB memory, 64 MB per file. Only /work is writable (/tmp is a small scratch disk). Read-only mounts such as /skills/<name>/ may exist.`,
 		parameters: obj({ language: oneOf(["shell", "python", "node"]), code: str({ minLength: 1 }), timeoutMs: opt(int({ minimum: 1000, maximum: MAX_TIMEOUT_MS })) }),
 		replay: "unsafe",
 		executionMode: "sequential",
@@ -46,12 +46,32 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 
 	const writeFile = defineTool({
 		name: "sandbox_write_file",
-		description: "Write a text file into the sandbox working directory (/work).",
-		parameters: obj({ path: str(), content: str() }),
+		description: "Write a file into the sandbox working directory (/work). Text by default; use encoding \"base64\" for binary content. Subject to the workspace quota.",
+		parameters: obj({ path: str(), content: str(), encoding: opt(oneOf(["utf8", "base64"])) }),
 		replay: "safe",
 		async execute(args, api, context) {
-			const rel = await withActor("sandbox_write_file", api, { path: args.path, content: `${args.content.length} 字符` }, context, true, async (a) => sb().writeFile(a.space, a.conversationId, args.path, new TextEncoder().encode(args.content)));
-			return { output: [{ type: "text", text: `已写入 /work/${rel}` }] };
+			const bytes = args.encoding === "base64" ? new Uint8Array(Buffer.from(args.content, "base64")) : new TextEncoder().encode(args.content);
+			const rel = await withActor("sandbox_write_file", api, { path: args.path, content: `${args.content.length} 字符` }, context, true, async (a) => sb().writeFile(a.space, a.conversationId, args.path, bytes));
+			return { output: [{ type: "text", text: `已写入 /work/${rel}（${bytes.length} 字节）` }] };
+		},
+	});
+
+	const importFile = defineTool({
+		name: "sandbox_import",
+		description: "Copy a file from the file library into the sandbox working directory (/work) so code can process it. Uses the latest version unless versionId is given. Returns the /work path.",
+		parameters: obj({ fileId: str(), versionId: opt(str()), path: opt(str({ description: "Target path under /work (default: the file's name)." })) }),
+		replay: "safe",
+		async execute(args, api, context) {
+			const r = await withActor("sandbox_import", api, args, context, true, async (a) => {
+				const files = ctx.services.get("files") as unknown as Files;
+				const f = await files.requireFile(a.principal, "read", args.fileId);
+				const versionId = args.versionId ?? f.latest_version_id;
+				if (!versionId) throw new Error("文件没有版本");
+				const v = await files.requireVersion(a.principal, args.fileId, versionId);
+				const rel = sb().writeFile(a.space, a.conversationId, args.path ?? v.version.name, v.bytes);
+				return { rel, size: v.bytes.length, name: v.version.name };
+			}, (x) => x.rel);
+			return { output: [{ type: "text", text: `已导入「${r.name}」到 /work/${r.rel}（${r.size} 字节）` }] };
 		},
 	});
 
@@ -101,10 +121,10 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 		},
 	});
 
-	return { exec, writeFile, readFile, list, publish };
+	return { exec, writeFile, readFile, list, publish, importFile };
 }
 
 export function createSandboxExtension(ctx: AppContext, opts: { resolveActor?: ActorResolver } = {}) {
 	const t = createSandboxTools(ctx, opts);
-	return defineExtension({ name: "wr.sandbox", tools: [t.exec, t.writeFile, t.readFile, t.list, t.publish] });
+	return defineExtension({ name: "wr.sandbox", tools: [t.exec, t.writeFile, t.readFile, t.list, t.publish, t.importFile] });
 }

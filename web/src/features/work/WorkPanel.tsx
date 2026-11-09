@@ -1,13 +1,16 @@
-// One switchable, on-demand work panel: 子任务 / 终端 / 浏览器. Never several panels at once.
+// One switchable, on-demand work panel: 子任务 / 终端 / 文件 / 浏览器. Never several panels at once.
 // Everything shown here comes from the same server ACL as the conversation itself.
-import { Bot, Download, ExternalLink, FolderOpen, Globe, Plug, SquareTerminal, Users, X } from "lucide-react";
+import { Bot, ExternalLink, FolderOpen, Globe, Plug, SquareTerminal, Users, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { EntriesPage, MemberType, SubagentDTO, TasksResponse } from "@shared/chat";
-import type { ConversationWorkDTO, SandboxFilesResponse, SandboxInfoDTO, SandboxRunsResponse } from "@shared/files";
+import type { ConversationWorkDTO } from "@shared/files";
 import { BrowserSessionView, JobCard } from "./live";
+import { FilesTab } from "./files";
+import { TerminalTab } from "./terminal";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
-import { cn, durationText, formatBytes, isSimulatedUsage, relTime, SIMULATED_USAGE } from "@/lib/utils";
+import { durationText, isSimulatedUsage, relTime, SIMULATED_USAGE } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { usePanel, type PanelState, type WorkTab } from "@/components/shell/panel";
@@ -28,10 +31,19 @@ const SUB_STATUS: Record<SubagentDTO["status"], { label: string; tone: "info" | 
 
 export default function WorkPanel({ state, onClose }: { state: Extract<PanelState, { kind: "work" }>; onClose: () => void }) {
 	const { openWork } = usePanel();
-	const setTab = (t: string) => openWork(t as WorkTab, state.spaceId, state.conversationId);
+	// "files" is owned by this panel; the shared WorkTab type (components/shell/panel.tsx) may not list it yet, so it lives in local state
+	// and is reset whenever the shell opens another tab (or the same tab of another conversation).
+	const [local, setLocal] = useState<"files" | null>(null);
+	useEffect(() => setLocal(state.tab === ("files" as string) ? "files" : null), [state.tab, state.conversationId]);
+	const tab: string = local ?? state.tab;
+	const setTab = (t: string) => {
+		if (t === "files") return setLocal("files");
+		setLocal(null);
+		openWork(t as WorkTab, state.spaceId, state.conversationId);
+	};
 	return (
 		<div data-testid="work-panel" className="flex h-full min-h-0 flex-col">
-			<Tabs value={state.tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">
+			<Tabs value={tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">
 				<div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
 					<TabsList>
 						<TabsTrigger value="tasks" data-testid="work-tab-tasks">
@@ -41,6 +53,10 @@ export default function WorkPanel({ state, onClose }: { state: Extract<PanelStat
 						<TabsTrigger value="terminal" data-testid="work-tab-terminal">
 							<SquareTerminal />
 							终端
+						</TabsTrigger>
+						<TabsTrigger value="files" data-testid="work-tab-files">
+							<FolderOpen />
+							文件
 						</TabsTrigger>
 						<TabsTrigger value="browser" data-testid="work-tab-browser">
 							<Globe />
@@ -54,13 +70,16 @@ export default function WorkPanel({ state, onClose }: { state: Extract<PanelStat
 				</div>
 				<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
 					<TabsContent value="tasks" className="p-3">
-						{state.tab === "tasks" ? <TasksTab spaceId={state.spaceId} conversationId={state.conversationId} /> : null}
+						{tab === "tasks" ? <TasksTab spaceId={state.spaceId} conversationId={state.conversationId} /> : null}
 					</TabsContent>
 					<TabsContent value="terminal" className="p-3">
-						{state.tab === "terminal" ? <TerminalTab spaceId={state.spaceId} conversationId={state.conversationId} /> : null}
+						{tab === "terminal" ? <TerminalTab spaceId={state.spaceId} conversationId={state.conversationId} /> : null}
+					</TabsContent>
+					<TabsContent value="files" className="p-3">
+						{tab === "files" ? <FilesTab spaceId={state.spaceId} conversationId={state.conversationId} /> : null}
 					</TabsContent>
 					<TabsContent value="browser" className="p-3">
-						{state.tab === "browser" ? <BrowserTab spaceId={state.spaceId} conversationId={state.conversationId} /> : null}
+						{tab === "browser" ? <BrowserTab spaceId={state.spaceId} conversationId={state.conversationId} /> : null}
 					</TabsContent>
 				</div>
 			</Tabs>
@@ -151,76 +170,6 @@ function SubagentsSection({ spaceId, conversationId }: { spaceId: string; conver
 				</div>
 			)}
 		</Loadable>
-	);
-}
-
-function TerminalTab({ spaceId, conversationId }: { spaceId: string; conversationId: number }) {
-	const infoRes = useApi<{ info: SandboxInfoDTO }>(`/sandbox/${spaceId}`);
-	const info = { ...infoRes, data: infoRes.data?.info };
-	const runs = useApi<SandboxRunsResponse>(`/sandbox/${spaceId}/runs?conversationId=${conversationId}`, { pollMs: 3000 });
-	const files = useApi<SandboxFilesResponse>(`/sandbox/${spaceId}/files?conversationId=${conversationId}`, { pollMs: 5000 });
-	return (
-		<div className="space-y-4">
-			<Loadable state={info} what="执行环境" need="D 组：GET /sandbox/:spaceId">
-				{info.data ? (
-					<div className="rounded-lg bg-surface-2 px-3 py-2 text-[12px] text-fg-muted">
-						隔离：{info.data.isolation === "unavailable" ? <span className="text-danger">不可用（{info.data.isolationDetail}）</span> : info.data.isolationDetail} · 超时 {Math.round(info.data.limits.timeoutMs / 1000)} 秒 · 内存 {formatBytes(info.data.limits.memoryBytes)} · 网络
-						{info.data.limits.network ? "开启" : "关闭"} · 文件闲置 {info.data.retentionHours} 小时后清理（需要保留的成果请发布到文件库） · 已用 {formatBytes(info.data.usedBytes)} / {formatBytes(info.data.quotaBytes)}
-					</div>
-				) : null}
-			</Loadable>
-			<section>
-				<h3 className="mb-2 text-[12.5px] font-medium text-fg-muted">执行记录</h3>
-				<Loadable state={runs} what="执行记录" need="D 组：GET /sandbox/:spaceId/runs">
-					{(runs.data?.runs ?? []).length === 0 ? (
-						<p className="text-[13px] text-fg-subtle">这个对话还没有执行过代码。</p>
-					) : (
-						<div className="space-y-2">
-							{runs.data!.runs.map((r) => (
-								<div key={r.id} data-testid="sandbox-run" className="overflow-hidden rounded-lg border border-border">
-									<div className="flex items-center gap-2 bg-surface-2 px-2.5 py-1.5 text-[12px]">
-										<SquareTerminal className="size-3.5 text-fg-muted" />
-										<span className="font-mono">{r.language}</span>
-										<Badge tone={r.status === "ok" ? "success" : r.status === "running" ? "info" : "danger"}>{r.status === "ok" ? "成功" : r.status === "running" ? "运行中" : r.status === "timeout" ? "超时" : r.status === "killed" ? "已终止" : "出错"}</Badge>
-										{r.exitCode !== undefined ? <span className="text-fg-subtle">exit {r.exitCode}</span> : null}
-										<span className="flex-1" />
-										{r.durationMs ? <span className="text-fg-subtle">{durationText(r.durationMs)}</span> : null}
-									</div>
-									<pre className="max-h-40 overflow-auto bg-[#16171a] px-3 py-2 font-mono text-[12px] leading-5 text-[#d7d9dc]">{r.code}</pre>
-									{r.stdout ? <pre className="max-h-56 overflow-auto border-t border-border px-3 py-2 font-mono text-[12px] leading-5 text-fg">{r.stdout}</pre> : null}
-									{r.stderr ? <pre className="max-h-40 overflow-auto border-t border-border px-3 py-2 font-mono text-[12px] leading-5 text-danger">{r.stderr}</pre> : null}
-								</div>
-							))}
-						</div>
-					)}
-				</Loadable>
-			</section>
-			<section>
-				<h3 className="mb-2 flex items-center gap-1 text-[12.5px] font-medium text-fg-muted">
-					<FolderOpen className="size-3.5" />
-					工作目录
-				</h3>
-				<Loadable state={files} what="工作目录" need="D 组：GET /sandbox/:spaceId/files">
-					{(files.data?.entries ?? []).length === 0 ? (
-						<p className="text-[13px] text-fg-subtle">目录为空。</p>
-					) : (
-						<ul className="divide-y divide-border rounded-lg border border-border text-[12.5px]">
-							{files.data!.entries.map((e) => (
-								<li key={e.path} className="flex items-center gap-2 px-2.5 py-1.5">
-									<span className={cn("min-w-0 flex-1 truncate font-mono", e.kind === "directory" && "text-fg-muted")}>{e.path}</span>
-									<span className="shrink-0 text-fg-subtle">{e.kind === "file" ? formatBytes(e.size) : "目录"}</span>
-									{e.kind === "file" ? (
-										<a aria-label={`下载 ${e.path}`} className="text-fg-subtle hover:text-fg" href={`/api/sandbox/${spaceId}/file?path=${encodeURIComponent(e.path)}&conversationId=${conversationId}`}>
-											<Download className="size-3.5" />
-										</a>
-									) : null}
-								</li>
-							))}
-						</ul>
-					)}
-				</Loadable>
-			</section>
-		</div>
 	);
 }
 
