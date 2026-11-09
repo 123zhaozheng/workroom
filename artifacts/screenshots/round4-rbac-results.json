@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T15:39:58.854Z",
+  "at": "2026-11-09T23:25:37.176Z",
   "results": [
     {
       "name": "seed: six members joined the owner's organisation",
@@ -29,7 +29,7 @@
     {
       "name": "org structure: drag 华东 onto 研发部 moves it (server state)",
       "ok": true,
-      "detail": "parent=dep_0mw9fft6k1208459362c0b0ff"
+      "detail": "parent=dep_0mw9w2mvy9fe8605bab9d8efd"
     },
     {
       "name": "org structure: 移动到 menu moves it back under 销售部",
@@ -85,6 +85,11 @@
       "name": "authz: department-scoped assignment shows its scope",
       "ok": true,
       "detail": "王五 部门「华西」及子部门 技能审核员 撤销"
+    },
+    {
+      "name": "authz: a role granted to a user group reaches its member (李四 can manage budgets)",
+      "ok": true,
+      "detail": "status=200"
     },
     {
       "name": "authz: 赵六 can now read the audit log (server)",

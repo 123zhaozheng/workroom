@@ -162,6 +162,21 @@ try {
 	await owner.waitForSelector('[data-testid="authz-row"]:has-text("王五")');
 	const rowText = await owner.locator('[data-testid="authz-row"]:has-text("王五")').innerText();
 	check("authz: department-scoped assignment shows its scope", rowText.includes("华西") && rowText.includes("技能审核员"), rowText.replace(/\s+/g, " "));
+	// user group (optional): create, add 李四, grant 计费管理员 to the group
+	await owner.fill('input[aria-label="新用户组名称"]', "报表组");
+	await owner.click('[data-testid="group-create"]');
+	await owner.waitForSelector('[data-testid="group-list"]:has-text("报表组")');
+	await owner.locator('[data-testid="group-list"] li button', { hasText: "报表组" }).click();
+	await owner.selectOption('[data-testid="group-list"] select[aria-label="添加成员"]', { label: "李四" });
+	await owner.locator('[data-testid="group-list"] button', { hasText: "添加" }).click();
+	await owner.waitForSelector('[data-testid="group-list"] :text("李四")');
+	await owner.selectOption('select[aria-label="主体类型"]', "group");
+	await owner.selectOption('[data-testid="authz-scope"] select[aria-label="范围"]', "org");
+	await owner.selectOption('[data-testid="authz-role"]', { label: "计费管理员" });
+	await owner.click('[data-testid="authz-assign"]');
+	await owner.waitForSelector('[data-testid="authz-row"]:has-text("报表组")');
+	const liBudget = await li.api.post(`${base}/api/admin/budgets`, { data: { scope: { kind: "org", id: "" }, period: "month", limitCost: 50, action: "warn" } });
+	check("authz: a role granted to a user group reaches its member (李四 can manage budgets)", liBudget.ok(), `status=${liBudget.status()}`);
 	await shot(owner, "1440-rbac-authz");
 	// the server really applies it
 	const zApi = await zhao.api.get(`${base}/api/admin/audit`);

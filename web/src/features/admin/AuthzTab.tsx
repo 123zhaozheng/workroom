@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Row, Table, useAct } from "@/features/admin/common";
+import { GroupsPanel } from "@/features/admin/GroupsPanel";
 import { ROLE_SHORT, ScopePicker, deptTreeOptions, scopeText, useDepartments, useViewerPerms } from "@/features/admin/rbac-ui";
 
 type SubjectKind = "user" | "department" | "group";
@@ -134,6 +135,7 @@ export function Authorizations() {
 					</Table>
 				)}
 			</Loadable>
+			<GroupsPanel onChanged={groups.reload} />
 		</div>
 	);
 }
