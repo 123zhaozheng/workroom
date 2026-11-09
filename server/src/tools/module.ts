@@ -147,6 +147,7 @@ export const toolsModule: WorkroomModule = {
 		api.get("/tools/policy", (c) => c.json(policyDTO(principalOf(c).orgId)));
 		api.put("/tools/policy", async (c) => {
 			const p = principalOf(c);
+			await ctx.services.get("authz").require(p, "sandbox.policy.manage", undefined);
 			policy.set(p, (await jsonBody<{ groups: Record<string, boolean> }>(c)).groups ?? {});
 			return c.json(policyDTO(p.orgId));
 		});

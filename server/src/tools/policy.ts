@@ -47,7 +47,7 @@ export class ToolPolicy {
 		return g === undefined || this.groups(orgId)[g];
 	}
 	set(p: Principal, groups: Partial<Record<string, boolean>>): Record<ToolGroup, boolean> {
-		if (p.orgRole === "member") throw new HttpError(403, "forbidden", "只有组织管理员可以修改工具策略");
+		// Permission (sandbox.policy.manage) is checked by the route with the authz service.
 		for (const [g, v] of Object.entries(groups)) {
 			if (!(g in TOOL_GROUPS)) throw new HttpError(400, "invalid", `未知工具组 ${g}`);
 			this.#ctx.db.run("INSERT INTO tool_org_policy (org_id, tool_group, enabled, updated_by, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(org_id, tool_group) DO UPDATE SET enabled = excluded.enabled, updated_by = excluded.updated_by, updated_at = excluded.updated_at", p.orgId, g, v ? 1 : 0, p.userId, nowIso());

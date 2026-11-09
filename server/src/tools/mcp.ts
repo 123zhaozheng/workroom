@@ -298,13 +298,15 @@ export class McpManager {
 		const r = this.row(id);
 		if (!r) return { allow: false, reason: "not_found" };
 		if (r.org_id !== p.orgId) return { allow: false, reason: "other_org" };
-		const isAdmin = p.orgRole === "owner" || p.orgRole === "admin";
 		if (r.scope === "personal") return r.owner_user_id === p.userId ? { allow: true, reason: "owner" } : { allow: false, reason: "personal_connector" };
+		// Organisation connectors are managed by whoever may add them (mcp.connector.add_org) or review them (mcp.connector.review).
+		const market = this.#ctx.services.get("market") as Market;
+		const manager = (await market.can(p, "mcp.connector.add_org")) || (await market.can(p, "mcp.connector.review"));
 		if (action === "read" || action === "use") {
-			if (r.access === "admins" && !isAdmin) return { allow: false, reason: "admins_only" };
+			if (r.access === "admins" && !manager) return { allow: false, reason: "admins_only" };
 			return { allow: true, reason: "org_member" };
 		}
-		return isAdmin ? { allow: true, reason: p.orgRole } : { allow: false, reason: "not_admin" };
+		return manager ? { allow: true, reason: "connector_manager" } : { allow: false, reason: "not_admin" };
 	}
 	enabledFor(row: McpServerRow, userId: string): boolean {
 		const s = this.#ctx.db.get<{ enabled: number }>("SELECT enabled FROM mcp_user_settings WHERE server_id = ? AND user_id = ?", row.id, userId);
@@ -336,7 +338,7 @@ export class McpManager {
 		const name = String(input.name ?? "").trim().slice(0, 80);
 		if (!name) throw new HttpError(400, "invalid", "连接名称必填");
 		if (input.scope !== "system" && input.scope !== "personal") throw new HttpError(400, "invalid", "scope 必须是 system 或 personal");
-		if (input.scope === "system" && p.orgRole === "member") throw new HttpError(403, "forbidden", "只有组织管理员可以添加系统连接");
+		// System connectors need mcp.connector.add_org: enforced by the callers (routes, MCP market) with the authz service.
 		if (input.transport === "stdio") {
 			if (opts.sandbox) {
 				// stdio inside the sandbox (service mode): allowed for personal and system connectors; never runs on the host.

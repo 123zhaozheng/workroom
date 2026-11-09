@@ -94,7 +94,6 @@ export interface SubRow {
 }
 
 const DEFAULT_POLICY: MarketPolicyDTO = { personalSkill: "free", personalMcp: "free" };
-const MEMBER_FALLBACK = new Set(["skill.use", "skill.upload", "mcp.connector.add_personal", "sandbox.use", "model.use"]);
 
 export interface UploadInput {
 	skillId?: string;
@@ -139,9 +138,8 @@ export class Market {
 	// ------------------------------------------------------------ permissions
 	async can(p: Principal, permission: string, scope?: AuthzScope): Promise<boolean> {
 		if (this.authzOverride) return this.authzOverride(p, permission, scope);
-		if (this.#ctx.services.has("authz")) return this.#ctx.services.get("authz").has(p, permission, scope);
-		if (p.orgRole === "owner" || p.orgRole === "admin") return true;
-		return MEMBER_FALLBACK.has(permission);
+		// The RBAC authz service is always provided by the identity module; without it nothing is granted (fail closed).
+		return this.#ctx.services.has("authz") ? this.#ctx.services.get("authz").has(p, permission, scope) : false;
 	}
 	async require(p: Principal, permission: string, scope?: AuthzScope, message?: string): Promise<void> {
 		if (!(await this.can(p, permission, scope))) throw new HttpError(403, "forbidden", message ?? `缺少权限 ${permission}`);

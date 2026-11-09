@@ -219,7 +219,7 @@ export class Skills {
 		if (!KINDS.includes(input.kind)) throw new HttpError(400, "invalid", "kind 必须是 prompt、context 或 executable");
 		if (!String(input.instructions ?? "").trim()) throw new HttpError(400, "invalid", "技能说明（instructions）必填");
 		const scope = input.scope === "org" ? "org" : "personal";
-		if (scope === "org" && p.orgRole === "member") throw new HttpError(403, "forbidden", "只有组织管理员可以发布组织技能");
+		if (scope === "org") await this.#market.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以直接发布组织技能；成员请上传技能包并提交审核");
 		const m = this.#materialize(input, input.kind);
 		const id = newId("skl");
 		const now = nowIso();

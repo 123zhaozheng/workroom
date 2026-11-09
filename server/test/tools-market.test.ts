@@ -484,3 +484,41 @@ test("personal-skill policy: free → usable immediately; review → upload auto
 		await t.dispose();
 	}
 });
+
+test("custom role with ONLY skill.review at department scope: reviews that department's submissions, nothing else", async () => {
+	const { t, admin, author, other, assign, dept, join: joinDept } = await setup();
+	try {
+		const d1 = await dept("研发部");
+		const d2 = await dept("市场部");
+		await joinDept(d1, author.me.userId);
+		await assign(author.me.userId, "builtin:dept_admin", { kind: "department", id: d1 });
+		const role = (await t.json("POST", "/api/admin/roles", { token: admin.token, json: { name: "仅技能审核", permissions: ["skill.review"] } })).role;
+		const rev = await orgMember(t, admin, "mk-onlyrev@example.com");
+		await assign(rev.me.userId, role.id, { kind: "department", id: d1 });
+		// The role grants exactly skill.review: no marketplace management, no publishing, no MCP review.
+		const me = (await t.json("GET", "/api/market/me", { token: rev.token })).me;
+		assert.equal(me.canReviewSkills, false, "not a member of d1 → no department queue entry point");
+		await joinDept(d1, rev.me.userId);
+		const me2 = (await t.json("GET", "/api/market/me", { token: rev.token })).me;
+		assert.deepEqual([me2.canReviewSkills, me2.canReviewMcp, me2.canManageMarket, me2.canPublishOrg], [true, false, false, false]);
+
+		const up1 = await up(t, author.token, zip({ "SKILL.md": skillMd({ name: "d1-skill", description: "研发部的发布前检查流程。当用户准备发版时使用。" }) }));
+		const s1 = (await t.json("POST", `/api/market/skills/${up1.body.skill.id}/versions/1/submit`, { token: author.token, json: { targetScope: "department", targetRef: d1 } })).submission;
+		const up2 = await up(t, admin.token, zip({ "SKILL.md": skillMd({ name: "d2-skill", description: "市场部的投放复盘模板。当用户做投放复盘时使用。" }) }));
+		const s2 = (await t.json("POST", `/api/market/skills/${up2.body.skill.id}/versions/1/submit`, { token: admin.token, json: { targetScope: "department", targetRef: d2 } })).submission;
+		const up3 = await up(t, admin.token, zip({ "SKILL.md": skillMd({ name: "org-skill", description: "全组织通用的写作规范。当用户写正式文档时使用。" }) }));
+		const s3 = (await t.json("POST", `/api/market/skills/${up3.body.skill.id}/versions/1/submit`, { token: admin.token, json: { targetScope: "org" } })).submission;
+
+		assert.deepEqual((await t.json("GET", "/api/market/submissions?view=queue", { token: rev.token })).submissions.map((x: any) => x.id), [s1.id]);
+		await t.json("POST", `/api/market/submissions/${s2.id}/decision`, { token: rev.token, json: { decision: "approve" }, expect: 403 });
+		await t.json("POST", `/api/market/submissions/${s3.id}/decision`, { token: rev.token, json: { decision: "approve" }, expect: 403 });
+		// Reviewing does not imply admin powers.
+		await t.json("POST", `/api/market/skills/${up1.body.skill.id}/unpublish`, { token: rev.token, json: { reason: "x" }, expect: 403 });
+		await t.json("PUT", "/api/market/policy", { token: rev.token, json: { personalSkill: "review" }, expect: 403 });
+		await t.json("PUT", "/api/tools/policy", { token: rev.token, json: { groups: { sandbox: false } }, expect: 403 });
+		assert.equal((await t.json("POST", `/api/market/submissions/${s1.id}/decision`, { token: rev.token, json: { decision: "approve", comment: "ok" } })).submission.state, "published");
+		void other;
+	} finally {
+		await t.dispose();
+	}
+});
