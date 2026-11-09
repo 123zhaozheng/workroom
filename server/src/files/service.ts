@@ -225,7 +225,18 @@ export class Files implements FileService {
 			}
 			throw e;
 		}
-		return this.refOf(this.versionRow(versionId)!);
+		const ref = this.refOf(this.versionRow(versionId)!);
+		this.#notifyKnowledge(ref, principal);
+		return ref;
+	}
+
+	/** C re-indexes KB docs that follow this file (M06-C); failures never fail the write. */
+	#notifyKnowledge(ref: FileVersionRef, principal: Principal): void {
+		if (!this.#ctx.services.has("knowledgeAdmin")) return;
+		const k = this.#ctx.services.get("knowledgeAdmin") as { fileVersionAdded?: (fileId: string, ref: FileVersionRef, p: Principal) => unknown };
+		Promise.resolve()
+			.then(() => k.fileVersionAdded?.(ref.fileId, ref, principal))
+			.catch((e: unknown) => console.error("[files] knowledge notification failed", e));
 	}
 
 	async getVersion(principal: Principal, versionId: string): Promise<{ ref: FileVersionRef; bytes: Uint8Array; provenance: FileProvenance } | null> {

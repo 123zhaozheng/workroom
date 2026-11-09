@@ -35,14 +35,6 @@ async function readUpload(c: HonoContext<AppEnv>): Promise<{ file: File; fields:
 	return { file, fields };
 }
 
-function notifyKnowledge(ctx: AppContext, fileId: string, ref: unknown, principal: Principal): void {
-	if (!ctx.services.has("knowledgeAdmin")) return;
-	const k = ctx.services.get("knowledgeAdmin") as any;
-	Promise.resolve()
-		.then(() => k.fileVersionAdded?.(fileId, ref, principal))
-		.catch((e: unknown) => console.error("[files] knowledge notification failed", e));
-}
-
 export const filesModule: WorkroomModule = {
 	name: "files",
 	migrations: FILE_MIGRATIONS,
@@ -78,7 +70,6 @@ export const filesModule: WorkroomModule = {
 				provenance,
 				idempotencyKey: c.req.header("idempotency-key") ? `upload:${p.userId}:${c.req.header("idempotency-key")}` : undefined,
 			});
-			notifyKnowledge(ctx, ref.fileId, ref, p);
 			const detail = await files.detail(p, ref.fileId);
 			const out: FileUploadResponse = { file: detail.file, version: detail.versions.find((v) => v.versionId === ref.versionId)! };
 			return c.json(out);
@@ -101,7 +92,6 @@ export const filesModule: WorkroomModule = {
 				provenance: { createdBy: p.userId, spaceId: f.space_id, changeNote: fields.changeNote || undefined, origin: "upload", inputVersionIds: f.latest_version_id ? [f.latest_version_id] : undefined },
 				idempotencyKey: c.req.header("idempotency-key") ? `upload:${p.userId}:${c.req.header("idempotency-key")}` : undefined,
 			});
-			notifyKnowledge(ctx, ref.fileId, ref, p);
 			const detail = await files.detail(p, ref.fileId);
 			const out: FileUploadResponse = { file: detail.file, version: detail.versions.find((v) => v.versionId === ref.versionId)! };
 			return c.json(out);
