@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { greeting } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { BrandMark } from "@/components/shell/BrandMark";
+import { DotMatrix } from "@/components/DotMatrix";
 import { Composer } from "@/features/chat/Composer";
-import { ModelPicker } from "@/features/chat/ModelPicker";
 import { AssistantPicker } from "@/features/assistants/Assistants";
 import { useStartConversation } from "@/features/chat/useStartConversation";
 
@@ -18,41 +18,42 @@ const STARTERS = [
 export function HomePage() {
 	const { me, brand, personalSpaceId } = useSession();
 	const start = useStartConversation();
-	const [modelId, setModelId] = useState<string>();
 	const [assistantId, setAssistantId] = useState<string>();
 	const [seed, setSeed] = useState({ text: "", n: 0 });
+	const page = useRef<HTMLDivElement>(null);
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
+		<div ref={page} className="relative isolate flex min-h-0 flex-1 flex-col">
+			<DotMatrix column={680} />
 			<TopBar />
-			<div className="flex flex-1 flex-col items-center justify-center px-4 pb-[12vh]">
-				<div className="w-full max-w-[680px]">
-					<div className="mb-7 flex flex-col items-center text-center">
-						<BrandMark className="mb-4 size-9 rounded-xl" />
-						<h1 data-testid="home-greeting" className="text-[22px] font-medium tracking-tight sm:text-[26px]">
+			{/* desktop: greeting + composer centred; phones: greeting centred, composer docked at the bottom */}
+			<div className="flex min-h-0 flex-1 flex-col items-center px-4 sm:justify-center sm:pb-[12vh]">
+				<div className="flex w-full max-w-[680px] flex-1 flex-col sm:flex-none">
+					<div className="order-1 flex flex-1 flex-col items-center justify-center text-center sm:mb-7 sm:flex-none">
+						<BrandMark className="mb-4 size-10 rounded-xl" />
+						<h1 data-testid="home-greeting" className="text-[23px] font-medium tracking-tight sm:text-[27px]">
 							{greeting(me?.name)}
 						</h1>
-						<p className="mt-1.5 text-[14px] text-fg-muted">{brand.tagline}</p>
+						<p className="mt-2 text-[14px] text-fg-muted">{brand.tagline}</p>
 					</div>
-					<Composer
-						variant="home"
-						autoFocus
-						spaceId={personalSpaceId}
-						seed={seed}
-						onSubmit={(v) => start(v, { spaceId: personalSpaceId, modelId: assistantId ? undefined : modelId, assistantId })}
-						footer={
-							<span className="inline-flex items-center gap-1">
-								<AssistantPicker value={assistantId} onChange={setAssistantId} />
-								<ModelPicker value={modelId} onChange={setModelId} />
-							</span>
-						}
-					/>
-					<div className="mt-4 flex flex-wrap justify-center gap-2" aria-label="起步建议">
+					<div className="order-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:pb-0">
+						<Composer
+							variant="home"
+							autoFocus
+							spaceId={personalSpaceId}
+							seed={seed}
+							dropScope={page}
+							tools={<AssistantPicker value={assistantId} onChange={setAssistantId} />}
+							modelLocked={assistantId ? "使用助手的默认模型" : undefined}
+							onSubmit={(v) => start(v, { spaceId: personalSpaceId, assistantId })}
+						/>
+					</div>
+					<div className="order-2 mb-3 flex flex-wrap justify-center gap-2 sm:order-4 sm:mb-0 sm:mt-4" aria-label="起步建议">
 						{STARTERS.map((s) => (
 							<button
 								key={s.label}
 								onClick={() => setSeed((x) => ({ text: s.text, n: x.n + 1 }))}
-								className="rounded-full border border-border bg-surface px-3 py-1.5 text-[13px] text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+								className="rounded-full border border-border bg-surface/80 px-3 py-1.5 text-[13px] text-fg-muted backdrop-blur-[2px] transition-colors hover:border-border-strong hover:text-fg"
 							>
 								{s.label}
 							</button>

@@ -1,8 +1,9 @@
-import { ArrowDown, ChevronDown, ClipboardList, Link2, Route, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { FIXTURE_LABEL, type BranchResponse, type ConversationSummary, type EntryDTO, type SendMessageResponse } from "@shared/chat";
-import { ApiError, errorText, post, uuid } from "@/lib/api";
+import type { AgentDTO, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, SendMessageResponse } from "@shared/chat";
+import type { ThinkingLevel } from "@shared/ops";
+import { ApiError, errorText, get, patch, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { AssistantAvatarMark } from "@/features/assistants/Assistants";
 import type { Project } from "@/lib/types";
@@ -12,6 +13,8 @@ import { usePanel, type WorkTab } from "@/components/shell/panel";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip } from "@/components/ui/overlay";
 import { Button } from "@/components/ui/button";
 import { ErrorState, Spinner, Unavailable } from "@/components/ui/misc";
+import { DotMatrix } from "@/components/DotMatrix";
+import { modelName, type ModelInfo } from "@/features/composer/models";
 import { Composer, type ComposerSubmit } from "@/features/chat/Composer";
 import { ApprovalCard, CitationStatusContext, ReconcileCard } from "@/features/chat/Cards";
 import type { ConversationCitationStatus } from "@shared/knowledge";
@@ -49,7 +52,10 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const [share, setShare] = useState(false);
 
 	const conv = state?.conversation ?? detail?.conversation;
-	const agent = state?.agent ?? detail?.agent;
+	const [agentOverride, setAgentOverride] = useState<AgentDTO>();
+	const [modelNote, setModelNote] = useState<string>();
+	const pageRef = useRef<HTMLDivElement>(null);
+	const agent = agentOverride ?? state?.agent ?? detail?.agent;
 	const live = state?.live;
 	const runStatus = live?.status ?? conv?.status ?? "idle";
 	const busy = !!live?.busy;
@@ -171,6 +177,20 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			}
 		});
 	const work = useCallback((tab: WorkTab) => openWork(tab, spaceId, id), [openWork, spaceId, id]);
+	/** Switch the model of this conversation. The server's answer decides what is shown: if it does not apply the change,
+	 * the switcher stays on the model that is really in use and says so (the choice still becomes the default for new chats). */
+	const changeModel = async (m: ModelInfo, thinking?: ThinkingLevel) => {
+		setModelNote(undefined);
+		try {
+			await patch(base, { modelId: m.id, ...(thinking ? { thinkingLevel: thinking } : {}) });
+			const d = await get<ConversationDetailResponse>(base);
+			const applied = !!d.agent.model && !!m.ref && d.agent.model.provider === m.ref.provider && d.agent.model.modelId === m.ref.modelId;
+			if (applied) setAgentOverride(d.agent);
+			else setModelNote(`这个对话仍在使用「${d.agent.modelLabel}」：服务端目前只在创建对话时确定模型。已把「${modelName(m)}」设为新对话的默认模型。`);
+		} catch (e) {
+			setModelNote(errorText(e));
+		}
+	};
 
 	useEffect(() => {
 		if (conv?.title) document.title = conv.title;
@@ -204,7 +224,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const panelOpen = !!panel;
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
+		<div ref={pageRef} className="relative isolate flex min-h-0 flex-1 flex-col">
+			<DotMatrix column={panelOpen ? 720 : 760} />
 			<TopBar
 				right={
 					<>
@@ -324,7 +345,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						</div>
 					) : null}
 					<CitationStatusContext.Provider value={citeStatus.data?.byChunkId}>
-					<div className="flex flex-col gap-6">
+					<div className="flex flex-col gap-7">
 						{turns.map((t, i) => {
 							const prevMax = i > 0 ? firstId(turns[i - 1]!) : Number.NEGATIVE_INFINITY;
 							const here = firstId(t);
@@ -357,7 +378,15 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						})}
 					</div>
 					</CitationStatusContext.Provider>
-					{state && turns.length === 0 && !busy ? <p className="py-16 text-center text-[13px] text-fg-subtle">这个对话还没有消息。</p> : null}
+					{state && turns.length === 0 && !busy ? (
+						<div data-testid="chat-empty" className="flex flex-col items-center gap-2 py-24 text-center">
+							<span className="flex size-10 items-center justify-center rounded-xl bg-surface-2 text-fg-muted">
+								<MessageSquare className="size-5" />
+							</span>
+							<p className="text-[14px] text-fg-muted">这个对话还没有消息</p>
+							<p className="text-[12.5px] text-fg-subtle">在下方输入，或把文件直接拖进来。</p>
+						</div>
+					) : null}
 
 					{pendingApprovals.length || reconcile.length ? (
 						<div className="mt-5 flex flex-col gap-3 sm:pl-[38px]">
@@ -409,6 +438,14 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						{actionErr}
 					</p>
 				) : null}
+				{modelNote ? (
+					<p data-testid="model-note" role="status" className="mb-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-1.5 text-[12.5px] text-fg-muted">
+						<span className="min-w-0 flex-1">{modelNote}</span>
+						<button aria-label="关闭" onClick={() => setModelNote(undefined)} className="mt-0.5 text-fg-subtle hover:text-fg">
+							<X className="size-3.5" />
+						</button>
+					</p>
+				) : null}
 				{readOnly ? (
 					<p data-testid="read-only-note" className="rounded-xl border border-border bg-surface-2 px-4 py-3 text-[13px] text-fg-muted">
 						{viewer ? "你在这个项目中是查看者：可以查看对话、成果和交接摘要，但不能发消息、确认操作或创建分支。" : "这是子任务的对话记录，只读。"}
@@ -423,20 +460,9 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						onSubmit={send}
 						disabled={!state}
 						disabledReason="正在连接…"
-						footer={
-							agent ? (
-								<span data-testid="model-label" className="inline-flex items-center gap-1">
-									{agent.fixture ? (
-										<>
-											<FlaskConical className="size-3 text-warning" />
-											<span className="text-warning">{FIXTURE_LABEL}</span>
-										</>
-									) : (
-										agent.modelLabel
-									)}
-								</span>
-							) : null
-						}
+						conversationId={id}
+						dropScope={pageRef}
+						model={{ actual: agent?.model, label: agent?.modelLabel, fixture: agent?.fixture, thinking: agent?.thinkingLevel, onSelect: changeModel }}
 					/>
 				)}
 			</div>

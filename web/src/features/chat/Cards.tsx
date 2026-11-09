@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/misc";
 import { Textarea } from "@/components/ui/input";
 import { usePanel } from "@/components/shell/panel";
+import { FileThumb, MiddleEllipsis } from "@/components/file/FileTile";
+import { fileKind, KIND_META } from "@/components/file/kinds";
 
 export function fileIcon(name: string, mime = "") {
 	const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -21,32 +23,36 @@ export function fileIcon(name: string, mime = "") {
 	return FileText;
 }
 
-/** Deliverable card. Click → right-side preview panel (drawer on narrow screens). */
+/** Deliverable card (same visual language as attachment cards). Click → right-side preview panel (drawer on narrow screens). */
 export function FileCard({ file }: { file: FileVersionRefDTO }) {
 	const { openPreview, panel } = usePanel();
-	const Icon = fileIcon(file.name, file.mime);
+	const kind = fileKind(file.name, file.mime);
 	const active = panel?.kind === "preview" && panel.target.versionId === file.versionId;
 	return (
 		<div
 			data-testid="file-card"
-			className={cn("group flex w-full max-w-[420px] items-center gap-3 rounded-xl border bg-surface px-3 py-2.5 transition-colors", active ? "border-border-strong bg-surface-2" : "border-border hover:border-border-strong")}
+			data-kind={kind}
+			className={cn("group flex w-full max-w-[440px] items-center gap-3 rounded-xl border bg-surface p-2 pr-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.03)] transition-colors", active ? "border-border-strong bg-surface-2" : "border-border hover:border-border-strong")}
 		>
 			<button
 				onClick={() => openPreview({ fileId: file.fileId, versionId: file.versionId, name: file.name, mime: file.mime })}
-				className="flex min-w-0 flex-1 items-center gap-3 text-left"
+				className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left"
 				aria-label={`预览 ${file.name}`}
 			>
-				<span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-fg-muted">
-					<Icon className="size-[18px]" />
-				</span>
-				<span className="min-w-0">
-					<span className="block truncate text-sm font-medium">{file.name}</span>
-					<span className="block text-xs text-fg-subtle">
-						v{file.versionNo} · {formatBytes(file.size)} · 点击预览
+				<FileThumb name={file.name} mime={file.mime} size={44} thumbUrl={kind === "image" ? `/api/files/${file.fileId}/versions/${file.versionId}/download` : undefined} />
+				<span className="min-w-0 flex-1">
+					<span className="flex items-center gap-2">
+						<MiddleEllipsis name={file.name} className="text-sm font-medium" />
+						<span data-testid="file-version" className="inline-flex h-[18px] shrink-0 items-center rounded bg-surface-2 px-1.5 text-[11px] font-medium tabular-nums text-fg-muted">
+							v{file.versionNo}
+						</span>
+					</span>
+					<span className="mt-0.5 block text-xs text-fg-subtle">
+						{KIND_META[kind].label} · {formatBytes(file.size)} · 点击预览
 					</span>
 				</span>
 			</button>
-			<a href={`/api/files/${file.fileId}/versions/${file.versionId}/download`} className="rounded-md p-1.5 text-fg-subtle hover:bg-surface-2 hover:text-fg" aria-label={`下载 ${file.name}`} title="下载">
+			<a href={`/api/files/${file.fileId}/versions/${file.versionId}/download`} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg" aria-label={`下载 ${file.name}`} title="下载">
 				<Download className="size-4" />
 			</a>
 		</div>

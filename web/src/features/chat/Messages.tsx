@@ -1,4 +1,4 @@
-import { BookOpen, Check, ChevronLeft, ChevronRight, Copy, Download, FileText, FlaskConical, GitBranch, Pencil, RefreshCw } from "lucide-react";
+import { BookOpen, Check, ChevronLeft, ChevronRight, Copy, Download, FlaskConical, GitBranch, Pencil, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { FIXTURE_LABEL, type ConversationSummary, type UserEntryDTO } from "@shared/chat";
 import { copyText, cn, downloadText, isSimulatedUsage, SIMULATED_USAGE } from "@/lib/utils";
@@ -10,6 +10,8 @@ import { AssistantAvatar } from "@/components/shell/BrandMark";
 import type { WorkTab } from "@/components/shell/panel";
 import { Markdown } from "@/features/markdown/Markdown";
 import { Citations, ErrorNote, FileCard } from "./Cards";
+import { RefTile } from "@/components/file/FileTile";
+import { MessageAttachment } from "./Attachments";
 import { turnMarkdown, type AssistantTurn } from "./model";
 import { StepChain } from "./Steps";
 import { JobChip } from "@/features/work/live";
@@ -77,18 +79,12 @@ export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEn
 			) : (
 				<>
 					{entry.attachments?.length || entry.knowledgeRefs?.length ? (
-						<div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5">
+						<div data-testid="message-attachments" className="mb-2 flex max-w-[92%] flex-wrap justify-end gap-2">
 							{entry.attachments?.map((a) => (
-								<span key={a.versionId} className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-surface px-1.5 text-xs text-fg-muted">
-									<FileText className="size-3" />
-									{a.name}
-								</span>
+								<MessageAttachment key={a.versionId} a={a} />
 							))}
 							{entry.knowledgeRefs?.map((k) => (
-								<span key={k.kbId + (k.docId ?? "")} className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-surface px-1.5 text-xs text-fg-muted">
-									<BookOpen className="size-3" />
-									{k.name}
-								</span>
+								<RefTile key={k.kbId + (k.docId ?? "")} testId="message-kb" icon={<BookOpen />} label="知识库" name={k.name} />
 							))}
 						</div>
 					) : null}

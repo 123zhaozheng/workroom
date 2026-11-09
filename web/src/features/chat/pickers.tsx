@@ -1,4 +1,4 @@
-import { BookOpen, FileText, Search } from "lucide-react";
+import { BookOpen, FileText, Search, Sparkles } from "lucide-react";
 import { useState } from "react";
 import type { AttachmentRef, KnowledgeRef } from "@shared/chat";
 import type { FileListResponse } from "@shared/files";
@@ -17,7 +17,7 @@ export function listOf<T>(data: unknown, ...keys: string[]): T[] {
 	return [];
 }
 
-export function FilePickerDialog({ open, onOpenChange, onPick, spaceId, projectId }: { open: boolean; onOpenChange: (o: boolean) => void; onPick: (r: AttachmentRef) => void; spaceId?: string; projectId?: string }) {
+export function FilePickerDialog({ open, onOpenChange, onPick, spaceId, projectId }: { open: boolean; onOpenChange: (o: boolean) => void; onPick: (r: AttachmentRef, meta?: { size?: number; mime?: string; versionNo?: number }) => void; spaceId?: string; projectId?: string }) {
 	const [q, setQ] = useState("");
 	const files = useApi<FileListResponse>(open ? `/files${qs({ q, projectId, spaceId: projectId ? undefined : spaceId })}` : null);
 	return (
@@ -36,7 +36,7 @@ export function FilePickerDialog({ open, onOpenChange, onPick, spaceId, projectI
 								<button
 									key={f.id}
 									onClick={() => {
-										onPick({ fileId: f.id, versionId: f.latestVersionId, name: f.name });
+										onPick({ fileId: f.id, versionId: f.latestVersionId, name: f.name }, { size: f.size, mime: f.mime, versionNo: f.latestVersionNo });
 										onOpenChange(false);
 									}}
 									className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
@@ -91,6 +91,42 @@ export function KbPickerDialog({ open, onOpenChange, onPick }: { open: boolean; 
 							))
 						)}
 					</Loadable>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+export interface SkillOption {
+	id: string;
+	name: string;
+	kind?: string;
+}
+/** Installed + enabled skills of the current user (GET /skills). */
+export function useUsableSkills(): SkillOption[] {
+	const res = useApi<{ skills?: { id: string; name: string; kind?: string; status?: string; install?: { enabled: boolean } }[] }>("/skills");
+	return (res.data?.skills ?? []).filter((s) => s.status !== "archived" && s.install?.enabled).map((s) => ({ id: s.id, name: s.name, kind: s.kind }));
+}
+
+export function SkillPickerDialog({ open, onOpenChange, skills, onPick }: { open: boolean; onOpenChange: (o: boolean) => void; skills: SkillOption[]; onPick: (s: SkillOption) => void }) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent title="使用技能" description="选择后会在消息开头写上技能名，助手会先加载该技能再按它的步骤做。" className="max-w-md">
+				<div className="wr-scroll max-h-[50vh] overflow-y-auto">
+					{skills.map((s) => (
+						<button
+							key={s.id}
+							data-testid="skill-option"
+							onClick={() => {
+								onPick(s);
+								onOpenChange(false);
+							}}
+							className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
+						>
+							<Sparkles className="size-4 shrink-0 text-fg-muted" />
+							<span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
+						</button>
+					))}
 				</div>
 			</DialogContent>
 		</Dialog>

@@ -130,3 +130,23 @@ export function Tip({ label, children, side = "top" }: { label: ReactNode; child
 		</T.Root>
 	);
 }
+
+// ---------- Bottom sheet (phones: replaces dropdown menus that would be cramped) ----------
+export function BottomSheet({ open, onOpenChange, title, children, className }: { open: boolean; onOpenChange: (o: boolean) => void; title: string; children: ReactNode; className?: string }) {
+	return (
+		<D.Root open={open} onOpenChange={onOpenChange}>
+			<D.Portal>
+				<D.Overlay className="fixed inset-0 z-50 bg-[var(--overlay)] wr-fade-in" />
+				<D.Content
+					data-testid="bottom-sheet"
+					className={cn("fixed inset-x-0 bottom-0 z-50 flex max-h-[82dvh] flex-col rounded-t-2xl border-t border-border bg-surface pb-[max(12px,env(safe-area-inset-bottom))] shadow-pop wr-sheet-up focus:outline-none", className)}
+				>
+					<div className="mx-auto mb-1 mt-2 h-1 w-9 shrink-0 rounded-full bg-border-strong" aria-hidden />
+					<D.Title className="px-5 pb-2 pt-1 text-[13px] font-medium text-fg-muted">{title}</D.Title>
+					<D.Description className="sr-only">{title}</D.Description>
+					<div className="wr-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-1">{children}</div>
+				</D.Content>
+			</D.Portal>
+		</D.Root>
+	);
+}

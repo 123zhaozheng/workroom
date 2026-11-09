@@ -8,8 +8,10 @@ export interface Prefs {
 	/** In-app reduce-motion toggle; the system setting is always honoured as well. */
 	reduceMotion: boolean;
 	sidebarCollapsed: boolean;
+	/** Animated dot-matrix background on the home and chat pages (user-requested; off = no canvas at all). */
+	dotMatrix: boolean;
 }
-const DEFAULTS: Prefs = { theme: "system", reduceMotion: false, sidebarCollapsed: false };
+const DEFAULTS: Prefs = { theme: "system", reduceMotion: false, sidebarCollapsed: false, dotMatrix: true };
 const KEY = "wr.prefs.v1";
 
 function load(): Prefs {

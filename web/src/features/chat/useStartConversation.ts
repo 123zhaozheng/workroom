@@ -10,7 +10,9 @@ export function useStartConversation() {
 		const { conversation } = await post<{ conversation: ConversationSummary }>("/conversations", {
 			...(opts.spaceId && !opts.projectId ? { spaceId: opts.spaceId } : {}),
 			...(opts.projectId ? { projectId: opts.projectId } : {}),
-			...(opts.modelId ? { modelId: opts.modelId } : {}),
+			// model: explicit option, else what the composer's switcher chose; an assistant brings its own default model
+			...(!opts.assistantId && (opts.modelId ?? v.modelId) ? { modelId: opts.modelId ?? v.modelId } : {}),
+			...(!opts.assistantId && v.thinkingLevel ? { thinkingLevel: v.thinkingLevel } : {}),
 			...(opts.assistantId ? { assistantId: opts.assistantId } : {}),
 			// no client title: the server derives it from the first message (directives stripped)
 		});
