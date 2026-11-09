@@ -1,0 +1,80 @@
+{
+  "at": "2026-11-09T06:52:40.821Z",
+  "results": [
+    {
+      "name": "automation: next-run preview (5 runs, server-computed, chosen time zone)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "automation: invalid cron reported by the server preview",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "automation: run now → succeeded, with conversation link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "automation: rerun creates a new run in history",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "automation: cancel a running run → 已取消",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: invite created with a join link",
+      "ok": true,
+      "detail": "/register?invite=2uGx7FOG_6mWhqDP"
+    },
+    {
+      "name": "invitee joins the same organisation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "member does not see 组织管理 in the menu",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "server refuses admin API to a member",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "admin: disabling a member revokes their session at once",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: department created",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: channels show credential source and health (keys never shown)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: budget created and shows spent / limit / state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: audit lists the changes made above",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: audit CSV export downloads",
+      "ok": true,
+      "detail": "status=200"
+    }
+  ]
+}
