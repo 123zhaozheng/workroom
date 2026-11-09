@@ -1,0 +1,405 @@
+// Chat / runtime DTOs shared by server (group A, server/src/runtime) and web (group B).
+// Owner: group A. Only extend compatibly (add optional fields / new union members); never rename or remove.
+// pi-durable ids (conversation / entry / task / submission) are numbers; a conversation is addressed by (spaceId, conversationId).
+
+// ---------------------------------------------------------------- conversations
+
+/** chat: normal conversation; branch: created by fork/edit/regenerate; automation: started by an automation; subagent: task-owned child (read-only in UI). */
+export type ConversationKind = "chat" | "branch" | "automation" | "subagent";
+
+export interface ConversationSummary {
+	readonly spaceId: string;
+	readonly conversationId: number;
+	readonly title: string;
+	readonly kind: ConversationKind;
+	readonly projectId?: string;
+	readonly createdBy: string;
+	readonly createdAt: string;
+	readonly updatedAt: string;
+	readonly archived: boolean;
+	/** Fork source, read from pi-durable's ConversationRecord.parent (never stored separately). */
+	readonly parent?: { readonly conversationId: number; readonly entryId: number };
+	/** Owner edge for subagent conversations (pi-durable ConversationRecord.owner). */
+	readonly owner?: { readonly conversationId: number; readonly taskId: number };
+	/** Best effort: present when the space runtime is open. */
+	readonly status?: RunStatus;
+	readonly assistantId?: string;
+}
+
+export interface CreateConversationRequest {
+	readonly spaceId?: string;
+	readonly projectId?: string;
+	readonly title?: string;
+	/** Platform model id (from GET /models) or "provider/modelId". */
+	readonly modelId?: string;
+	readonly assistantId?: string;
+}
+
+export interface ConversationDetailResponse {
+	readonly conversation: ConversationSummary;
+	readonly parent?: { readonly conversationId: number; readonly entryId: number };
+	/** Direct branches forked from this conversation. */
+	readonly branches: readonly ConversationSummary[];
+	readonly agent: AgentDTO;
+}
+
+export interface AgentDTO {
+	readonly model?: { readonly provider: string; readonly modelId: string };
+	readonly thinkingLevel?: string;
+	/** True when the model is the deterministic fixture ("测试模型，非真实 AI"). The UI must label it. */
+	readonly fixture: boolean;
+	readonly modelLabel: string;
+	readonly tools: readonly string[];
+	readonly maxTurns?: number;
+	readonly assistant?: AssistantDTO;
+}
+
+// ---------------------------------------------------------------- entries
+
+export interface AttachmentRef {
+	readonly fileId: string;
+	readonly versionId: string;
+	readonly name: string;
+}
+export interface KnowledgeRef {
+	readonly kbId: string;
+	readonly docId?: string;
+	readonly name: string;
+}
+
+interface EntryBase {
+	readonly id: number;
+	/** Conversation that physically holds the entry (a fork shows inherited parent entries with the parent's id). */
+	readonly conversationId: number;
+}
+
+export interface UserEntryDTO extends EntryBase {
+	readonly kind: "user";
+	readonly text: string;
+	readonly userId?: string;
+	readonly authorName?: string;
+	readonly attachments?: readonly AttachmentRef[];
+	readonly knowledgeRefs?: readonly KnowledgeRef[];
+	/** Set for inputs written by the runtime itself (subagent report, automation). */
+	readonly via?: { readonly kind: "automation" | "subagent_report" | "delegate"; readonly id?: string };
+}
+
+export interface ToolCallDTO {
+	readonly id: string;
+	readonly name: string;
+	readonly arguments: unknown;
+}
+
+export interface AssistantEntryDTO extends EntryBase {
+	readonly kind: "assistant";
+	readonly text: string;
+	readonly thinking?: string;
+	readonly toolCalls: readonly ToolCallDTO[];
+	/** pi-ai stop reason: stop | length | toolUse | error | aborted. */
+	readonly stopReason: string;
+	readonly errorMessage?: string;
+	readonly model: { readonly provider: string; readonly modelId: string };
+	readonly fixture: boolean;
+	readonly usage?: UsageDTO;
+	readonly timestamp?: number;
+}
+
+export interface ToolResultEntryDTO extends EntryBase {
+	readonly kind: "tool_result";
+	readonly callId: string;
+	readonly toolName: string;
+	readonly text: string;
+	readonly isError: boolean;
+	readonly details?: unknown;
+	readonly diagnostics?: readonly { readonly severity: string; readonly message: string; readonly code?: string }[];
+}
+
+export interface MarkerEntryDTO extends EntryBase {
+	/** start: conversation start marker; reset/compaction: context boundary; system: prompt change (hidden by default). */
+	readonly kind: "start" | "reset" | "compaction" | "system";
+	readonly text?: string;
+}
+
+export interface OtherEntryDTO extends EntryBase {
+	readonly kind: "other";
+	/** Raw pi entry kind, e.g. "wr.note". */
+	readonly rawKind: string;
+	readonly data?: unknown;
+}
+
+export type EntryDTO = UserEntryDTO | AssistantEntryDTO | ToolResultEntryDTO | MarkerEntryDTO | OtherEntryDTO;
+
+export interface EntriesPage {
+	readonly items: readonly EntryDTO[]; // ascending id order
+	/** Pass as `before` to load the previous page; absent when the start was reached. */
+	readonly next?: number;
+}
+
+// ---------------------------------------------------------------- live state
+
+/**
+ * Independent run states (M02-C):
+ * idle (never ran) · running · waiting_approval (等待用户) · done (成功) · aborted (取消) · timeout (超时/轮数上限)
+ * · failed (模型或执行失败) · interrupted (进程中断且重试耗尽).
+ */
+export type RunStatus = "idle" | "running" | "waiting_approval" | "done" | "aborted" | "timeout" | "failed" | "interrupted";
+
+export interface UsageDTO {
+	readonly input: number;
+	readonly output: number;
+	readonly cacheRead: number;
+	readonly cacheWrite: number;
+	readonly totalTokens: number;
+	readonly costTotal: number;
+	/** True when (part of) the spend came from the fixture model: cost is 0 and not real. */
+	readonly fixture?: boolean;
+}
+
+export interface LiveToolDTO {
+	readonly callId: string;
+	readonly name: string;
+	readonly status: "pending" | "running" | "done";
+	readonly output?: string;
+	readonly details?: unknown;
+	readonly taskId?: number;
+	/** Present for delegate calls: the child conversation the UI can attach to. */
+	readonly childConversationId?: number;
+}
+
+export interface LiveDTO {
+	readonly status: RunStatus;
+	readonly busy: boolean;
+	/** Streaming partial of the current model response. */
+	readonly partial?: { readonly text: string; readonly thinking?: string; readonly toolCalls: readonly ToolCallDTO[] };
+	readonly tools: readonly LiveToolDTO[];
+	readonly turns?: number;
+	readonly retry?: { readonly at: number; readonly error: string };
+	/** Why the newest run ended without an answer (pi.live.runFailure). */
+	readonly failure?: { readonly reason: string; readonly detail?: string };
+}
+
+export interface QueuedInputDTO {
+	readonly submissionId: number;
+	readonly mode: "steer" | "followUp" | "write";
+	readonly text?: string;
+}
+
+// ---------------------------------------------------------------- submissions
+
+export type SendMode = "auto" | "steer" | "followUp";
+
+export interface SendMessageRequest {
+	readonly text: string;
+	/** Client-generated UUID; resending the same id returns the same submission and writes nothing new. */
+	readonly requestId: string;
+	readonly attachments?: readonly AttachmentRef[];
+	readonly knowledgeRefs?: readonly KnowledgeRef[];
+	/** auto (default) = steer the running work when busy, start a run when idle. */
+	readonly mode?: SendMode;
+}
+
+/**
+ * Feedback for a submitted message (M02-C):
+ * received = admitted durably, waiting for the next boundary of the running work (steer)
+ * queued   = admitted durably, waits for the current run to finish (follow-up)
+ * applied  = placed in the transcript, the run is working on it
+ * done     = answered
+ * unanswered = will not be answered (reason: aborted, model_error, turn_limit, reset, run_failed, ...)
+ * withdrawn  = withdrawn before it was applied (abort while queued)
+ */
+export type SubmissionStatus = "received" | "queued" | "applied" | "done" | "unanswered" | "withdrawn";
+
+export interface SubmissionDTO {
+	readonly submissionId: number;
+	readonly conversationId: number;
+	readonly requestId?: string;
+	readonly status: SubmissionStatus;
+	readonly reason?: string;
+	readonly detail?: unknown;
+	readonly entryId?: number;
+	readonly answerEntryId?: number;
+}
+
+export interface SendMessageResponse {
+	readonly submissionId: number;
+	readonly status: SubmissionStatus;
+	readonly submission: SubmissionDTO;
+}
+
+export interface ForkRequest {
+	readonly entryId: number;
+	readonly title?: string;
+}
+export interface EditRequest {
+	/** The user entry being edited. */
+	readonly entryId: number;
+	readonly text: string;
+	readonly requestId: string;
+}
+export interface RegenerateRequest {
+	/** An assistant entry (or the user entry of that turn) to answer again. */
+	readonly entryId: number;
+}
+export interface BranchResponse {
+	readonly conversation: ConversationSummary;
+	readonly submissionId?: number;
+}
+
+// ---------------------------------------------------------------- approvals & effects
+
+export type ApprovalStatus = "pending" | "approved" | "rejected";
+
+export interface ApprovalDTO {
+	readonly approvalId: string;
+	readonly conversationId: number;
+	readonly callId: string;
+	readonly toolName?: string;
+	readonly title: string;
+	/** Exactly what will happen if approved. */
+	readonly summary: string;
+	readonly detail?: unknown;
+	readonly risk: "low" | "medium" | "high";
+	readonly status: ApprovalStatus;
+	readonly requestedAt: string;
+	readonly requestedFor?: string;
+	readonly approverUserIds?: readonly string[];
+	readonly decidedBy?: string;
+	readonly decidedAt?: string;
+	readonly note?: string;
+}
+
+export interface ApprovalDecisionRequest {
+	readonly decision: "approved" | "rejected";
+	readonly note?: string;
+}
+
+/** intent → dispatching → done; needs_reconciliation when the outcome is unknown (crash while dispatching); failed when the target refused. */
+export type EffectStatus = "intent" | "dispatching" | "done" | "failed" | "needs_reconciliation";
+
+export interface EffectDTO {
+	readonly effectId: string;
+	readonly conversationId: number;
+	readonly callId: string;
+	readonly key: string;
+	readonly target: string;
+	readonly summary: string;
+	readonly idempotencyKey: string;
+	readonly status: EffectStatus;
+	readonly receipt?: unknown;
+	readonly error?: string;
+	readonly updatedAt: string;
+	readonly reconciledBy?: string;
+}
+
+export interface ReconcileRequest {
+	/** What the user verified at the target: it happened (with optional receipt) or it did not. */
+	readonly outcome: "done" | "failed";
+	readonly receipt?: unknown;
+	readonly note?: string;
+}
+
+// ---------------------------------------------------------------- assistants / team / subagents
+
+/** M03-C: distinct type tags and permission contracts. */
+export type MemberType = "builtin_subagent" | "external_tool" | "third_party_agent";
+
+export interface MemberDeclaration {
+	readonly id: string;
+	readonly name: string;
+	readonly type: MemberType;
+	readonly description?: string;
+	readonly model?: { readonly provider: string; readonly modelId: string };
+	readonly thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	/** Explicit allowlist; [] = no tools. A child never inherits the parent's tools. */
+	readonly tools: readonly string[];
+	readonly knowledgeScope?: { readonly kbIds: readonly string[] };
+	readonly maxTurns: number;
+	readonly budget?: { readonly maxTokens?: number; readonly maxCostUsd?: number };
+	readonly instructions?: string;
+	/** third_party_agent / external_tool: connector or tool id the call goes through. */
+	readonly connectorId?: string;
+}
+
+export interface AssistantDTO {
+	readonly id: string;
+	readonly name: string;
+	readonly avatar?: string;
+	readonly description: string;
+	readonly instructions?: string;
+	readonly model?: { readonly provider: string; readonly modelId: string };
+	readonly tools?: readonly string[];
+	readonly knowledge?: { readonly kbIds: readonly string[] };
+	readonly members: readonly MemberDeclaration[];
+	readonly scope: "personal" | "org";
+	readonly createdBy: string;
+	readonly createdAt: string;
+	readonly updatedAt: string;
+	readonly builtin?: boolean;
+}
+
+export type SubagentStatus = "running" | "done" | "failed" | "aborted" | "unanswered";
+
+export interface SubagentDTO {
+	readonly delegationId: string;
+	readonly memberId: string;
+	readonly memberName: string;
+	readonly memberType: MemberType;
+	readonly mode: "foreground" | "background";
+	/** 来源: the parent conversation and the call that started it. */
+	readonly source: { readonly conversationId: number; readonly callId: string; readonly taskId: number };
+	/** 负责人: the principal the work runs for. */
+	readonly ownerUserId?: string;
+	readonly childConversationId?: number;
+	readonly status: SubagentStatus;
+	readonly task: string;
+	readonly resultSummary?: string;
+	readonly failure?: string;
+	readonly usage?: UsageDTO;
+	readonly startedAt: string;
+	readonly endedAt?: string;
+}
+
+export interface TaskNodeDTO {
+	readonly taskId: number;
+	readonly kind: string;
+	readonly conversationId: number;
+	readonly ownerTaskId?: number;
+	readonly background: boolean;
+	readonly abortRequested: boolean;
+	readonly status: string;
+	readonly phase?: string;
+	readonly blocked?: string;
+	readonly conversations: readonly number[];
+}
+
+export interface TasksResponse {
+	readonly tasks: readonly TaskNodeDTO[];
+	readonly subagents: readonly SubagentDTO[];
+}
+
+// ---------------------------------------------------------------- SSE
+
+/**
+ * Full conversation state, sent as SSE `snapshot` on connect and `state` (throttled) on every change.
+ * `entries` is a window (newest ≤100); page older ones with GET .../entries?before=<entries[0].id>.
+ */
+export interface ConversationState {
+	readonly conversation: ConversationSummary;
+	readonly entries: readonly EntryDTO[];
+	readonly hasEarlier: boolean;
+	readonly live: LiveDTO;
+	readonly queue: readonly QueuedInputDTO[];
+	readonly approvals: readonly ApprovalDTO[];
+	readonly effects: readonly EffectDTO[];
+	readonly subagents: readonly SubagentDTO[];
+	readonly usage: UsageDTO;
+	readonly agent: AgentDTO;
+	/** Monotonic per connection. */
+	readonly revision: number;
+	readonly at: string;
+}
+
+/** SSE event names: `snapshot` | `state` carry ConversationState; `ping` carries {at}; `error` carries {code, message} and the server closes. */
+export type ConversationEventName = "snapshot" | "state" | "ping" | "error";
+
+export const FIXTURE_LABEL = "测试模型（非真实 AI）";
