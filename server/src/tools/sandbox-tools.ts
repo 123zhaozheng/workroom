@@ -37,7 +37,7 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 		executionMode: "sequential",
 		async execute(args, api, context) {
 			const run = await withActor("sandbox_exec", api, { language: args.language, code: args.code.length > 400 ? `${args.code.slice(0, 400)}…` : args.code }, context, true, (a) =>
-				sb().run({ principal: a.principal, space: a.space, conversationId: a.conversationId, taskId: a.taskId, callId: a.callId, language: args.language, code: args.code, timeoutMs: args.timeoutMs }),
+				sb().run({ principal: a.principal, space: a.space, conversationId: a.conversationId, taskId: a.taskId, callId: a.callId, language: args.language, code: args.code, timeoutMs: args.timeoutMs, signal: context.abortSignal }),
 				(r) => `${r.status} exit=${r.exitCode}`);
 			const text = [`status: ${run.status}${run.exitCode !== undefined ? ` (exit ${run.exitCode})` : ""}, ${run.durationMs} ms`, run.stdout ? `stdout:\n${run.stdout}` : "", run.stderr ? `stderr:\n${run.stderr}` : ""].filter(Boolean).join("\n");
 			return { output: [{ type: "text", text }], isError: run.status !== "ok", details: { run: { runId: run.id, spaceId: run.spaceId, status: run.status } } };

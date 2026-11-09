@@ -4,7 +4,8 @@ import type { AppContext, Principal, WorkroomModule } from "../core/contracts.ts
 import { HttpError, jsonBody, principalOf } from "../core/http.ts";
 import { ToolCallLog, TOOL_CALL_MIGRATIONS } from "./calls.ts";
 import { BLOCKED_CONNECTORS, createToolSearch, McpManager, MCP_MIGRATIONS } from "./mcp.ts";
-import { Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
+import { ISOLATION_TEXT, probeIsolation, Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
+import { pdfFontStatus } from "../files/generate.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
@@ -149,6 +150,33 @@ export const toolsModule: WorkroomModule = {
 			const name = b.name ?? f.name;
 			const ref = await (ctx.services.get("files") as unknown as Files).putVersion(p, { fileId: b.fileId, name, mime: effectiveMime(undefined, name), bytes: f.bytes, provenance: { createdBy: p.userId, spaceId: space.id, conversationId: b.conversationId, changeNote: b.changeNote ?? `从沙箱 /work/${b.path} 发布`, origin: "upload", tool: "sandbox_publish" } as any });
 			return c.json({ version: ref });
+		});
+
+		// ---- capabilities (M14-A, tools side): what this user can use right now, and what is unavailable and why ----
+		api.get("/tools/capabilities", async (c) => {
+			const p = principalOf(c);
+			const iso = probeIsolation();
+			const br = (ctx.services.get("browser") as BrowserService).available();
+			const conns = await Promise.all(mgr.rows(p.orgId).filter((r) => r.scope === "system" || r.owner_user_id === p.userId).map((r) => mgr.dto(p, r)));
+			const sk = ctx.services.get("skills") as Skills;
+			return c.json({
+				deliverables: { formats: ["md", "html", "csv", "docx", "xlsx", "pptx", "pdf"], tools: ["file_create", "file_revise", "file_read", "file_list"], pdfCjkFont: pdfFontStatus() },
+				sandbox: { status: iso.ok ? "ready" : "unavailable", detail: iso.ok ? ISOLATION_TEXT : iso.detail, languages: ["shell", "python", "node"], network: false },
+				codemode: { status: "ready", detail: "QuickJS（WebAssembly）脚本，可调用会话中的工具" },
+				browser: { status: br.ok ? "ready" : "unavailable", detail: br.detail },
+				connectors: conns.map((x) => ({ id: x.id, name: x.name, status: x.status, statusDetail: x.statusDetail, access: x.access, enabledForMe: x.enabledForMe, tools: x.tools.length, usable: x.access === "allowed" && x.enabledForMe && (x.status === "ready" || x.status === "needs_reconnect") })),
+				blockedConnectors: BLOCKED_CONNECTORS,
+				skills: sk.active(p).map(({ skill, version }) => {
+					const need: string[] = JSON.parse(version.required_permissions);
+					const have = sk.granted(version.id, p.userId);
+					return { id: skill.id, name: skill.name, kind: skill.kind, versionNo: version.version_no, missingGrants: need.filter((x) => !have.includes(x)) };
+				}),
+				media: {
+					audio: { status: "blocked", detail: "未配置语音识别/合成服务或模型凭据" },
+					video: { status: "blocked", detail: "未配置视频生成/理解服务或模型凭据" },
+					imageInput: { status: "depends_on_model", detail: "取决于所选模型的能力（模型网关，E 组）" },
+				},
+			});
 		});
 
 		// ---- skills ----

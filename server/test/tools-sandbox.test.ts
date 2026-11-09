@@ -76,9 +76,27 @@ test("sandbox: confined filesystem, no network, timeout kills the process tree, 
 		const vt = createSandboxTools(ctx, { resolveActor: fixedActor(ctx, viewer.me.userId, viewer.me.orgId, project.spaceId) });
 		await assert.rejects(vt.exec.execute({ language: "shell", code: "echo hi" } as any, fakeApi({ conversationId: conv, taskId: 900, callId: "v" }), context), /role_viewer|无权/);
 
-		// Lifecycle: files idle past retention are reaped; fresh files stay.
+		// Cancellation kills the run's whole process tree promptly.
 		const sb = ctx.services.get("sandbox") as Sandbox;
 		const space = ctx.services.get("identity").space(project.spaceId)!;
+		const ac = new AbortController();
+		setTimeout(() => ac.abort(), 300);
+		const principal = (await ctx.services.get("identity").principalFor(a.me.userId, a.me.orgId))!;
+		const t0 = Date.now();
+		const cancelled = await sb.run({ principal, space, conversationId: conv, language: "shell", code: "sleep 4323", timeoutMs: 60_000, signal: ac.signal });
+		assert.equal(cancelled.status, "killed");
+		assert.ok(Date.now() - t0 < 10_000);
+		assert.match(cancelled.stderr, /已被取消/);
+
+		// Capabilities: what is available and what is not, and why.
+		const caps = await t.json("GET", "/api/tools/capabilities", { token: a.token });
+		assert.equal(caps.sandbox.status, "ready");
+		assert.equal(caps.browser.status, "ready");
+		assert.equal(caps.media.audio.status, "blocked");
+		assert.deepEqual(caps.deliverables.formats, ["md", "html", "csv", "docx", "xlsx", "pptx", "pdf"]);
+		assert.match(caps.deliverables.pdfCjkFont, /^available/);
+
+		// Lifecycle: files idle past retention are reaped; fresh files stay.
 		const wd = sb.workdir(space, conv);
 		mkdirSync(join(wd, "old"), { recursive: true });
 		writeFileSync(join(wd, "old", "stale.txt"), "x");

@@ -207,7 +207,7 @@ export class Sandbox {
 	}
 
 	/** Execute code in the sandbox. Records a run row (idempotent per tool call). */
-	async run(input: { principal: Principal; space: Space; conversationId?: number; taskId?: number; callId?: string; language: Language; code: string; timeoutMs?: number; network?: boolean }): Promise<SandboxRunDTO> {
+	async run(input: { principal: Principal; space: Space; conversationId?: number; taskId?: number; callId?: string; language: Language; code: string; timeoutMs?: number; network?: boolean; signal?: AbortSignal }): Promise<SandboxRunDTO> {
 		const iso = probeIsolation();
 		if (!iso.ok) throw new HttpError(503, "sandbox_unavailable", `沙箱不可用：${iso.detail}`);
 		if (input.network) throw new HttpError(403, "network_disabled", "沙箱默认不允许联网；本部署未开放沙箱网络");
@@ -223,12 +223,12 @@ export class Sandbox {
 			"INSERT INTO tool_sandbox_runs (id, space_id, conversation_id, task_id, call_id, user_id, language, code, status, limits, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)",
 			id, input.space.id, input.conversationId ?? null, input.taskId ?? null, input.callId ?? null, input.principal.userId, input.language, input.code.slice(0, 200_000), JSON.stringify(limits), nowIso(),
 		);
-		const r = await this.#exec(input.space, wd, input.language, input.code, limits, id);
+		const r = await this.#exec(input.space, wd, input.language, input.code, limits, id, input.signal);
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
 		return this.runDTO(id)!;
 	}
 
-	async #exec(space: Space, wd: string, language: Language, code: string, limits: SandboxLimitsDTO, runId: string): Promise<RunResult> {
+	async #exec(space: Space, wd: string, language: Language, code: string, limits: SandboxLimitsDTO, runId: string, abortSignal?: AbortSignal): Promise<RunResult> {
 		const scratch = join(this.root(space), ".runs", runId);
 		const rootDir = join(scratch, "root");
 		const codeDir = join(scratch, "code");
@@ -261,13 +261,23 @@ export class Sandbox {
 			timedOut = true;
 			killAll();
 		}, limits.timeoutMs);
+		// Cancellation (run aborted by the user / harness closing) kills the whole namespace too.
+		let cancelled = false;
+		const onAbort = () => {
+			cancelled = true;
+			killAll();
+		};
+		if (abortSignal?.aborted) onAbort();
+		abortSignal?.addEventListener("abort", onAbort, { once: true });
 		const { code: exitCode, signal } = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((res) => child.on("close", (c, s) => res({ code: c, signal: s })));
 		clearTimeout(timer);
+		abortSignal?.removeEventListener("abort", onAbort);
 		killAll();
 		rmSync(scratch, { recursive: true, force: true });
 		let stderr = err.text();
-		const status: RunResult["status"] = timedOut ? "timeout" : signal ? "killed" : exitCode === 0 ? "ok" : exitCode === 137 || exitCode === 152 ? "killed" : "error";
+		const status: RunResult["status"] = timedOut ? "timeout" : cancelled || signal ? "killed" : exitCode === 0 ? "ok" : exitCode === 137 || exitCode === 152 ? "killed" : "error";
 		if (timedOut) stderr += `\n[sandbox] 超过时间限制 ${limits.timeoutMs} ms，已终止整个进程组`;
+		else if (cancelled) stderr += "\n[sandbox] 运行已被取消，已终止整个进程组";
 		else if (exitCode === 152 || signal === "SIGXCPU") stderr += `\n[sandbox] 超过 CPU 时间限制 ${limits.cpuSeconds} 秒`;
 		return { status, exitCode, stdout: out.text(), stderr, durationMs: Date.now() - started };
 	}

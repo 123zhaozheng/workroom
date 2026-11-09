@@ -313,6 +313,12 @@ function unicodeFont(): { path: string; bytes: Buffer } | null {
 	return cachedFont;
 }
 
+/** Whether PDFs can render CJK text (a Unicode font was found). */
+export function pdfFontStatus(): string {
+	const f = unicodeFont();
+	return f ? `available: ${f.path}` : "fallback: 未找到 CJK 字体（设置 WORKROOM_PDF_FONT），PDF 中非拉丁字符会显示为 ?";
+}
+
 export interface PdfResult {
 	bytes: Uint8Array;
 	warnings: string[];
