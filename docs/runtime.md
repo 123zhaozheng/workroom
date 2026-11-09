@@ -47,6 +47,7 @@
 | `GET .../entries?before=&limit=` | `EntriesPage`（升序；`next` 传回 `before`）。`pi.system` 不返回 |
 | `GET .../events` (SSE) | `snapshot` → `state`（节流，默认 100 ms，完整 `ConversationState`）、`ping`（15 s）、`error`（`forbidden` / `runtime_closed`，随后关闭）。断开只停止 watch。每 5 s 重查 ACL |
 | `GET .../state` | 与 SSE snapshot 同形的一次性状态 |
+| （state 字段）`work` | D 的 `work` 服务存在时：本会话的后台任务（jobs）与实时浏览器会话（`ConversationWorkDTO`，`shared/files.ts`）。SSE 在 D 的 `wr.jobs` 会话文档变化时立即重发（文档在首个任务时才出现，watch 延迟挂接）；浏览器会话没有 pi 文档，由周期 tick（`WORKROOM_SSE_ACL_RECHECK_MS`，默认 5 s）比对指纹后重发 |
 | `POST .../messages {text, requestId, attachments?, knowledgeRefs?, mode?}` | `{submissionId, status, submission}`；mode `auto`（=忙时插话）/`steer`/`followUp` |
 | `GET .../submissions/:sid` | `SubmissionDTO`：`received`(插话已接收待应用) / `queued`(排队等本轮结束) / `applied` / `done` / `unanswered`(+reason) / `withdrawn` |
 | `POST .../submissions/:sid/withdraw` | 撤回尚未应用的提交 |

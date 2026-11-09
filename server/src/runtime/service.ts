@@ -690,9 +690,21 @@ export class Runtime implements RuntimeService {
 			subagents,
 			usage: usageFromState(view.docs[UsageDoc.definition.kind], this.isSimulated),
 			agent: await this.agentDTO(harness, conv, context),
+			...this.workOf(spaceId, conversationId),
 			revision,
 			at: nowIso(),
 		};
+	}
+
+	/** Jobs + browser sessions from group D's `work` service, when loaded. Never fails the state. */
+	workOf(spaceId: string, conversationId: number): { work?: ConversationState["work"] } {
+		if (!this.ctx.services.has("work")) return {};
+		try {
+			return { work: (this.ctx.services.get("work") as { forConversation(s: string, c: number): NonNullable<ConversationState["work"]> }).forConversation(spaceId, conversationId) };
+		} catch (err) {
+			console.error("[runtime] work service failed", (err as Error)?.message ?? err);
+			return {};
+		}
 	}
 
 	async tasks(p: Principal, spaceId: string, conversationId: number, context: Context): Promise<TasksResponse> {

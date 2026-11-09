@@ -470,3 +470,28 @@ test("default toolset policy: a default conversation gets every product tool (AC
 		await t.dispose();
 	}
 });
+
+test("work (D): SSE state carries jobs from the work service and re-emits on wr.jobs changes (running → done) without polling", async (tc) => {
+	const t = await startTestApp();
+	try {
+		if (!t.app.ctx.services.has("work") || !t.app.ctx.services.has("sandbox")) return tc.skip("tools module (work/sandbox) not loaded");
+		const a = await t.user("rt-work@example.com");
+		const c = await newChat(t, a.token);
+		const sse = sseReader(await t.req("GET", `${base(c)}/events`, { token: a.token }));
+		const snap: ConversationState = (await sse.next((e) => e.event === "snapshot")).data;
+		assert.deepEqual(snap.work?.jobs ?? [], []);
+		const job = { kind: "sandbox", title: "慢任务", sandbox: { language: "shell", code: "sleep 1.5; echo job-finished" } };
+		const r = await send(t, a.token, c, `[[call job_start ${JSON.stringify(job)}]]`);
+		const running = await sse.state((s) => s.work?.jobs.some((j) => j.title === "慢任务" && (j.status === "running" || j.status === "queued")) ?? false, 15_000);
+		assert.ok(running.work!.browserSessions);
+		await settle(t, a.token, c, r.submissionId);
+		// the chat answered already; the job finishes later and the stream re-emits by itself
+		const done = await sse.state((s) => s.work?.jobs.some((j) => j.title === "慢任务" && j.status === "done") ?? false, 20_000);
+		assert.equal(done.work!.jobs.find((j) => j.title === "慢任务")!.status, "done");
+		await sse.close();
+		const st: ConversationState = await t.json("GET", `${base(c)}/state`, { token: a.token });
+		assert.equal(st.work!.jobs[0]!.status, "done");
+	} finally {
+		await t.dispose();
+	}
+});

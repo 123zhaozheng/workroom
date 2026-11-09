@@ -127,6 +127,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 					await stream.writeSSE({ event: "error", data: JSON.stringify({ code: "forbidden", message: `访问权限已变更（${d.reason}）`, reason: d.reason }) }).catch(() => {});
 					close();
 				} else if (view?.docs?.["pi.live"]?.run) schedule(); // keep nested subagent state fresh while busy
+				else if (JSON.stringify(rt.workOf(spaceId, id).work ?? null) !== workPrint) schedule(); // e.g. browser take-over
 			}, sse.aclRecheckMs);
 			stopAll.push(() => clearInterval(ping), () => clearInterval(recheck));
 
@@ -136,7 +137,9 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 				sending = true;
 				dirty = false;
 				try {
+					void attachJobs();
 					const state: ConversationState = await rt.state(spaceId, harness, conv, view as any, ++revision, context);
+					workPrint = JSON.stringify(state.work ?? null);
 					if (!closed) await stream.writeSSE({ event, data: JSON.stringify(state), id: String(revision) });
 				} catch (err: any) {
 					if (!closed) console.error("[runtime] sse state", err?.message ?? err);
@@ -144,6 +147,28 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 					sending = false;
 				}
 				if (dirty) schedule();
+			};
+			// Group D's `wr.jobs` conversation doc mirrors job transitions; it exists only after the first job, so the
+			// watch is attached lazily (retried on every send). Browser sessions have no pi doc: their fingerprint is
+			// compared on the periodic tick instead.
+			let jobsWatched = false;
+			let jobsAttaching = false;
+			let workPrint = "";
+			const attachJobs = async () => {
+				if (jobsWatched || jobsAttaching || closed) return;
+				jobsAttaching = true;
+				try {
+					const token = (await import("../tools/jobs.ts").catch(() => undefined))?.JobsDoc;
+					if (!token) return void (jobsWatched = true);
+					const w = await harness.watchDoc(token, conv.id, context).catch(() => undefined);
+					if (w) {
+						jobsWatched = true;
+						onStop(() => w.stop());
+						w.start(async () => schedule());
+					}
+				} finally {
+					jobsAttaching = false;
+				}
 			};
 			const schedule = () => {
 				dirty = true;

@@ -530,6 +530,8 @@ export interface ConversationState {
 	readonly subagents: readonly SubagentDTO[];
 	readonly usage: UsageDTO;
 	readonly agent: AgentDTO;
+	/** Background jobs and live browser sessions of this conversation (group D's `work` service; absent without it). */
+	readonly work?: import("./files.ts").ConversationWorkDTO;
 	/** Monotonic per connection. */
 	readonly revision: number;
 	readonly at: string;
