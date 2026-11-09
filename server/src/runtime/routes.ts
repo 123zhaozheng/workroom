@@ -68,6 +68,20 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		return c.json(await rt.entries(p, c.req.param("spaceId"), convId(c.req.param("id")), { before: Number(c.req.query("before")) || undefined, limit: Number(c.req.query("limit")) || undefined }, ctx0));
 	});
 
+	/** One-shot ConversationState (same shape as the SSE snapshot) for clients that cannot keep a stream. */
+	api.get("/conversations/:spaceId/:id/state", async (c) => {
+		const p = principalOf(c);
+		const spaceId = c.req.param("spaceId");
+		const id = convId(c.req.param("id"));
+		const { harness, conv } = await rt.access(p, "read", spaceId, id, ctx0);
+		const watch = await conv.watch(ctx0, { min: Math.min(Math.max(Number(c.req.query("limit")) || 50, 1), 100) });
+		try {
+			return c.json(await rt.state(spaceId, harness, conv, watch.value as any, 0, ctx0));
+		} finally {
+			await watch.stop();
+		}
+	});
+
 	// ------------------------------------------------------------ SSE
 	api.get("/conversations/:spaceId/:id/events", async (c) => {
 		const p = principalOf(c);

@@ -84,7 +84,7 @@ export function createFixtureTools(rt: Runtime, effects: Effects): Extension {
 				},
 				context,
 			);
-			if (args.holdAfterMs) await sleep(args.holdAfterMs, context);
+			if (args.holdAfterMs && !(outcome.status === "done" && outcome.replayed)) await sleep(args.holdAfterMs, context);
 			const body = outcome.status === "done" ? { status: "done", replayed: outcome.replayed, receipt: outcome.receipt } : { status: outcome.status, effectId: outcome.effectId, detail: outcome.detail };
 			return { output: text(JSON.stringify(body)), details: body as any, isError: outcome.status !== "done" };
 		},
