@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { existsSync, readFileSync } from "node:fs";
-import { relative } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { resolve, sep, extname } from "node:path";
+import { getMimeType } from "hono/utils/mime";
 import { createApp } from "./core/app.ts";
 import { loadConfig } from "./core/config.ts";
 import { loadModules } from "./modules.ts";
@@ -9,14 +9,26 @@ import { loadModules } from "./modules.ts";
 const config = loadConfig();
 const app = await createApp(config, await loadModules());
 if (existsSync(config.webDist)) {
-	const root = relative(process.cwd(), config.webDist);
-	app.hono.use("/assets/*", serveStatic({ root }));
-	app.hono.use("/fonts/*", serveStatic({ root }));
+	// Cross-platform static serving: resolve against the absolute dist dir and require containment
+	// (works across Windows drives; no string concatenation of paths, no `..` heuristics).
+	const root = resolve(config.webDist);
+	const indexHtml = resolve(root, "index.html");
 	app.hono.get("*", (c) => {
 		if (c.req.path.startsWith("/api/")) return c.notFound();
-		const f = `${config.webDist}${c.req.path}`;
-		if (c.req.path !== "/" && existsSync(f) && !c.req.path.includes("..")) return c.body(readFileSync(f));
-		return c.html(readFileSync(`${config.webDist}/index.html`, "utf8"));
+		let rel: string;
+		try {
+			rel = decodeURIComponent(c.req.path);
+		} catch {
+			return c.text("bad path", 400);
+		}
+		const f = resolve(root, "." + rel);
+		const inside = f === root || f.startsWith(root + sep);
+		if (inside && f !== root && existsSync(f) && statSync(f).isFile()) {
+			const type = getMimeType(f) ?? (extname(f) === ".woff2" ? "font/woff2" : "application/octet-stream");
+			const immutable = rel.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache";
+			return c.body(readFileSync(f), 200, { "content-type": type, "cache-control": immutable });
+		}
+		return c.html(readFileSync(indexHtml, "utf8"));
 	});
 }
 await app.start();

@@ -13,9 +13,11 @@
     "dev:server": "node --watch --disable-warning=ExperimentalWarning server/src/main.ts",
     "start": "node --disable-warning=ExperimentalWarning server/src/main.ts",
     "typecheck": "tsc -p server/tsconfig.json --noEmit && npm run -w web typecheck",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 'server/test/**/*.test.ts'",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"server/test/**/*.test.ts\"",
     "build:web": "npm run -w web build",
-    "acceptance": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/test/acceptance-loop.test.ts server/test/proof.test.ts && npm run build:web && npm run -w web e2e"
+    "acceptance": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/test/acceptance-loop.test.ts server/test/proof.test.ts && npm run build:web && npm run -w web e2e",
+    "sandbox:image": "node server/sandbox/build-image.mjs",
+    "backup": "node scripts/backup.mjs"
   },
   "dependencies": {
     "@earendil-works/chord": "1.5.0",
@@ -46,5 +48,8 @@
   "devDependencies": {
     "@types/node": "26.6.6",
     "typescript": "7.0.2"
+  },
+  "optionalDependencies": {
+    "playwright-core": "1.63.0"
   }
 }
