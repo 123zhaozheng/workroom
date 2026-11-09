@@ -160,3 +160,31 @@ test("memory section + memory_save: private memory only in the owner's personal 
 		await t.dispose();
 	}
 });
+
+test("compaction: key constraints from memory are still in the prompt after the transcript is summarized (M10-C)", async () => {
+	const t = await startTestApp();
+	try {
+		const alice = await t.user("alice@example.com", { name: "Alice" });
+		await t.json("POST", "/api/memory", { token: alice.token, json: { content: "CONSTRAINT-MEM 所有金额以人民币万元为单位", scope: "private", kind: "constraint" } });
+		const c = await newChat(t, alice.token);
+		// Enough transcript that compaction has something to summarize (keepRecentTokens keeps only the tail verbatim).
+		const filler = "历史讨论内容，与约束无关。".repeat(2500);
+		for (const msg of [`第一轮 ${filler} [[reply a]]`, `第二轮 ${filler} [[reply b]]`, `第三轮 ${filler} [[reply c]]`]) await run(t, alice.token, c, msg);
+		const h = await t.app.ctx.services.get("runtime").harness(c.spaceId, BACKGROUND_CONTEXT);
+		const conv = (await h.conversation(c.conversationId as any, BACKGROUND_CONTEXT))!;
+		const taskId = await conv.compact("保留关键约束", BACKGROUND_CONTEXT);
+		const done = await h.waitForTask(taskId, BACKGROUND_CONTEXT);
+		assert.equal((done.state as any).outcome.status, "completed", JSON.stringify(done.state));
+		const placed = (done.state as any).outcome.result?.submissionId;
+		if (placed !== undefined) await (await h.submission(placed, BACKGROUND_CONTEXT))!.wait(BACKGROUND_CONTEXT);
+		await run(t, alice.token, c, "压缩后 [[reply d]]");
+		const es = await rawEntries(t, c);
+		const compIdx = es.findIndex((e) => e.kind === "pi.compaction");
+		assert.ok(compIdx > 0, "a compaction entry exists");
+		// After the compaction the prompt sections are re-established for the new context, memory included.
+		const after = es.slice(compIdx).filter((e) => e.kind === "pi.system").map((e) => e.model?.[0]?.sections?.memory ?? "").join("\n");
+		assert.match(after, /CONSTRAINT-MEM/);
+	} finally {
+		await t.dispose();
+	}
+});
