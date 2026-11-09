@@ -7,8 +7,8 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { check, chromium, login, register, ROOT, sendMessage, shot, SHOTS, sleep, startServer, summary } from "./lib.mjs";
 
-const PAGE_PORT = 8864;
-const MCP_PORT = 8865;
+const PAGE_PORT = 8874;
+const MCP_PORT = 8875;
 const pageServer = createServer((_req, res) => {
 	res.setHeader("content-type", "text/html; charset=utf-8");
 	res.end(`<!doctype html><html><head><title>观看测试页</title></head><body style="font:16px sans-serif;padding:40px"><h1>只读观看测试</h1><button>按钮</button></body></html>`);
@@ -19,7 +19,7 @@ let mcp = await startHttpFixture("tok-good", "127.0.0.1", MCP_PORT);
 const MCP_ARGS = ["--disable-warning=ExperimentalWarning", join(ROOT, "server/test/fixtures/mcp-fixture-server.ts")];
 
 const server = await startServer({
-	port: 8862,
+	port: 8872,
 	env: {
 		WORKROOM_SECRET_KEY: "e2e-only-secret-key-not-for-production",
 		WORKROOM_URL_ALLOWLIST: `127.0.0.1:${PAGE_PORT},127.0.0.1:${MCP_PORT}`,

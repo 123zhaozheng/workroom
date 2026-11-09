@@ -3,7 +3,7 @@
 import { join } from "node:path";
 import { check, chromium, register, sendMessage, shot, SHOTS, startServer, summary } from "./lib.mjs";
 
-const server = await startServer({ port: 8852, env: { WORKROOM_RT_RETRY_MAX: "0" } });
+const server = await startServer({ port: 8882, env: { WORKROOM_RT_RETRY_MAX: "0" } });
 const base = server.base;
 const browser = await chromium.launch();
 try {
