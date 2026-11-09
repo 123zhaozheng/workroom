@@ -4,7 +4,17 @@ import type { AppContext, Principal, WorkroomModule } from "../core/contracts.ts
 import { HttpError, jsonBody, principalOf } from "../core/http.ts";
 import { ToolCallLog, TOOL_CALL_MIGRATIONS } from "./calls.ts";
 import { BLOCKED_CONNECTORS, createToolSearch, McpManager, MCP_MIGRATIONS } from "./mcp.ts";
-import type { ConnectorCreateRequest, ConnectorListResponse, ToolCallListResponse } from "../../../shared/files.ts";
+import { Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
+import { createSandboxExtension } from "./sandbox-tools.ts";
+import { BrowserService, createBrowserExtension } from "./browser.ts";
+import { CodemodeSandbox } from "@earendil-works/pi-codemode";
+import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
+import { contentDisposition } from "../files/module.ts";
+import { effectiveMime } from "../files/mime.ts";
+import type { Files } from "../files/service.ts";
+import type { ConnectorCreateRequest, ConnectorListResponse, SandboxFilesResponse, SandboxRunsResponse, ToolCallListResponse } from "../../../shared/files.ts";
+
+const codemodeSandboxes = new WeakMap<AppContext, CodemodeSandbox>();
 
 function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	const search = createToolSearch(mgr, ctx);
@@ -19,10 +29,16 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 
 export const toolsModule: WorkroomModule = {
 	name: "tools",
-	migrations: [...TOOL_CALL_MIGRATIONS.map((m) => m), ...MCP_MIGRATIONS.map((m) => ({ ...m, version: m.version + 100 }))],
+	migrations: [
+		...TOOL_CALL_MIGRATIONS,
+		...MCP_MIGRATIONS.map((m) => ({ ...m, version: m.version + 100 })),
+		...SANDBOX_MIGRATIONS.map((m) => ({ ...m, version: m.version + 200 })),
+	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
 		ctx.services.provide("mcp", new McpManager(ctx));
+		ctx.services.provide("sandbox", new Sandbox(ctx));
+		ctx.services.provide("browser", new BrowserService(ctx));
 	},
 	extensions(ctx) {
 		const mgr = ctx.services.get("mcp") as McpManager;
@@ -36,13 +52,23 @@ export const toolsModule: WorkroomModule = {
 				console.error("[tools] reinstall wr.mcp failed", e);
 			}
 		};
-		return [ext];
+		// Code mode: model-written JavaScript runs in QuickJS (WebAssembly, no host access) and calls tools as nested calls,
+		// each with its own ACL check and replay policy.
+		let codemodeSandbox = codemodeSandboxes.get(ctx);
+		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
+		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
+		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		(ctx.services.get("mcp") as McpManager).start();
+		(ctx.services.get("sandbox") as Sandbox).start();
 	},
 	async stop(ctx) {
 		await (ctx.services.get("mcp") as McpManager).stop();
+		(ctx.services.get("sandbox") as Sandbox).stop();
+		await (ctx.services.get("browser") as BrowserService).stop();
+		await codemodeSandboxes.get(ctx)?.close().catch(() => {});
+		codemodeSandboxes.delete(ctx);
 	},
 	routes(api, ctx) {
 		const log = ctx.services.get("toolCalls") as ToolCallLog;
@@ -61,6 +87,50 @@ export const toolsModule: WorkroomModule = {
 			} else spaceIds = (await acl.readableSpaces(p)).map((s) => s.id);
 			const out: ToolCallListResponse = { calls: log.list({ spaceIds, conversationId: q.conversationId ? Number(q.conversationId) : undefined, tool: q.tool, limit: q.limit ? Number(q.limit) : undefined }) };
 			return c.json(out);
+		});
+
+		// ---- sandbox (work panel): same ACL as the space's conversations; publishing needs write ----
+		const sb = ctx.services.get("sandbox") as Sandbox;
+		const spaceFor = async (c: any, action: "read" | "write") => {
+			const p = principalOf(c);
+			const space = ctx.services.get("identity").space(c.req.param("spaceId"));
+			if (!space) throw new HttpError(404, "space_not_found", "空间不存在");
+			await acl.require(p, action, { kind: "space", id: space.id });
+			const cid = c.req.query("conversationId");
+			return { p, space, conversationId: cid === undefined || cid === "" ? undefined : Number(cid) };
+		};
+		api.get("/sandbox/:spaceId", async (c) => {
+			const { space } = await spaceFor(c, "read");
+			return c.json({ info: sb.info(space), browser: (ctx.services.get("browser") as BrowserService).available() });
+		});
+		api.get("/sandbox/:spaceId/files", async (c) => {
+			const { space, conversationId } = await spaceFor(c, "read");
+			const out: SandboxFilesResponse = { entries: sb.entries(space, conversationId) };
+			return c.json(out);
+		});
+		api.get("/sandbox/:spaceId/file", async (c) => {
+			const { space, conversationId } = await spaceFor(c, "read");
+			const f = sb.readFile(space, conversationId, c.req.query("path") ?? "");
+			return new Response(f.bytes as Uint8Array<ArrayBuffer>, { headers: { "content-type": effectiveMime(undefined, f.name), "content-disposition": contentDisposition("attachment", f.name), "x-content-type-options": "nosniff", "content-security-policy": "sandbox; default-src 'none'", "cache-control": "private, no-store" } });
+		});
+		api.get("/sandbox/:spaceId/runs", async (c) => {
+			const { space, conversationId } = await spaceFor(c, "read");
+			const out: SandboxRunsResponse = { runs: sb.runs(space.id, conversationId) };
+			return c.json(out);
+		});
+		api.get("/sandbox/:spaceId/runs/:runId", async (c) => {
+			const { space } = await spaceFor(c, "read");
+			const run = sb.runDTO(c.req.param("runId"));
+			if (!run || run.spaceId !== space.id) throw new HttpError(404, "not_found", "运行记录不存在");
+			return c.json({ run });
+		});
+		api.post("/sandbox/:spaceId/publish", async (c) => {
+			const { p, space } = await spaceFor(c, "write");
+			const b = await jsonBody<{ conversationId?: number; path: string; name?: string; fileId?: string; changeNote?: string }>(c);
+			const f = sb.readFile(space, b.conversationId, b.path);
+			const name = b.name ?? f.name;
+			const ref = await (ctx.services.get("files") as unknown as Files).putVersion(p, { fileId: b.fileId, name, mime: effectiveMime(undefined, name), bytes: f.bytes, provenance: { createdBy: p.userId, spaceId: space.id, conversationId: b.conversationId, changeNote: b.changeNote ?? `从沙箱 /work/${b.path} 发布`, origin: "upload", tool: "sandbox_publish" } as any });
+			return c.json({ version: ref });
 		});
 
 		// ---- connectors ----

@@ -489,6 +489,9 @@ export class McpManager {
 			description: `[${serverName}${policy === "write" ? " · 写操作，需要确认" : ""}] ${t.description || t.name}`.slice(0, 1024),
 			parameters: schema,
 			deferred: true,
+			// Model only: the registry is process-wide, so code mode's searchTools() could otherwise list other orgs' connector
+			// tools by name. Access is still re-checked on every call.
+			callers: ["model"],
 			// Reads may rerun after a crash. Writes are replay-safe only through the effects protocol: a rerun finds the
 			// recorded receipt (done) or an unconfirmed dispatch (needs_reconciliation) and never calls the server blindly.
 			replay: "safe",
