@@ -348,3 +348,44 @@ test("runtime: input validation — unknown/unlisted model refused, chip shapes 
 		await t.dispose();
 	}
 });
+
+test("runtime: per-message outcome (B) — done, aborted, model_error, withdrawn are on the exact message after reload", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("rt-outcome@example.com");
+		const c = await newChat(t, a.token);
+		const ok = await send(t, a.token, c, "好的 [[reply ok]]");
+		await settle(t, a.token, c, ok.submissionId);
+		const bad = await send(t, a.token, c, "[[fail]]");
+		await settle(t, a.token, c, bad.submissionId);
+		const slow = await send(t, a.token, c, "[[slow 5000]] 会被停止");
+		await waitFor(async () => (await t.json("GET", `${base(c)}/submissions/${slow.submissionId}`, { token: a.token })).status === "applied");
+		const queued = await send(t, a.token, c, "排队中被停止", { mode: "followUp" });
+		const withdrawn = await send(t, a.token, c, "撤回这条", { mode: "followUp" });
+		await t.json("POST", `${base(c)}/submissions/${withdrawn.submissionId}/withdraw`, { token: a.token });
+		await t.json("POST", `${base(c)}/abort`, { token: a.token, json: {} });
+		await settle(t, a.token, c, queued.submissionId);
+		// reload: entries and SSE snapshot both carry the outcome on each message
+		const users = (await entries(t, a.token, c)).filter((e) => e.kind === "user") as any[];
+		const by = (text: string) => users.find((u) => u.text.includes(text));
+		assert.deepEqual(by("好的").submission, { submissionId: ok.submissionId, status: "done" });
+		assert.equal(by("[[fail]]").submission.status, "unanswered");
+		assert.equal(by("[[fail]]").submission.reason, "model_error");
+		assert.equal(by("会被停止").submission.status, "unanswered");
+		assert.equal(by("会被停止").submission.reason, "aborted");
+		assert.equal(by("撤回这条").submission.status, "withdrawn");
+		assert.equal(by("撤回这条").placed, false);
+		assert.equal(by("排队中被停止").submission.status, "withdrawn");
+		assert.equal(by("排队中被停止").placed, false);
+		assert.equal(by("好的").placed, undefined);
+		const sse = sseReader(await t.req("GET", `${base(c)}/events`, { token: a.token }));
+		const snap: ConversationState = (await sse.next((e) => e.event === "snapshot")).data;
+		assert.equal((snap.entries.find((e) => e.kind === "user" && (e as any).text.includes("撤回这条")) as any).submission.status, "withdrawn");
+		await sse.close();
+		// the unplaced trace is display-only: the model never saw it
+		const next = await send(t, a.token, c, "继续 [[reply 仍正常]]");
+		assert.equal((await settle(t, a.token, c, next.submissionId)).status, "done");
+	} finally {
+		await t.dispose();
+	}
+});

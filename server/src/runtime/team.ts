@@ -121,7 +121,7 @@ export function createTeamExtension(rt: Runtime, effects: Effects): Extension {
 			deliver: async (task, runtime, ctx) => {
 				const { delegationId, childId, userId, orgId, member } = task.input;
 				const child = (await runtime.conversation(childId as ConversationId, ctx))!;
-				const submission = await child.submit({ type: "input", content: task.input.task, requestId: `delegate:${task.id}`, entry: { kind: InputEntry.kind, data: { text: task.input.task, userId, orgId, via: { kind: "delegate", id: delegationId } } as any } }, ctx);
+				const submission = await child.submit({ type: "input", content: task.input.task, requestId: `delegate:${task.id}`, entry: { kind: InputEntry.kind, data: { text: task.input.task, userId, orgId, requestId: `delegate:${task.id}`, via: { kind: "delegate", id: delegationId } } as any } }, ctx);
 				const readUsage = async () => usageFromState(await runtime.snapshot(UsageDoc, childId as ConversationId, ctx));
 				const { settled, budgetStop } = await waitWithBudget(child, submission.wait(ctx), readUsage, member);
 				const usage = await readUsage();
@@ -146,7 +146,7 @@ export function createTeamExtension(rt: Runtime, effects: Effects): Extension {
 				const principal = await rt.ctx.services.get("identity").principalFor(task.input.userId, task.input.orgId);
 				if (report && principal) {
 					const parent = (await runtime.conversation(runtime.conversationId, ctx))!;
-					await parent.submit({ type: "input", content: report, whenBusy: "followUp", requestId: `delegate-report:${task.id}`, entry: { kind: InputEntry.kind, data: { text: report, userId: task.input.userId, orgId: task.input.orgId, via: { kind: "subagent_report", id: task.input.delegationId } } as any } }, ctx);
+					await parent.submit({ type: "input", content: report, whenBusy: "followUp", requestId: `delegate-report:${task.id}`, entry: { kind: InputEntry.kind, data: { text: report, userId: task.input.userId, orgId: task.input.orgId, requestId: `delegate-report:${task.id}`, via: { kind: "subagent_report", id: task.input.delegationId } } as any } }, ctx);
 				}
 				await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), ctx);
 			},
@@ -234,7 +234,7 @@ export function createTeamExtension(rt: Runtime, effects: Effects): Extension {
 			}, context);
 			await api.details({ delegationId, childConversationId: childId, member: m.id, mode } as any, context);
 			const handle = (await api.conversation(childId as ConversationId, context))!;
-			const request = { type: "input" as const, content: args.task, requestId: `delegate:${api.taskId}`, entry: { kind: InputEntry.kind, data: { text: args.task, userId: actor.principal.userId, orgId: actor.principal.orgId, via: { kind: "delegate", id: delegationId } } as any } };
+			const request = { type: "input" as const, content: args.task, requestId: `delegate:${api.taskId}`, entry: { kind: InputEntry.kind, data: { text: args.task, userId: actor.principal.userId, orgId: actor.principal.orgId, requestId: `delegate:${api.taskId}`, via: { kind: "delegate", id: delegationId } } as any } };
 			const readUsage = async () => usageFromState(await api.snapshot(UsageDoc, childId as ConversationId, context));
 			const { settled, budgetStop } = await waitWithBudget(handle, (await handle.submit(request, context)).wait(context), readUsage, m);
 			const usage = await readUsage();

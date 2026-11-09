@@ -66,3 +66,5 @@ export const AssistantDoc = defineDoc<{ assistantId: string | null; name: string
 export const InputEntry = defineEntry<InputEntryData & Record<string, any>>("wr.input");
 /** Display-only start marker written when a conversation is created (lets "edit first message" fork before it). */
 export const StartEntry = defineEntry<{ createdBy: string; at: string }>("wr.start");
+/** Display-only trace of an input that was withdrawn / aborted before it was placed (so the outcome survives reload). */
+export const UnplacedInputEntry = defineEntry<InputEntryData & Record<string, any>>("wr.input-unplaced");

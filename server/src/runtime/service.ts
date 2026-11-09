@@ -6,7 +6,7 @@ import { ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentD
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, SubagentDTO, SubmissionDTO, TasksResponse } from "../../../shared/chat.ts";
-import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, SpaceDoc, StartEntry, TeamDoc } from "./docs.ts";
+import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
@@ -382,6 +382,8 @@ export class Runtime implements RuntimeService {
 			...(input.knowledgeRefs?.length ? { knowledgeRefs: input.knowledgeRefs } : {}),
 			...(input.via ? { via: input.via } : {}),
 		};
+		// requestId in the entry links the message to its submission, so its outcome can be shown on it after reload.
+		(data as any).requestId = input.requestId;
 		let sub;
 		try {
 			sub = await conv.submit(
@@ -485,8 +487,10 @@ export class Runtime implements RuntimeService {
 	}
 
 	async abort(p: Principal, spaceId: string, conversationId: number, body: { background?: boolean }, context: Context): Promise<void> {
-		const { conv } = await this.access(p, "write", spaceId, conversationId, context);
+		const { harness, conv } = await this.access(p, "write", spaceId, conversationId, context);
+		const queued = ((await harness.snapshot(InboxDoc, conv.id, context))?.items ?? []).filter((i) => i.mode !== "write").map((i) => ({ id: i.id as number, entry: (i as any).entry }));
 		await conv.abort(context, body.background ? { background: true } : undefined);
+		await this.recordUnplaced(harness, conv, queued, context);
 	}
 
 	async continue(p: Principal, spaceId: string, conversationId: number, body: { requestId?: string }, context: Context): Promise<SubmissionDTO> {
@@ -506,22 +510,64 @@ export class Runtime implements RuntimeService {
 		return this.ctx.db.get<{ name: string }>("SELECT name FROM id_users WHERE id = ?", userId)?.name;
 	}
 
-	toDTOs(entries: readonly EntryRecord[]): EntryDTO[] {
+	/** Entry DTOs (pi.system hidden) with each user message's submission outcome read from pi-durable. */
+	async toDTOs(harness: Harness, entries: readonly EntryRecord[], context: Context): Promise<EntryDTO[]> {
 		const names = new Map<string, string | undefined>();
 		const name = (u: string) => {
 			if (!names.has(u)) names.set(u, this.userName(u));
 			return names.get(u);
 		};
-		return entries.filter((e) => e.kind !== "pi.system").map((e) => entryDTO(e, name));
+		const visible = entries.filter((e) => e.kind !== "pi.system");
+		const dtos = visible.map((e) => entryDTO(e, name));
+		const lookups: { i: number; conversationId: number; requestId: string }[] = [];
+		visible.forEach((e, i) => {
+			const rid = (e.data as any)?.requestId;
+			if ((e.kind === InputEntry.kind || e.kind === UnplacedInputEntry.kind) && typeof rid === "string") lookups.push({ i, conversationId: e.conversationId as number, requestId: rid });
+		});
+		if (lookups.length) {
+			const recs = await harness.commit((tx) => Promise.all(lookups.map((l) => tx.submissionByRequest(cid(l.conversationId), l.requestId))), context);
+			lookups.forEach((l, k) => {
+				const rec = recs[k];
+				if (!rec) return;
+				const s = submissionDTO(rec);
+				(dtos[l.i] as any).submission = { submissionId: s.submissionId, status: s.status, ...(s.reason ? { reason: s.reason } : {}) };
+			});
+		}
+		return dtos;
+	}
+
+	/**
+	 * Inputs settled without ever being placed (withdrawn, or dropped by an abort) leave no entry in pi. Append a
+	 * display-only `wr.input-unplaced` write (never seen by the model) so the message and its outcome survive reload.
+	 */
+	async recordUnplaced(harness: Harness, conv: Conversation, items: readonly { id: number; entry?: any }[], context: Context): Promise<void> {
+		for (const it of items) {
+			const sub = await harness.submission(it.id as SubmissionId, context);
+			const rec = sub ? await sub.status(context) : undefined;
+			if (!rec || rec.type !== "input" || rec.status !== "unanswered" || rec.entry !== undefined) continue;
+			const data = { ...((it.entry?.data as object) ?? {}), ...(rec.requestId ? { requestId: rec.requestId } : {}), submissionId: it.id, reason: rec.reason };
+			await conv.submit({ type: "write", requestId: `unplaced:${it.id}`, entry: { kind: UnplacedInputEntry.kind, data: data as any } }, context);
+		}
+	}
+
+	async withdraw(p: Principal, spaceId: string, conversationId: number, submissionId: number, context: Context) {
+		const { harness, conv } = await this.access(p, "write", spaceId, conversationId, context);
+		if (!Number.isInteger(submissionId) || submissionId <= 0) throw new HttpError(400, "invalid_id", "提交 id 无效");
+		const inbox = await harness.snapshot(InboxDoc, conv.id, context);
+		const item = inbox?.items.find((i) => (i.id as number) === submissionId);
+		const r = await harness.abortSubmission(submissionId as SubmissionId, context, conv.id);
+		if (r === "not_found") throw new HttpError(404, "not_found", "提交不存在");
+		if (r === "aborted" && item) await this.recordUnplaced(harness, conv, [{ id: submissionId, entry: (item as any).entry }], context);
+		return { result: r, submission: await this.submissionStatus(harness, conversationId, submissionId, context) };
 	}
 
 	async entries(p: Principal, spaceId: string, conversationId: number, q: { before?: number; limit?: number }, context: Context): Promise<EntriesPage> {
-		const { conv } = await this.access(p, "read", spaceId, conversationId, context);
+		const { harness, conv } = await this.access(p, "read", spaceId, conversationId, context);
 		const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
 		const query = q.before ? { maxEntryId: (Number(q.before) - 1) as EntryId, order: "descending" as const } : { order: "descending" as const };
 		const page = await conv.entries(query, limit, undefined, context);
 		const items = [...page.items].reverse();
-		return { items: this.toDTOs(items), ...(page.next && items.length ? { next: items[0]!.id as number } : {}) };
+		return { items: await this.toDTOs(harness, items, context), ...(page.next && items.length ? { next: items[0]!.id as number } : {}) };
 	}
 
 	async agentDTO(harness: Harness, conv: Conversation, context: Context): Promise<AgentDTO> {
@@ -584,7 +630,7 @@ export class Runtime implements RuntimeService {
 		const ld = liveDTO(live, approvals, hasAnswer);
 		return {
 			conversation: this.summary(spaceId, conversationId, this.row(spaceId, conversationId), view.conversation, ld.status),
-			entries: this.toDTOs(view.entries),
+			entries: await this.toDTOs(harness, view.entries, context),
 			hasEarlier: view.before !== undefined,
 			live: ld,
 			queue: queueDTO(view.docs[InboxDoc.definition.kind]),

@@ -82,6 +82,14 @@ export interface UserEntryDTO extends EntryBase {
 	readonly knowledgeRefs?: readonly KnowledgeRef[];
 	/** Set for inputs written by the runtime itself (subagent report, automation). */
 	readonly via?: { readonly kind: "automation" | "subagent_report" | "delegate"; readonly id?: string };
+	/**
+	 * Outcome of the submission this message belongs to (M02-C), re-read from pi-durable on every load:
+	 * applied (run working on it) · done · unanswered (+reason: aborted, model_error, turn_limit, …) · withdrawn.
+	 * Absent for entries written before outcomes were recorded.
+	 */
+	readonly submission?: { readonly submissionId: number; readonly status: SubmissionStatus; readonly reason?: string };
+	/** false = the input never reached the model (withdrawn / aborted while queued); shown as a marker of what was sent. */
+	readonly placed?: boolean;
 }
 
 export interface ToolCallDTO {

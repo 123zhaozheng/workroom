@@ -204,13 +204,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 
 	api.post("/conversations/:spaceId/:id/submissions/:submissionId/withdraw", async (c) => {
 		const p = principalOf(c);
-		const spaceId = c.req.param("spaceId");
-		const id = convId(c.req.param("id"));
-		const { harness } = await rt.access(p, "write", spaceId, id, ctx0);
-		const sid = Number(c.req.param("submissionId"));
-		const r = await harness.abortSubmission(sid as any, ctx0, id as any);
-		if (r === "not_found") throw new HttpError(404, "not_found", "提交不存在");
-		return c.json({ result: r, submission: await rt.submissionStatus(harness, id, sid, ctx0) });
+		return c.json(await rt.withdraw(p, c.req.param("spaceId"), convId(c.req.param("id")), Number(c.req.param("submissionId")), ctx0));
 	});
 
 	api.post("/conversations/:spaceId/:id/fork", async (c) => {

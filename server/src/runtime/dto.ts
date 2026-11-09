@@ -56,7 +56,8 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 	const base = { id: e.id as number, conversationId: e.conversationId as number };
 	const msg = e.model?.[0] as Message | undefined;
 	switch (e.kind) {
-		case "wr.input": {
+		case "wr.input":
+		case "wr.input-unplaced": {
 			const d = (e.data ?? {}) as any;
 			return {
 				...base,
@@ -67,6 +68,7 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 				...(d.attachments?.length ? { attachments: d.attachments } : {}),
 				...(d.knowledgeRefs?.length ? { knowledgeRefs: d.knowledgeRefs } : {}),
 				...(d.via ? { via: { kind: d.via.kind, id: d.via.automationId ?? d.via.id } } : {}),
+				...(e.kind === "wr.input-unplaced" ? { placed: false } : {}),
 			};
 		}
 		case "pi.user":
