@@ -29,11 +29,18 @@ export class IngestPipeline {
 	retryBaseMs = envInt("WORKROOM_KB_RETRY_BASE_MS", 2000);
 	/** Offline OCR engine (null when OCR is disabled or its packages are missing). */
 	ocr: OcrEngine | null = null;
-	#running = false;
+	/** Jobs processed at once (different documents only; one document's versions run strictly in order). */
+	concurrency = Math.max(1, envInt("WORKROOM_KB_CONCURRENCY", 2));
+	/** Observability/test hook: job start/end events. */
+	onJobEvent: ((e: { phase: "start" | "end"; jobId: string; docId: string; versionNo: number; active: number }) => void) | null = null;
+	/** Highest number of jobs observed running at once (ops/tests). */
+	maxActiveSeen = 0;
 	#stopped = true;
 	#paused = false;
+	#scheduled = false;
 	#timer: NodeJS.Timeout | undefined;
-	#current: Promise<void> | null = null;
+	readonly #active = new Map<string, Promise<void>>();
+	readonly #activeDocs = new Set<string>();
 	#idleWaiters: (() => void)[] = [];
 
 	constructor(ctx: AppContext, store: KnowledgeStore) {
@@ -65,11 +72,11 @@ export class IngestPipeline {
 	async stop(): Promise<void> {
 		this.#stopped = true;
 		clearTimeout(this.#timer);
-		await this.#current?.catch(() => {});
+		await Promise.all([...this.#active.values()].map((p) => p.catch(() => {})));
 		await this.ocr?.close();
 	}
 
-	/** Test/ops control: stop picking up new jobs (pending jobs stay durable). */
+	/** Test/ops control: stop picking up new jobs (pending jobs stay durable; running ones finish). */
 	pause(): void {
 		this.#paused = true;
 	}
@@ -79,47 +86,64 @@ export class IngestPipeline {
 	}
 
 	kick(): void {
-		if (this.#stopped || this.#paused || this.#running) return;
-		this.#running = true;
-		setImmediate(() => void this.#drain());
+		if (this.#stopped || this.#paused || this.#scheduled) return;
+		this.#scheduled = true;
+		setImmediate(() => {
+			this.#scheduled = false;
+			this.#fill();
+		});
 	}
 
-	/** Resolves when no job is runnable now (pending jobs scheduled for later are not waited for). */
+	/** Resolves when nothing runs and no job is runnable now (jobs scheduled for later are not waited for). */
 	idle(): Promise<void> {
-		if (!this.#running && !this.#runnable()) return Promise.resolve();
+		if (!this.#active.size && !this.#runnable()) return Promise.resolve();
 		return new Promise((r) => this.#idleWaiters.push(r));
 	}
 
-	#runnable(): JobRow | undefined {
-		return this.db.get<JobRow>("SELECT * FROM kb_jobs WHERE state = 'pending' AND run_after <= ? ORDER BY created_at, id LIMIT 1", nowIso());
+	/**
+	 * Next runnable job: pending, due, its document not already being processed, and no older live job for the same
+	 * document (so v1 is always indexed before v2 of one document — supersede order stays correct under concurrency).
+	 */
+	#runnable(): (JobRow & { doc_id: string; version_no: number }) | undefined {
+		return this.db.get(
+			`SELECT j.*, v.doc_id, v.version_no FROM kb_jobs j JOIN kb_doc_versions v ON v.id = j.doc_version_id
+			 WHERE j.state = 'pending' AND j.run_after <= ? AND v.doc_id NOT IN (SELECT value FROM json_each(?))
+			   AND NOT EXISTS (SELECT 1 FROM kb_jobs j2 JOIN kb_doc_versions v2 ON v2.id = j2.doc_version_id
+			                   WHERE v2.doc_id = v.doc_id AND j2.state IN ('pending','running') AND j2.id != j.id
+			                     AND (v2.version_no < v.version_no OR (v2.version_no = v.version_no AND j2.created_at < j.created_at)))
+			 ORDER BY j.created_at, j.id LIMIT 1`,
+			nowIso(), JSON.stringify([...this.#activeDocs]),
+		);
 	}
 
-	async #drain(): Promise<void> {
-		if (this.#stopped) {
-			this.#running = false;
-			return;
+	#fill(): void {
+		if (this.#stopped) return;
+		while (!this.#paused && this.#active.size < this.concurrency) {
+			const job = this.#runnable();
+			if (!job) break;
+			this.#activeDocs.add(job.doc_id);
+			this.maxActiveSeen = Math.max(this.maxActiveSeen, this.#active.size + 1);
+			this.onJobEvent?.({ phase: "start", jobId: job.id, docId: job.doc_id, versionNo: job.version_no, active: this.#active.size + 1 });
+			// #process marks the job 'running' synchronously before its first await, so the next pick cannot take it.
+			const run = this.#process(job)
+				.catch((e) => console.error("[knowledge] job crashed", e))
+				.finally(() => {
+					this.#active.delete(job.id);
+					this.#activeDocs.delete(job.doc_id);
+					this.onJobEvent?.({ phase: "end", jobId: job.id, docId: job.doc_id, versionNo: job.version_no, active: this.#active.size });
+					if (!this.#stopped) this.#fill();
+				});
+			this.#active.set(job.id, run);
 		}
-		try {
-			while (!this.#stopped && !this.#paused) {
-				const job = this.#runnable();
-				if (!job) break;
-				this.#current = this.#process(job);
-				await this.#current;
-				this.#current = null;
-			}
-		} finally {
-			this.#running = false;
-			this.#current = null;
-			if (!this.#stopped) {
-				const next = this.db.get<{ run_after: string }>("SELECT run_after FROM kb_jobs WHERE state = 'pending' ORDER BY run_after LIMIT 1");
-				if (next && !this.#paused) {
-					clearTimeout(this.#timer);
-					this.#timer = setTimeout(() => this.kick(), Math.max(10, Date.parse(next.run_after) - Date.now()));
-					this.#timer.unref?.();
-				}
-			}
-			if (this.#stopped || this.#paused || !this.#runnable()) for (const w of this.#idleWaiters.splice(0)) w();
+		if (this.#stopped) return;
+		// Wake up for the next job scheduled in the future (retry backoff).
+		clearTimeout(this.#timer);
+		const next = this.db.get<{ run_after: string }>("SELECT run_after FROM kb_jobs WHERE state = 'pending' AND run_after > ? ORDER BY run_after LIMIT 1", nowIso());
+		if (next && !this.#paused) {
+			this.#timer = setTimeout(() => this.kick(), Math.max(10, Date.parse(next.run_after) - Date.now()));
+			this.#timer.unref?.();
 		}
+		if (!this.#active.size && (this.#paused || !this.#runnable())) for (const w of this.#idleWaiters.splice(0)) w();
 	}
 
 	#setStatus(versionId: string, status: VersionRow["status"], extra: Partial<Pick<VersionRow, "error" | "error_code" | "retryable">> = {}): void {

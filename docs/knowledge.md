@@ -26,11 +26,11 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 
 - **显式加入**：上传文件（D 的 `POST /api/files`）不会进入知识库；必须 `POST /api/kb/:id/docs {fileId, versionId}`。加入时以调用者身份 `files.getVersion(principal, versionId)` 校验文件读权限，并要求对知识库有 write 权限。
 - 状态机：`queued → parsing → indexing → ready | failed(errorCode, error, retryable)`。`GET /api/kb/:id/docs` 的 `availability`（ready / processing / failed）就是“知识是否可用”，与文件存储状态（D）分开；`GET /api/kb/files/:fileId/status` 给出一个文件在各知识库中的知识状态。
-- 任务持久化在 `kb_jobs`。`start()` 时把 `running`（上个进程崩溃遗留）改回 `pending`，版本状态回到 `queued`，并为没有任务的 queued 版本补任务，然后继续处理。单进程串行处理（SQLite 单写者）。
+- 任务持久化在 `kb_jobs`。`start()` 时把 `running`（上个进程崩溃遗留）改回 `pending`，版本状态回到 `queued`，并为没有任务的 queued 版本补任务，然后继续处理。**有界并发**：不同文档最多同时处理 `WORKROOM_KB_CONCURRENCY`（默认 2）个；同一文档的版本严格按版本号顺序处理（较旧版本的任务未结束前，较新版本不会开始），因此“新版本取代旧版本”的顺序在并发下保持正确。索引写入是同步事务，不会交错。
 - 后台读取来源时以**添加者**身份重新解析（`identity.principalFor`），撤权同样作用于后台任务。
 - 失败：`unsupported_type`、`parse_error`、`encrypted`、`no_text`、`ocr_unavailable`、`ocr_failed`（不可重试，除非标注）；`source_unavailable`、`internal`（可重试）。可重试错误自动重试（默认共 3 次，指数退避 2s 起；`WORKROOM_KB_MAX_ATTEMPTS`、`WORKROOM_KB_RETRY_BASE_MS`），最后进入 failed；`POST /api/kb/:id/docs/:docId/retry` 手动重试。
 - 解析器（`parsers.ts`）：txt（UTF-8/BOM/GB18030）、md（标题路径，忽略代码块中的 #）、html（h1–h6 路径、段落、列表、表格行；去掉 script/style）、docx（mammoth → html，Word 标题样式成为章节路径）、csv/tsv（表头标注的行，行号锚点）、xlsx（exceljs，工作表 + 行号，公式取结果）、json（按顶层键分组的路径行）、pdf（unpdf 按页提取，页码锚点）。
-- **OCR（离线，已实现并验证）**：tesseract.js（WASM，worker 线程）+ npm 包内的 `chi_sim`/`eng` best_int 语言数据（首次使用复制到 `<dataDir>/ocr/lang`，不访问网络）。图片（png/jpg/webp/bmp/tiff/gif）整体识别；PDF 中**没有文本层的页面**用 unpdf + `@napi-rs/canvas` 以 2 倍栅格化后识别（单文档最多 100 页），保留页码锚点。OCR 文本的分片与引用带 `ocr: true`，定位显示“第 N 页（OCR 识别）”。`WORKROOM_KB_OCR=0` 关闭。
+- **OCR（离线，已实现并验证）**：tesseract.js（WASM，worker 线程）+ npm 包内的 `chi_sim`/`eng` best_int 语言数据（首次使用复制到 `<dataDir>/ocr/lang`，不访问网络）。图片（png/jpg/webp/bmp/tiff/gif）整体识别；PDF 中**没有文本层的页面**在独立 worker 线程（`render-worker.ts`）中用 unpdf + `@napi-rs/canvas` 以 2 倍栅格化后识别（不阻塞主事件循环）（单文档最多 100 页），保留页码锚点。OCR 文本的分片与引用带 `ocr: true`，定位显示“第 N 页（OCR 识别）”。`WORKROOM_KB_OCR=0` 关闭。
 - 分片（`chunker.ts`）：同一锚点单元（页 / 章节路径 / 工作表 / OCR 标志）内打包到 ≤900 字，超长段落在句末切分（中英标点）并带少量重叠；分片永不跨页、跨章节、跨工作表。
 
 ## 3. 权限模型（M07-A，检索阶段过滤）
@@ -112,6 +112,6 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 ## 10. 已知限制 / 阻塞
 
 - **向量检索**：blocked（无嵌入凭据），见 §4。
-- OCR 质量取决于 tesseract（chi_sim best_int）；扫描质量差的页面可能识别错误，引用会标注 OCR。单文档 OCR 上限 100 页。OCR 在主进程外的 worker 线程中运行，但 PDF 栅格化在主线程。
-- 处理是单进程串行；多 worker 部署需要按 `owner_instance` 租约领取任务（未实现，与架构 §2 的单 owner 前提一致）。
+- OCR 质量取决于 tesseract（chi_sim best_int）；扫描质量差的页面可能识别错误，引用会标注 OCR。单文档 OCR 上限 100 页。识别与 PDF 栅格化都在 worker 线程中；文本层 PDF / docx / xlsx 的解析仍在主线程（单文档解析时间短，但超大文件会占用事件循环片刻）。
+- 处理是单进程内有界并发；多进程部署需要按 `owner_instance` 租约领取任务（未实现，与架构 §2 的单 owner 前提一致）。同一文档较旧版本在重试退避期间会阻塞较新版本的处理（顺序优先）。
 - 引用状态依赖 `kb_chunks` 中保留的 tombstone 行；目前不做物理清理（体量可控时可加按时间清理，代价是更早的回答只能显示 `not_found`）。

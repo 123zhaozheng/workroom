@@ -2,6 +2,7 @@
 // Anchors: PDF page; heading path for md/html/docx; sheet + row for xlsx; row for csv; JSON path; paragraph ordinal otherwise.
 import { parse as parseHtml, type HTMLElement, type Node as HtmlNode, NodeType } from "node-html-parser";
 import type { OcrEngine } from "./ocr.ts";
+type PdfRasterSessionLike = { close(): Promise<void> };
 
 /** Pages beyond this are not OCR'd (bounded work per document); they are reported in ParseResult.ocrSkippedPages. */
 export const MAX_OCR_PAGES = 100;
@@ -445,29 +446,42 @@ async function parsePdf(bytes: Uint8Array, ocr: OcrEngine | null): Promise<Parse
 	const blocks: Block[] = [];
 	let ocrPages = 0;
 	let ocrSkippedPages = 0;
-	for (let i = 0; i < pages.length; i++) {
-		let text = pages[i] ?? "";
-		let fromOcr = false;
-		if (!text.trim() && ocr) {
-			// Scanned page (no text layer): rasterize at 2x and OCR it, keeping the page number as the anchor.
-			if (ocrPages >= MAX_OCR_PAGES) {
-				ocrSkippedPages++;
-				continue;
+	// Page rendering for OCR runs in a worker thread when the engine provides one (opened lazily, only for scanned pages).
+	let session: Awaited<ReturnType<NonNullable<OcrEngine["rasterize"]>>> | null = null;
+	const render = async (page: number): Promise<Uint8Array> => {
+		if (ocr?.rasterize) {
+			session ??= await ocr.rasterize(bytes);
+			return session.render(page);
+		}
+		return renderPageAsImage(pdf, page, { canvasImport: () => import("@napi-rs/canvas"), scale: 2 });
+	};
+	try {
+		for (let i = 0; i < pages.length; i++) {
+			let text = pages[i] ?? "";
+			let fromOcr = false;
+			if (!text.trim() && ocr) {
+				// Scanned page (no text layer): rasterize at 2x and OCR it, keeping the page number as the anchor.
+				if (ocrPages >= MAX_OCR_PAGES) {
+					ocrSkippedPages++;
+					continue;
+				}
+				try {
+					const png = await render(i + 1);
+					text = await ocr.recognize(png);
+					fromOcr = true;
+					ocrPages++;
+				} catch (e) {
+					throw new ParseError("ocr_failed", `第 ${i + 1} 页 OCR 失败：${(e as Error).message ?? String(e)}`, true);
+				}
 			}
-			try {
-				const png = await renderPageAsImage(pdf, i + 1, { canvasImport: () => import("@napi-rs/canvas"), scale: 2 });
-				text = await ocr.recognize(png);
-				fromOcr = true;
-				ocrPages++;
-			} catch (e) {
-				throw new ParseError("ocr_failed", `第 ${i + 1} 页 OCR 失败：${(e as Error).message ?? String(e)}`, true);
+			let n = 1;
+			for (const p of text.replace(/\r\n?/g, "\n").split(/\n\s*\n/)) {
+				const t = norm(p);
+				if (t) blocks.push({ text: t, page: i + 1, paragraph: n++, ...(fromOcr ? { ocr: true } : {}) });
 			}
 		}
-		let n = 1;
-		for (const p of text.replace(/\r\n?/g, "\n").split(/\n\s*\n/)) {
-			const t = norm(p);
-			if (t) blocks.push({ text: t, page: i + 1, paragraph: n++, ...(fromOcr ? { ocr: true } : {}) });
-		}
+	} finally {
+		await (session as PdfRasterSessionLike | null)?.close();
 	}
 	return { format: "pdf", blocks, pageCount: total, ...(ocrPages ? { ocrPages } : {}), ...(ocrSkippedPages ? { ocrSkippedPages } : {}) };
 }

@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
 import { addDepartment, joinOrg, kbIdle, kbWithDoc, knowledgeAdmin, MIME, removeFromDepartment, uploadFile, uploadVersion, waitDoc } from "../src/knowledge/testing.ts";
+import { waitFor } from "../src/runtime/testing.ts";
 
 async function makePdf(pages: string[]): Promise<Uint8Array> {
 	const doc = await PDFDocument.create();
@@ -479,6 +480,48 @@ test("retrieval debug explains per KB why it was searched or excluded (scope, me
 		assert.equal(ev.samples[0].pass, false);
 		assert.ok(ev.samples[0].kbDecisions[0].notes.some((n: string) => n.includes("已过期")));
 		knowledgeAdmin(t).pipeline.resume();
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("ingestion runs documents concurrently (bounded) while one document's versions stay strictly ordered", async () => {
+	const t = await startTestApp();
+	try {
+		const alice = await t.user("alice@example.com");
+		const { kb } = await t.json("POST", "/api/kb", { token: alice.token, json: { name: "Busy", scope: "personal" } });
+		const k = knowledgeAdmin(t);
+		k.pipeline.concurrency = 2;
+		k.pipeline.pause();
+		const events: { phase: string; docId: string; versionNo: number; active: number }[] = [];
+		k.pipeline.onJobEvent = (e) => events.push(e);
+		// Doc A: v1, v2, v3 queued back to back (the KB follows the file); docs B, C, D: one version each.
+		const a = await uploadFile(t, alice.token, { name: "a.txt", mime: MIME.txt, bytes: "Alpha version one tapir." });
+		const da = (await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: a.fileId, versionId: a.versionId } })).doc;
+		await uploadVersion(t, alice.token, a.fileId, { name: "a.txt", mime: MIME.txt, bytes: "Alpha version two tapir." });
+		await uploadVersion(t, alice.token, a.fileId, { name: "a.txt", mime: MIME.txt, bytes: "Alpha version three tapir." });
+		const others: string[] = [];
+		for (const n of ["b", "c", "d"]) {
+			const u = await uploadFile(t, alice.token, { name: `${n}.txt`, mime: MIME.txt, bytes: `Document ${n} about tapirs.` });
+			others.push((await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: u.fileId, versionId: u.versionId } })).doc.id);
+		}
+		await waitFor(async () => (await t.json("GET", `/api/kb/${kb.id}/docs/${da.id}`, { token: alice.token })).versions.length === 3 || undefined, { what: "3 versions queued" });
+		k.pipeline.resume();
+		const final = await waitDoc(t, alice.token, kb.id, da.id, (d) => d.serving?.versionNo === 3 && d.latest.status === "ready");
+		for (const id of others) assert.equal((await waitDoc(t, alice.token, kb.id, id)).latest.status, "ready");
+		await kbIdle(t);
+		assert.equal(final.serving!.versionNo, 3);
+		// Bounded concurrency: at most 2 at once, and 2 was actually reached.
+		assert.equal(Math.max(...events.map((e) => e.active)), 2);
+		assert.equal(k.pipeline.maxActiveSeen, 2);
+		// Per-document order: A's versions start 1, 2, 3, and each starts only after the previous one ended.
+		const aEvents = events.filter((e) => e.docId === da.id);
+		assert.deepEqual(aEvents.map((e) => `${e.phase}:${e.versionNo}`), ["start:1", "end:1", "start:2", "end:2", "start:3", "end:3"]);
+		// Supersede chain is intact: only v3 is searchable; v1/v2 superseded.
+		const r = await search(t, alice.token, { query: "alpha version", kbIds: [kb.id] });
+		assert.deepEqual(r.citations.filter((c: any) => c.docId === da.id).map((c: any) => c.versionNo), [3]);
+		const versions = (await t.json("GET", `/api/kb/${kb.id}/docs/${da.id}`, { token: alice.token })).versions;
+		assert.deepEqual(versions.map((v: any) => [v.versionNo, v.status, !!v.supersededAt]), [[3, "ready", false], [2, "ready", true], [1, "ready", true]]);
 	} finally {
 		await t.dispose();
 	}

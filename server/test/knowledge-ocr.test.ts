@@ -53,6 +53,8 @@ test("OCR: image and scanned PDF page are recognized offline, cited with page + 
 		assert.equal(sp.doc.latest.status, "ready", String(sp.doc.latest.error));
 		assert.equal(sp.doc.latest.pageCount, 2);
 		assert.equal(sp.doc.latest.ocrPages, 1);
+		// The scanned page was rasterized in the render worker thread, not on the main event loop.
+		assert.equal((t.app.ctx.services.get("knowledgeAdmin") as any).pipeline.ocr.rasterizer.running, true);
 		const c2 = (await t.json("POST", "/api/kb/search", { token: alice.token, json: { query: "保密期限", kbIds: [sp.kb.id] } })).citations[0];
 		assert.equal(c2?.page, 2);
 		assert.equal(c2.ocr, true);

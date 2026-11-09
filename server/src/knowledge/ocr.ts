@@ -5,11 +5,88 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { Worker } from "node:worker_threads";
+
+export interface PdfRasterSession {
+	render(page: number): Promise<Uint8Array>;
+	close(): Promise<void>;
+}
 
 export interface OcrEngine {
 	readonly id: string;
 	recognize(image: Uint8Array): Promise<string>;
+	/** Rasterize PDF pages off the main thread (optional; parsers fall back to in-process rendering). */
+	rasterize?(pdf: Uint8Array): Promise<PdfRasterSession>;
 	close(): Promise<void>;
+}
+
+/** One worker thread (render-worker.ts) shared by all jobs; requests are matched by id; terminated when idle. */
+export class PdfRasterizer {
+	#worker: Worker | null = null;
+	#pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
+	#seq = 0;
+	#sessions = 0;
+	#idle: NodeJS.Timeout | undefined;
+
+	#get(): Worker {
+		clearTimeout(this.#idle);
+		if (!this.#worker) {
+			const w = new Worker(new URL("./render-worker.ts", import.meta.url));
+			w.unref();
+			w.on("message", (m: { rid: number; ok: boolean; error?: string }) => {
+				const p = this.#pending.get(m.rid);
+				this.#pending.delete(m.rid);
+				if (m.ok) p?.resolve(m);
+				else p?.reject(new Error(m.error ?? "render failed"));
+			});
+			const fail = (e: Error) => {
+				for (const p of this.#pending.values()) p.reject(e);
+				this.#pending.clear();
+				this.#worker = null;
+			};
+			w.on("error", fail);
+			w.on("exit", (code) => code !== 0 && fail(new Error(`render worker exited with ${code}`)));
+			this.#worker = w;
+		}
+		return this.#worker;
+	}
+	#call(msg: Record<string, unknown>, transfer: ArrayBuffer[] = []): Promise<any> {
+		const rid = ++this.#seq;
+		const w = this.#get();
+		return new Promise((resolve, reject) => {
+			this.#pending.set(rid, { resolve, reject });
+			w.postMessage({ ...msg, rid }, transfer);
+		});
+	}
+	async open(pdf: Uint8Array): Promise<PdfRasterSession> {
+		const sid = ++this.#seq;
+		const copy = new Uint8Array(pdf); // transferred to the worker
+		await this.#call({ op: "open", sid, bytes: copy }, [copy.buffer as ArrayBuffer]);
+		this.#sessions++;
+		let closed = false;
+		return {
+			render: async (page: number) => new Uint8Array((await this.#call({ op: "render", sid, page, scale: 2 })).png),
+			close: async () => {
+				if (closed) return;
+				closed = true;
+				await this.#call({ op: "close", sid }).catch(() => {});
+				if (--this.#sessions === 0) {
+					this.#idle = setTimeout(() => void this.close(), IDLE_MS);
+					this.#idle.unref?.();
+				}
+			},
+		};
+	}
+	/** True when a render worker thread is currently alive (tests/ops). */
+	get running(): boolean {
+		return !!this.#worker;
+	}
+	async close(): Promise<void> {
+		clearTimeout(this.#idle);
+		const w = this.#worker;
+		this.#worker = null;
+		await w?.terminate();
+	}
 }
 
 const LANGS = ["chi_sim", "eng"] as const;
@@ -37,6 +114,10 @@ export function ocrSupport(): { ok: true } | { ok: false; missing: string } {
 
 export class TesseractOcr implements OcrEngine {
 	readonly id = `tesseract.js(${LANGS.join("+")})`;
+	readonly rasterizer = new PdfRasterizer();
+	rasterize(pdf: Uint8Array): Promise<PdfRasterSession> {
+		return this.rasterizer.open(pdf);
+	}
 	readonly #dir: string;
 	#worker: Promise<any> | null = null;
 	#idle: NodeJS.Timeout | undefined;
@@ -89,5 +170,6 @@ export class TesseractOcr implements OcrEngine {
 		const w = this.#worker;
 		this.#worker = null;
 		if (w) await (await w.catch(() => null))?.terminate().catch(() => {});
+		await this.rasterizer.close();
 	}
 }
