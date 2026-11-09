@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronDown, FlaskConical, GitBranch, Loader2, PanelRight, RotateCcw, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { FIXTURE_LABEL, type BranchResponse, type ConversationSummary, type EntryDTO, type SendMessageResponse } from "@shared/chat";
@@ -208,6 +208,27 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 								</MenuContent>
 							</Menu>
 						) : null}
+						<Menu>
+							<MenuTrigger asChild>
+								<button data-testid="chat-more" aria-label="更多" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg">
+									<MoreHorizontal className="size-[18px]" />
+								</button>
+							</MenuTrigger>
+							<MenuContent align="end" className="w-60">
+								<MenuItem
+									data-testid="make-skill"
+									onSelect={() =>
+										act(async () => {
+											const r = await post<{ draft: { id: string } }>("/skills/drafts", { spaceId, conversationId: id });
+											navigate(`/capabilities?draft=${r.draft.id}`);
+										})
+									}
+								>
+									<Sparkles />
+									整理为技能（预览后验证发布）
+								</MenuItem>
+							</MenuContent>
+						</Menu>
 						<Tip label="工作面板（子任务 / 终端 / 浏览器）">
 							<button data-testid="open-work-panel" aria-label="工作面板" onClick={() => work("tasks")} className={cn("rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg", panel?.kind === "work" && "bg-surface-2 text-fg")}>
 								<PanelRight className="size-[18px]" />

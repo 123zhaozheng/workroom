@@ -1,9 +1,10 @@
 // Actionable pages against the real server: 自动化 editor & runs (E), 组织管理 (E), 能力 (D).
 // Run: npm run -w web build && node web/e2e/pages.mjs
 import { join } from "node:path";
-import { check, chromium, register, shot, SHOTS, sleep, startServer, summary } from "./lib.mjs";
+import { check, chromium, register, ROOT, sendMessage, shot, SHOTS, sleep, startServer, summary } from "./lib.mjs";
 
-const server = await startServer({ port: 8822, env: { WORKROOM_AUTOMATION_TICK_MS: "1000" } });
+const MCP_ARGS = ["--disable-warning=ExperimentalWarning", join(ROOT, "server/test/fixtures/mcp-fixture-server.ts")];
+const server = await startServer({ port: 8822, env: { WORKROOM_AUTOMATION_TICK_MS: "1000", WORKROOM_MCP_STDIO_ALLOW: [process.execPath, ...MCP_ARGS].join(" ") } });
 const base = server.base;
 const browser = await chromium.launch();
 try {
@@ -112,10 +113,73 @@ try {
 	const csv = await page.request.get(`${base}/api/admin/audit.csv`);
 	check("admin: audit CSV export downloads", csv.ok() && (await csv.text()).split("\n").length > 2, `status=${csv.status()}`);
 
-	// ---------------------------------------------------------------- 能力: skills & connectors
+	// ---------------------------------------------------------------- 能力: skill lifecycle
 	await page.goto(`${base}/capabilities`);
-	await page.waitForLoadState("networkidle");
-	await shot(page, "1440-capabilities");
+	await page.click('[data-testid="skill-new"]');
+	await page.fill("#sn", "周报格式");
+	await page.fill("#sd", "按公司格式写周报");
+	await page.fill("#si", "周报包含：本周进展、风险、下周计划。每节不超过五条，结论放最前。");
+	await page.click('[data-testid="skill-create"]');
+	await page.waitForSelector('[data-testid="skill"]');
+	const skillId = (await (await page.request.get(`${base}/api/skills`)).json()).skills[0].id;
+	await page.request.post(`${base}/api/skills/${skillId}/versions`, { data: { description: "加入数据来源要求", instructions: "周报包含：本周进展、风险、下周计划，并注明数据来源。每节不超过五条。", changeNote: "加数据来源" } });
+	await page.reload();
+	const card = page.locator('[data-testid="skill"]').first();
+	await card.locator("button[aria-expanded]").click();
+	await card.locator('[data-testid="skill-pin"] option[value="1"]').waitFor({ state: "attached", timeout: 10000 });
+	await sleep(300);
+	await card.locator('[data-testid="skill-pin"]').selectOption("1");
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("v1（固定）"), null, { timeout: 10000 }).catch(async (e) => {
+		console.log("DEBUG card:", (await card.innerText()).replace(/\s+/g, " "));
+		throw e;
+	});
+	check("skill: pin to v1", true);
+	await card.getByRole("button", { name: /升级到 v2/ }).click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("使用 v2"), null, { timeout: 10000 });
+	check("skill: upgrade to v2", true);
+	await card.locator('[data-testid="skill-rollback"]').click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("使用 v1"), null, { timeout: 10000 });
+	check("skill: rollback to the version used before", true);
+	await card.locator('[data-testid="skill-enable"]').click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("已停用"), null, { timeout: 10000 });
+	check("skill: disable", true);
+	await shot(page, "1440-capabilities-skill");
+
+	// ---------------------------------------------------------------- 能力: draft from a finished task → validate → publish
+	await page.goto(`${base}/`);
+	await sendMessage(page, '把要点整理成文件 [[call file_create {"name":"要点","format":"md","content":"# 要点\\n- 一\\n- 二"}]]');
+	await page.waitForURL(/\/c\//);
+	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
+	await page.click('[data-testid="chat-more"]');
+	await page.click('[data-testid="make-skill"]');
+	await page.waitForURL(/\/capabilities\?draft=/, { timeout: 15000 });
+	await page.waitForSelector('[data-testid="skill-draft"] #di');
+	check("draft: preview of instructions / resources / permissions from the task", (await page.locator("#di").inputValue()).length > 20);
+	await page.click('[data-testid="draft-validate"]');
+	await page.waitForSelector('[data-testid="draft-checks"]', { timeout: 60000 });
+	const ok = await page.locator('[data-testid="draft-checks"]').getAttribute("data-ok");
+	await shot(page, "1440-skill-draft-validated");
+	if (ok === "true") {
+		await page.click('[data-testid="draft-publish"]');
+		await page.waitForFunction(() => document.querySelectorAll('[data-testid="skill"]').length >= 2, null, { timeout: 15000 });
+		check("draft: validated sample → published and installed", true);
+	} else check("draft: validation result shown; publish stays disabled when it fails", await page.locator('[data-testid="draft-publish"]').isDisabled(), "validation not ok");
+
+	// ---------------------------------------------------------------- 能力: connectors
+	const cr = await page.request.post(`${base}/api/connectors`, { data: { name: "测试笔记服务", scope: "system", transport: "stdio", command: process.execPath, args: MCP_ARGS } });
+	check("setup: fixture MCP connector created (operator-allowlisted command)", cr.ok(), `status=${cr.status()} ${cr.ok() ? "" : (await cr.text()).slice(0, 200)}`);
+	await page.goto(`${base}/capabilities?tab=connectors`);
+	await page.waitForSelector('[data-testid="connector"]');
+	const conn = page.locator('[data-testid="connector"]').first();
+	await conn.getByRole("button", { name: /检查|重新连接/ }).click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="connector"]')?.textContent?.includes("可用"), null, { timeout: 20000 });
+	check("connector: re-check shows 可用 and its tools (write tools marked)", (await conn.innerText()).includes("写操作"));
+	const en = conn.locator('input[type="checkbox"]');
+	const before = await en.isChecked();
+	await en.click();
+	await page.waitForFunction((b) => (document.querySelector('[data-testid="connector"] input[type="checkbox"]'))?.checked === !b, before, { timeout: 10000 });
+	check("connector: per-user enablement toggles", true);
+	await shot(page, "1440-capabilities-connectors");
 	await ctx.close();
 } catch (e) {
 	check("script completed", false, String(e?.stack ?? e));

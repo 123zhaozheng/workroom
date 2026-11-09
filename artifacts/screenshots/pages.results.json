@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T06:52:40.821Z",
+  "at": "2026-11-09T06:59:08.570Z",
   "results": [
     {
       "name": "automation: next-run preview (5 runs, server-computed, chosen time zone)",
@@ -29,7 +29,7 @@
     {
       "name": "admin: invite created with a join link",
       "ok": true,
-      "detail": "/register?invite=2uGx7FOG_6mWhqDP"
+      "detail": "/register?invite=kUEpWyVWet3gSziK"
     },
     {
       "name": "invitee joins the same organisation",
@@ -75,6 +75,51 @@
       "name": "admin: audit CSV export downloads",
       "ok": true,
       "detail": "status=200"
+    },
+    {
+      "name": "skill: pin to v1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "skill: upgrade to v2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "skill: rollback to the version used before",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "skill: disable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "draft: preview of instructions / resources / permissions from the task",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "draft: validated sample → published and installed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "setup: fixture MCP connector created (operator-allowlisted command)",
+      "ok": true,
+      "detail": "status=200 "
+    },
+    {
+      "name": "connector: re-check shows 可用 and its tools (write tools marked)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "connector: per-user enablement toggles",
+      "ok": true,
+      "detail": ""
     }
   ]
 }

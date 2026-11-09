@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 let failed = 0;
-for (const f of ["core-loop.mjs", "states.mjs"]) {
+for (const f of ["core-loop.mjs", "states.mjs", "pages.mjs"]) {
 	console.log(`\n=== ${f}`);
 	const r = spawnSync(process.execPath, [join(here, f)], { stdio: "inherit" });
 	if (r.status !== 0) failed++;

@@ -16,9 +16,9 @@ const TONES: Record<Tone, string> = {
 	warning: "bg-warning-soft text-warning",
 	danger: "bg-danger-soft text-danger",
 };
-export function Badge({ tone = "neutral", className, children, title }: { tone?: Tone; className?: string; children: ReactNode; title?: string }) {
+export function Badge({ tone = "neutral", className, children, ...rest }: { tone?: Tone; className?: string; children: ReactNode; title?: string; [data: `data-${string}`]: string | undefined }) {
 	return (
-		<span title={title} className={cn("inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[12px] font-medium [&_svg]:size-3", TONES[tone], className)}>
+		<span {...rest} className={cn("inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[12px] font-medium [&_svg]:size-3", TONES[tone], className)}>
 			{children}
 		</span>
 	);
