@@ -36,6 +36,20 @@ try {
 	await page.click('[data-testid="automation-run-rerun"]');
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation-run"]').length >= 2, null, { timeout: 30000 });
 	check("automation: rerun creates a new run in history", true);
+	// in-app notification carries the task link, status and opens the run's conversation (M12-C)
+	await page.waitForSelector('[data-testid="notifications-unread"]', { timeout: 30000 });
+	await page.click('[data-testid="notifications"]');
+	await page.waitForSelector('[data-testid="notification"]');
+	const nText = await page.locator('[data-testid="notification"]').first().innerText();
+	check("notification: in-app notice with status and task link", /成功|失败|已取消|超时/.test(nText) && (await page.locator('[data-testid="notification-link"]').count()) > 0, nText.replace(/\s+/g, " ").slice(0, 80));
+	await sleep(400);
+	await shot(page, "1440-notifications");
+	await page.locator('[data-testid="notification-link"]').first().click();
+	await page.waitForURL(/\/c\//, { timeout: 10000 });
+	await page.waitForSelector('[data-testid="assistant-message"]', { timeout: 15000 });
+	check("notification: link opens the automation's conversation with its result", true);
+	await page.goto(`${base}/automations`);
+	await page.waitForSelector('[data-testid="automation"]');
 	await sleep(800);
 	await shot(page, "1440-automation-runs");
 
@@ -72,6 +86,7 @@ try {
 	check("invitee joins the same organisation", (await p2.locator('[data-testid="user-menu"]').innerText()).includes("管理员甲"));
 	await p2.click('[data-testid="user-menu"]');
 	check("member does not see 组织管理 in the menu", (await p2.locator('[data-testid="menu-admin"]').count()) === 0);
+	await shot(p2, "1366-member-simple-menu");
 	await p2.keyboard.press("Escape");
 	const forbidden = await p2.request.get(`${base}/api/admin/members`);
 	check("server refuses admin API to a member", forbidden.status() === 403, `status=${forbidden.status()}`);

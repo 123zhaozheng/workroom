@@ -10,6 +10,7 @@ import type { Project } from "@/lib/types";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tip } from "@/components/ui/overlay";
 import { RunDot } from "@/features/chat/status";
 import { BrandMark } from "./BrandMark";
+import { NotificationsBell } from "./Notifications";
 import { NewProjectDialog } from "@/features/projects/NewProjectDialog";
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
@@ -45,6 +46,7 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 					<span className="truncate text-[15px] font-semibold tracking-tight">{brand.name}</span>
 				</button>
 				<div className="flex-1" />
+				<NotificationsBell onNavigate={onNavigate} />
 				{onCollapse ? (
 					<Tip label="收起侧栏" side="right">
 						<button onClick={onCollapse} aria-label="收起侧栏" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-3 hover:text-fg">

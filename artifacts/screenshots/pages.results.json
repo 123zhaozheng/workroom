@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T06:59:08.570Z",
+  "at": "2026-11-09T07:11:18.089Z",
   "results": [
     {
       "name": "automation: next-run preview (5 runs, server-computed, chosen time zone)",
@@ -22,6 +22,16 @@
       "detail": ""
     },
     {
+      "name": "notification: in-app notice with status and task link",
+      "ok": true,
+      "detail": "自动化「工作日早报」已完成 成功 计划时间 2026-11-09 15:10:48 GMT+8 打开任务 刚刚"
+    },
+    {
+      "name": "notification: link opens the automation's conversation with its result",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "name": "automation: cancel a running run → 已取消",
       "ok": true,
       "detail": ""
@@ -29,7 +39,7 @@
     {
       "name": "admin: invite created with a join link",
       "ok": true,
-      "detail": "/register?invite=kUEpWyVWet3gSziK"
+      "detail": "/register?invite=Gc6HHgOFzYIsQ5mV"
     },
     {
       "name": "invitee joins the same organisation",
@@ -102,7 +112,17 @@
       "detail": ""
     },
     {
-      "name": "draft: validated sample → published and installed",
+      "name": "draft: sample validation passes",
+      "ok": true,
+      "detail": "ok=true"
+    },
+    {
+      "name": "draft: publish enabled only after a passing validation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "draft: published and installed",
       "ok": true,
       "detail": ""
     },

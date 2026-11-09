@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T07:05:07.490Z",
+  "at": "2026-11-09T07:10:38.662Z",
   "results": [
     {
       "name": "M01-A: plain chat, attachment and knowledge chip sent from the same composer, no workflow choice",
@@ -62,9 +62,19 @@
       "detail": ""
     },
     {
+      "name": "retrieval debug: shows per-KB decision (searched, access basis, index readiness)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "evaluation: samples run with pass/rank and no-evidence kept distinct",
+      "ok": true,
+      "detail": "通过 2/2 · Recall@5 1.00 · MRR 1.00 通过 · s1 · 排名 1 · 首条：报销制度.md · 章节：报销制度 · 第 1 段 通过 · s2 · 没有找到相关证据"
+    },
+    {
       "name": "handoff (editor): decisions, progress and deliverables of the task, and may continue",
       "ok": true,
-      "detail": "已完成 · 整理发布会清单 你可以接手继续 待处理 · 0 没有待处理事项 已做的决定 · 1 批准「预订场地」：向场地方提交 12 月 1 日的预订 · 负责人 · 2026/11/9 07:05:01 进展 · 2 负责人：整理发布会清"
+      "detail": "已完成 · 整理发布会清单 你可以接手继续 待处理 · 0 没有待处理事项 已做的决定 · 1 批准「预订场地」：向场地方提交 12 月 1 日的预订 · 负责人 · 2026/11/9 07:10:32 进展 · 2 负责人：整理发布会清"
     },
     {
       "name": "viewer: no composer, no edit/regenerate/fork actions in the conversation",

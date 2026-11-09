@@ -14,17 +14,9 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable, Page, PageHeader, Spinner } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
+import { RUN } from "./automationStatus";
 
-export const RUN: Record<AutomationRunStatus, { label: string; tone: "neutral" | "info" | "success" | "danger" | "warning" }> = {
-	pending: { label: "等待中", tone: "info" },
-	running: { label: "运行中", tone: "info" },
-	succeeded: { label: "成功", tone: "success" },
-	failed: { label: "失败", tone: "danger" },
-	cancelled: { label: "已取消", tone: "neutral" },
-	timeout: { label: "超时", tone: "warning" },
-	skipped: { label: "已跳过", tone: "neutral" },
-	refused: { label: "被拒绝", tone: "danger" },
-};
+export { RUN };
 const TRIGGER_KIND = { cron: "周期（cron）", once: "一次性", manual: "仅手动", webhook: "Webhook 事件" } as const;
 const RUN_TRIGGER: Record<AutomationRunDTO["trigger"], string> = { schedule: "按计划", manual: "手动", webhook: "Webhook", catchup: "补跑", rerun: "再次运行" };
 export const trigText = (t: AutomationTrigger) => (t.kind === "cron" ? `周期：${t.expr}` : t.kind === "once" ? `一次性：${fullTime(t.at)}` : t.kind === "manual" ? "仅手动触发" : "Webhook 事件触发");

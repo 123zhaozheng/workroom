@@ -4,7 +4,7 @@ import { AlertCircle, ArrowLeft, BookOpen, CheckCircle2, FolderPlus, Loader2, Pl
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { FileUploadResponse } from "@shared/files";
-import type { KbDocDTO, KbProcessingStatus, KbSearchResponse, KbSummary, RetrievalFailure } from "@shared/knowledge";
+import type { KbDecisionDTO, KbDocDTO, KbEvalResult, KbProcessingStatus, KbSearchResponse, KbSummary, RetrievalFailure } from "@shared/knowledge";
 import { del, errorText, post } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
@@ -357,7 +357,7 @@ function SearchDebug({ kbId }: { kbId: string }) {
 					setBusy(true);
 					setErr(undefined);
 					try {
-						setRes(await post<KbSearchResponse>("/kb/search", { query: q, kbIds: [kbId], limit: 8 }));
+						setRes(await post<KbSearchResponse>("/kb/search", { query: q, kbIds: [kbId], limit: 8, debug: true }));
 					} catch (e) {
 						setErr(errorText(e));
 					} finally {
@@ -380,6 +380,7 @@ function SearchDebug({ kbId }: { kbId: string }) {
 						{res.diagnostics.pendingDocs ? ` · ${res.diagnostics.pendingDocs} 份资料尚未就绪` : ""}
 						{res.diagnostics.tookMs !== undefined ? ` · ${res.diagnostics.tookMs} ms` : ""}
 					</p>
+					{res.debug?.kbDecisions?.length ? <Decisions items={res.debug.kbDecisions} /> : null}
 					{res.citations.map((c) => (
 						<div key={c.chunkId} className="rounded-lg border border-border px-3 py-2 text-[13px]">
 							<div className="text-fg">
@@ -390,6 +391,93 @@ function SearchDebug({ kbId }: { kbId: string }) {
 					))}
 				</div>
 			) : null}
+			<EvalBox kbId={kbId} />
 		</section>
+	);
+}
+
+const REASON: Record<KbDecisionDTO["reason"], string> = {
+	searched: "已检索",
+	not_requested: "未被引用（本次只查指定知识库）",
+	outside_project_context: "不在当前项目范围",
+	outside_member_scope: "超出该成员的知识范围",
+	forbidden: "无权访问",
+};
+
+/** Why each knowledge base was searched or excluded (scope, access basis, index readiness, governance). */
+function Decisions({ items }: { items: KbDecisionDTO[] }) {
+	return (
+		<details className="rounded-lg border border-border bg-surface px-3 py-2 text-xs" data-testid="kb-decisions" open>
+			<summary className="cursor-pointer text-fg-muted">检索范围说明（{items.length} 个知识库）</summary>
+			<ul className="mt-2 space-y-1.5">
+				{items.map((d) => (
+					<li key={d.kbId}>
+						<span className={d.included ? "text-success" : "text-fg-subtle"}>{d.included ? "✓" : "—"}</span> <span className="font-medium">{d.kbName ?? d.kbId}</span> · {REASON[d.reason]}
+						{d.access ? ` · 依据 ${d.access}` : ""}
+						{d.index ? ` · 可检索 ${d.index.ready} / 处理中 ${d.index.processing} / 失败 ${d.index.failed}` : ""}
+						{d.hits !== undefined ? ` · 命中 ${d.hits}` : ""}
+						{d.notes.length ? <span className="block text-fg-subtle">{d.notes.join("；")}</span> : null}
+					</li>
+				))}
+			</ul>
+		</details>
+	);
+}
+
+/** Evaluation samples: one per line, "问题 => 期望命中的文件名" (empty expectation = expect no evidence). */
+function EvalBox({ kbId }: { kbId: string }) {
+	const [text, setText] = useState("");
+	const [res, setRes] = useState<KbEvalResult>();
+	const [err, setErr] = useState<string>();
+	const [busy, setBusy] = useState(false);
+	const run = async () => {
+		const samples = text
+			.split("\n")
+			.map((l) => l.trim())
+			.filter(Boolean)
+			.map((l, i) => {
+				const [query, file] = l.split("=>").map((x) => x.trim());
+				return { id: `s${i + 1}`, query: query!, expect: file ? { fileName: file } : { reason: "no_evidence" as const } };
+			});
+		if (!samples.length) return;
+		setBusy(true);
+		setErr(undefined);
+		try {
+			setRes(await post<KbEvalResult>("/kb/eval", { samples, kbIds: [kbId] }));
+		} catch (e) {
+			setErr(errorText(e));
+		} finally {
+			setBusy(false);
+		}
+	};
+	return (
+		<details className="mt-4 text-[13px]">
+			<summary className="cursor-pointer text-fg-muted">问答评估样例</summary>
+			<Textarea data-testid="kb-eval-input" value={text} onChange={(e) => setText(e.target.value)} rows={3} className="mt-2 font-mono text-[12.5px]" placeholder={"报销时限 => 报销制度.md\n火星基地预算 =>"} />
+			<div className="mt-2 flex items-center gap-2">
+				<Button size="sm" onClick={run} disabled={busy} data-testid="kb-eval-run">
+					运行评估
+				</Button>
+				<span className="text-xs text-fg-subtle">每行一个问题；“=&gt;”后写期望命中的文件名，留空表示期望“没有证据”。</span>
+			</div>
+			{err ? <p className="mt-1 text-danger">{err}</p> : null}
+			{res ? (
+				<div className="mt-2 rounded-lg border border-border px-3 py-2 text-xs" data-testid="kb-eval-result">
+					<div className="mb-1 font-medium">
+						通过 {res.passed}/{res.total} · Recall@5 {res.recallAt5.toFixed(2)} · MRR {res.mrr.toFixed(2)}
+					</div>
+					<ul className="space-y-0.5">
+						{res.samples.map((x) => (
+							<li key={x.id} className={x.pass ? "text-success" : "text-danger"}>
+								{x.pass ? "通过" : "未通过"} · {x.id}
+								{x.rank ? ` · 排名 ${x.rank}` : ""}
+								{x.reason ? ` · ${FAILURE[x.reason]}` : ""}
+								{x.top ? <span className="text-fg-muted"> · 首条：{x.top}</span> : null}
+							</li>
+						))}
+					</ul>
+				</div>
+			) : null}
+		</details>
 	);
 }

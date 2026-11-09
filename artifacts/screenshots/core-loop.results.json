@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T06:49:00.381Z",
+  "at": "2026-11-09T07:08:59.997Z",
   "results": [
     {
       "name": "home: heavy chunks not loaded (markdown/shiki/katex/recharts/preview/work panel)",
@@ -89,12 +89,17 @@
     {
       "name": "branch: edit created a branch (original untouched)",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw8wgzk92ca69e195d42d43f/46"
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8x6mvo1235fcd6c21f91b4/46"
+    },
+    {
+      "name": "branch: after a refresh the branch, its answer and the switcher are still there",
+      "ok": true,
+      "detail": ""
     },
     {
       "name": "branch: switcher returns to the original conversation with its results",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw8wgzk92ca69e195d42d43f/3"
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8x6mvo1235fcd6c21f91b4/3"
     },
     {
       "name": "files: two versions listed",
@@ -107,9 +112,14 @@
       "detail": ""
     },
     {
+      "name": "knowledge: page is connected (C routes present)",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "name": "knowledge: new doc never shown as ready before the server says so",
       "ok": true,
-      "detail": "initial=ready"
+      "detail": "initial=processing"
     },
     {
       "name": "knowledge: doc reaches 可检索 (or explicit 失败 with retry)",
@@ -164,7 +174,7 @@
     {
       "name": "session: fonts served from same origin /assets",
       "ok": true,
-      "detail": "/assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2"
+      "detail": "/assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2"
     },
     {
       "name": "no uncaught page errors",

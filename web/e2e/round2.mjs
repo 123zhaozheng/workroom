@@ -177,6 +177,18 @@ try {
 	await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="kb-doc"]')].some((e) => e.textContent?.includes("已尝试 2 次")), null, { timeout: 30000 });
 	check("knowledge retry: retry re-runs processing (attempt 2) and the honest failure stays visible", (await bad.getAttribute("data-availability")) === "failed");
 	await shot(page, "1440-knowledge-retry");
+	// retrieval debug + evaluation samples (M07-C)
+	await page.fill('input[placeholder^="输入一个问题"]', "报销 发票");
+	await page.getByRole("button", { name: "检索", exact: true }).click();
+	await page.waitForSelector('[data-testid="kb-decisions"]', { timeout: 15000 });
+	check("retrieval debug: shows per-KB decision (searched, access basis, index readiness)", (await page.locator('[data-testid="kb-decisions"]').innerText()).includes("已检索"));
+	await page.locator("summary", { hasText: "问答评估样例" }).click();
+	await page.fill('[data-testid="kb-eval-input"]', "报销 发票 => 报销制度.md\n火星基地预算 =>");
+	await page.click('[data-testid="kb-eval-run"]');
+	await page.waitForSelector('[data-testid="kb-eval-result"]', { timeout: 20000 });
+	const ev = await page.locator('[data-testid="kb-eval-result"]').innerText();
+	check("evaluation: samples run with pass/rank and no-evidence kept distinct", ev.includes("通过 2/2"), ev.replace(/\s+/g, " ").slice(0, 120));
+	await shot(page, "1440-knowledge-debug-eval");
 
 	// ---------------------------------------------------------------- project roles: editor handoff vs viewer read-only
 	const proj = (await (await page.request.post(`${base}/api/projects`, { data: { name: "发布会筹备" } })).json()).project;

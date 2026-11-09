@@ -130,6 +130,10 @@ try {
 	await page.waitForSelector('[data-testid="assistant-message"]', { timeout: 20000 });
 	await page.waitForSelector('[data-testid="branch-switcher"]', { timeout: 15000 });
 	check("branch: edit created a branch (original untouched)", true, page.url());
+	await page.reload();
+	await page.waitForSelector('[data-testid="branch-badge"]', { timeout: 15000 });
+	await page.waitForSelector('[data-testid="branch-switcher"]', { timeout: 15000 });
+	check("branch: after a refresh the branch, its answer and the switcher are still there", (await page.locator('[data-testid="assistant-message"]').count()) > 0);
 	await sleep(400);
 	await shot(page, "1440-chat-branch");
 	const branchUrl = page.url();
