@@ -88,4 +88,31 @@ If you need a driver feature that is missing, add a request below (to us) rather
 
 ## To integrator
 
-(filled in as items are found — see sections below)
+1. **Dependencies**: `playwright-core` (exact version, `optionalDependencies`) so the browser tool works on Windows/macOS with the system Edge/Chrome without a browser download; `browser.ts` already resolves `playwright` → global installs → `playwright-core`. Not installed by us (package.json is yours).
+2. **Root `package.json` scripts**: `"test"` uses single-quoted globs (`'server/test/**/*.test.ts'`) which cmd.exe/PowerShell do not unquote → on Windows use `\"server/test/**/*.test.ts\"`. Also add `"sandbox:image": "node server/sandbox/build-image.mjs"` and `"backup": "node scripts/backup.mjs"`.
+3. **`web/e2e/run.mjs`**: add `round4-sandbox.mjs` to the list (it uses port 8862 and `data/dev-sandbox`, like the other scripts it starts its own server; 27 checks).
+4. **`server/src/main.ts`** (Windows): `relative(process.cwd(), config.webDist)` is absolute across drives and `${config.webDist}${c.req.path}` concatenates with `/`; use `path.join`/`resolve` + a `startsWith(webDist + sep)` containment check instead of `includes("..")`.
+5. **Shared types**: new DTOs live in `shared/sandbox.ts` (new file). `shared/files.ts` `SandboxInfoDTO`/`SandboxFilesResponse` are now superseded by the same-named, compatible supersets there; `SandboxRunDTO` gained an untyped `driver` field. Please re-export or delete the old ones.
+6. **Panel state**: `web/src/components/shell/panel.tsx` `WorkTab` is `"tasks" | "terminal" | "browser"`. The work panel's new 文件 tab is handled with local state; add `"files"` to `WorkTab` (then `openWork("files", …)` from the chat UI works, e.g. "open in workspace" on a file artifact). `WorkPanel` already honours `state.tab === "files"`.
+7. **Permissions** (RBAC): used as defined in `shared/permissions.ts`: `sandbox.policy.manage` (driver settings), `sandbox.use` (workspace writes). `sandbox.network` is not enforced yet: network is host-wide off by default and only switchable by admins; when per-run network is wired to a skill/MCP declaration, check `authz.has(p, "sandbox.network")` in `Sandbox.#networkAllowed` (it has the principal in `run`/`startService`).
+8. **`module.ts`**: the sandbox routes moved to `server/src/tools/sandbox-routes.ts` (one call to `registerSandboxRoutes`), `capabilities` sandbox section now comes from `Sandbox.capabilities()`, and `Sandbox.stop()` is async. No other changes.
+
+## To files group (`server/src/files/**`) — Windows/macOS
+
+1. `slides.ts` `slideRendererAvailable()` hard-codes `/usr/bin/soffice`, `/usr/lib/libreoffice/program/soffice`, `/usr/bin/pdftoppm`, and `renderSlides()` runs `soffice … -env:UserInstallation=file:///tmp/lo …; pdftoppm` through `sb.execIsolated(...)`. Patch: `import { findSoffice } from "../tools/sandbox/paths.ts"` (handles `WORKROOM_SOFFICE`, `C:\Program Files\LibreOffice\program\soffice.exe`, macOS app bundle, Linux paths, PATH); pass `{ hostTools: true }` as the 5th argument of `execIsolated` (documents that the command needs host programs; only the namespace driver provides them and it refuses otherwise instead of failing obscurely). For Windows/macOS: either keep the outline fallback (current behaviour, honest) or, opt-in only (`WORKROOM_PPTX_HOST_RENDER=1`), run `findSoffice()` through `runHost()` from `server/src/tools/sandbox/hostexec.ts` (no shell, clean env, timeout kills the process tree; NOT isolation — the pptx is untrusted input, so default off) and render PDF → PNG with `unpdf` + `@napi-rs/canvas` (already dependencies) instead of `pdftoppm`.
+2. `generate.ts` ~line 269: CJK PDF font candidates are Linux-only. Add `C:\Windows\Fonts\msyh.ttc` / `simhei.ttf` / `simsun.ttc` and `/System/Library/Fonts/PingFang.ttc`, `/Library/Fonts/Arial Unicode.ttf` (check fontkit handles `.ttc`; more robust: ship an OFL Noto Sans SC subset in the repo).
+3. `actor.ts` `spaceIdFromPath` uses `/\/spaces\/…/`; on Windows storage paths contain `\spaces\`. Use `/[\\/]spaces[\\/]([A-Za-z0-9_-]+)(?:[\\/]|$)/` (as `knowledge/extension.ts` already does).
+
+## To ops (`server/src/ops/backup.ts`)
+
+Line ~74 `rel.split("/").includes("sandbox")` and the manifest `path: relative(destDir, abs)` use the OS separator: on Windows the sandbox directories are not excluded and the manifest is not portable. Normalise with `.split(sep).join("/")`. Also the data volume now contains `sandbox-mounts/` (materialised skills, rebuildable) next to `orgs/…/sandbox/`: exclude it unless `includeSandbox`.
+
+## To chat UI group
+
+The user message bubble renders `[[call …]]` fixture directives raw in the chat (visible in `artifacts/screenshots/1440-sandbox-terminal.png`); strip them in display (fixture mode only). Work panel entry points that should open the new tab: file artifacts produced by `sandbox_*` tools (`workTabFor()` in `chat/Steps.tsx` maps tool names to tabs: `sandbox_list|sandbox_write_file|sandbox_read_file|sandbox_import|sandbox_publish` → `"files"` once `WorkTab` has it).
+
+## To marketplace
+
+- `Sandbox.mountsRoot()` is `<dataDir>/sandbox-mounts`; materialise skills/MCP packages below it (the contract above). `skills.ts` `execute()` currently writes skill resources into `/work/.skills/…` via `writeFile` (counts against the workspace quota and shows in the file tree); the intended design is the read-only `/skills/<slug>/` mount via `addMountProvider`.
+- `chmod 0o555/0o444` on Windows only toggles the read-only attribute; executable bits are irrelevant there (scripts are started as `python3 /skills/x/main.py`, never executed directly). Deleting read-only trees on Windows may need `rmSync(..., { force: true })` after clearing the attribute.
+- The MCP SDK's `StdioClientTransport` already uses `cross-spawn`, so host-side stdio servers work on Windows; sandboxed ones use `serviceTransport()`.

@@ -104,28 +104,45 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 
 ### 沙箱（`sandbox_exec` 等，扩展 `wr.sandbox`）
 
-每个空间 `orgs/<org>/spaces/<space>/sandbox/c<conversationId>/` 是一个会话的工作目录（跨运行持久）。shell / Python 3 / Node 在以下环境中运行（`server/src/tools/sandbox.ts`）：
+每个空间 `orgs/<org>/spaces/<space>/sandbox/c<conversationId>/` 是一个会话的工作目录 `/work`（跨运行持久）。shell / Python 3 / Node 通过**沙箱驱动**运行（第四轮重构：`server/src/tools/sandbox.ts` 是策略层——配额、运行记录、并发上限、挂载、常驻服务、保留期；`server/src/tools/sandbox/*` 是驱动）。**没有任何驱动能隔离时一律拒绝执行（503 + 启用方法），绝不无隔离运行。**
 
-**保证**
-- `unshare --user --map-root-user --mount --pid --fork --net --ipc --uts --kill-child`：独立 user/mount/pid/net/ipc/uts 命名空间。
-- 新的 tmpfs 根 → 只读绑定 `/usr`、`/bin`、`/lib*`、`/sbin`、少量 `/etc` 文件（passwd、hosts、ld.so、ssl、fonts…）、Node 运行时（仅 node 语言）；`/work` = 本会话工作目录（唯一可写的持久位置），`/tmp` 为 64 MB 内存盘，`/code` 只读；`pivot_root` 后卸载旧根，根文件系统再设为只读。**看不到**数据目录（app.sqlite、blobs、其他空间/会话）、源码、`/home`、`/root`、`/opt` 其余部分（测试断言 app.sqlite 与仓库路径不存在、写 `/usr` 失败）。
-- `setpriv --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all`：丢弃全部 capabilities（不能再 mount/chroot），`env -i` 最小环境。
-- `prlimit`：地址空间 512 MB（node 1 GB + `--max-old-space-size`）、CPU 秒（软限 = 预算，先发 SIGXCPU → 报告“超过 CPU 时间限制”；硬限 = 预算 + 2 s）、单文件 64 MB、256 个文件描述符、进程数（相对当前 uid 进程数 + 64）、无 core。
-- 墙钟超时（默认 30 s，最大 300 s）或运行被取消（pi 任务 abort）→ `kill(-pgid, SIGKILL)`；`--kill-child` + pid 命名空间保证所有子孙进程随之结束（测试用后台 `sleep` 验证无残留）。
-- 无网络：只有未启用的 `lo`（测试 `connect_ex` 返回 ENETUNREACH）。
-- 主机无法创建命名空间时拒绝执行（503），绝不退化为无隔离执行。
+#### 驱动与选择
 
-**不保证**
-- 不是虚拟机：与宿主共享内核，内核漏洞可逃逸；以服务进程的 uid 映射运行（本环境为 root 映射）。
-- 没有 cgroup：内存限制是每进程地址空间，不是总量；没有 IO/带宽限制。
-- 磁盘配额是软配额：运行前检查空间沙箱总量（默认 512 MB，`WORKROOM_SANDBOX_QUOTA_MB`），单文件受 fsize 限制。
-- 进程数限制按宿主 uid 计数（RLIMIT_NPROC 语义），是近似值。
+| 驱动 | 平台 | 说明 |
+|---|---|---|
+| `namespaces` | 仅 Linux（需允许非特权 user namespace + util-linux） | 原有实现，无需守护进程 |
+| `docker` | Windows（Docker Desktop）、macOS、Linux | 每次运行一个容器；通过 docker CLI（Windows 上 CLI 自己走 `npipe:////./pipe/docker_engine`，也尊重 `DOCKER_HOST`/context）。**未实现 Engine API 直连**（每种 Docker 安装都带 CLI） |
+| `none` | 任意 | 不执行；报错信息说明如何启用（装 Docker Desktop 等） |
 
-**生命周期与持久化**：工作目录内文件在最后修改后 `WORKROOM_SANDBOX_RETENTION_HOURS`（默认 72 h）被清理（每小时 `reap()`；列表中给出每个文件的 `expiresAt`）。需要保留的结果在到期前用 `sandbox_publish`（或 `file_create`、`POST /sandbox/:spaceId/publish`）发布到文件库，成为不可变版本。
+选择：管理员设置 `auto | namespaces | docker | none`（持久化在 `tool_sandbox_settings`，缺省取 `WORKROOM_SANDBOX_DRIVER`，再缺省 `auto`）。`auto` = 命名空间可用则用它，否则 Docker 可用则用 Docker，否则 `none`。**显式选择不会被静默降级**：选 `docker` 但 Docker 不可用，结果是 `none` 并带 Docker 的原因，不会悄悄改用命名空间。
 
-**工具**：`sandbox_exec`（`replay: "unsafe"`：脚本可能对工作目录有非幂等副作用，崩溃后给模型 interrupted 错误而不是重跑）、`sandbox_write_file` / `sandbox_read_file` / `sandbox_list`（safe）、`sandbox_publish`（safe，库写入幂等键）。运行记录表 `tool_sandbox_runs`（代码、状态、退出码、stdout/stderr ≤256 KB、耗时、限额）。
+管理 API（读：所有登录用户，诊断细节仅管理员；写：组织所有者/管理员或拥有 `sandbox.policy.manage` 的成员）：`GET /sandbox/driver`（设置、生效驱动及原因、每个驱动的状态/隔离范围/限制、镜像准备进度、常驻服务）、`PUT /sandbox/driver`（`driver`、`network: none|allowed`、`maxConcurrent`、`docker: {image, pythonImage, nodeImage, cpus, autoPull, bin, host}`）、`POST /sandbox/driver/detect`、`POST /sandbox/driver/prepare {mode: "pull"|"build"}`。设置是**整台服务器**的（一个服务器一套沙箱）。`/tools/capabilities` 的 `sandbox` 含 `driver`、`status`（`ready|needs_setup|unavailable|disabled_by_admin`）。
 
-**路由**（与会话相同的空间 ACL；发布需写权限）：`GET /sandbox/:spaceId`（隔离说明、限额、用量、浏览器可用性）、`GET /sandbox/:spaceId/files?conversationId=`、`GET /sandbox/:spaceId/file?path=&conversationId=`（下载，路径不能逃出工作目录）、`GET /sandbox/:spaceId/runs?conversationId=`、`GET /sandbox/:spaceId/runs/:runId`、`POST /sandbox/:spaceId/publish`。
+#### 命名空间驱动：保证与不保证
+
+保证：独立 user/mount/pid/net/ipc/uts 命名空间；新 tmpfs 根 → 只读绑定 `/usr`、`/bin`、`/lib*`、`/sbin`、少量 `/etc` 文件、Node 运行时；`/work` 可写，`/tmp` 64 MB 内存盘，`/code` 与额外挂载只读；`pivot_root` 后根只读；看不到数据目录、源码、`/home`、`/root`；`setpriv` 丢弃全部 capabilities + no_new_privs；`prlimit`（地址空间、CPU 秒、单文件、文件描述符、进程数）；墙钟超时或取消 → 杀整个进程组（含后台子进程）；无网络。
+不保证：不是虚拟机，共享内核；无 cgroup（内存是每进程地址空间限制，无总量/IO 限制）；用宿主机自带的 python3/node；磁盘配额是软配额；进程数限制按宿主 uid 计数（近似）；只有 Linux。
+
+#### Docker 驱动：保证与不保证
+
+容器：固定镜像（`workroom/sandbox:1`，由 `server/sandbox/Dockerfile` 构建，含 python3 + node + numpy/pandas/scipy/matplotlib/openpyxl/python-docx/python-pptx/pypdf/pillow + 中文字体；不存在时回退公共 slim 镜像 `python:3.12-slim` / `node:22-slim`，均按摘要固定，缺失时首次运行自动 `docker pull`；说明见 `server/sandbox/README.md`）。每次运行：`--network none`（管理员允许且调用方声明才用 `bridge`）、`--memory`（含 swap 同值）/`--cpus`/`--pids-limit`、`--ulimit`（单文件、文件描述符、CPU 秒、core=0）、`--read-only`、`--tmpfs /tmp`（64 MB）、`--cap-drop ALL`、`no-new-privileges`、Docker 默认 seccomp、非 root（uid 10001；Linux 上若服务本身非 root 则用服务的 uid，rootless Docker 用容器 root=宿主普通用户）、`--init`、`--pull never`。`/work` 绑定挂载会话工作目录，`/code`（脚本）与技能等额外挂载只读；用户环境变量走 `--env-file`（不出现在进程列表）。超时/取消：**轮询到容器存在后 `rm -f`**（容器创建中时单次 kill 会落空，且 `docker rm -f` 对不存在的名字静默成功——此竞态已在真实 Docker 上复现并修复），之后再等 CLI 退出；每次运行结束必 `rm -f`；启动时按标签 `workroom.sandbox=1` + `workroom.instance=<数据目录哈希>` 清理上次崩溃遗留的容器，且在清理完成前不开始新运行。OOM 通过 `inspect` 识别并报告“超过内存限制”。Windows：数据目录路径转换（盘符大写、`\\?\` 前缀、`WORKROOM_SANDBOX_PATH_MAP`）、`--mount` CSV 引号、`MSYS_NO_PATHCONV=1`。
+不保证：与宿主（Windows/macOS 上是 Docker Desktop 的虚拟机）共享内核；开启沙箱联网后可达桥接网络上的任何地址（含局域网/元数据），平台 URL 策略不作用于沙箱内；无磁盘配额；能访问 Docker 的账号即宿主管理员；Windows/macOS 绑定挂载经文件共享层，较慢且权限位不同。
+
+#### 挂载、常驻服务、并发（给技能与 MCP 的契约，详见 `docs/requests/sandbox.md`）
+
+`mounts: [{hostPath, target, readOnly}]`（只能来自 `sb.mountsRoot()` = `<data>/sandbox-mounts` 或注册的根目录，目标不能是 `/work` `/tmp` `/usr` … 保留路径，非工作区的挂载必须只读，符号链接先解析再校验）；`sb.addMountProvider()` 让每次运行/服务自动带上挂载；`sb.acquireService(key, {...})` 启动按 key 复用的常驻进程（stdin/stdout 管道，空闲 15 min / 最长 1 h 自动停止，关停时全部停止），`serviceTransport(svc)` 把它接成 MCP 客户端传输。并发：同时运行数上限（`maxConcurrent`，默认 8），超出排队。
+
+#### 工作区文件 API 与生命周期
+
+与会话相同的空间 ACL：**读 = 空间读（viewer 可浏览/预览/下载）；写（上传、新建文件夹、移动、删除、发布）= 空间写**；非成员 403；写操作另需 `sandbox.use`（有 RBAC 时）。路径一律先规范化：拒绝 `..`、盘符/`:`（NTFS 流）、控制字符、`<>"|?*`、以点或空格结尾的名字、过长；接受 `/work/…` 前缀与反斜杠；**沙箱内代码创建的指向工作区外的符号链接**在读/写/发布/建目录时都被拒绝（逐级检查），删除符号链接只删链接本身。写入配额：空间内所有工作区总量上限 `WORKROOM_SANDBOX_QUOTA_MB`（默认 512，覆盖写只计差额，超出 507），单文件 64 MB（413）。文件在最后修改后 `WORKROOM_SANDBOX_RETENTION_HOURS`（默认 72 h）被清理（每小时 `reap()`；每个条目带 `expiresAt`）；需要保留的成果用「发布到文件库」（`sandbox_publish` / `POST /sandbox/:spaceId/publish`）成为不可变版本。工作面板“文件”标签显示树、预览（文本最多 256 KB、图片内联、二进制仅下载）、下载、上传、新建文件夹、删除（二次确认）、发布，以及配额与保留规则；“终端”标签按时间顺序显示每次运行的命令、stdout、stderr、退出码与耗时（等宽、可滚动）。
+
+**工具**：`sandbox_exec`（`replay: "unsafe"`）、`sandbox_write_file`（文本，或 `encoding: "base64"` 写二进制）/ `sandbox_read_file` / `sandbox_list` / `sandbox_import`（把文件库文件复制进 /work；均 safe）、`sandbox_publish`（safe，库写入幂等键）。运行记录表 `tool_sandbox_runs`（代码、状态、退出码、stdout/stderr ≤256 KB、耗时、限额、`driver`）。
+
+**路由**（空间 ACL）：`GET /sandbox/:spaceId`（驱动、隔离说明、限额、用量）、`GET /sandbox/:spaceId/files?conversationId=`（`entries` + `usage` + `canWrite`）、`GET …/preview?path=`、`GET …/file?path=[&inline=1]`（下载；仅图片可内联，均带 `CSP: sandbox`、`nosniff`）、`PUT …/file?path=`（原始请求体上传）、`POST …/mkdir`、`DELETE …/file?path=`、`POST …/move`、`GET …/runs`、`GET …/runs/:runId`、`POST …/publish`。
+
+**环境变量**：`WORKROOM_SANDBOX_DRIVER`、`WORKROOM_SANDBOX_NETWORK`、`WORKROOM_SANDBOX_MAX_CONCURRENT`、`WORKROOM_SANDBOX_MAX_SERVICES`、`WORKROOM_SANDBOX_QUOTA_MB`、`WORKROOM_SANDBOX_RETENTION_HOURS`、`WORKROOM_DOCKER_BIN`、`WORKROOM_DOCKER_HOST`、`WORKROOM_SANDBOX_IMAGE`/`_PYTHON_IMAGE`/`_NODE_IMAGE`、`WORKROOM_SANDBOX_CPUS`、`WORKROOM_SANDBOX_AUTOPULL`、`WORKROOM_SANDBOX_PATH_MAP`、`WORKROOM_CHROME_PATH`、`WORKROOM_PLAYWRIGHT_PATH`/`_ROOT`、`WORKROOM_SOFFICE`。
+
+**验证状态**：命名空间驱动与全部工作区文件 API 在本环境真实运行测试；Docker 驱动对一个**真实的 Docker 守护进程**测试（`server/test/tools-sandbox-docker.test.ts`，本环境为 vfs 存储驱动、无桥接网络；没有 Docker 时该文件自动跳过并写明原因），命令行构造另有假 docker CLI 测试（`tools-sandbox-drivers.test.ts`）。**未在真实 Windows/macOS + Docker Desktop 上验证。**
 
 ### Code Mode（QuickJS）
 
@@ -193,7 +210,9 @@ Playwright + Chromium（主机预装，`/opt/node-tools/node_modules/playwright`
 | `GET /skills/drafts` · `POST /skills/drafts {spaceId, conversationId, name?}` | 本人 · 会话读 | 我的草稿 / 从成功任务生成草稿 |
 | `GET /skills/drafts/:id` · `PATCH /skills/drafts/:id` | 本人 | 预览 / 修改（使验证失效） |
 | `POST /skills/drafts/:id/validate` · `POST /skills/drafts/:id/publish {scope?}` | 本人 | 样例验证 / 发布（需最近一次验证通过） |
-| `GET /sandbox/:spaceId` · `/files` · `/file?path=` · `/runs` · `/runs/:runId` | 空间读 | 执行环境、工作目录、下载、运行记录 |
+| `GET /sandbox/:spaceId` · `/files` · `/preview?path=` · `/file?path=` · `/runs` · `/runs/:runId` | 空间读 | 执行环境、工作区树与用量、预览、下载、运行记录 |
+| `PUT /sandbox/:spaceId/file?path=` · `DELETE …/file?path=` · `POST …/mkdir` · `POST …/move` | 空间写 | 上传、删除、新建文件夹、移动（配额/路径规则见沙箱一节） |
+| `GET /sandbox/driver` · `PUT /sandbox/driver` · `POST /sandbox/driver/detect` · `POST /sandbox/driver/prepare` | 登录读 · 管理员写 | 沙箱驱动状态与设置 |
 | `POST /sandbox/:spaceId/publish {conversationId, path, name?, fileId?}` | 空间写 | 发布沙箱文件到文件库 |
 | `GET /jobs?spaceId=&conversationId=&status=` · `GET /jobs/:id` | 空间读 | 后台任务（`canCancel`） |
 | `POST /jobs/:id/cancel` | 空间写 | 取消 |
