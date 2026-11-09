@@ -17,7 +17,7 @@ try {
 	await page.click('[data-testid="automation-new"]');
 	await page.waitForSelector('[data-testid="automation-editor"]');
 	await page.fill("#an", "工作日早报");
-	await page.fill("#ap", "汇总昨天的进展 [[reply 已汇总。]]");
+	await page.fill("#ap", '汇总昨天的进展 [[call file_create {"name":"日报","format":"md","content":"# 日报\\n- 进展正常"}]]');
 	await page.fill('[data-testid="automation-cron"]', "0 9 * * 1-5");
 	await page.selectOption("#atz", "Asia/Shanghai");
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation-preview"] li').length === 5, null, { timeout: 10000 });
@@ -41,6 +41,7 @@ try {
 	await page.click('[data-testid="notifications"]');
 	await page.waitForSelector('[data-testid="notification"]');
 	const nText = await page.locator('[data-testid="notification"]').first().innerText();
+	check("notification: carries the run's deliverable", (await page.locator('[data-testid="notification"] a[href^="/files/"]').count()) > 0);
 	check("notification: in-app notice with status and task link", /成功|失败|已取消|超时/.test(nText) && (await page.locator('[data-testid="notification-link"]').count()) > 0, nText.replace(/\s+/g, " ").slice(0, 80));
 	await sleep(400);
 	await shot(page, "1440-notifications");
@@ -53,13 +54,37 @@ try {
 	await sleep(800);
 	await shot(page, "1440-automation-runs");
 
+	// modify an existing automation (M12-A)
+	await page.locator('[data-testid="automation"]').first().getByRole("button", { name: "编辑" }).click();
+	await page.waitForSelector('[data-testid="automation-editor"]');
+	await page.fill("#an", "工作日早报（改）");
+	await page.fill('[data-testid="automation-cron"]', "30 8 * * 1-5");
+	await page.waitForFunction(() => document.querySelector('[data-testid="automation-preview"] li')?.textContent?.includes("08:30"), null, { timeout: 10000 });
+	await page.click('[data-testid="automation-save"]');
+	await page.waitForFunction(() => document.querySelector('[data-testid="automation"]')?.textContent?.includes("工作日早报（改）") && document.querySelector('[data-testid="automation"]')?.textContent?.includes("30 8 * * 1-5"), null, { timeout: 10000 });
+	check("automation: edit trigger/name with fresh preview, saved", true);
+
+	// a failing run is recorded with its reason (M12-B)
+	await page.click('[data-testid="automation-new"]');
+	await page.fill("#an", "会失败的任务");
+	await page.fill("#ap", "[[fail]] 这一步会失败");
+	await page.selectOption("#ak", "manual");
+	await page.click('[data-testid="automation-save"]');
+	const failing = page.locator('[data-testid="automation"]', { hasText: "会失败的任务" });
+	await failing.waitFor();
+	await failing.locator("button[aria-expanded]").click();
+	await failing.locator('[data-testid="automation-run-now"]').click();
+	await failing.locator('[data-testid="automation-run"][data-status="failed"]').waitFor({ timeout: 90000 });
+	check("automation: failed run recorded with reason, rerun offered", (await failing.locator('[data-testid="automation-run-rerun"]').count()) > 0, (await failing.locator('[data-testid="automation-run"]').first().innerText()).replace(/\s+/g, " ").slice(0, 100));
+	await shot(page, "1440-automation-failed");
+
 	// cancel a slow run
 	await page.click('[data-testid="automation-new"]');
 	await page.fill("#an", "慢任务");
 	await page.fill("#ap", "[[slow 30000]] 慢慢做");
 	await page.selectOption("#ak", "manual");
 	await page.click('[data-testid="automation-save"]');
-	await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation"]').length === 2, null, { timeout: 10000 });
+	await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation"]').length === 3, null, { timeout: 10000 });
 	const slow = page.locator('[data-testid="automation"]', { hasText: "慢任务" });
 	await slow.locator("button[aria-expanded]").click();
 	await slow.locator('[data-testid="automation-run-now"]').click();
