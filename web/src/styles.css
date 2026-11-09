@@ -323,3 +323,13 @@ html[data-reduce-motion="true"] ::after {
 	scrollbar-width: thin;
 	scrollbar-color: var(--border-strong) transparent;
 }
+
+/* Code must show exactly what was typed: no ligatures (=> must not become ⇒). */
+pre,
+code,
+kbd,
+samp,
+.font-mono {
+	font-variant-ligatures: none;
+	font-feature-settings: "calt" 0, "liga" 0;
+}

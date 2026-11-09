@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|
 | M01-A | 同一界面完成纯聊天、带附件、带知识引用三类请求，不先选工作流 | A+B | planned | | |
 | M01-B | 编辑/再生成产生可辨识版本或分支，不覆盖原结果；刷新后能找回 | A+B | planned | | |
-| M01-C | 长回答、代码、表格、公式与引用可读/复制/导出；流式与历史渲染一致 | B | planned | | |
+| M01-C | 长回答、代码、表格、公式与引用可读/复制/导出；流式与历史渲染一致 | B | verified | `web/src/features/markdown/Markdown.tsx`（Streamdown，流式/历史同一组件；shiki/KaTeX 按需）、`web/src/features/chat/Messages.tsx`（复制/导出 Markdown）、`Cards.tsx#Citations` | `web/e2e/states.mjs` › "markdown: code block, table and formula rendered"、"copy and export actions present"、"streamed and reloaded (history) rendering identical"、"highlighter / katex chunks loaded only when needed"；截图 `artifacts/screenshots/1440-markdown-rich.png`。引用列表的渲染在有 `details.citations` 时生效（引用数据由 C 提供，未在 e2e 中造出带引用的回答） |
 | M02-A | 浏览器关闭、断网、重新登录后可查看任务状态与最终成果；浏览器不是执行进程 | A | planned | | |
 | M02-B | worker 故障演练验证恢复；外部写结果不确定时进入待核对，避免盲目重放 | A+D | planned | | |
 | M02-C | 插话有“已接收/已应用/未应用”反馈；取消、超时、等待用户、失败、成功有独立终态 | A+B | planned | | |
@@ -21,14 +21,14 @@
 | M05-A | 提示词预设、仅上下文 Skill、可执行 Skill 分别展示能力和依赖 | D | planned | | |
 | M05-B | 技能版本可固定、升级、停用、回滚；任务记录实际使用版本 | D | planned | | |
 | M05-C | 从成功任务整理技能：预览指令、资源、所需授权，用样例验证后发布 | D | planned | | |
-| M06-A | 上传后展示处理中/可检索/失败及重试；不把“上传成功”显示为“知识可用” | C+B | partial | `server/src/knowledge/pipeline.ts`, `service.ts#docDTO`, `GET /api/kb/:id/docs`, `POST …/retry` | `server/test/knowledge.test.ts` › "processing: explicit add, queued → parsing → indexing → ready, failures … and retry"、"processing survives restart"。服务端 verified（availability 与 latest.status 分开；失败码+可重试+重试）；UI 展示属 B |
+| M06-A | 上传后展示处理中/可检索/失败及重试；不把“上传成功”显示为“知识可用” | C+B | partial | `server/src/knowledge/pipeline.ts`, `service.ts#docDTO`, `GET /api/kb/:id/docs`, `POST …/retry`；B UI：`web/src/pages/KnowledgePage.tsx`（处理中/排队/解析/索引 → 可检索 / 失败+原因+重试，轮询服务端状态） | `server/test/knowledge.test.ts` › "processing: explicit add, queued → parsing → indexing → ready, failures … and retry"、"processing survives restart"。服务端 verified（availability 与 latest.status 分开；失败码+可重试+重试）；UI 展示属 B；UI：`web/e2e/core-loop.mjs` › "knowledge: new doc never shown as ready before the server says so"、"doc reaches 可检索 (or explicit 失败 with retry)"，截图 `artifacts/screenshots/1440-knowledge.png`（失败+重试分支未在 e2e 中触发） |
 | M06-B | 回答引用定位到文件和版本；有页码显示页码，否则段落/章节/原文片段 | C | verified | `service.ts#search/#citation`, `chunker.ts#locatorOf`, `shared/knowledge.ts#CitationDTO` | `server/test/knowledge.test.ts` › "citations point to the exact file version and PDF page; locators for md/csv"（versionId 可下载同一字节、PDF 第 2 页）；`server/test/knowledge-ocr.test.ts`（扫描页“第 2 页（OCR 识别）”）；`server/test/knowledge-extension.test.ts` › kb_search 编号引用 |
 | M06-C | 知识源删除、更新、撤权后新检索与缓存遵守新状态；已有回答保留来源快照与失效提示 | C | verified | `pipeline.ts#index`（新版本就绪时 tombstone 旧分片）, `service.ts#deleteDoc/fileDeleted/citationStatus`, `GET /api/kb/citations/:chunkId/status` | `server/test/knowledge.test.ts` › "new file version re-indexes … v1 citation reports superseded; delete removes from search and cache"（含缓存不复用、文件删除）、"ACL: … removal revokes the next search" |
 | M07-A | 知识可见范围：个人、指定项目成员、部门、企业；检索阶段执行权限过滤 | C+E | verified | `acl.ts#ACCESSIBLE_KB_SQL`（检索 SQL 内过滤）, ACL resolver kind "kb" | `server/test/knowledge.test.ts` › "ACL: project/personal/department/org scopes are enforced inside retrieval; removal revokes the next search"、"same-named file in two projects stays isolated"、"KB management: maintainers …" |
 | M07-B | 制度与模板有责任人、版本、生效状态、更新时间；过期资料可下架或替换 | C | verified | `service.ts#updateGovernance`, `GOV_FILTER`, `PATCH /api/kb/:id/docs/:docId/governance` | `server/test/knowledge.test.ts` › "governance: owner, version label, effective/expired/withdrawn; inactive docs excluded by default; replacement" |
 | M07-C | 检索调试与问答评估样例；无证据、索引未就绪、权限不足、模型错误分开反馈 | C | verified | `service.ts#search`（diagnostics.reason）, `POST /api/kb/search {debug}`, `eval.ts`, `eval-samples.ts`, `POST /api/kb/eval` | `server/test/knowledge-eval.test.ts`（16/16，recall@5=1，MRR=1；无权用户全部 forbidden；debug 计划）；`server/test/knowledge.test.ts`（no_evidence / index_not_ready / forbidden）。模型错误由运行时以 `unanswered/model_error` 反馈（A） |
 | M08-A | 已发布成果进入文件库，可反查来源任务、run、创建者、输入资料、生成时间 | D | planned | | |
-| M08-B | 继续修改保留旧版本，新版本关联变更说明；可预览、下载、切换 | D+B | planned | | |
+| M08-B | 继续修改保留旧版本，新版本关联变更说明；可预览、下载、切换 | D+B | partial | D 服务端见 D 行；UI：`web/src/pages/FileDetailPage.tsx`（版本列表、变更说明、来源、下载、切换预览、上传新版本）、`features/preview/PreviewPanel.tsx`（版本切换） | UI：`web/e2e/core-loop.mjs` › "chat: v2 file card"、"files: two versions listed"、"files: switched preview to v1"；截图 `artifacts/screenshots/1440-file-detail-v2.png`、`1440-file-detail-v1.png`、`1440-chat-preview-open.png`。服务端测试由 D 提供 |
 | M08-C | 文件加入知识库是显式选择并经解析/索引；文件存储状态与知识可用状态分开 | C+D | verified | `POST /api/kb/:id/docs`（显式加入，按调用者校验文件读权限）, `GET /api/kb/files/:fileId/status` | `server/test/knowledge.test.ts` › "processing: explicit add …"（上传后不可检索、文件知识状态为空，加入后经解析/索引才 ready） |
 | M09-A | 项目所有者/编辑者/查看者角色分别限制会话、文件、知识和操作 | E | planned | | |
 | M09-B | 成员在授权范围内接手任务，知道已有决策、进展、待确认项、交付位置 | A+E | planned | | |
@@ -37,14 +37,14 @@
 | M10-B | 私人记忆、项目共享背景、企业知识不交叉泄露；切换范围后上下文同步变化 | C | verified | `memory.ts#contextFor`, 提示词段 `memory`/`knowledge_scope`（`extension.ts`）, `GET /api/memory/context` | `server/test/knowledge-memory.test.ts` › "memory isolation: private memory never enters project context; switching space switches context"；`server/test/knowledge-extension.test.ts` › "memory section + memory_save …"（真实运行时 pi.system 段）、kb_search 项目默认范围 |
 | M10-C | 压缩与恢复后仍能追溯关键约束；用户纠正的信息有明确更新结果 | C+A | verified | `memory.ts#correct`, 记忆段每次请求渲染（压缩后重写） | `server/test/knowledge-memory.test.ts` › "memory correction: visible update result …"；`server/test/knowledge-extension.test.ts` › "compaction: key constraints from memory are still in the prompt …"、分叉后看到纠正后的记忆 |
 | M11-A | 普通 Web 用户无需安装执行依赖即可完成服务端任务 | D | planned | | |
-| M11-B | 可按需查看执行页面、目录、输出、错误；预览与接管入口权限一致 | D+B | planned | | |
+| M11-B | 可按需查看执行页面、目录、输出、错误；预览与接管入口权限一致 | D+B | partial | UI：`web/src/features/work/WorkPanel.tsx`（同一工作面板：子任务 / 终端（隔离说明、执行记录 stdout/stderr/exit、工作目录与下载）/ 浏览器（标题、地址、截图、正文）），数据均经服务端 ACL | UI：`web/e2e/states.mjs` › "work panel: subagent with source/status/result"、"terminal tab renders"、"one panel, switchable tabs"；截图 `artifacts/screenshots/1440-work-panel-tasks.png`、`1440-work-panel-terminal.png`、`1440-work-panel-browser.png`。默认助手未开放沙箱/浏览工具，e2e 中终端与浏览器为空状态；“接管”入口未提供 |
 | M11-C | 任务环境隔离，资源配额、生命周期、文件持久化规则明确；到期前可发布成果 | D | planned | | |
 | M12-A | 时区、下次运行、触发条件、授权范围、输出目的地可预览与修改 | E | planned | | |
 | M12-B | 防重入、并发限制、取消、失败记录、再次运行入口 | E | planned | | |
 | M12-C | 通知携带任务链接、状态与成果；通知失败与任务失败分别记录 | E | planned | | |
-| M13-A | 1366×768 完成主要操作，侧栏与预览可收起；移动端不挤成三列 | B | planned | | |
-| M13-B | 重型模块按需加载；减少动画模式生效；日常界面无持续动画背景 | B | planned | | |
-| M13-C | 跨设备状态一致；客户端非前置要求；原生客户端需单独验收（不用响应式冒充） | B+A | planned | | |
+| M13-A | 1366×768 完成主要操作，侧栏与预览可收起；移动端不挤成三列 | B | verified | `web/src/components/shell/AppShell.tsx`（≥1024 侧栏+单一右面板；<1024 左右抽屉） | `web/e2e/core-loop.mjs` › "1366: no horizontal overflow with preview open"、"1366: sidebar collapsible"、"390: sidebar not inline"、"390: preview opens as a drawer (no side column)"、"390: no horizontal page scroll"；截图 `artifacts/screenshots/1366-home.png`、`1366-chat-preview.png`、`1366-chat-sidebar-collapsed.png`、`390-home.png`、`390-nav-drawer.png`、`390-chat.png`、`390-preview-drawer.png` |
+| M13-B | 重型模块按需加载；减少动画模式生效；日常界面无持续动画背景 | B | verified | `web/src/App.tsx`（页面级 lazy）、`AppShell.tsx`（预览/工作面板 lazy）、`features/preview/PreviewPanel.tsx`（按类型 lazy viewer）、`Markdown.tsx`（shiki/KaTeX 按需）、`pages/StatsPage.tsx`（Recharts lazy）、`styles.css`（reduced-motion） | `web/e2e/core-loop.mjs` › "home: heavy chunks not loaded"（Streamdown/shiki/KaTeX/Recharts/预览/工作面板均未请求）、"reduced-motion (system)"、"reduced-motion (in-app toggle)"、"no ambient animation on idle pages"；`states.mjs` › "highlighter / katex chunks loaded only when needed"；按需加载地图见 `docs/ui.md` §7。PDF/Office 由服务端渲染为沙箱 HTML/浏览器内置 PDF 查看器，客户端不打包 pdf.js/docx 解析 |
+| M13-C | 跨设备状态一致；客户端非前置要求；原生客户端需单独验收（不用响应式冒充） | B+A | partial | `web/src/features/chat/useConversation.ts`（状态全部来自服务端 SSE 快照，无本地业务状态） | `web/e2e/states.mjs` › "cross-device: phone shows the same running state"、"cancel on desktop is reflected on phone"；截图 `artifacts/screenshots/390-same-task-running.png`。浏览器即可完成全部操作（无需客户端）。**原生客户端未做**，不以响应式网页冒充；PWA 未做 |
 | M14-A | 按所选模型和已连接工具声明能力，失败时指出不可用环节 | E+D | planned | | |
 | M14-B | 文档、表格、演示稿通过实际可打开文件验收：生成、预览、下载、后续修改 | D | planned | | |
 | M14-C | 音视频等长任务有异步状态、取消和预算，不占据主界面大量控制项 | D+A | planned | | |
@@ -68,4 +68,4 @@
 | X-PROOF | pi-durable 纵向证明：服务端运行→发消息→watch→从中间 entry fork→原/分支独立继续→关闭浏览器后后台执行→进程重启恢复同 storage→同 requestId 不重复→不确定外部写不盲重做 | planned | |
 | X-LOOP | 可用闭环：目标→上传资料/知识引用→工具→确认/补充→生成文件入库→预览下载→继续修改 v2→刷新与服务端重启可继续 | planned | |
 | X-ISO | 两用户隔离/撤权；同名跨项目隔离 | planned | |
-| X-UI | 1366×768、1440、390 截图；重型预览懒加载；中文字体离线；reduced-motion | planned | |
+| X-UI | 1366×768、1440、390 截图；重型预览懒加载；中文字体离线；reduced-motion | verified | `web/e2e/core-loop.mjs`（30 项）+ `web/e2e/states.mjs`（23 项），结果 `artifacts/screenshots/core-loop.results.json`、`states.results.json`；截图 `artifacts/screenshots/{1440,1366,390}-*.png`；"session: no external requests at all (fonts work offline)"、"fonts served from same origin /assets"；`docs/ui.md` |

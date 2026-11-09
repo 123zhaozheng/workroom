@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T02:25:07.844Z",
+  "at": "2026-11-09T02:30:40.355Z",
   "results": [
     {
       "name": "setup: knowledge base created through C's API",
@@ -17,12 +17,42 @@
       "detail": "会议纪要.txt\n制度库\n根据附件和制度库整理要点 [[reply 已阅读附件与知识库引用。]]\n周岚"
     },
     {
+      "name": "markdown: code block, table and formula rendered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "markdown: highlighter / katex chunks loaded only when needed",
+      "ok": true,
+      "detail": "http://127.0.0.1:8812/assets/katex-DEcVZfaU.css, http://127.0.0.1:8812/assets/javascript-DF6j-435.js"
+    },
+    {
+      "name": "markdown: copy and export actions present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "markdown: streamed and reloaded (history) rendering identical",
+      "ok": true,
+      "detail": "123 chars"
+    },
+    {
       "name": "state: failed shown with reason + 继续",
       "ok": true,
       "detail": "失败 · 模型出错：fixture: simulated model failure ([[fail]]) 继续"
     },
     {
+      "name": "cross-device: phone shows the same running state",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "name": "state: cancelled is its own terminal state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "cross-device: cancel on desktop is reflected on phone",
       "ok": true,
       "detail": ""
     },
@@ -32,12 +62,47 @@
       "detail": "subagents=1"
     },
     {
+      "name": "work panel: terminal tab renders (sandbox info / runs / directory)",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "name": "work panel: one panel, switchable tabs",
       "ok": true,
       "detail": ""
     },
     {
       "name": "project page: members with roles",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page /search: renders without a UI fault",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page /capabilities: renders without a UI fault",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page /automations: renders without a UI fault",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page /stats: renders without a UI fault",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page /memory: renders without a UI fault",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page /admin: renders without a UI fault",
       "ok": true,
       "detail": ""
     },

@@ -42,6 +42,26 @@ try {
 	check("chat: sent message carries attachment and knowledge references", userText.includes("会议纪要.txt") && (!kbOk || userText.includes("制度库")), userText.slice(0, 80));
 	const convUrl = page.url();
 
+	// ---------------------------------------------------------------- M01-C: code / table / formula; streaming == history
+	const reqs = [];
+	page.on("request", (r) => reqs.push(r.url()));
+	await sendMessage(page, "[[reply 结果如下：\n\n```js\nconst total = items.reduce((a, b) => a + b, 0);\n```\n\n| 指标 | 数值 |\n|---|---|\n| 收入 | 120 |\n| 成本 | 80 |\n\n利润率 $p = \\frac{40}{120}$。]]");
+	await page.waitForFunction(() => document.querySelectorAll('[data-testid="assistant-message"]').length >= 2, null, { timeout: 20000 });
+	const last = page.locator('[data-testid="assistant-message"]').last();
+	await last.locator("table").waitFor({ timeout: 15000 });
+	await last.locator(".katex").first().waitFor({ timeout: 15000 });
+	await sleep(800);
+	check("markdown: code block, table and formula rendered", (await last.locator("pre").count()) > 0 && (await last.locator("table").count()) > 0 && (await last.locator(".katex").count()) > 0);
+	check("markdown: highlighter / katex chunks loaded only when needed", reqs.some((u) => /katex/i.test(u)) && reqs.some((u) => /shiki|javascript-|wasm-|index-.*code|code-/i.test(u) || /streamdown.*code/i.test(u)), reqs.filter((u) => /katex|shiki|javascript|wasm/.test(u)).slice(0, 3).join(", "));
+	check("markdown: copy and export actions present", (await last.locator('[data-testid="action-copy"]').count()) > 0 && (await last.locator('[data-testid="action-export"]').count()) > 0);
+	const liveHtml = (await last.locator(".wr-prose").first().innerText()).trim();
+	await shot(page, "1440-markdown-rich");
+	await page.reload();
+	await page.locator('[data-testid="assistant-message"]').last().locator(".katex").first().waitFor({ timeout: 15000 });
+	await sleep(800);
+	const histHtml = (await page.locator('[data-testid="assistant-message"]').last().locator(".wr-prose").first().innerText()).trim();
+	check("markdown: streamed and reloaded (history) rendering identical", liveHtml === histHtml, liveHtml === histHtml ? `${liveHtml.length} chars` : `live=${liveHtml.slice(0, 60)} | hist=${histHtml.slice(0, 60)}`);
+
 	// ---------------------------------------------------------------- failed with reason
 	await sendMessage(page, "[[fail]] 这一步会失败");
 	await page.waitForSelector('[data-testid="run-bar"][data-status="failed"], [data-testid="run-bar"][data-status="interrupted"]', { timeout: 60000 });
@@ -55,10 +75,20 @@ try {
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 10000 });
 	await sleep(500);
 	await shot(page, "1440-state-running");
+	// second device (phone) on the same conversation sees the same live state
+	const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, storageState: await ctx.storageState() });
+	const pp = await phone.newPage();
+	await pp.goto(page.url());
+	await pp.waitForSelector('[data-testid="run-bar"][data-status="running"]', { timeout: 15000 });
+	check("cross-device: phone shows the same running state", true);
+	await shot(pp, "390-same-task-running");
 	await page.click('[data-testid="stop"]');
 	await page.waitForSelector('[data-testid="run-bar"][data-status="aborted"]', { timeout: 15000 });
 	check("state: cancelled is its own terminal state", true);
 	await shot(page, "1440-state-cancelled");
+	await pp.waitForSelector('[data-testid="run-bar"][data-status="aborted"]', { timeout: 15000 });
+	check("cross-device: cancel on desktop is reflected on phone", true);
+	await phone.close();
 
 	// ---------------------------------------------------------------- subagent → work panel
 	await sendMessage(page, '[[call delegate {"member":"writer","task":"把会议纪要写成一段通知"}]]');

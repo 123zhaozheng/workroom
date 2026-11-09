@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T02:20:50.911Z",
+  "at": "2026-11-09T02:30:16.238Z",
   "results": [
     {
       "name": "home: heavy chunks not loaded (markdown/shiki/katex/recharts/preview/work panel)",
@@ -69,12 +69,12 @@
     {
       "name": "branch: edit created a branch (original untouched)",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw8mw5855768a46e5e40c002/46"
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8n88iffe9f6cc8f1a16138/46"
     },
     {
       "name": "branch: switcher returns to the original conversation with its results",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw8mw5855768a46e5e40c002/3"
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8n88iffe9f6cc8f1a16138/3"
     },
     {
       "name": "files: two versions listed",
@@ -149,7 +149,7 @@
     {
       "name": "no uncaught page errors",
       "ok": true,
-      "detail": "Failed to load resource: the server responded with a status of 401 (Unauthorized) | Failed to load resource: the server responded with a status of 401 (Unauthorized) | Failed to load resource: the server responded with a status of 404 (Not Found)"
+      "detail": "Failed to load resource: the server responded with a status of 401 (Unauthorized) | Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     }
   ]
 }
