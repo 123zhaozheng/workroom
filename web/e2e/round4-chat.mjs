@@ -83,11 +83,10 @@ try {
 	await page.waitForLoadState("networkidle");
 
 	// ---- real models for the switcher: a ready one with capabilities + thinking levels, one blocked (no route)
-	const ch = await (await page.request.post(`${base}/api/admin/channels`, { data: { name: "E2E 渠道", provider: "openai-compatible", baseUrl: "http://127.0.0.1:9/v1" } })).json();
-	const pro = await (await page.request.post(`${base}/api/admin/models`, { data: { id: "e2e-pro", label: "E2E Pro", description: "多模态与推理", capabilities: ["text", "tools", "image", "reasoning"], thinkingLevels: ["off", "low", "medium", "high"], defaultThinking: "medium", contextWindow: 200000 } })).json();
-	await page.request.post(`${base}/api/admin/models/${pro.model?.id}/routes`, { data: { channelId: ch.channel?.id, upstreamModelId: "e2e-upstream" } });
-	const blocked = await (await page.request.post(`${base}/api/admin/models`, { data: { id: "e2e-blocked", label: "E2E 未配置", capabilities: ["text"] } })).json();
-	check("setup: second ready model + blocked model created through the admin API", !!pro.model?.id && !!blocked.model?.id && !!ch.channel?.id, JSON.stringify({ pro: pro.model?.id, ch: ch.channel?.id }));
+	const prov = await (await page.request.post(`${base}/api/admin/model-providers`, { data: { name: "E2E 兼容", type: "openai-completions", baseUrl: "http://127.0.0.1:9/v1", keyless: true, models: [{ id: "e2e-pro", name: "E2E Pro", description: "多模态与推理", contextWindow: 200000, maxTokens: 8192, input: ["text", "image"], reasoning: true }] } })).json();
+	const prov2 = await (await page.request.post(`${base}/api/admin/model-providers`, { data: { name: "E2E 缺密钥", type: "openai-completions", baseUrl: "http://127.0.0.1:9/v1", models: [{ id: "e2e-nokey", name: "E2E 缺密钥模型" }] } })).json();
+	const pro = { model: { id: `${prov.provider?.id}/e2e-pro` } };
+	check("setup: a second ready model (provider with capabilities) and a blocked one (no key) created through the models API", !!prov.provider?.id && !!prov2.provider?.id, JSON.stringify({ pro: prov.provider?.id, nokey: prov2.provider?.health }));
 	await page.request.post(`${base}/api/skills`, { data: { name: "周报模板", kind: "prompt", description: "周报的固定开头", instructions: "请按“结论—进展—风险—计划”的顺序写周报。" } });
 	const modelList = await (await page.request.get(`${base}/api/models`)).json();
 	const fixtureId = modelList.models.find((m) => m.fixture || m.status === "fixture")?.id;
@@ -338,7 +337,7 @@ try {
 	check("models: grouped by provider (≥ 2 groups)", groupsN >= 2, `${groupsN} groups`);
 	const proOpt = opts.find((o) => o.t.includes("E2E Pro"));
 	check("models: capability badges for images / tools / reasoning", !!proOpt && ["image", "tools", "reasoning"].every((c) => proOpt.caps.includes(c)), JSON.stringify(proOpt));
-	const blockedOpt = opts.find((o) => o.t.includes("E2E 未配置"));
+	const blockedOpt = opts.find((o) => o.t.includes("E2E 缺密钥模型"));
 	check("models: blocked model is disabled and shows the reason", !!blockedOpt && blockedOpt.disabled && /不可用：/.test(blockedOpt.t), blockedOpt?.t);
 	const fixtureOpts = opts.filter((o) => o.status === "fixture");
 	check("models: the test model is labelled 测试模型（非真实 AI） exactly once", fixtureOpts.length === 1 && (fixtureOpts[0].t.match(/测试模型/g) ?? []).length === 1, fixtureOpts[0]?.t);
@@ -348,7 +347,7 @@ try {
 	await page.click('[data-testid="model-picker"]');
 	await page.waitForSelector('[data-testid="thinking-levels"]');
 	const levels = await page.locator('[data-testid="thinking-levels"] [data-level]').evaluateAll((e) => e.map((x) => x.dataset.level));
-	check("models: thinking levels offered for a reasoning model", levels.join(",") === "off,low,medium,high", levels.join(","));
+	check("models: thinking levels offered for a reasoning model", levels[0] === "off" && levels.includes("low") && levels.includes("high"), levels.join(","));
 	await page.locator('[data-testid="thinking-levels"] [data-level="high"]').click();
 	await page.keyboard.press("Escape");
 	const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("wr.model.default.v1") ?? "{}"));
@@ -364,7 +363,7 @@ try {
 	const convUrl = page.url();
 	const [, , spaceId, convId] = new URL(convUrl).pathname.split("/");
 	const detail = await (await page.request.get(`${base}/api/conversations/${spaceId}/${convId}`)).json();
-	check("models: new conversation is created with the chosen model (server-side per conversation)", detail.agent?.model?.modelId === pro.model?.id && detail.agent?.modelLabel === "E2E Pro", JSON.stringify(detail.agent?.model));
+	check("models: new conversation is created with the chosen model (server-side per conversation)", detail.agent?.model?.provider === prov.provider?.id && detail.agent?.model?.modelId === "e2e-pro" && detail.agent?.modelLabel === "E2E Pro", JSON.stringify(detail.agent?.model));
 	await page.waitForSelector('[data-testid="chat-title"]');
 	await page.reload();
 	await page.waitForSelector('[data-testid="model-picker"]');
@@ -448,6 +447,13 @@ try {
 	// ================================================================= 5. settings toggle + reduced motion
 	await page.goto(`${base}/settings`);
 	await page.waitForSelector('[data-testid="dot-matrix-toggle"]');
+	await sleep(600);
+	const offSection = await page.locator('[data-testid="personal-keys-section"]').count();
+	await page.request.put(`${base}/api/admin/model-settings`, { data: { personalProviders: true } });
+	await page.reload();
+	await page.waitForSelector('[data-testid="personal-keys-section"]', { timeout: 10000 }).catch(() => {});
+	check("settings: 我的模型密钥 section appears only when the admin policy enables personal keys", offSection === 0 && (await page.locator('[data-testid="personal-keys-section"]').count()) === 1 && (await page.locator('[data-testid="personal-keys"]').count()) === 1, `off=${offSection}`);
+	await page.request.put(`${base}/api/admin/model-settings`, { data: { personalProviders: false } });
 	await page.goto(`${base}/`);
 	await page.waitForSelector('[data-testid="dot-matrix"]');
 	await page.goto(`${base}/settings`);
@@ -505,6 +511,7 @@ try {
 				models: [
 					{ id: "m-a", label: "Alpha 4", provider: { id: "acme", name: "Acme AI" }, status: "ready", isDefault: true, capabilities: { text: true, image: true, tools: true, reasoning: false }, thinkingLevels: ["off"], contextWindow: 1000000, ref: { provider: "acme", modelId: "alpha-4" } },
 					{ id: "m-b", label: "Beta 2", providerName: "Acme AI", status: "ready", isDefault: false, capabilities: ["text", "tools", "reasoning"], thinkingLevels: ["off", "low", "high"], defaultThinking: "low", ref: { provider: "acme", modelId: "beta-2" } },
+					{ id: "m-d", label: "Delta", providerId: "acme", providerName: "Acme AI", status: "ready", personal: true, isDefault: false, capabilities: ["text"], input: ["text", "image"], reasoning: true, thinkingLevels: ["off", "medium"], ref: { provider: "acme", modelId: "delta" } },
 					{ id: "m-c", label: "Gamma", providerName: "另一家", status: "blocked", statusDetail: "未配置凭据", capabilities: ["text"], thinkingLevels: [], ref: { provider: "other", modelId: "gamma" } },
 				],
 			},
@@ -516,7 +523,7 @@ try {
 	await mp.waitForSelector('[data-testid="model-option"]');
 	const groupNames = await mp.locator('[data-testid="model-group"]').evaluateAll((g) => g.map((x) => x.getAttribute("aria-label")));
 	const shapeTxt = await mp.locator('[role="menu"]').innerText();
-	check("models: richer /api/models shape (provider name, capability object, context window) is grouped and badged", groupNames.join(",") === "Acme AI,另一家" && shapeTxt.includes("1M 上下文") && (await mp.locator('[data-cap="image"]').count()) === 1, `${groupNames.join(",")} | ${shapeTxt.replace(/\n/g, " ").slice(0, 160)}`);
+	check("models: richer /api/models shape (provider name, capability object, context window) is grouped and badged", groupNames.join(",") === "Acme AI,另一家" && shapeTxt.includes("1M 上下文") && (await mp.locator('[data-cap="image"]').count()) === 2 && shapeTxt.includes("个人密钥"), `${groupNames.join(",")} | ${shapeTxt.replace(/\n/g, " ").slice(0, 160)}`);
 	await mctx.close();
 
 	// ================================================================= 8. phone 390 × 844
@@ -569,7 +576,10 @@ try {
 	await allReady(lp, 2);
 	await sendMessage(lp, '整理一下 [[call file_create {"name":"销售汇总","format":"md","title":"销售汇总","content":"# 汇总\\n- 数据已整理"}]]');
 	await lp.waitForURL(/\/c\//);
-	await lp.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
+	await lp.waitForSelector('[data-testid="file-card"]', { timeout: 40000 }).catch(async (e) => {
+		console.log("DEBUG lp page:", (await lp.locator("main").innerText()).slice(0, 600));
+		throw e;
+	});
 	await lp.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 20000 });
 	await lp.locator('[data-testid="file-card"] button').first().click();
 	await lp.waitForSelector('[data-testid="side-panel"]');

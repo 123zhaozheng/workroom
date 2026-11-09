@@ -23,6 +23,8 @@ export interface ModelInfo {
 	defaultThinking?: ThinkingLevel;
 	contextWindow?: number;
 	ref?: { provider: string; modelId: string };
+	/** The viewer's own provider (personal key). */
+	personal?: boolean;
 }
 /** Kept for pages that only need the label/status of a model. */
 export type ModelOption = Pick<ModelInfo, "id" | "label" | "status" | "statusDetail" | "isDefault" | "fixture">;
@@ -64,12 +66,15 @@ export function normalizeModel(raw: unknown): ModelInfo | null {
 	if (!id) return null;
 	const ref = r.ref && typeof r.ref === "object" ? (r.ref as { provider?: string; modelId?: string }) : undefined;
 	const provObj = r.provider && typeof r.provider === "object" ? (r.provider as { id?: string; name?: string }) : undefined;
-	const provId = (typeof r.provider === "string" ? r.provider : provObj?.id) ?? ref?.provider ?? "other";
+	const provId = (typeof r.providerId === "string" ? r.providerId : undefined) ?? (typeof r.provider === "string" ? r.provider : provObj?.id) ?? ref?.provider ?? "other";
 	const status = r.status === "blocked" || r.status === "fixture" ? r.status : "ready";
 	const fixture = status === "fixture" || r.fixture === true;
 	const name = (typeof r.providerName === "string" && r.providerName) || provObj?.name || (fixture ? PROVIDER_NAMES.fixture! : PROVIDER_NAMES[provId] ?? (provId === "other" ? "其他" : provId));
 	const levels = Array.isArray(r.thinkingLevels) ? (r.thinkingLevels.filter((l): l is ThinkingLevel => LEVELS.includes(l as ThinkingLevel)) as ThinkingLevel[]) : [];
 	const capList = caps(r.capabilities);
+	// round-4 fields: input: ["text","image"], reasoning: boolean
+	if (Array.isArray(r.input) && r.input.includes("image") && !capList.includes("image")) capList.push("image");
+	if (r.reasoning === true && !capList.includes("reasoning")) capList.push("reasoning");
 	return {
 		id,
 		label: typeof r.label === "string" ? r.label : typeof r.name === "string" ? r.name : id,
@@ -85,6 +90,7 @@ export function normalizeModel(raw: unknown): ModelInfo | null {
 		defaultThinking: LEVELS.includes(r.defaultThinking as ThinkingLevel) ? (r.defaultThinking as ThinkingLevel) : undefined,
 		contextWindow: typeof r.contextWindow === "number" ? r.contextWindow : undefined,
 		ref: ref?.provider && ref.modelId ? { provider: ref.provider, modelId: ref.modelId } : undefined,
+		personal: r.personal === true || undefined,
 	};
 }
 

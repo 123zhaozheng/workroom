@@ -11,15 +11,20 @@ import type { SessionDTO } from "@shared/ops";
 import { del, errorText, post } from "@/lib/api";
 import { fullTime, relTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { ModelOption } from "@/features/chat/ModelPicker";
 import { MyPermissionsSection } from "@/features/admin/MyPermissions";
+
+// models group's component; lazy so the admin model code is not part of the settings chunk until needed
+const PersonalProviders = lazy(() => import("@/features/admin/models/ModelsAdmin").then((m) => ({ default: m.PersonalProviders })));
 
 export default function SettingsPage() {
 	const prefs = usePrefs();
 	const { me, brand } = useSession();
 	const models = useApi<unknown>("/models");
 	const list = listOf<ModelOption & { capabilities?: string[] }>(models.data, "models");
+	// 我的模型密钥 only when the admin policy opens it (GET /models carries the flag)
+	const personalKeys = !!(models.data as { personalProviders?: boolean } | undefined)?.personalProviders;
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<TopBar />
@@ -44,6 +49,14 @@ export default function SettingsPage() {
 						</Row>
 					</Group>
 					<AssistantsSection />
+					{personalKeys ? (
+						<section className="mb-8" data-testid="personal-keys-section">
+							<h2 className="mb-2 text-[13px] font-medium text-fg-muted">我的模型密钥</h2>
+							<Suspense fallback={<p className="text-[13px] text-fg-subtle">正在加载…</p>}>
+								<PersonalProviders />
+							</Suspense>
+						</section>
+					) : null}
 					<Group title="账号">
 						<Row label="姓名">{me?.name}</Row>
 						<Row label="邮箱">{me?.email}</Row>

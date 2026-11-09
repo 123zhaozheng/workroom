@@ -36,6 +36,7 @@ function RowBody({ m, selected }: { m: ModelInfo; selected: boolean }) {
 				<span className="flex items-center gap-1.5">
 					{m.fixture ? <FlaskConical className="size-3.5! shrink-0 text-warning!" /> : null}
 					<span className={cn("truncate text-sm", m.fixture && "text-warning")}>{modelName(m)}</span>
+					{m.personal ? <span className="shrink-0 rounded bg-surface-2 px-1 text-[11px] text-fg-subtle">个人密钥</span> : null}
 				</span>
 				{m.status === "blocked" ? (
 					<span className="mt-0.5 block text-xs text-danger">不可用：{m.statusDetail ?? "未配置凭据"}</span>
