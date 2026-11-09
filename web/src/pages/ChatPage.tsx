@@ -1,9 +1,10 @@
-import { ArrowDown, ChevronDown, ClipboardList, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ClipboardList, Route, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { FIXTURE_LABEL, type BranchResponse, type ConversationSummary, type EntryDTO, type SendMessageResponse } from "@shared/chat";
 import { ApiError, errorText, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { AssistantAvatarMark } from "@/features/assistants/Assistants";
 import type { Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
@@ -19,6 +20,7 @@ import { buildTurns, type Turn } from "@/features/chat/model";
 import { RUN_LABEL, RunIcon, SUBMISSION_LABEL, reasonText } from "@/features/chat/status";
 import { useConversationDetail, useConversationStream, useEarlierEntries, useSubmissionTracker } from "@/features/chat/useConversation";
 
+const RoutesDialog = lazy(() => import("@/features/chat/RoutesDialog"));
 const HandoffDialog = lazy(() => import("@/features/handoff/Handoff").then((m) => ({ default: m.ConversationHandoffDialog })));
 
 const firstId = (t: Turn): number => (t.kind === "user" ? t.entry.id : t.kind === "marker" ? t.entry.id : (t.firstEntryId ?? Number.POSITIVE_INFINITY));
@@ -42,6 +44,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const [stopping, setStopping] = useState(false);
 	const [continuing, setContinuing] = useState(false);
 	const [handoff, setHandoff] = useState(false);
+	const [routes, setRoutes] = useState(false);
 
 	const conv = state?.conversation ?? detail?.conversation;
 	const agent = state?.agent ?? detail?.agent;
@@ -235,6 +238,10 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 									<ClipboardList />
 									交接摘要（决定 / 进展 / 待处理 / 成果）
 								</MenuItem>
+								<MenuItem data-testid="open-routes" onSelect={() => setRoutes(true)}>
+									<Route />
+									模型与路由记录
+								</MenuItem>
 								<MenuItem
 									data-testid="make-skill"
 									disabled={readOnly}
@@ -263,6 +270,12 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						<h1 data-testid="chat-title" className="truncate text-[14.5px] font-medium">
 							{conv?.title || "对话"}
 						</h1>
+						{agent?.assistant && !agent.assistant.builtin ? (
+							<span data-testid="chat-assistant" className="inline-flex shrink-0 items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11.5px] text-fg-muted" title={agent.assistant.description}>
+								<AssistantAvatarMark a={agent.assistant} size={16} />
+								{agent.assistant.name}
+							</span>
+						) : null}
 						{conv?.kind === "branch" ? (
 							<span data-testid="branch-badge" className="inline-flex shrink-0 items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11.5px] text-fg-muted">
 								<GitBranch className="size-3" />
@@ -421,6 +434,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 					/>
 				)}
 			</div>
+			{routes ? (
+				<Suspense fallback={null}>
+					<RoutesDialog spaceId={spaceId} conversationId={id} modelLabel={agent?.modelLabel} fixture={agent?.fixture} open={routes} onOpenChange={setRoutes} />
+				</Suspense>
+			) : null}
 			{handoff ? (
 				<Suspense fallback={null}>
 					<HandoffDialog spaceId={spaceId} conversationId={id} open={handoff} onOpenChange={setHandoff} />

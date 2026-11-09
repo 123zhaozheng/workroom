@@ -5,6 +5,7 @@ import { TopBar } from "@/components/shell/AppShell";
 import { BrandMark } from "@/components/shell/BrandMark";
 import { Composer } from "@/features/chat/Composer";
 import { ModelPicker } from "@/features/chat/ModelPicker";
+import { AssistantPicker } from "@/features/assistants/Assistants";
 import { useStartConversation } from "@/features/chat/useStartConversation";
 
 const STARTERS = [
@@ -18,6 +19,7 @@ export function HomePage() {
 	const { me, brand, personalSpaceId } = useSession();
 	const start = useStartConversation();
 	const [modelId, setModelId] = useState<string>();
+	const [assistantId, setAssistantId] = useState<string>();
 	const [seed, setSeed] = useState({ text: "", n: 0 });
 
 	return (
@@ -37,8 +39,13 @@ export function HomePage() {
 						autoFocus
 						spaceId={personalSpaceId}
 						seed={seed}
-						onSubmit={(v) => start(v, { spaceId: personalSpaceId, modelId })}
-						footer={<ModelPicker value={modelId} onChange={setModelId} />}
+						onSubmit={(v) => start(v, { spaceId: personalSpaceId, modelId: assistantId ? undefined : modelId, assistantId })}
+						footer={
+							<span className="inline-flex items-center gap-1">
+								<AssistantPicker value={assistantId} onChange={setAssistantId} />
+								<ModelPicker value={modelId} onChange={setModelId} />
+							</span>
+						}
 					/>
 					<div className="mt-4 flex flex-wrap justify-center gap-2" aria-label="起步建议">
 						{STARTERS.map((s) => (

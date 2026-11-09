@@ -112,7 +112,9 @@ function SubagentsSection({ spaceId, conversationId }: { spaceId: string; conver
 					</div>
 					{subs.map((s) => {
 						const M = MEMBER[s.memberType] ?? MEMBER.builtin_subagent;
-						const st = SUB_STATUS[s.status];
+						// A turn-limit stop is the timeout class (M02-C): its own label, never shown as success or a plain failure.
+						const turnLimit = /turn_limit|轮数上限|max ?turns/i.test(s.failure ?? "");
+						const st = turnLimit ? { label: "达到轮数上限（超时）", tone: "warning" as const } : SUB_STATUS[s.status];
 						return (
 							<div key={s.delegationId} data-testid="subagent" className="rounded-xl border border-border p-3">
 								<div className="flex items-center gap-2">
@@ -125,7 +127,7 @@ function SubagentsSection({ spaceId, conversationId }: { spaceId: string; conver
 								</div>
 								<p className="mt-1.5 text-[13px]">{s.task}</p>
 								{s.resultSummary ? <p className="mt-1 whitespace-pre-wrap text-[12.5px] text-fg-muted">结果：{s.resultSummary}</p> : null}
-								{s.failure ? <p className="mt-1 text-[12.5px] text-danger">失败原因：{s.failure}</p> : null}
+								{s.failure ? <p className="mt-1 text-[12.5px] text-danger">{turnLimit ? `未完成：在允许的轮数内没有完成，已停止（${s.failure}）` : `失败原因：${s.failure}`}</p> : null}
 								<div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] text-fg-subtle">
 									<span>来源：对话 {s.source.conversationId} · 调用 {s.source.callId.slice(0, 10)}</span>
 									{s.ownerUserId ? <span>负责人：{s.ownerUserId === me?.userId ? `你（${me.name}）` : s.ownerUserId}</span> : null}

@@ -1,0 +1,50 @@
+{
+  "at": "2026-11-09T07:28:16.060Z",
+  "results": [
+    {
+      "name": "M03-A: assistant stored with avatar, description, tools, knowledge, model and members (Settings)",
+      "ok": true,
+      "detail": "研 研究助理 个人 查资料、写摘要 模型：平台默认 · 工具：默认工具集 · 知识库：0 个 · 团队成员：检索员"
+    },
+    {
+      "name": "M03-A: the conversation references the assistant (shown in the header), the assistant itself is managed separately",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M03-B: subagent card shows source, owner, status, result/failure and simulated cost",
+      "ok": true,
+      "detail": "检索员 内置子 Agent 达到轮数上限（超时） 检索资料里的报销规定 未完成：在允许的 轮数内没有完成，已停止（turn_limit） 来源：对话 3 · 调用 fx_mw8xu27 负责人：你（运行测试） 开始 刚刚 用时 24 ms 测试模型 · 模拟用量，不计费 查看子任务对话"
+    },
+    {
+      "name": "M02-C: turn-limit (timeout class) shown as its own state, not as success or a plain failure",
+      "ok": true,
+      "detail": "检索员 | 内置子 Agent | 达到轮数上限（超时）"
+    },
+    {
+      "name": "M15-A: shown model and the recorded route (channel / upstream model / status) for this conversation",
+      "ok": true,
+      "detail": "当前模型：测试模型（非真实 AI） 时间 平台模型 实际渠道 / 上游模型 结果 2026/11/9 07:26:43 workroom-fixture Fixture（确定性测试模型） / workroom-fixture测试模型 成功2 ms 2026/11/9 07:26:44 workroom-fixture "
+    },
+    {
+      "name": "M02-A: after closing the browser and logging in again (other device), the finished run and its deliverable are there",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M02-B: the interrupted run resumed in the new process and finished (no browser involvement)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M02-B: the external write cut mid-dispatch shows 待核对 instead of being re-sent",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M02-B: user records the verified outcome",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

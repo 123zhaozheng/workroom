@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { Badge, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
+import { AssistantsSection } from "@/features/assistants/Assistants";
 import type { ModelOption } from "@/features/chat/ModelPicker";
 
 export default function SettingsPage() {
@@ -30,6 +31,7 @@ export default function SettingsPage() {
 							</label>
 						</Row>
 					</Group>
+					<AssistantsSection />
 					<Group title="账号">
 						<Row label="姓名">{me?.name}</Row>
 						<Row label="邮箱">{me?.email}</Row>
