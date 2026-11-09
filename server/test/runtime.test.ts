@@ -295,3 +295,38 @@ test("runtime M09-B / M13-C: a project member takes over — sees the same state
 		await t.dispose();
 	}
 });
+
+test("fixture model: directive parsing, schema-driven demo args, labelled answers", async () => {
+	const { parseDirectives, demoArgs, fixtureAnswer } = await import("../src/runtime/fixture-model.ts");
+	const d = parseDirectives(`a [[call t1 {"x":"]]","n":{"k":[1,2]}}]] b [[call t2]] [[slow 250]] [[fail]] [[reply hi there]]`);
+	assert.deepEqual(d.calls, [{ name: "t1", args: { x: "]]", n: { k: [1, 2] } } }, { name: "t2", args: {} }]);
+	assert.equal(d.slowMs, 250);
+	assert.equal(d.fail, true);
+	assert.equal(d.reply, "hi there");
+	const args = demoArgs({ type: "object", properties: { name: { type: "string" }, format: { enum: ["docx", "md"] }, content: { type: "string" }, extra: { type: "string" } }, required: ["name", "format"] }, { title: "周报", content: "正文", query: "q" });
+	assert.deepEqual(args, { name: "周报", format: "md", content: "正文" });
+	const sys = { role: "system", content: "", toolsAdded: [{ name: "kb_search", description: "", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } }], timestamp: 0 } as any;
+	const a1 = fixtureAnswer([sys, { role: "user", content: "查一下知识库里的资料", timestamp: 0 } as any]);
+	assert.equal(a1.message.stopReason, "toolUse");
+	assert.equal((a1.message.content[0] as any).name, "kb_search");
+	const a2 = fixtureAnswer([{ role: "user", content: "你好", timestamp: 0 } as any]);
+	assert.match((a2.message.content[0] as any).text, /^【测试模型·非真实AI】/);
+});
+
+test("fixture demo mode drives a real module tool: 生成 → D's file tool when installed", async (tc) => {
+	const t = await startTestApp();
+	try {
+		if (!t.app.ctx.services.has("files")) return tc.skip("files module not loaded");
+		const a = await t.user("rt-demo@example.com");
+		const c = await newChat(t, a.token);
+		const r = await send(t, a.token, c, "请帮我生成一份周报");
+		await settle(t, a.token, c, r.submissionId);
+		const es = await entries(t, a.token, c);
+		const tr = es.find((e) => e.kind === "tool_result") as any;
+		assert.ok(tr, "a file tool was called");
+		assert.equal(tr.isError, false, tr.text);
+		assert.match((es.at(-1) as any).text, /测试模型·非真实AI/);
+	} finally {
+		await t.dispose();
+	}
+});

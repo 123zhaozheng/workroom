@@ -102,15 +102,40 @@ export function textOfContent(content: string | readonly { type: string; text?: 
 	return content.flatMap((c) => (c.type === "text" && typeof c.text === "string" ? [c.text] : [])).join("");
 }
 
-/** Tools currently offered, reconstructed from the transcript's system messages (toolsAdded / toolsRemoved). */
-export function offeredTools(messages: readonly Message[]): Set<string> {
-	const tools = new Set<string>();
+/** Tools currently offered (name → JSON Schema of parameters), reconstructed from system messages (toolsAdded / toolsRemoved). */
+export function offeredToolSchemas(messages: readonly Message[]): Map<string, any> {
+	const tools = new Map<string, any>();
 	for (const m of messages) {
 		if (m.role !== "system") continue;
 		for (const t of m.toolsRemoved ?? []) tools.delete(t.name);
-		for (const t of m.toolsAdded ?? []) tools.add(t.name);
+		for (const t of m.toolsAdded ?? []) tools.set(t.name, t.parameters);
 	}
 	return tools;
+}
+export function offeredTools(messages: readonly Message[]): Set<string> {
+	return new Set(offeredToolSchemas(messages).keys());
+}
+
+/** Fill a tool's required parameters from its JSON Schema with deterministic demo values (demo mode only). */
+export function demoArgs(schema: any, hints: { title: string; content: string; query: string }): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	const props: Record<string, any> = schema?.properties ?? {};
+	const required: string[] = schema?.required ?? Object.keys(props);
+	// Required keys, plus well-known optional text fields so a generated document is not empty.
+	const keys = [...new Set([...required, ...Object.keys(props).filter((k) => /^(title|content|text|body|markdown)$/i.test(k) && props[k]?.type === "string")])];
+	for (const key of keys) {
+		const p = props[key] ?? {};
+		const enumv: unknown[] | undefined = p.enum ?? (p.const !== undefined ? [p.const] : undefined) ?? p.anyOf?.flatMap((x: any) => (x.const !== undefined ? [x.const] : x.enum ?? []));
+		if (enumv?.length) out[key] = enumv.includes("md") ? "md" : enumv.includes("markdown") ? "markdown" : enumv[0];
+		else if (p.type === "number" || p.type === "integer") out[key] = p.minimum ?? 1;
+		else if (p.type === "boolean") out[key] = false;
+		else if (p.type === "array") out[key] = [];
+		else if (p.type === "object") out[key] = demoArgs(p, hints);
+		else if (/name|title|file/i.test(key)) out[key] = hints.title;
+		else if (/query|question|q$|keyword/i.test(key)) out[key] = hints.query;
+		else out[key] = hints.content;
+	}
+	return out;
 }
 
 const FILE_TOOL_PREFERENCE = ["files_create", "file_create", "create_file", "artifact_create", "generate_document", "files_generate", "document_create"];
@@ -138,7 +163,8 @@ function callId(name: string): string {
 export function fixtureAnswer(messages: readonly Message[]): { message: AssistantMessage; slowMs?: number } {
 	const visible = messages.filter((m) => m.role !== "system");
 	const last = visible.at(-1);
-	const tools = offeredTools(messages);
+	const schemas = offeredToolSchemas(messages);
+	const tools = new Set(schemas.keys());
 	if (!last) return { message: fauxAssistantMessage(`${FIXTURE_LABEL} 没有可回答的内容。`) };
 
 	if (last.role === "toolResult") {
@@ -165,13 +191,15 @@ export function fixtureAnswer(messages: readonly Message[]): { message: Assistan
 		const plain = text.replace(/\[\[[^\]]*\]\]/g, "").trim();
 		// Heuristic demo mode, only with tools actually offered.
 		if (/知识|资料/.test(plain) && tools.has("kb_search")) {
-			return { message: fauxAssistantMessage([fauxToolCall("kb_search", { query: plain.slice(0, 200) }, { id: callId("kb_search") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+			const args = { ...demoArgs(schemas.get("kb_search"), { title: plain.slice(0, 40), query: plain.slice(0, 200), content: plain.slice(0, 200) }), query: plain.slice(0, 200) };
+			return { message: fauxAssistantMessage([fauxToolCall("kb_search", args as ToolCall["arguments"], { id: callId("kb_search") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
 		}
 		if (/生成|报告|文档/.test(plain)) {
 			const fileTool = FILE_TOOL_PREFERENCE.find((n) => tools.has(n)) ?? [...tools].find((n) => /(create|generate).*(file|doc)|(file|doc).*(create|generate)/i.test(n));
 			if (fileTool) {
-				const args = { title: plain.slice(0, 40) || "报告", format: "md", content: `# ${plain.slice(0, 40) || "报告"}\n\n${FIXTURE_LABEL} 生成的示例内容。` };
-				return { message: fauxAssistantMessage([fauxToolCall(fileTool, args, { id: callId(fileTool) })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+				const title = plain.slice(0, 40) || "报告";
+				const args = demoArgs(schemas.get(fileTool), { title, query: plain.slice(0, 200), content: `# ${title}\n\n${FIXTURE_LABEL} 生成的示例内容（演示，非真实 AI 撰写）。` });
+				return { message: fauxAssistantMessage([fauxToolCall(fileTool, args as ToolCall["arguments"], { id: callId(fileTool) })], { stopReason: "toolUse" }), slowMs: d.slowMs };
 			}
 		}
 		const echo = plain.length > 200 ? `${plain.slice(0, 200)}…` : plain;
