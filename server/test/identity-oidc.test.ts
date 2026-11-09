@@ -96,7 +96,7 @@ test("OIDC login: code+PKCE+nonce against local IdP; replay, nonce tamper, domai
 		};
 
 		const ok = await login();
-		assert.equal(ok.status, 302, ok.body);
+		assert.equal(ok.status, 302, ok.body ?? "");
 		assert.equal(ok.location, "/projects");
 		const me = await t.json("GET", "/api/me", { token: ok.token });
 		assert.equal(me.me.email, "alice@corp.example");
