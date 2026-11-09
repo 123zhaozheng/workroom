@@ -13,6 +13,7 @@ import type {
 	KbScope,
 	KbSearchRequest,
 	MemoryScope,
+	RetrievalEventDTO,
 	UpdateGovernanceRequest,
 	UpdateMemoryRequest,
 } from "../../../shared/knowledge.ts";
@@ -23,6 +24,7 @@ import { MemoryStore } from "./memory.ts";
 import { knowledgeExtension } from "./extension.ts";
 import { embeddingStatus, type EmbeddingProvider } from "./embeddings.ts";
 import { runEval } from "./eval.ts";
+import { findRetrievalEvents, pruneRetrievalEvents } from "./events.ts";
 import { SUPPORTED_FORMATS } from "./parsers.ts";
 import { ocrSupport, TesseractOcr } from "./ocr.ts";
 
@@ -52,6 +54,10 @@ export class Knowledge {
 	/** Files module hook: file deleted → its KB docs leave retrieval immediately. */
 	fileDeleted(fileId: string): number {
 		return this.store.fileDeleted(fileId);
+	}
+	/** For E's /admin/trace (M18-B): retrieval events of an org matching a correlation id. */
+	retrievalEvents(orgId: string, q: string): RetrievalEventDTO[] {
+		return findRetrievalEvents(this.ctx.db, orgId, q);
 	}
 	setEmbeddingProvider(p: EmbeddingProvider | null): void {
 		this.embeddings = p;
@@ -88,13 +94,21 @@ function mountRoutes(api: Hono<AppEnv>, ctx: AppContext): void {
 		const p = principalOf(c);
 		const b = await jsonBody<KbSearchRequest>(c);
 		if (typeof b.query !== "string") throw new HttpError(400, "invalid", "query 必填");
-		return c.json(await s().search(p, b.query, b));
+		return c.json(await s().search(p, b.query, { ...b, trace: { source: "api", requestId: c.get("requestId") } }));
 	});
 	api.post("/kb/eval", async (c) => {
 		const p = principalOf(c);
 		const b = await jsonBody<{ samples: KbEvalSample[]; kbIds?: string[] }>(c);
 		if (!Array.isArray(b.samples) || b.samples.length > 200) throw new HttpError(400, "invalid", "samples 必须是数组（最多 200 条）");
-		return c.json(await runEval(s(), p, b.samples, { kbIds: b.kbIds }));
+		return c.json(await runEval(s(), p, b.samples, { kbIds: b.kbIds, requestId: c.get("requestId") }));
+	});
+	api.get("/kb/admin/retrieval-events", (c) => {
+		const p = principalOf(c);
+		const role = s().access.liveOrgRole(p.userId, p.orgId);
+		if (role !== "owner" && role !== "admin") throw new HttpError(403, "forbidden", "只有组织管理员可以查看检索事件", { reason: "not_admin" });
+		const q = c.req.query("q")?.trim();
+		if (!q) throw new HttpError(400, "invalid", "q 必填：requestId / <spaceId>:<conversationId> / callId / 事件 id / queryHash");
+		return c.json({ events: k().retrievalEvents(p.orgId, q) });
 	});
 	api.get("/kb/citations/:chunkId/status", (c) => {
 		const p = principalOf(c);
@@ -229,6 +243,7 @@ export const knowledgeModule: WorkroomModule = {
 		const k = knowledgeOf(ctx);
 		const identity = ctx.services.get("identity") as unknown as { registerResolver?: (kind: ResourceRef["kind"], r: (p: Principal, action: string, res: ResourceRef) => Promise<any>) => void };
 		identity.registerResolver?.("kb", async (p, action, res) => k.store.access.decision(p, action, k.store.kbRow(res.id)));
+		pruneRetrievalEvents(ctx.db);
 		k.pipeline.start();
 	},
 	async stop(ctx) {

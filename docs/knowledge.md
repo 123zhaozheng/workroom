@@ -59,6 +59,14 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 - 评估：`server/src/knowledge/eval-samples.ts`（md/txt/csv/html/json 语料 + 14 个样例，测试中再加 PDF 页码样例）；`POST /api/kb/eval {samples, kbIds?}` 返回 `passed`、`recallAt5`、`mrr`、逐条 rank。当前：16/16，recall@5 = 1，MRR = 1（`knowledge-eval.test.ts`）。
 - **向量检索：blocked**。没有嵌入模型凭据；`embeddings.ts` 定义了 `EmbeddingProvider` 接口和解锁步骤（`kb_vectors` 表、流水线写入、与 FTS 结果做 RRF 融合并保持同一 SQL 权限过滤），没有伪造向量。
 
+## 4.1 检索事件（M18-B）
+
+每次检索（HTTP、`kb_search` 工具、评估、子 Agent 范围拒绝）写入 `kb_retrieval_events`：`source`、`requestId`（HTTP 的 `x-request-id`）、
+`spaceId/conversationId/taskId/callId`（工具调用）、`queryHash`（sha256(orgId, 归一化查询) 前 16 位）、按 `WORKROOM_REDACT` 脱敏的查询
+（strict 不存）、`kbIds`、`forbiddenKbIds`、命中数、`reason`、`strategy`、`cached`、耗时。同时经 E 的 `logEvent` 输出 `kb.search` 结构化日志
+（不含查询原文）。查询：`GET /api/kb/admin/retrieval-events?q=<requestId | spaceId:conversationId | callId | 事件 id | queryHash>`（组织管理员），
+以及 `knowledgeAdmin.retrievalEvents(orgId, q)` 供 E 的 `/api/admin/trace` 合并（见 `docs/requests/C.md` To E）。保留 30 天（启动时清理）。
+
 ## 5. 引用语义（M06-B、M06-C）
 
 - `Citation`（核心契约）+ 展示字段：`kbId/kbName/docId/fileId/versionId/versionNo/fileName/chunkId/page?/section?/paragraph?/sheet?/rowStart?/rowEnd?/ocr?/snippet/score/locator`。`versionId` 就是 D 的不可变文件版本，可直接 `GET /api/files/:fileId/versions/:versionId/download`。

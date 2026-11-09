@@ -21,6 +21,7 @@ import type {
 import { accessibleKbQuery, KbAccess, type KbRow } from "./acl.ts";
 import { locatorOf } from "./chunker.ts";
 import { coverage, escapeLike, makeSnippet, occurrences, planQuery } from "./query.ts";
+import { recordRetrieval } from "./events.ts";
 
 export interface DocRow {
 	id: string;
@@ -524,11 +525,18 @@ export class KnowledgeStore implements KnowledgeService {
 		return result;
 	}
 
-	/** Retrieval event sink (M18-B); filled in by the events module. */
-	recordRetrieval(_p: Principal, _query: string, _result: SearchResult, _trace?: RetrievalTrace): void {}
+	recordRetrieval(p: Principal, query: string, result: SearchResult, trace?: RetrievalTrace): void {
+		recordRetrieval(this.db, p, query, result, trace);
+	}
 
-	/** KnowledgeService contract. */
+	/** KnowledgeService contract. Every call is recorded as a retrieval event (M18-B). */
 	async search(p: Principal, query: string, options: SearchOptions = {}): Promise<SearchResult> {
+		const result = await this.#search(p, query, options);
+		this.recordRetrieval(p, query ?? "", result, options.trace);
+		return result;
+	}
+
+	async #search(p: Principal, query: string, options: SearchOptions): Promise<SearchResult> {
 		const t0 = performance.now();
 		const out = (citations: CitationDTO[], diagnostics: RetrievalDiagnostics, debug?: SearchResult["debug"]): SearchResult => ({
 			citations,

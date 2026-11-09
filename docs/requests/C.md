@@ -35,6 +35,22 @@ All three items below are resolved; kept for history.
    when a file is deleted, call `.fileDeleted(fileId)`. Both are exported by C now; KB docs that follow the file re-index
    (new doc version; old chunks tombstoned once the new one is ready) or are removed from retrieval immediately.
 
+## To E (ops) — M18-B retrieval events in `/api/admin/trace`
+
+C records one row per retrieval (HTTP search, `kb_search` tool call, eval, scope refusal) in `kb_retrieval_events` and logs a
+`kb.search` line through your `logEvent` (fields: `eventId, requestId, spaceId, conversationId, taskId, callId, orgId, userId,
+source, queryHash, queryLen, kbIds, forbiddenKbIds, hits, reason, strategy, cached, latencyMs` — never the query text).
+Please merge the events into the trace response (one line, no schema work on your side):
+
+```ts
+retrieval: ctx.services.has("knowledgeAdmin") ? (ctx.services.get("knowledgeAdmin") as any).retrievalEvents(p.orgId, q) : [],
+```
+
+`retrievalEvents(orgId, q)` matches `q` against event id, `requestId`, `"<spaceId>:<conversationId>"`, `callId` or `queryHash`,
+org-scoped, ≤200 rows, returns `RetrievalEventDTO[]` (`shared/knowledge.ts`). The stored query is redacted with your
+`redactText` per `WORKROOM_REDACT` (strict → not stored, only hash + length). Until you merge it, admins can use
+`GET /api/kb/admin/retrieval-events?q=` (org owner/admin only). Retention: `WORKROOM_KB_EVENT_RETENTION_DAYS` (default 30), pruned on start.
+
 ## To integrator
 
 - Dependencies added with `--save-exact`: `unpdf@2.1.0`, `mammoth@1.13.0`, `exceljs@4.4.0`, `node-html-parser@9.0.7`,

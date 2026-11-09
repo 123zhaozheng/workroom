@@ -177,4 +177,35 @@ ALTER TABLE kb_chunks ADD COLUMN ocr INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE kb_doc_versions ADD COLUMN ocr_pages INTEGER;
 `,
 	},
+	{
+		version: 3,
+		name: "retrieval events (M18-B)",
+		sql: `
+CREATE TABLE kb_retrieval_events (
+	id TEXT PRIMARY KEY,
+	org_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	source TEXT NOT NULL,            -- api | tool | eval
+	request_id TEXT,
+	space_id TEXT,
+	conversation_id INTEGER,
+	task_id INTEGER,
+	call_id TEXT,
+	query_hash TEXT NOT NULL,        -- sha256(orgId, normalized query), first 16 hex
+	query_redacted TEXT,             -- per WORKROOM_REDACT: off = full, standard = secrets masked, strict = NULL
+	query_len INTEGER NOT NULL,
+	kb_ids TEXT NOT NULL,            -- JSON: searched KB ids
+	forbidden_kb_ids TEXT,           -- JSON
+	hit_count INTEGER NOT NULL,
+	reason TEXT,
+	strategy TEXT,
+	cached INTEGER NOT NULL DEFAULT 0,
+	latency_ms REAL NOT NULL,
+	at TEXT NOT NULL
+);
+CREATE INDEX kb_retrieval_events_req ON kb_retrieval_events(org_id, request_id);
+CREATE INDEX kb_retrieval_events_conv ON kb_retrieval_events(space_id, conversation_id);
+CREATE INDEX kb_retrieval_events_at ON kb_retrieval_events(org_id, at);
+`,
+	},
 ];

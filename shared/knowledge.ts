@@ -227,6 +227,31 @@ export interface KbCapabilities {
 	readonly formats: readonly string[];
 }
 
+// ---------- retrieval events (M18-B) ----------
+/** One retrieval, as found by correlation id (GET /api/kb/admin/retrieval-events?q=, and E's /api/admin/trace). */
+export interface RetrievalEventDTO {
+	readonly id: string;
+	readonly at: string;
+	readonly userId: string;
+	readonly source: "api" | "tool" | "eval";
+	readonly requestId?: string;
+	readonly spaceId?: string;
+	readonly conversationId?: number;
+	readonly taskId?: number;
+	readonly callId?: string;
+	readonly queryHash: string;
+	/** Redacted query text; absent under WORKROOM_REDACT=strict. */
+	readonly query?: string;
+	readonly queryLength: number;
+	readonly kbIds: string[];
+	readonly forbiddenKbIds?: string[];
+	readonly hitCount: number;
+	readonly reason?: RetrievalFailure;
+	readonly strategy?: string;
+	readonly cached: boolean;
+	readonly latencyMs: number;
+}
+
 // ---------- evaluation ----------
 export interface KbEvalSample {
 	readonly id: string;
