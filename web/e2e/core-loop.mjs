@@ -35,6 +35,16 @@ try {
 	const external = homeReqs.filter((u) => !u.startsWith(base) && !u.startsWith("data:"));
 	check("home: no external requests (fonts/CDN)", external.length === 0, external.join(", "));
 	check("home: one composer, no dashboard", (await page.locator('[data-testid="composer"]').count()) === 1);
+	const models = await (await page.request.get(`${base}/api/models`)).json().catch(() => null);
+	if (models?.models?.length) {
+		await page.click('[data-testid="model-picker"]');
+		await page.waitForSelector('[data-testid="model-option"]');
+		const blocked = models.models.filter((m) => m.status === "blocked").length;
+		const disabled = await page.locator('[data-testid="model-option"][data-disabled]').count();
+		check("home: blocked models shown with reason and not selectable", disabled === blocked, `blocked=${blocked} disabled=${disabled}`);
+		await shot(page, "1440-home-model-picker");
+		await page.keyboard.press("Escape");
+	} else check("home: model list unavailable → picker hidden (no fake models)", (await page.locator('[data-testid="model-picker"]').count()) === 0);
 
 	// ---------------------------------------------------------------- chat: tool step + file card
 	await sendMessage(page, '帮我写一份项目周报 [[call file_create {"name":"项目周报","format":"md","title":"项目周报","content":"# 本周进展\\n- 完成需求评审\\n- 完成原型\\n\\n# 风险\\n- 暂无"}]]');

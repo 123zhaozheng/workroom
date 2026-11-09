@@ -139,14 +139,18 @@ function KbDetail({ kbId }: { kbId: string }) {
 	const docs = useApi<unknown>(`/kb/${encodeURIComponent(kbId)}/docs`, { pollMs: poll ? 2000 : undefined });
 	const list = listOf<KbDocDTO>(docs.data, "docs");
 	const anyProcessing = list.some((d) => d.availability === "processing" || d.latest.status !== "ready" && d.latest.status !== "failed");
-	useEffect(() => {
-		if (docs.data) setPoll(anyProcessing);
-	}, [docs.data, anyProcessing]);
+
 	const input = useRef<HTMLInputElement>(null);
 	const [picker, setPicker] = useState(false);
 	const [msg, setMsg] = useState<{ tone: "info" | "danger"; text: string }>();
 	const [busy, setBusy] = useState(false);
 	const { openPreview } = usePanel();
+	useEffect(() => {
+		if (!docs.data) return;
+		setPoll(anyProcessing);
+		// the "processing" notice must not outlive the processing it describes
+		if (!anyProcessing) setMsg((m) => (m?.tone === "info" ? undefined : m));
+	}, [docs.data, anyProcessing]);
 	const canWrite = kb?.permissions.write ?? true;
 
 	const addVersion = async (fileId: string, versionId: string) => {

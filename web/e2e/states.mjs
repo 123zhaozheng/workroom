@@ -114,6 +114,20 @@ try {
 	check("work panel: one panel, switchable tabs", (await page.locator('[data-testid="side-panel"]').count()) === 1);
 	await page.click('[data-testid="close-panel"]');
 
+	// ---------------------------------------------------------------- knowledge failure is shown honestly (M06-A)
+	if (kbOk) {
+		const kb = await kbRes.json();
+		const kbId = (kb.kb ?? kb).id;
+		await page.goto(`${base}/knowledge/${kbId}`);
+		await page.setInputFiles('[data-testid="kb-upload-input"]', { name: "设备数据.bin", mimeType: "application/octet-stream", buffer: Buffer.from(Array.from({ length: 512 }, (_, i) => (i * 37) % 256)) });
+		await page.waitForSelector('[data-testid="kb-doc"]', { timeout: 15000 });
+		await page.waitForSelector('[data-testid="kb-doc"][data-availability="failed"], [data-testid="kb-doc"][data-availability="ready"]', { timeout: 30000 });
+		const av = await page.locator('[data-testid="kb-doc"]').first().getAttribute("data-availability");
+		const txt = await page.locator('[data-testid="kb-doc"]').first().innerText();
+		check("knowledge: unparseable upload shows 失败 + reason (never 可检索)", av === "failed" && txt.includes("失败原因"), `${av}: ${txt.replace(/\s+/g, " ").slice(0, 120)}`);
+		await shot(page, "1440-knowledge-failed");
+	}
+
 	// ---------------------------------------------------------------- project page
 	const pr = await (await page.request.post(`${base}/api/projects`, { data: { name: "新品发布" } })).json();
 	await page.goto(`${base}/projects/${pr.project.id}`);

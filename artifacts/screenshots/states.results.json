@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T02:30:40.355Z",
+  "at": "2026-11-09T02:34:09.467Z",
   "results": [
     {
       "name": "setup: knowledge base created through C's API",
@@ -70,6 +70,11 @@
       "name": "work panel: one panel, switchable tabs",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "knowledge: unparseable upload shows 失败 + reason (never 可检索)",
+      "ok": true,
+      "detail": "failed: 设备数据.bin 尚无可检索版本 · 512 B · 刚刚 失败 失败原因：不支持的文件类型（application/octet-stream）；支持 txt, md, html, csv, json, pdf, docx, xlsx（已尝"
     },
     {
       "name": "project page: members with roles",

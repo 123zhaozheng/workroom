@@ -61,7 +61,7 @@ export default function StatsCharts({ data }: { data: StatsDTO }) {
 			{data.daily?.length ? (
 				<div className="h-72 rounded-xl border border-border bg-surface p-3">
 					<ResponsiveContainer width="100%" height="100%">
-						<BarChart data={data.daily}>
+						<BarChart data={data.daily} maxBarSize={48}>
 							<CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
 							<XAxis dataKey="day" tick={{ fontSize: 12, fill: "var(--fg-subtle)" }} />
 							<YAxis tick={{ fontSize: 12, fill: "var(--fg-subtle)" }} />

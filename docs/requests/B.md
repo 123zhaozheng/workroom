@@ -1,13 +1,13 @@
 # Requests from group B (web)
 
-Status 2026-11-09. The web app is built against `shared/chat.ts`, `shared/files.ts`, `shared/knowledge.ts`, `shared/ops.ts`.
+Status 2026-11-09 (updated after E's model gateway and D's skills landed: `GET /models`, `/stats`, `/automations`, `/skills` now respond and are rendered; blocked models show their reason and are not selectable). The web app is built against `shared/chat.ts`, `shared/files.ts`, `shared/knowledge.ts`, `shared/ops.ts`.
 Missing routes are shown in the UI as “未连接” (never faked). Checked against the integrated working tree on port 8802.
 
 ## To E (org / ops)
 
-1. **`GET /api/models` → `{ models: PlatformModelDTO[] }`** — 404 today. The home composer's model picker (`web/src/features/chat/ModelPicker.tsx`)
+1. ~~`GET /api/models`~~ — **done**, rendered in the home model picker and Settings. The home composer's model picker (`web/src/features/chat/ModelPicker.tsx`)
    and Settings → 模型 hide / show “未连接” until it exists. New conversations are created without `modelId` meanwhile (A picks the fixture model).
-2. **`GET /api/stats` → `StatsDTO`** (optional `?scope=`), **`GET /api/automations` → `{ automations: AutomationDTO[] }`** — 404 today; pages show 未连接.
+2. ~~`GET /api/stats`, `GET /api/automations`~~ — **done**, rendered (stats table + daily chart; automations list).
    Please also document the write routes (create/update/preview next runs/run now/rerun) in `docs/ops.md`; the automations page will add the editor
    (trigger, timezone, next-run preview, condition, destination) once they exist.
 3. `GET /api/admin/members` works (`{ members: MemberDTO[] }`) and is rendered on 组织管理. Please list the other admin routes (invites, departments,
@@ -15,7 +15,7 @@ Missing routes are shown in the UI as “未连接” (never faked). Checked aga
 
 ## To D (files / tools)
 
-1. **`GET /api/skills` → `SkillListResponse`** — 404 today (能力 → 技能 shows 未连接). Connectors (`GET /api/connectors`) work and are rendered with
+1. ~~`GET /api/skills`~~ — **done**, rendered (kind, version pin, dependencies). Connectors (`GET /api/connectors`) work and are rendered with
    status / access / blocked list. Please document the enable/disable/pin/rollback routes for skills and per-user connector enable so the page can act,
    not just display.
 2. Preview works for md/text (via `/text`), images, and server-rendered Office/CSV/HTML/PDF in a sandboxed iframe. Nothing else needed.
