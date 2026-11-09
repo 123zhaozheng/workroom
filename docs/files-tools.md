@@ -71,6 +71,10 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 表 `tool_calls`：工具名、连接器、组织、用户、空间、会话、pi task、callId、**参数摘要**（密钥类字段名 → `[REDACTED]`，已知密钥值与常见令牌形态替换，长串截断）、状态（running/ok/error/denied/needs_reconciliation）、错误、结果摘要、尝试次数、耗时。同一 (space, task, call, tool) 重放复用同一记录。
 路由：`GET /tool-calls?spaceId=&conversationId=&tool=`（按空间读权限）、`GET /connectors/:id/calls`（管理者看全部，其他人看自己的）。
 
+
+> **第 4 轮（MARKETPLACE 组）**：技能与 MCP 已扩展为「上传包 → 自动检查 → 范围审核 → 发布 → 安装」的市场，技能以内容寻址 zip + 沙箱只读挂载 `/skills/<slug>/` 提供，stdio MCP 只在沙箱服务模式运行，个人连接器可要求审批、凭据按用户加密。
+> 设计、目录布局、API 与缺口见 [skills-mcp-marketplace.md](skills-mcp-marketplace.md)。下文 §4、§5 描述的 JSON 创建、安装/固定/升级/回滚、逐版本授权仍然有效；其中「组织技能由管理员直接创建」现在等价于一次**强制发布**（留审计），`skill_run` 的脚本目录变为只读挂载，`GET /skills` 的 `scope` 取值扩展为 personal/project/department/org。
+
 ## 4. MCP 连接器（M04-A/B/C）
 
 - 表 `mcp_servers`（系统 = 组织级，组织 owner/admin 管理；个人 = 仅本人可见可用）与 `mcp_user_settings`（每用户启用开关，调用时校验）。
