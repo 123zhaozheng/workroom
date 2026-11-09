@@ -48,7 +48,13 @@ DTO 一律从 `shared/*.ts` 引用（`@shared/chat`、`@shared/files`、`@shared
 - **插话**：运行中输入框的发送键变为“插话”，可切换“稍后处理”（followUp）；每条插话在输入框上方显示反馈 已接收 → 已应用 → 已回复，或“未应用：原因”/“已撤回”（轮询 `GET .../submissions/:id`）。停止键 = `POST .../abort`。
 - **分支**：消息悬停操作——复制、编辑（→ `POST .../edit`，新分支）、重新生成（→ `.../regenerate`，新分支）、从这里分叉（→ `.../fork`）、导出 Markdown。分歧点上方显示 `‹ i / n ›` 切换器；顶栏“分支 n”菜单列出原对话与所有分支；分支顶栏显示“分支”标记与“来自：原对话”链接。原对话永不被修改。
 - **输入框**：一个输入框完成纯聊天 / 带附件 / 带知识引用。附件与知识库以小标签出现在输入框内；来源：“+”菜单（上传、从文件库选择、引用知识库）或输入 `/` 的斜杠菜单（键盘可选）。中文输入法组合期间回车不发送。
-- 子 Agent 会话（`kind: subagent`）只读。
+- 子 Agent 会话（`kind: subagent`）只读；项目**查看者**打开项目对话时也是只读（无输入框、无编辑/再生成/分叉、不能确认），服务端同样拒绝其写请求。
+- **每条消息的结果**：`UserEntryDTO.submission` 未回复/撤回时直接标在那条消息下（“这条消息没有得到回复：未应用（已被取消）”），刷新、换设备后不变。
+- **用量诚实**：测试模型（`usage.fixture`/`usage.simulated`）只显示“测试模型 · 模拟用量，不计费”，不显示任何 Token 数；统计页在只有测试模型请求时 Token 显示“—”。
+- **引用失效提示**：打开对话时取 `GET /kb/conversations/:spaceId/:id/citation-status`；旧回答保留原引用快照，来源更新/删除/下架/过期时在引用上方标出服务端给的说明（更新时可直接打开当前版本），无权访问时隐藏片段与链接；对话顶部有汇总提示。
+- **待核对**：`effects` 中 `needs_reconciliation` → 核对卡片（已生效 / 未生效），系统不自动重做。
+- **后台任务**（M14-C）：`job_start` 的结果在消息中显示为一行状态（进行中/已完成/失败/超预算/已取消 + 取消），详情（预算、进度、产出文件）在工作面板“子任务”页；聊天始终可用。
+- **“更多”菜单**（对话顶栏 ⋯）：交接摘要（M09-B，对话框：待处理/已做决定/进展/成果/参与者/当前权限）、整理为技能（→ 能力页草稿）。不新增常驻面板。
 
 ## 5. 组件清单
 
@@ -64,9 +70,12 @@ DTO 一律从 `shared/*.ts` 引用（`@shared/chat`、`@shared/files`、`@shared
 | `features/chat/*` | `Composer` `pickers`（文件/知识库选择）`ModelPicker` `Messages`（用户/助手消息、分支切换器）`Steps`（步骤链）`Cards`（文件卡、审批卡、核对卡、引用）`status`（状态文案与图标）`model`（视图模型）`useConversation`（SSE、详情、更早消息、提交跟踪） |
 | `features/markdown/Markdown.tsx` | 流式与历史共用的 Markdown 渲染 |
 | `features/preview/*` | `PreviewPanel` + `viewers/{FrameViewer,TextViewer,ImageViewer}` |
-| `features/work/WorkPanel.tsx` | 子任务 / 终端 / 浏览器 |
+| `features/work/WorkPanel.tsx` | 子任务（后台任务 + 子 Agent）/ 终端（隔离说明、执行记录、目录）/ 浏览器（实时会话 + 抓取记录） |
+| `features/work/live.tsx` | `JobCard` `JobChip`（消息内状态 + 取消）`BrowserSessionView`（观看 / 接管 / 点击截图操作 / 输入 / 导航 / 交还；接管权限 = 服务端 `canControl`，与预览一致） |
+| `features/handoff/Handoff.tsx` | 对话交接摘要对话框、项目页“对话与待处理”汇总 |
+| `components/shell/Notifications.tsx` | 侧栏铃铛：站内通知（状态、打开任务、成果文件、已读） |
 | `features/stats/StatsCharts.tsx` | Recharts（仅统计页） |
-| `pages/*` | 登录/注册、首页、对话、搜索、个人知识库（列表/详情/检索测试）、文件库、文件详情（版本与来源）、项目（成员/角色）、设置、能力（技能/连接）、自动化、记忆、统计、组织管理 |
+| `pages/*` | 登录/注册、首页、对话、搜索、个人知识库（列表/详情/失败重试/检索调试与评估）、文件库、文件详情（版本与来源）、项目（成员/角色/交接汇总）、设置、能力（技能安装/启用/固定/升级/回滚/授权/运行记录；从任务整理→验证→发布；连接启用/重新连接）、自动化（编辑器：触发/时区/下次运行预览/条件/输出/补跑/时长；立即运行/取消/再次运行/运行历史与通知投递）、记忆、统计、组织管理（成员/邀请/部门/会话/模型与渠道/预算/审计与导出） |
 
 ## 6. Markdown 渲染选型：Streamdown
 
@@ -93,11 +102,17 @@ Playwright 已预装（脚本通过 `createRequire` 加载，**不要** `playwri
 
 ```bash
 npm run -w web build
-node web/e2e/core-loop.mjs   # 或：npm run -w web e2e（依次跑全部）
-node web/e2e/states.mjs
+npm run -w web e2e           # 依次跑 core-loop / states / pages / round2（当前 36 + 24 + 31 + 19 项）
+node web/e2e/round2.mjs      # 或单独跑某一个
 ```
 
 - `web/e2e/core-loop.mjs`：注册 → 首页（无重型块、无外部请求、一个输入框）→ 发消息（`[[call file_create …]]`）→ 步骤链 + 文件卡 → 右侧预览打开/关闭 → 审批卡（`wr_fixture_approval`）批准 → 运行中插话反馈（已接收→已应用/已回复）→ `file_revise` 生成 v2 卡片 → 编辑产生分支 + 切换器回到原对话 → 文件库 v1/v2 与来源 → 知识库上传后“处理中→可检索”+ 检索测试 → 1366×768（预览、侧栏收起、无横向溢出）→ 390×844（导航抽屉、预览抽屉、无横向滚动）→ reduced-motion（系统与应用内开关）→ 全程无外部请求、字体仅来自 `/assets`。结果写入 `artifacts/screenshots/core-loop.results.json`。
+- `web/e2e/pages.mjs`（端口 8822）：自动化（预览、无效 cron、立即运行、再次运行、编辑、失败记录、取消、站内通知含成果与任务链接）、组织管理（邀请→加入、成员看不到管理入口且服务端 403、停用即撤销会话、部门、会话、渠道、预算、审计与 CSV）、能力（技能固定/升级/回滚/停用、从任务整理→验证→发布、连接重新检查与个人启用）。结果 `pages.results.json`。
+- `web/e2e/round2.mjs`（端口 8832 + 本地测试网页 8834，`WORKROOM_URL_ALLOWLIST` 只放行它）：M01-A 同一输入框三类请求、引用失效提示、单条消息结果、待核对卡片、终端真实执行、网页抓取、实时浏览器接管与点击、后台任务取消、知识库失败重试、检索调试与评估、编辑者交接摘要 / 查看者只读且服务端拒绝。结果 `round2.results.json`。
 - `web/e2e/states.mjs`：附件标签 + 斜杠菜单引用知识库（同一输入框）→ 失败（原因 + 继续）→ 运行中 → 取消 → 委派子 Agent 后工作面板（子任务/终端/浏览器）→ 项目页成员角色 → 搜索/能力/自动化/统计/记忆/管理页不出错 → 深色主题。结果写入 `artifacts/screenshots/states.results.json`。
 
 截图（deviceScaleFactor 2）在 `artifacts/screenshots/`，文件名前缀为视口宽度（`1440-*`、`1366-*`、`390-*`）。
+
+## 9. e2e 判定规则
+
+只有断言本身或紧挨着的 `waitForSelector/waitForFunction`（失败即抛出）能证明的检查才写成通过；功能缺失（接口 404、显示“未连接”）一律判为失败，不设“未连接也算通过”的分支。
