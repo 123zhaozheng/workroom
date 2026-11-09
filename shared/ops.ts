@@ -158,50 +158,172 @@ export interface PlatformModelDTO {
 	isDefault: boolean;
 	/** True for the deterministic test model: UI must label it "测试模型，非真实 AI". */
 	fixture: boolean;
+	// ---- round 4 (pi-ai native providers): all optional so older clients keep working
+	maxTokens?: number;
+	/** Native pi-ai provider id (= ref.provider) and its display name, e.g. "DeepSeek". */
+	providerId?: string;
+	providerName?: string;
+	providerType?: string;
+	scope?: "instance" | "org" | "user" | "fixture";
+	/** The viewer's own provider (个人自带密钥). */
+	personal?: boolean;
+	input?: ("text" | "image")[];
+	reasoning?: boolean;
+	/** USD per million tokens. */
+	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
-export type ChannelProviderKind = "anthropic" | "openai" | "openai-compatible" | "faux" | "fixture";
-export interface ChannelDTO {
+// ---- model providers (模型服务商): each is a real pi-ai Provider (createProvider + setProvider); keys are never returned
+export type ModelProviderType = "openai-completions" | "openai-responses" | "anthropic-messages" | "builtin";
+export type ModelProviderScope = "instance" | "org" | "user";
+export type ModelAuthStyle = "default" | "bearer" | "x-api-key" | "api-key";
+
+export interface ModelProviderDTO {
+	/** The pi-ai provider id (what conversations store as ref.provider). */
 	id: string;
-	orgId?: string;
 	name: string;
-	provider: ChannelProviderKind;
+	scope: ModelProviderScope;
+	orgId?: string;
+	ownerUserId?: string;
+	type: ModelProviderType;
+	/** pi-ai built-in provider id when type = "builtin" (azure, google, mistral, ...). */
+	builtinId?: string;
+	preset?: string;
 	baseUrl?: string;
-	/** Credential source; the key itself is never returned. */
+	authStyle: ModelAuthStyle;
+	keyless: boolean;
+	/** The key itself is never returned. */
 	credential: { kind: "none" | "stored" | "env"; envVar?: string; hint?: string };
-	status: "enabled" | "disabled";
-	health: "ready" | "blocked" | "circuit_open";
-	healthDetail?: string;
-	rpmLimit?: number;
-	concurrencyLimit?: number;
+	/** Names only; values are sealed server-side. */
+	headerNames: string[];
+	envKeys: string[];
 	timeoutMs?: number;
-	/** USD per 1M tokens; overrides catalog prices for cost calculation. */
-	price?: { input: number; output: number; cacheRead: number; cacheWrite: number };
-	builtin: boolean;
+	status: "enabled" | "disabled";
+	health: "ready" | "blocked" | "disabled";
+	healthDetail?: string;
+	lastCheck?: { at: string; ok: boolean; list?: boolean; completion?: boolean; detail?: string };
+	lastFetchAt?: string;
+	source: "admin" | "personal" | "config" | "env" | "migration" | "test";
+	modelCount: number;
+	enabledModelCount: number;
+	/** Instance-level (workroom.models.json / env) providers are read-only for org admins. */
+	readOnly: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
 
-export interface ModelRouteDTO {
+export interface AdminModelDTO {
+	/** Platform id "<providerId>/<modelId>". */
 	id: string;
-	platformModelId: string;
-	channelId: string;
-	upstreamModelId: string;
-	/** Lower = tried first. Same priority → weighted random. */
-	priority: number;
-	weight: number;
+	providerId: string;
+	modelId: string;
+	name: string;
+	manual: boolean;
+	/** A catalog (fetched / built-in) model whose fields the admin overrode. */
+	overridden: boolean;
 	enabled: boolean;
+	contextWindow: number;
+	maxTokens: number;
+	input: ("text" | "image")[];
+	reasoning: boolean;
+	thinkingLevels: ThinkingLevel[];
+	thinkingLevelMap?: Record<string, string | null>;
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	compat?: Record<string, unknown>;
+	tools: boolean;
 	capabilities: ModelCapability[];
+	visibility: { departmentIds?: string[]; projectIds?: string[]; userIds?: string[] } | null;
+	fallbacks: { provider: string; modelId: string }[];
+	defaultThinking?: ThinkingLevel;
+	description?: string;
+	sort: number;
+	/** Looks like an embedding / speech / image model: not offered by default. */
+	nonChat: boolean;
+	isDefault: boolean;
 }
 
-export interface AdminPlatformModelDTO extends PlatformModelDTO {
-	orgId?: string;
-	enabled: boolean;
-	visibility: { departmentIds?: string[]; projectIds?: string[] } | null;
-	routes: ModelRouteDTO[];
-	kind: "real" | "fixture";
-	/** Instance-level (env-managed) models/channels are read-only for org admins. */
-	builtin: boolean;
+export interface ModelProviderPreset {
+	key: string;
+	label: string;
+	type: ModelProviderType;
+	baseUrl?: string;
+	builtinId?: string;
+	keyless?: boolean;
+	authStyle?: ModelAuthStyle;
+	catalogFrom?: string;
+	hint: string;
+	exampleModels?: string[];
+}
+
+export interface ModelProvidersResponse {
+	providers: ModelProviderDTO[];
+	presets: ModelProviderPreset[];
+	/** Admin only. */
+	builtins?: { id: string; name: string; baseUrl?: string; models: number; auth: string[]; configured: boolean }[];
+	fixture?: { id: string; name: string; detail: string } | null;
+	settings?: { personalProviders: boolean; defaultModel: { provider: string; modelId: string } | null; secretKeyConfigured: boolean; config: { path: string | null; providers: string[]; errors: string[] } };
+}
+
+export interface CreateModelProviderRequest {
+	name: string;
+	type: ModelProviderType;
+	builtinId?: string;
+	preset?: string;
+	baseUrl?: string;
+	/** Stored encrypted; needs WORKROOM_SECRET_KEY (409 secret_key_missing). */
+	apiKey?: string;
+	/** Name of a WORKROOM_* environment variable holding the key (admin providers only). */
+	apiKeyEnv?: string;
+	/** Custom request headers; values are sealed. */
+	headers?: Record<string, string>;
+	/** Provider-scoped config for pi-ai built-ins, e.g. AZURE_OPENAI_BASE_URL. */
+	env?: Record<string, string>;
+	keyless?: boolean;
+	authStyle?: ModelAuthStyle;
+	timeoutMs?: number;
+	/** Manual models to add at the same time. */
+	models?: (Partial<AdminModelSpec> & { id: string; enabled?: boolean })[];
+	/** Run 获取模型列表 right after creating; enableFetched switches the chat ones on. */
+	fetchModels?: boolean;
+	enableFetched?: boolean;
+}
+/** null clears (apiKey, headers, env, timeoutMs); a header value "****" keeps the stored value. */
+export type UpdateModelProviderRequest = Partial<Omit<CreateModelProviderRequest, "type" | "builtinId" | "models" | "fetchModels" | "enableFetched" | "apiKey" | "headers" | "env" | "timeoutMs">> & { status?: "enabled" | "disabled"; apiKey?: string | null; headers?: Record<string, string> | null; env?: Record<string, string> | null; timeoutMs?: number | null };
+
+/** What a manual model / an override may define (pi-ai Model fields; compat is validated against pi-ai's schema for the provider's API). */
+export interface AdminModelSpec {
+	name: string;
+	contextWindow: number;
+	maxTokens: number;
+	input: ("text" | "image")[];
+	reasoning: boolean;
+	thinkingLevelMap: Record<string, string | null>;
+	cost: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+	compat: Record<string, unknown>;
+	tools: boolean;
+}
+export type UpdateAdminModelRequest = Partial<AdminModelSpec> & {
+	enabled?: boolean;
+	visibility?: AdminModelDTO["visibility"];
+	fallbacks?: AdminModelDTO["fallbacks"];
+	defaultThinking?: ThinkingLevel | null;
+	description?: string | null;
+	sort?: number;
+	/** Drop every override on a catalog model. */
+	resetSpec?: boolean;
+};
+
+export interface ProviderTestResponse {
+	ok: boolean;
+	list: { ok: boolean; skipped?: boolean; detail?: string; count?: number; latencyMs?: number; url?: string };
+	completion: { ok: boolean; modelId?: string; detail?: string; latencyMs?: number; text?: string };
+}
+export interface FetchModelsResponse {
+	ok: boolean;
+	error?: string;
+	count?: number;
+	provider: ModelProviderDTO;
+	models: AdminModelDTO[];
 }
 
 export type RouteErrorClass =
@@ -574,53 +696,6 @@ export interface CreateOidcProviderRequest {
 	autoJoinRole?: "admin" | "member";
 }
 
-// ---- models / channels / routes
-export interface CreatePlatformModelRequest {
-	/** slug; the stored id is prefixed with the org */
-	id?: string;
-	label: string;
-	description?: string;
-	capabilities?: ModelCapability[];
-	thinkingLevels?: ThinkingLevel[];
-	defaultThinking?: ThinkingLevel;
-	contextWindow?: number;
-	maxTokens?: number;
-	visibility?: { departmentIds?: string[]; projectIds?: string[] } | null;
-	isDefault?: boolean;
-	sort?: number;
-}
-export type UpdatePlatformModelRequest = Partial<Omit<CreatePlatformModelRequest, "id">> & { enabled?: boolean };
-export interface CreateChannelRequest {
-	name: string;
-	provider: Exclude<ChannelProviderKind, "fixture">;
-	baseUrl?: string;
-	/** stored encrypted; requires WORKROOM_SECRET_KEY (409 secret_key_missing) */
-	apiKey?: string;
-	/** must start with WORKROOM_ */
-	apiKeyEnv?: string;
-	rpmLimit?: number;
-	concurrencyLimit?: number;
-	timeoutMs?: number;
-	price?: { input: number; output: number; cacheRead: number; cacheWrite: number };
-}
-export type UpdateChannelRequest = Partial<Omit<CreateChannelRequest, "provider" | "apiKey">> & { status?: "enabled" | "disabled"; /** null clears */ apiKey?: string | null };
-export interface CreateRouteRequest {
-	channelId: string;
-	upstreamModelId: string;
-	priority?: number;
-	weight?: number;
-	capabilities?: ModelCapability[];
-}
-export type UpdateRouteRequest = Partial<Omit<CreateRouteRequest, "channelId">> & { enabled?: boolean };
-export interface ChannelTestResponse {
-	ok: boolean;
-	status: string;
-	detail?: string;
-	latencyMs?: number;
-	error?: string;
-	route?: string;
-}
-
 // ---- budgets / usage settings
 export interface CreateBudgetRequest {
 	scope: { kind: BudgetScopeKind; id?: string };
@@ -686,3 +761,164 @@ export interface WebhookAllowlistDTO {
 	entries: string[];
 	instance: string[];
 }
+
+// ---------------------------------------------------------------- analytics dashboard (round 4, stats group)
+// GET /stats/scopes, GET /stats/overview, GET /stats/export.csv. Every number is derived from stored records
+// (usage_ledger, tool/file/knowledge/automation tables); see docs/stats.md for the exact definitions.
+export type StatsGranularity = "hour" | "day" | "week";
+export type StatsScopeKey = string; // "personal" | "org" | "project:<id>" | "department:<id>"
+
+export interface StatsScopeOption {
+	key: StatsScopeKey;
+	kind: "personal" | "org" | "project" | "department";
+	label: string;
+}
+export interface StatsScopesDTO {
+	orgId: string;
+	orgName: string;
+	/** True when the viewer's org is a flagged demo org: all numbers are synthetic and must carry a banner. */
+	demo: boolean;
+	scopes: StatsScopeOption[];
+	/** Charts whose CSV the viewer may export (same permission as viewing the scope, plus optional authz `stats.export`). */
+	exportable: boolean;
+}
+
+export type StatsKpiKey =
+	| "conversations"
+	| "runs"
+	| "modelRequests"
+	| "toolCalls"
+	| "filesProduced"
+	| "knowledgeSearches"
+	| "automationRuns"
+	| "successRate"
+	| "latencyP50"
+	| "latencyP95"
+	| "inputTokens"
+	| "outputTokens"
+	| "cacheTokens"
+	| "cost";
+
+export interface StatsKpiDTO {
+	key: StatsKpiKey;
+	/** null = no data in the period (never a made-up zero for rates / latency). */
+	value: number | null;
+	/** Same metric over the immediately preceding period of equal length; null when there is no previous period or no data. */
+	previous: number | null;
+	/** value - previous (percentage points for successRate); null when either side is null. */
+	delta: number | null;
+	/** (value - previous) / previous; null when previous is 0/null and for successRate. */
+	deltaPct: number | null;
+	/** One point per bucket of `series.buckets` (null = no data in that bucket). */
+	spark: (number | null)[];
+	/** Tokens/cost: how much came from simulated (fixture / test-model) usage; those never count into `value`. */
+	simulatedValue?: number;
+}
+
+export interface StatsSeriesItemDTO {
+	key: string;
+	label: string;
+	/** Every request of this item came from a simulated (fixture) model. */
+	simulated: boolean;
+	requests: number[];
+	/** Real + simulated tokens per bucket (simulated part also in `simulatedTokens`). */
+	tokens: number[];
+	simulatedTokens: number[];
+	totalRequests: number;
+	totalTokens: number;
+	totalSimulatedTokens: number;
+	/** Failed (non-success) requests in the period. */
+	failedRequests: number;
+}
+
+export interface StatsOutcomeBreakdownDTO {
+	tasks: OutcomeCounts;
+	runs: OutcomeCounts;
+	modelRequests: OutcomeCounts;
+	toolCalls: OutcomeCounts;
+}
+
+export interface StatsToolRowDTO {
+	tool: string;
+	calls: number;
+	errors: number;
+	errorRate: number;
+	avgDurationMs: number | null;
+}
+
+export interface StatsTopRowDTO {
+	id: string;
+	name: string;
+	runs: number;
+	modelRequests: number;
+	toolCalls: number;
+	tokens: number;
+	simulatedTokens: number;
+	failedRuns: number;
+	cost: number;
+}
+
+export interface StatsConversationRowDTO {
+	spaceId: string;
+	conversationId: number;
+	/** null when the viewer may not read the conversation (title is not disclosed) or it is demo data. */
+	title: string | null;
+	userName: string | null;
+	projectId?: string;
+	projectName?: string;
+	runs: number;
+	modelRequests: number;
+	failedRuns: number;
+	tokens: number;
+	simulated: boolean;
+	lastAt: string;
+	/** In-app link, only when the viewer may open the conversation and it exists (never for demo backfill). */
+	link: string | null;
+}
+
+export interface StatsOverviewDTO {
+	generatedAt: string;
+	scope: StatsScopeKey;
+	scopeLabel: string;
+	orgName: string;
+	demo: boolean;
+	range: { from: string; to: string };
+	previous: { from: string; to: string };
+	granularity: StatsGranularity;
+	/** Differs from `granularity` when the requested one would create too many buckets (hour > 14 days, day > 400 days). */
+	requestedGranularity: StatsGranularity;
+	tzOffsetMinutes: number;
+	kpis: StatsKpiDTO[];
+	simulation: {
+		/** model requests by simulated (fixture/test-model) vs real models in the period. */
+		simulatedRequests: number;
+		realRequests: number;
+		onlySimulated: boolean;
+		simulatedTokens: TokenTotals;
+	};
+	/** Always the 365 local days ending with the day of `range.to`, independent of the range filter. */
+	calendar: { from: string; to: string; days: { day: string; runs: number; modelRequests: number; toolCalls: number; tokens: number; failedRuns: number }[] };
+	/** weekday (0 = Monday … 6 = Sunday) × local hour, within the selected range. */
+	punchCard: { cells: { weekday: number; hour: number; runs: number; modelRequests: number; toolCalls: number; tokens: number }[] };
+	series: {
+		buckets: string[];
+		model: StatsSeriesItemDTO[];
+		provider: StatsSeriesItemDTO[];
+		route: StatsSeriesItemDTO[];
+	};
+	outcomes: StatsOutcomeBreakdownDTO;
+	tools: StatsToolRowDTO[];
+	latency: { count: number; source: "real" | "simulated" | "none"; p50: number | null; p90: number | null; p95: number | null; p99: number | null; max: number | null; avg: number | null; buckets: { le: number | null; count: number }[] };
+	topUsers: StatsTopRowDTO[];
+	topProjects: StatsTopRowDTO[];
+	conversations: StatsConversationRowDTO[];
+	recentFailures: { at: string; spaceId: string; conversationId: number; outcome: Outcome; errorClass?: string; model?: string; title: string | null; link: string | null; simulated: boolean }[];
+	largeContext: StatsDTO["largeContext"];
+	knowledge: { searches: number; withHits: number; noEvidence: number; otherEmpty: number; hitRate: number | null; noEvidenceRate: number | null; avgLatencyMs: number | null; byReason: Record<string, number>; bySource: Record<string, number>; spark: { searches: number; noEvidence: number }[] };
+	automation: { total: number; byStatus: Record<string, number> };
+	files: { versions: number; byOrigin: Record<string, number> };
+	/** Why a section may be empty, in Chinese, for the empty states. */
+	notes: string[];
+}
+
+export type StatsExportChart = "kpis" | "calendar" | "punchcard" | "series-model" | "series-provider" | "series-route" | "outcomes" | "tools" | "latency" | "top-users" | "top-projects" | "conversations" | "knowledge";

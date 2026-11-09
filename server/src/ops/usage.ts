@@ -363,7 +363,8 @@ export class UsageService implements BudgetGate {
 			/* runtime catalog not present */
 		}
 		for (const r of this.db.all<{ conversation_id: number }>("SELECT conversation_id FROM usage_import_state WHERE space_id = ?", spaceId)) ids.add(r.conversation_id);
-		this.db.run("DELETE FROM usage_ledger WHERE space_id = ?", spaceId);
+		// demo = 1 rows are seeded backfill (scripts/seed-demo.mjs), not a projection of pi facts: a rebuild never deletes them.
+		this.db.run("DELETE FROM usage_ledger WHERE space_id = ? AND demo = 0", spaceId);
 		let rows = 0;
 		for (const id of ids) rows += (await this.importConversation(spaceId, id)).rows;
 		return { conversations: ids.size, rows };
@@ -376,7 +377,7 @@ export class UsageService implements BudgetGate {
 		const u = await h.usage(BACKGROUND_CONTEXT);
 		const pi = { tokens: 0, cost: 0 };
 		for (const b of [u.models, u.tools]) for (const v of Object.values(b)) (pi.tokens += v.totalTokens), (pi.cost += v.cost.total);
-		const l = this.db.get<{ t: number; c: number }>("SELECT COALESCE(SUM(total_tokens),0) AS t, COALESCE(SUM(CASE WHEN fixture = 1 THEN 0 ELSE cost END),0) AS c FROM usage_ledger WHERE space_id = ? AND kind IN ('model_request','tool_call','adjustment')", spaceId)!;
+		const l = this.db.get<{ t: number; c: number }>("SELECT COALESCE(SUM(total_tokens),0) AS t, COALESCE(SUM(CASE WHEN fixture = 1 THEN 0 ELSE cost END),0) AS c FROM usage_ledger WHERE space_id = ? AND demo = 0 AND kind IN ('model_request','tool_call','adjustment')", spaceId)!;
 		// Fixture spend is costed 0 in the ledger; pi's fixture cost is 0 as well.
 		return { pi, ledger: { tokens: l.t, cost: l.c }, match: pi.tokens === l.t && Math.abs(pi.cost - l.c) < 1e-9 };
 	}

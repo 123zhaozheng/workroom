@@ -9,6 +9,7 @@ import { NotifyService } from "./notify.ts";
 import { registerOpsRoutes } from "./routes.ts";
 import { TraceService } from "./trace.ts";
 import { OPS_MIGRATIONS } from "./schema.ts";
+import { STATS_MIGRATIONS } from "./stats-schema.ts";
 import { UsageService, type RuntimeDocs } from "./usage.ts";
 
 export interface OpsState {
@@ -41,7 +42,7 @@ function json<T>(s: string | null | undefined, d: T): T {
 
 export const opsModule: WorkroomModule = {
 	name: "ops",
-	migrations: OPS_MIGRATIONS,
+	migrations: [...OPS_MIGRATIONS, ...STATS_MIGRATIONS],
 	async init(ctx) {
 		const gateway = new Gateway(ctx);
 		// pi-ai native providers: env vars -> legacy tables (once) -> workroom.models.json, then register them all in the one Models instance.

@@ -11,6 +11,7 @@ import { ATTEMPT_SELECT, attemptDto, registerModelRoutes } from "./models-routes
 import type { OpsState } from "./module.ts";
 import { channelDto, deliveryDto, notificationDto, validateWebhookUrl } from "./notify.ts";
 import { Allowlist } from "./egress.ts";
+import { registerStatsRoutes } from "./stats-routes.ts";
 import { ledgerDto, newBudgetId, type StatsScope } from "./usage.ts";
 
 
@@ -457,6 +458,7 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 			notifications: notes.map(notificationDto),
 		});
 	});
+	registerStatsRoutes(api, ctx, s);
 }
 
 export type { Destination };

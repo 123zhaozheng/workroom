@@ -1,0 +1,64 @@
+/* Analytics page tokens. Chart colours are the validated reference palette (dataviz skill; scripts/validate_palette.js:
+ * categorical light/dark all gates PASS, adjacent CVD dE >= 8.4, normal-vision >= 19.3). Slots are assigned in fixed order.
+ * Status colours are the fixed status palette and always ship with a text label. The sequential ramp is one hue (blue). */
+.stats-root {
+	--c1: #2a78d6;
+	--c2: #eb6834;
+	--c3: #1baf7a;
+	--c4: #eda100;
+	--c5: #e87ba4;
+	--c6: #008300;
+	--c7: #6250d6;
+	--c8: #e34948;
+	--c-other: #898781;
+	--st-success: #0ca30c;
+	--st-failed: #d03b3b;
+	--st-cancelled: #898781;
+	--st-timeout: #ec835a;
+	--st-approval: #fab219;
+	--st-progress: #2a78d6;
+	--seq-0: #eceae4;
+	--seq-1: #cde2fb;
+	--seq-2: #86b6ef;
+	--seq-3: #3987e5;
+	--seq-4: #1c5cab;
+	--seq-5: #0d366b;
+	--grid: #e1e0d9;
+	--axis: #c3c2b7;
+	--good-text: #006300;
+	--bad-text: #b3261e;
+}
+:root[data-theme="dark"] .stats-root {
+	--c1: #3987e5;
+	--c2: #d95926;
+	--c3: #199e70;
+	--c4: #c98500;
+	--c5: #d55181;
+	--c6: #008300;
+	--c7: #9085e9;
+	--c8: #e66767;
+	--seq-0: #2a2b2f;
+	--seq-1: #104281;
+	--seq-2: #1c5cab;
+	--seq-3: #2a78d6;
+	--seq-4: #5598e7;
+	--seq-5: #86b6ef;
+	--grid: #2c2c2a;
+	--axis: #383835;
+	--good-text: #0ca30c;
+	--bad-text: #f07a70;
+}
+.stats-root svg:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+}
+.stats-root .st-cell:hover,
+.stats-root .st-cell:focus-visible {
+	stroke: var(--fg);
+	stroke-width: 1.5px;
+}
+@media (forced-colors: active) {
+	.stats-root .st-cell {
+		forced-color-adjust: none;
+	}
+}
