@@ -177,6 +177,7 @@ export interface ChannelDTO {
 	timeoutMs?: number;
 	/** USD per 1M tokens; overrides catalog prices for cost calculation. */
 	price?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	builtin: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -199,6 +200,8 @@ export interface AdminPlatformModelDTO extends PlatformModelDTO {
 	visibility: { departmentIds?: string[]; projectIds?: string[] } | null;
 	routes: ModelRouteDTO[];
 	kind: "real" | "fixture";
+	/** Instance-level (env-managed) models/channels are read-only for org admins. */
+	builtin: boolean;
 }
 
 export type RouteErrorClass =
@@ -384,9 +387,12 @@ export interface AutomationDTO {
 	maxDurationMs: number;
 	enabled: boolean;
 	nextRunAt?: string;
+	/** nextRunAt rendered in the automation's timezone, e.g. "2026-03-09 09:00:00 EDT". */
+	nextRunLocal?: string;
 	lastRun?: AutomationRunDTO;
 	/** Only at creation / rotation for webhook triggers. */
 	webhookToken?: string;
+	webhookUrl?: string;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -396,6 +402,7 @@ export interface AutomationRunDTO {
 	id: string;
 	automationId: string;
 	scheduledFor: string;
+	scheduledForLocal: string;
 	trigger: "schedule" | "manual" | "webhook" | "catchup" | "rerun";
 	status: AutomationRunStatus;
 	reason?: string;
@@ -440,6 +447,7 @@ export interface NotifyChannelDTO {
 	enabled: boolean;
 	status: "ready" | "blocked";
 	statusDetail?: string;
+	hasSecret: boolean;
 	createdAt: string;
 }
 
@@ -500,4 +508,181 @@ export interface TraceEventDTO {
 	status?: string;
 	summary: string;
 	detail?: unknown;
+}
+
+// ================================================================ requests & envelopes (route table: docs/ops.md §9)
+export interface ErrorBody {
+	error: { code: string; message: string; detail?: unknown };
+}
+
+// ---- org / members / invites / departments / sessions
+export interface UpdateMemberRoleRequest {
+	role: OrgRole;
+}
+export interface CreateInviteRequest {
+	email?: string;
+	role?: OrgRole;
+	departmentId?: string;
+	/** 1..720, default 72 */
+	ttlHours?: number;
+}
+export interface CreateDepartmentRequest {
+	name: string;
+	parentId?: string;
+}
+export interface UpdateDepartmentRequest {
+	name?: string;
+	parentId?: string | null;
+}
+export interface SetDepartmentMemberRequest {
+	userId: string;
+	role: "member" | "manager" | null;
+}
+export interface SetProjectMemberRequest {
+	email?: string;
+	userId?: string;
+	role: ProjectRole | null;
+}
+export interface CreateShareRequest {
+	kind: ShareResourceKind;
+	id: string;
+	spaceId?: string;
+	expiresInHours?: number;
+}
+export interface AuditQuery {
+	/** comma list */
+	category?: string;
+	/** exact, or prefix with trailing "*" */
+	action?: string;
+	actorUserId?: string;
+	target?: string;
+	requestId?: string;
+	/** matches ids inside detail (conversationId, effectId, approvalId, runId, …) */
+	ref?: string;
+	since?: string;
+	until?: string;
+	/** cursor: id of the last item of the previous page */
+	before?: string;
+	limit?: number;
+}
+export interface CreateOidcProviderRequest {
+	name: string;
+	issuer: string;
+	clientId: string;
+	clientSecret?: string;
+	allowedDomains?: string[];
+	autoJoinRole?: "admin" | "member";
+}
+
+// ---- models / channels / routes
+export interface CreatePlatformModelRequest {
+	/** slug; the stored id is prefixed with the org */
+	id?: string;
+	label: string;
+	description?: string;
+	capabilities?: ModelCapability[];
+	thinkingLevels?: ThinkingLevel[];
+	defaultThinking?: ThinkingLevel;
+	contextWindow?: number;
+	maxTokens?: number;
+	visibility?: { departmentIds?: string[]; projectIds?: string[] } | null;
+	isDefault?: boolean;
+	sort?: number;
+}
+export type UpdatePlatformModelRequest = Partial<Omit<CreatePlatformModelRequest, "id">> & { enabled?: boolean };
+export interface CreateChannelRequest {
+	name: string;
+	provider: Exclude<ChannelProviderKind, "fixture">;
+	baseUrl?: string;
+	/** stored encrypted; requires WORKROOM_SECRET_KEY (409 secret_key_missing) */
+	apiKey?: string;
+	/** must start with WORKROOM_ */
+	apiKeyEnv?: string;
+	rpmLimit?: number;
+	concurrencyLimit?: number;
+	timeoutMs?: number;
+	price?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+}
+export type UpdateChannelRequest = Partial<Omit<CreateChannelRequest, "provider" | "apiKey">> & { status?: "enabled" | "disabled"; /** null clears */ apiKey?: string | null };
+export interface CreateRouteRequest {
+	channelId: string;
+	upstreamModelId: string;
+	priority?: number;
+	weight?: number;
+	capabilities?: ModelCapability[];
+}
+export type UpdateRouteRequest = Partial<Omit<CreateRouteRequest, "channelId">> & { enabled?: boolean };
+export interface ChannelTestResponse {
+	ok: boolean;
+	status: string;
+	detail?: string;
+	latencyMs?: number;
+	error?: string;
+	route?: string;
+}
+
+// ---- budgets / usage settings
+export interface CreateBudgetRequest {
+	scope: { kind: BudgetScopeKind; id?: string };
+	period: "day" | "month" | "total";
+	limitCost?: number;
+	limitTokens?: number;
+	action?: "block" | "warn";
+}
+export type UpdateBudgetRequest = Partial<Pick<CreateBudgetRequest, "period" | "limitCost" | "limitTokens" | "action">> & { enabled?: boolean };
+export interface BudgetCheckResponse {
+	allow: boolean;
+	reason?: string;
+}
+export interface TimeSavingRequest {
+	minutes: number;
+	note?: string;
+	spaceId?: string;
+	conversationId?: number;
+}
+
+// ---- automations / notifications
+export interface CreateAutomationRequest {
+	name: string;
+	prompt: string;
+	/** default: personal space; or projectId */
+	spaceId?: string;
+	projectId?: string;
+	trigger: AutomationTrigger;
+	timezone: string;
+	condition?: AutomationCondition;
+	destination?: Partial<AutomationDestinationDTO>;
+	maxConcurrent?: number;
+	missedPolicy?: "skip" | "run_once";
+	maxDurationMs?: number;
+	modelId?: string;
+	assistantId?: string;
+	enabled?: boolean;
+}
+/** PATCH; `enabled: false` disables (no further scheduled runs), `enabled: true` re-enables and recomputes nextRunAt. */
+export type UpdateAutomationRequest = Partial<Omit<CreateAutomationRequest, "spaceId" | "projectId">>;
+export interface PreviewNextRunsRequest {
+	trigger: AutomationTrigger;
+	timezone: string;
+	/** ISO; default now */
+	from?: string;
+	/** 1..50, default 5 */
+	count?: number;
+}
+export interface RunNowResponse {
+	runId: string;
+	run: AutomationRunDTO;
+}
+export interface CreateNotifyChannelRequest {
+	kind: "webhook" | "email";
+	name: string;
+	target: string;
+	/** HMAC signing secret (webhook); requires WORKROOM_SECRET_KEY */
+	secret?: string;
+	/** org-wide channel; admins only */
+	shared?: boolean;
+}
+export interface WebhookAllowlistDTO {
+	entries: string[];
+	instance: string[];
 }

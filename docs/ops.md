@@ -205,3 +205,98 @@ pi-durable 是唯一权威（每会话 `pi.usage`，含失败与中止的尝试�
 | 邮件通知 | blocked | SMTP 凭据 |
 | 真实企业 IdP（OIDC） | partial | 仅对测试内自建 IdP 验证；SAML 未实现 |
 | 多进程限流/熔断 | 未实现 | 计数在进程内（单 owner 部署） |
+
+---
+
+## 9. 路由与 DTO 一览（供 B 的管理页与自动化页）
+
+类型均在 `shared/ops.ts`。认证：cookie `wr_session` 或 `Authorization: Bearer`。错误体 `ErrorBody`（`{error:{code,message,detail?}}`）。
+权限列：**any** = 任意组织成员；**admin** = 组织 owner/admin；**owner** = 组织 owner；**auto-w** = 自动化负责人（仍可写其空间）或组织管理员；**auto-r** = 负责人或可读其空间者。
+
+### 9.1 账号、会话、2FA、企业登录
+
+| 方法 路径 | 权限 | 请求 | 响应 |
+|---|---|---|---|
+| POST `/auth/register` | 公开 | `{email,name,password,orgName?,inviteCode?}` | `{me: MeDTO, token}` |
+| POST `/auth/login` | 公开 | `{email,password,totp?,orgId?}` | `{me, token}`；401 `totp_required`/`totp_invalid`/`bad_credentials`，403 `no_org` |
+| POST `/auth/logout` · POST `/auth/switch-org {orgId}` · POST `/auth/accept-invite {inviteCode}` | any | — | `{ok}` / `{me,token}` / `{orgId,role}` |
+| GET `/me` · GET `/me/orgs` | any | — | `{me: MeDTO, personalSpaceId, brand}` · `{orgs: OrgMembershipDTO[]}` |
+| POST `/me/password` | any | `{current,next}` | `{ok, revokedSessions}` |
+| GET `/me/sessions` · DELETE `/me/sessions/:sid` · POST `/me/sessions/revoke-others` | any | — | `{sessions: SessionDTO[]}` · `{ok}` · `{revoked}` |
+| POST `/me/2fa/setup` · `/me/2fa/enable {code}` · `/me/2fa/disable {code}` | any | — | `TotpSetupDTO` · `{ok}` |
+| GET `/auth/oidc/providers` | 公开 | — | `{providers:{id,name}[]}` |
+| GET `/auth/oidc/:id/start?returnTo=` → GET `/auth/oidc/callback` | 公开 | — | 302（设置会话 cookie） |
+| GET `/admin/oidc` · POST `/admin/oidc` · PATCH `/admin/oidc/:id` | admin | `CreateOidcProviderRequest` / `{enabled?,clientSecret?,allowedDomains?,autoJoinRole?,name?}` | `{providers: OidcProviderDTO[]}` / `{provider}` |
+
+### 9.2 组织、成员、邀请、部门、会话、审计
+
+| 方法 路径 | 权限 | 请求 | 响应 |
+|---|---|---|---|
+| GET `/org` · PATCH `/org {name}` | any · admin | — | `{org:{id,name,createdAt,memberCount}, myRole}` · `{ok}` |
+| GET `/org/members` | any | — | `{members:{userId,name,email,role}[]}`（成员选择器） |
+| GET `/admin/members` | admin | — | `{members: MemberDTO[]}` |
+| PATCH `/admin/members/:userId` | admin（owner 才能动 owner） | `UpdateMemberRoleRequest` | `{ok}`；409 `last_owner` |
+| POST `/admin/members/:userId/disable` · `/enable` | admin | — | `{ok, revokedSessions}` · `{ok}` |
+| DELETE `/admin/members/:userId` | admin | — | `{ok, projects, sessions, shares}` |
+| GET `/admin/invites` · POST `/admin/invites` · DELETE `/admin/invites/:code` | admin | `CreateInviteRequest` | `{invites: InviteDTO[]}` · `{invite: InviteDTO}`（含 `code`） · `{ok}` |
+| GET `/departments` | any | — | `{departments: DepartmentDTO[]}` |
+| POST `/admin/departments` · PATCH `/admin/departments/:id` · DELETE `/admin/departments/:id` | admin | `CreateDepartmentRequest` / `UpdateDepartmentRequest` | `{department: DepartmentDTO}` · `{ok}` |
+| GET `/admin/departments/:id/members` · PUT `/admin/departments/:id/members` | admin | `SetDepartmentMemberRequest` | `{members: DepartmentMemberDTO[]}` · `{ok}` |
+| GET `/admin/sessions?userId=` · DELETE `/admin/sessions/:sid` | admin | — | `{sessions: SessionDTO[]}` · `{ok}` |
+| GET `/admin/audit?…` | admin | `AuditQuery`（查询串） | `{items: AuditEntryDTO[], next?}`（`next` 作为下一页 `before`） |
+| GET `/admin/audit.csv?…` | admin | `AuditQuery` | `text/csv`（导出本身记审计） |
+| GET `/admin/settings/webhook-allowlist` · PUT `{entries}` | admin | `{entries: string[]}` | `WebhookAllowlistDTO` / `{entries}` |
+| GET\|POST `/projects` · GET\|PATCH\|DELETE `/projects/:id` | any / 项目 owner | `{name,description?}` | `{projects}` / `{project}` / `{ok}` |
+| GET `/projects/:id/members` · PUT `/projects/:id/members` | 项目读 / 项目 owner | `SetProjectMemberRequest` | `{members}` · `{ok, revokedShares}` |
+| POST `/shares` · GET `/shares?kind=&id=` · DELETE `/shares/:id` | 资源 share 权限 | `CreateShareRequest` | `{share: ShareLinkDTO}`（仅创建时含 `token`/`url`） · `{shares}` · `{ok}` |
+| GET `/shared/:token` | 公开只读 | — | `SharedViewDTO`；404/410 |
+
+### 9.3 模型、渠道、路由
+
+| 方法 路径 | 权限 | 请求 | 响应 |
+|---|---|---|---|
+| GET `/models` | any | — | `{models: PlatformModelDTO[], defaultModelId?}` |
+| GET `/admin/models` · POST `/admin/models` · PATCH `/admin/models/:id` | admin（内置模型只读 403 `builtin`） | `CreatePlatformModelRequest` / `UpdatePlatformModelRequest`（停用：`{enabled:false}`） | `{models: AdminPlatformModelDTO[]}` / `{model}` |
+| POST `/admin/models/:id/routes` · PATCH `/admin/routes/:id` · DELETE `/admin/routes/:id` | admin | `CreateRouteRequest` / `UpdateRouteRequest` | `{route: ModelRouteDTO}` · `{ok}` |
+| GET `/admin/channels` · POST `/admin/channels` · PATCH `/admin/channels/:id` | admin | `CreateChannelRequest` / `UpdateChannelRequest`（停用：`{status:"disabled"}`） | `{channels: ChannelDTO[]}` / `{channel}`；409 `secret_key_missing` |
+| POST `/admin/channels/:id/test` | admin | — | `ChannelTestResponse` |
+| GET `/admin/route-attempts?spaceId=&conversationId=&requestKey=&status=&channelId=&limit=` | admin | — | `{attempts: RouteAttemptDTO[]}` |
+| GET `/conversations/:spaceId/:conversationId/routes` | 会话读者 | — | `{attempts: RouteAttemptDTO[]}` |
+
+### 9.4 用量、统计、预算
+
+| 方法 路径 | 权限 | 请求 | 响应 |
+|---|---|---|---|
+| GET `/usage?scope=&from=&to=` | 见 §3.4 | scope = `personal`｜`org`｜`project:<id>`｜`department:<id>` | `UsageSummaryDTO` |
+| GET `/stats?scope=&from=&to=&largeContextTokens=` | 同上 | — | `StatsDTO` |
+| GET `/usage/ledger?scope=&kind=&from=&to=&limit=` · GET `/usage/export.csv?…` | 同上 | — | `{items: UsageLedgerRowDTO[]}` · CSV |
+| POST `/usage/time-savings` | any | `TimeSavingRequest` | `{id}` |
+| PUT `/admin/settings/savings` | admin | `{minutesPerSuccessfulTask: number\|null}` | `{ok}` |
+| GET `/budgets` · GET `/budgets/check?spaceId=` | any（只见适用于自己的） | — | `{budgets: BudgetDTO[]}` · `BudgetCheckResponse` |
+| POST `/admin/budgets` · PATCH `/admin/budgets/:id` · DELETE `/admin/budgets/:id` | admin | `CreateBudgetRequest` / `UpdateBudgetRequest` | `{budget: BudgetDTO}` · `{ok}` |
+| POST `/admin/usage/import` · POST `/admin/usage/rebuild {spaceId}` · GET `/admin/usage/reconcile?spaceId=` | admin | — | `{imported}` · `{conversations, rows}` · `{space:{pi,ledger,match}, conversations}` |
+
+### 9.5 自动化与通知
+
+| 方法 路径 | 权限 | 请求 | 响应 |
+|---|---|---|---|
+| POST `/automations/preview` | any | `PreviewNextRunsRequest` | `NextRunPreviewDTO`（无效 cron/时区：`runs:[]`+`error`） |
+| GET `/automations` · POST `/automations` | any（空间写权限） | `CreateAutomationRequest` | `{automations: AutomationDTO[]}` · `{automation}`（webhook 触发时含一次性 `webhookToken`/`webhookUrl`） |
+| GET `/automations/:id` · GET `/automations/:id/preview?count=` | auto-r | — | `{automation}` · `NextRunPreviewDTO` |
+| PATCH `/automations/:id` | auto-w | `UpdateAutomationRequest`（停用/启用：`{enabled}`） | `{automation}` |
+| DELETE `/automations/:id` | auto-w | — | `{ok}` |
+| POST `/automations/:id/run`（立即运行） | auto-w | — | `RunNowResponse` |
+| GET `/automations/:id/runs?limit=` · GET `/automation-runs/:runId` | auto-r | — | `{runs: AutomationRunDTO[]}` · `{run}` |
+| POST `/automation-runs/:runId/rerun` · POST `/automation-runs/:runId/cancel` | auto-w | — | `{runId}` · `{run}`；409 `already_finished` |
+| POST `/automations/:id/webhook-token` | auto-w | — | `{webhookToken, webhookUrl}` |
+| POST `/hooks/automations/:token` | 公开（令牌） | 头 `Idempotency-Key` | 202 `{runId, duplicate:false}` / 200 `{…, duplicate:true}` |
+| GET `/notifications?unread=1` · POST `/notifications/:id/read` · POST `/notifications/read-all` | any（本人） | — | `{notifications: NotificationDTO[], unread}` · `{ok}` |
+| GET `/notifications/deliveries?runId=` · POST `/notifications/deliveries/:id/retry` | any（本人；管理员可见本组织） | — | `{deliveries: NotificationDeliveryDTO[]}` · `{ok}` |
+| GET `/notify-channels` · POST `/notify-channels` · DELETE `/notify-channels/:id` | any（shared 需 admin） | `CreateNotifyChannelRequest` | `{channels: NotifyChannelDTO[]}` · `{channel}` · `{ok}`；400 `blocked_address`/`dns_failed` |
+
+### 9.6 排查
+
+| GET `/admin/trace?q=<requestId｜runId｜automationId｜requestKey｜callId｜spaceId:conversationId[:taskId]>&taskId=` | admin | — | `TraceDTO`（含 `events`：D 工具调用、C 检索事件等） |
+|---|---|---|---|
+
+契约测试：`server/test/ops-admin-contract.test.ts` 按本表逐类调用并断言响应形状。

@@ -48,15 +48,29 @@ include query text in `detail` unless it is needed (strict mode drops content fi
    Please keep `SecretBox(secretKey).seal/open(plain|sealed, aad)` stable; if you add another sealed column, add it to
    `SECRET_COLUMNS` in that file (E will accept the edit) or tell E.
 
-## To B (web)
+## To B (web) — admin & automation pages (round 2)
 
-- DTOs in `shared/ops.ts` (identity admin, models/channels/routes/attempts, usage/stats, budgets, automations,
-  notifications, trace). Fixture model: `PlatformModelDTO.fixture === true` and the label already carries
-  “测试模型，非真实 AI”. Saved hours: render `savedHours.confirmed` and `savedHours.estimate` (always labelled
-  "estimate"); both are `null` by default — show “无数据”, never a number.
-- Notification links are `/c/<spaceId>/<conversationId>`; public share view path is `/s/<token>` (API `GET /api/shared/:token`).
-- Login: when `POST /api/auth/login` answers 401 `totp_required`, ask for the 6-digit code and resend with `totp`.
-  Enterprise login buttons: `GET /api/auth/oidc/providers` → link to `/api/auth/oidc/:id/start?returnTo=<path>`.
+Everything the pages need is callable today; the full route table with request/response types is **docs/ops.md §9**,
+types in **shared/ops.ts** (request types `Create*/Update*Request`, `AuditQuery`, `PreviewNextRunsRequest`, `RunNowResponse`, …).
+`server/test/ops-admin-contract.test.ts` exercises each action and asserts the DTO fields, so you can rely on the shapes.
+
+- **Automations page**: list `GET /automations`; create `POST /automations`; live preview while editing
+  `POST /automations/preview {trigger, timezone, count}` (show `runs[].local` and `error` inline); edit `PATCH /automations/:id`;
+  disable/enable `PATCH {enabled}` (nextRunAt disappears/reappears); run now `POST /automations/:id/run`; history
+  `GET /automations/:id/runs` (status, reason, error, `link`, notifications + deliveries); rerun `POST /automation-runs/:runId/rerun`;
+  cancel `POST /automation-runs/:runId/cancel`; delete `DELETE /automations/:id`. Show `nextRunLocal`/`scheduledForLocal`
+  (already in the automation's timezone). Status colours: `refused` (authorization/budget, show `reason`), `skipped`
+  (concurrency/condition/missed), `timeout`, `cancelled`, `failed`, `succeeded`. Delivery failures are separate (per delivery).
+- **Admin pages**: members (role select, disable/enable, remove with the counts returned), invites (create shows the `code`
+  once; revoke), departments (CRUD + members with member/manager), sessions (per user, revoke), audit (filters: category comma
+  list, `action` prefix with `*`, `ref`, date range; pagination with `next` → `before`; CSV link `/api/admin/audit.csv?<same query>`),
+  channels (create with key → only `credential.hint` comes back; `health` + `healthDetail`; disable; "test" button), platform
+  models (builtin rows are read-only: `builtin: true`), routes (priority/weight/enable), budgets (scope pickers from
+  `/api/org/members`, `/api/departments`, `/api/projects`; show `spent` vs limit and `state`), webhook allowlist, OIDC providers.
+- Error codes to surface verbatim: `secret_key_missing` (409), `last_owner` (409), `owner_required`/`builtin` (403),
+  `blocked_address`/`dns_failed` (400, webhook), `invalid_cron`/`invalid_timezone` (400), `already_finished` (409).
+- Acceptance: M12-A/B/C and the admin rows (M16-A/C, M17-B, M09-A/C UI parts) are now **partial** until UI evidence
+  (screenshot path or browser test name) is added by you to the evidence column — please add it there when your pages land.
 
 ## To integrator
 
