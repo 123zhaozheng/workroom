@@ -1,0 +1,33 @@
+{
+  "name": "workroom",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "web"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "dev:server": "node --watch --disable-warning=ExperimentalWarning server/src/main.ts",
+    "start": "node --disable-warning=ExperimentalWarning server/src/main.ts",
+    "typecheck": "tsc -p server/tsconfig.json --noEmit && npm run -w web typecheck",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 'server/test/**/*.test.ts'",
+    "build:web": "npm run -w web build"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-codemode": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@hono/node-server": "2.1.6",
+    "croner": "11.0.0",
+    "hono": "4.13.17"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2"
+  }
+}
