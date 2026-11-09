@@ -77,6 +77,35 @@ export function parseDirectives(text: string): Directive {
 	return { calls, slowMs, fail, reply };
 }
 
+/** Remove every [[call …]] / [[slow …]] / [[fail]] / [[reply …]] directive (JSON-aware), leaving the human text. */
+export function stripDirectives(text: string): string {
+	let out = "";
+	let i = 0;
+	for (;;) {
+		const j = text.indexOf("[[", i);
+		if (j === -1) return out + text.slice(i);
+		const m = /^(call|slow|fail|reply)\b\s*/.exec(text.slice(j + 2));
+		if (!m) {
+			out += text.slice(i, j + 2);
+			i = j + 2;
+			continue;
+		}
+		out += text.slice(i, j);
+		let p = j + 2 + m[0].length;
+		if (m[1] === "call") {
+			const nm = /^[A-Za-z0-9_.:\-]+\s*/.exec(text.slice(p));
+			if (nm) p += nm[0].length;
+			if (text[p] === "{") {
+				const end = scanJsonObject(text, p);
+				if (end > 0) p = end;
+			}
+		}
+		const close = text.indexOf("]]", p);
+		if (close === -1) return out;
+		i = close + 2;
+	}
+}
+
 function scanJsonObject(text: string, start: number): number {
 	let depth = 0;
 	let inStr = false;

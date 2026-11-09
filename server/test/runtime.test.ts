@@ -389,3 +389,25 @@ test("runtime: per-message outcome (B) — done, aborted, model_error, withdrawn
 		await t.dispose();
 	}
 });
+
+test("runtime: server-side title — directives stripped, first meaningful line, PATCH wins", async () => {
+	const { titleFrom } = await import("../src/runtime/service.ts");
+	assert.equal(titleFrom(`[[call wr_fixture_echo {"text":"a]]b"}]] [[slow 10]]`), "");
+	assert.equal(titleFrom("\n  \n  季度   报告 [[reply x]] 草稿\n第二行"), "季度 报告 草稿");
+	assert.equal(titleFrom("— — —\n真正的标题"), "真正的标题");
+	assert.equal(titleFrom("字".repeat(60)).length, 40);
+	const t = await startTestApp();
+	try {
+		const a = await t.user("rt-title@example.com");
+		const c = await newChat(t, a.token);
+		await settle(t, a.token, c, (await send(t, a.token, c, `[[call wr_fixture_echo {"text":"x"}]]`)).submissionId);
+		assert.equal((await t.json("GET", base(c), { token: a.token })).conversation.title, "新对话");
+		await settle(t, a.token, c, (await send(t, a.token, c, "整理客户反馈 [[reply ok]]")).submissionId);
+		assert.equal((await t.json("GET", base(c), { token: a.token })).conversation.title, "整理客户反馈");
+		await t.json("PATCH", base(c), { token: a.token, json: { title: "我的标题" } });
+		await settle(t, a.token, c, (await send(t, a.token, c, "别改标题 [[reply ok]]")).submissionId);
+		assert.equal((await t.json("GET", base(c), { token: a.token })).conversation.title, "我的标题");
+	} finally {
+		await t.dispose();
+	}
+});

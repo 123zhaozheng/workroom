@@ -8,7 +8,7 @@ import { HttpError, nowIso } from "../core/http.ts";
 import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, SubagentDTO, SubmissionDTO, TasksResponse } from "../../../shared/chat.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
-import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel } from "./fixture-model.ts";
+import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
 import type { AssistantStore } from "./assistants.ts";
 
@@ -25,6 +25,19 @@ export interface CatalogRow {
 }
 
 const DEFAULT_TITLE = "新对话";
+
+/**
+ * Server-side title from a message: fixture directives stripped (JSON-aware), first meaningful line, whitespace
+ * collapsed, ≤ 40 characters. Empty → keep "新对话" and try the next message. A PATCHed title is never overwritten.
+ */
+export function titleFrom(text: string): string {
+	const line = stripDirectives(text)
+		.split("\n")
+		.map((l) => l.replace(/\s+/g, " ").trim())
+		.find((l) => l.length > 0 && /[\p{L}\p{N}]/u.test(l));
+	if (!line) return "";
+	return line.length > 40 ? `${line.slice(0, 39)}…` : line;
+}
 
 export function cid(n: number): ConversationId {
 	return n as ConversationId;
@@ -402,7 +415,7 @@ export class Runtime implements RuntimeService {
 			throw err;
 		}
 		if (row.title === DEFAULT_TITLE) {
-			const t = input.text.replace(/\[\[[^\]]*\]\]/g, "").trim().split("\n")[0]!.slice(0, 40);
+			const t = titleFrom(input.text);
 			if (t) this.ctx.db.run("UPDATE rt_conversations SET title = ? WHERE space_id = ? AND conversation_id = ? AND title = ?", t, spaceId, conversationId, DEFAULT_TITLE);
 		}
 		this.touch(spaceId, conversationId);
