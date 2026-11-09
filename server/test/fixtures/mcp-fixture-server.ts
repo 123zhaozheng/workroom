@@ -40,7 +40,7 @@ export function fixtureServer(env: { token?: string; notes?: string }): Server {
 }
 
 /** Streamable HTTP fixture (stateless). Requests without `Authorization: Bearer <token>` get 401. */
-export async function startHttpFixture(token: string): Promise<{ url: string; close: () => Promise<void>; server: HttpServer }> {
+export async function startHttpFixture(token: string, host = "127.0.0.1", port = 0): Promise<{ url: string; close: () => Promise<void>; server: HttpServer }> {
 	const http = createServer(async (req, res) => {
 		if (req.headers.authorization !== `Bearer ${token}`) {
 			res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: "unauthorized" }));
@@ -58,9 +58,9 @@ export async function startHttpFixture(token: string): Promise<{ url: string; cl
 		await server.connect(transport);
 		await transport.handleRequest(req, res, body);
 	});
-	await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
-	const port = (http.address() as { port: number }).port;
-	return { url: `http://127.0.0.1:${port}/mcp`, server: http, close: () => new Promise((r) => http.close(() => r())) };
+	await new Promise<void>((r, j) => http.once("error", j).listen(port, host, () => r()));
+	const bound = (http.address() as { port: number }).port;
+	return { url: `http://${host}:${bound}/mcp`, server: http, close: () => new Promise((r) => http.close(() => r())) };
 }
 
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {

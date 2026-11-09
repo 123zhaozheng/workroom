@@ -11,7 +11,51 @@ import { runtimeActorResolver, toolCallKey, type ActorResolver } from "../files/
 import type { Files } from "../files/service.ts";
 import type { BrowseResultDTO } from "../../../shared/files.ts";
 import type { ToolCallLog } from "./calls.ts";
-import { checkUrl } from "./netpolicy.ts";
+import { checkUrl, pinnedRequest } from "./netpolicy.ts";
+
+const MAX_RESPONSE = 25 * 1024 * 1024;
+
+/**
+ * Network guard for a browser context: Chromium never resolves or connects by itself. Every HTTP(S) request (navigation,
+ * redirect hop, subresource, fetch/XHR) is re-issued by the server through `pinnedRequest`: URL policy check, then a socket
+ * to the validated IP (pinned per origin for the context's lifetime, so a later DNS answer cannot rebind it), and the
+ * response is fulfilled back into the page. WebSockets and other schemes are refused.
+ */
+export async function guardContext(context: any, blocked: string[], pins: Map<string, string> = new Map()): Promise<Map<string, string>> {
+	await context.route("**/*", async (route: any) => {
+		const req = route.request();
+		const u: string = req.url();
+		if (u.startsWith("data:") || u.startsWith("blob:") || u === "about:blank") return route.continue();
+		let origin = u;
+		try {
+			origin = new URL(u).origin;
+		} catch {
+			/* invalid → blocked below */
+		}
+		try {
+			const headers: Record<string, string> = { ...(await req.allHeaders()) };
+			for (const h of Object.keys(headers)) if (h.startsWith(":")) delete headers[h];
+			headers["accept-encoding"] = "identity";
+			const res = await pinnedRequest(u, { method: req.method(), headers, body: req.postDataBuffer() ?? undefined, pinned: pins.get(origin) });
+			pins.set(origin, res.address);
+			const chunks: Buffer[] = [];
+			let size = 0;
+			for await (const c of res.body) {
+				size += (c as Buffer).length;
+				if (size > MAX_RESPONSE) throw new Error("response too large");
+				chunks.push(c as Buffer);
+			}
+			const out: Record<string, string> = {};
+			for (const [k, v] of Object.entries(res.headers)) if (v !== undefined && k !== "content-length" && k !== "transfer-encoding" && k !== "connection") out[k] = Array.isArray(v) ? v.join(k === "set-cookie" ? "\n" : ", ") : String(v);
+			return route.fulfill({ status: res.status, headers: out, body: Buffer.concat(chunks) });
+		} catch {
+			blocked.push(u.slice(0, 200));
+			return route.abort("blockedbyclient").catch(() => {});
+		}
+	});
+	await context.routeWebSocket?.(/.*/, (ws: any) => ws.close({ code: 1008, reason: "blocked by policy" }));
+	return pins;
+}
 
 type Browser = { newContext(o?: unknown): Promise<any>; close(): Promise<void>; isConnected(): boolean };
 
@@ -54,37 +98,18 @@ export class BrowserService {
 	}
 
 	async browse(input: { url: string; screenshot?: boolean; maxChars?: number; principal: Principal; space: Space; save?: { conversationId?: number; taskId?: number; callId?: string; idempotencyKey?: string } }): Promise<BrowseResultDTO & { blocked: string[] }> {
-		await checkUrl(input.url);
+		const first = await checkUrl(input.url);
 		const browser = await this.#get();
 		const context = await browser.newContext({ acceptDownloads: false, serviceWorkers: "block", javaScriptEnabled: true, viewport: { width: 1280, height: 800 }, locale: "zh-CN" });
 		const blocked: string[] = [];
-		const verdicts = new Map<string, boolean>();
 		try {
-			await context.route("**/*", async (route: any) => {
-				const u = route.request().url();
-				if (u.startsWith("data:") || u.startsWith("blob:") || u === "about:blank") return route.continue();
-				const key = (() => {
-					try {
-						const x = new URL(u);
-						return `${x.protocol}//${x.host}`;
-					} catch {
-						return u;
-					}
-				})();
-				let ok = verdicts.get(key);
-				if (ok === undefined) {
-					ok = await checkUrl(u).then(() => true, () => false);
-					verdicts.set(key, ok);
-				}
-				if (ok) return route.continue();
-				blocked.push(u.slice(0, 200));
-				return route.abort("blockedbyclient");
-			});
+			// The address validated above is the one the page connects to (pinned for the origin).
+			const pins = await guardContext(context, blocked, new Map([[first.url.origin, first.addresses[0]!]]));
 			const page = await context.newPage();
 			const resp = await page.goto(input.url, { waitUntil: "domcontentloaded", timeout: 20_000 });
 			await page.waitForLoadState("networkidle", { timeout: 3_000 }).catch(() => {});
 			const finalUrl = page.url();
-			await checkUrl(finalUrl); // a redirect chain may not end in a blocked address
+			await checkUrl(finalUrl, { pinned: pins.get(new URL(finalUrl).origin) }); // a redirect chain may not end in a blocked address
 			const title = await page.title();
 			const raw: string = await page.evaluate(() => (document.body ? (document.body as HTMLElement).innerText : ""));
 			const max = input.maxChars ?? 20_000;
