@@ -34,7 +34,7 @@ test("OCR: image and scanned PDF page are recognized offline, cited with page + 
 		// 1) A photo/scan of a contract clause (PNG).
 		const png = textImage(["合同编号 HT-2027", "违约金为合同总额的百分之五", "Payment due within 45 days"]);
 		const img = await kbWithDoc(t, alice.token, { name: "扫描件", scope: "personal" }, { name: "clause.png", mime: "image/png", bytes: png });
-		assert.equal(img.doc.latest.status, "ready", img.doc.latest.error);
+		assert.equal(img.doc.latest.status, "ready", String(img.doc.latest.error));
 		assert.equal(img.doc.latest.ocrPages, 1);
 		const c1 = (await t.json("POST", "/api/kb/search", { token: alice.token, json: { query: "违约金", kbIds: [img.kb.id] } })).citations[0];
 		assert.equal(c1?.fileName, "clause.png");
@@ -50,7 +50,7 @@ test("OCR: image and scanned PDF page are recognized offline, cited with page + 
 		const scan = await pdf.embedPng(textImage(["第二页：保密期限为五年", "Confidentiality term is five years"]));
 		pdf.addPage([595, 842]).drawImage(scan, { x: 20, y: 500, width: 555, height: 555 * (scan.height / scan.width) });
 		const sp = await kbWithDoc(t, alice.token, { name: "合同", scope: "personal" }, { name: "nda-scan.pdf", mime: MIME.pdf, bytes: await pdf.save() });
-		assert.equal(sp.doc.latest.status, "ready", sp.doc.latest.error);
+		assert.equal(sp.doc.latest.status, "ready", String(sp.doc.latest.error));
 		assert.equal(sp.doc.latest.pageCount, 2);
 		assert.equal(sp.doc.latest.ocrPages, 1);
 		const c2 = (await t.json("POST", "/api/kb/search", { token: alice.token, json: { query: "保密期限", kbIds: [sp.kb.id] } })).citations[0];

@@ -266,7 +266,7 @@ test("processing: explicit add, queued → parsing → indexing → ready, failu
 		const dimg = (await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: img.fileId, versionId: img.versionId } })).doc;
 		const fimg = await waitDoc(t, alice.token, kb.id, dimg.id);
 		assert.equal(fimg.latest.status, "failed");
-		assert.ok(["ocr_failed", "no_text"].includes(fimg.latest.errorCode), fimg.latest.errorCode);
+		assert.ok(["ocr_failed", "no_text"].includes(String(fimg.latest.errorCode)), String(fimg.latest.errorCode));
 		// Corrupt PDF → parse_error.
 		const bad = await uploadFile(t, alice.token, { name: "broken.pdf", mime: MIME.pdf, bytes: "%PDF-1.4 this is not really a pdf" });
 		const db = (await t.json("POST", `/api/kb/${kb.id}/docs`, { token: alice.token, json: { fileId: bad.fileId, versionId: bad.versionId } })).doc;

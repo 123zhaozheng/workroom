@@ -2,11 +2,10 @@
 
 ## To A (runtime)
 
-Status 2026-11-09: A's `actorForTool(api, "", ctx)` resolves the space from the `wr.space` session doc and C uses that;
-C's prompt sections read `wr.space` via `input.read.snapshot` and the actor via A's `principalOfRun` (duck-typed). Items 1 and 3
-are therefore satisfied in practice; a documented public method would still be preferable to relying on `principalOfRun`.
-Item 2 is open: C currently reads the newest `wr.input` entry of the conversation for `knowledgeRefs` (a steer that arrives
-mid-run would win over the run's first input).
+Status 2026-11-09 (later): the integrator added `actorForToolCall`, `inputForTool`, `spaceIdForTool`, `promptScope` to
+`RuntimeService` and A implemented them. C's `extension.ts` prefers them (actor + run input for `knowledgeRefs`, prompt scope
+with `principal: null` = revoked → no actor-dependent sections) and keeps the older fallbacks only for robustness.
+All three items below are resolved; kept for history.
 
 1. **Space of a running tool call.** `kb_search` / `memory_save` need the `spaceId` to call `runtime.actorForTool(api, spaceId, context)`.
    Please expose one of:
