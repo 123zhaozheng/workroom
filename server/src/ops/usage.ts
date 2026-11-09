@@ -467,10 +467,28 @@ export class UsageService implements BudgetGate {
 		const bounds = [250, 500, 1000, 2000, 5000, 10_000, 30_000, 60_000, null];
 		const buckets = bounds.map((le, i) => ({ le, count: durations.filter((d) => (le === null ? d > bounds[i - 1]! : d <= le && (i === 0 || d > bounds[i - 1]!))).length }));
 		const threshold = range.largeContextTokens ?? 32_000;
-		const large = this.db.all<{ outcome: string; error_class: string | null }>(`SELECT outcome, error_class FROM usage_ledger l WHERE ${where} AND l.kind = 'model_request' AND (input_tokens + cache_read + cache_write) >= ?`, ...params, threshold);
+		const large = this.db.all<{ outcome: string; error_class: string | null; platform_model_id: string | null; route: string | null; automation_id: string | null; tool_round: number }>(
+			`SELECT outcome, error_class, platform_model_id, route, automation_id, EXISTS (SELECT 1 FROM usage_ledger t WHERE t.space_id = l.space_id AND t.conversation_id = l.conversation_id AND t.kind = 'tool_call' AND t.entry_id < l.entry_id AND t.entry_id > COALESCE((SELECT MAX(i.entry_id) FROM usage_ledger i WHERE i.space_id = l.space_id AND i.conversation_id = l.conversation_id AND i.kind = 'task' AND i.entry_id < l.entry_id), 0)) AS tool_round
+			 FROM usage_ledger l WHERE ${where} AND l.kind = 'model_request' AND (input_tokens + cache_read + cache_write) >= ?`,
+			...params,
+			threshold,
+		);
 		const largeFailed = large.filter((r) => r.outcome !== "success");
 		const largeBy: Record<string, number> = {};
 		for (const r of largeFailed) largeBy[r.error_class ?? "unknown"] = (largeBy[r.error_class ?? "unknown"] ?? 0) + 1;
+		// Where large-context failures concentrate: platform model, actual route, and task stage
+		// (stage = "first_turn" before any tool result of the task, "after_tools" once tools ran, "automation" for scheduled runs).
+		const group = (key: (r: (typeof large)[number]) => string) => {
+			const m = new Map<string, { requests: number; failed: number }>();
+			for (const r of large) {
+				const k = key(r);
+				const g = m.get(k) ?? { requests: 0, failed: 0 };
+				g.requests++;
+				if (r.outcome !== "success") g.failed++;
+				m.set(k, g);
+			}
+			return [...m].map(([k, g]) => ({ key: k, ...g, failureRate: g.failed / g.requests })).sort((a, b) => b.failed - a.failed);
+		};
 		const errorClasses: Record<string, number> = {};
 		for (const r of this.db.all<{ c: string; n: number }>(`SELECT error_class AS c, COUNT(*) AS n FROM usage_ledger l WHERE ${where} AND l.kind = 'model_request' AND error_class IS NOT NULL GROUP BY error_class`, ...params)) errorClasses[r.c] = r.n;
 		const daily = this.db.all<any>(`SELECT substr(at,1,10) AS day, SUM(kind='task') AS tasks, SUM(kind='model_request') AS mr, SUM(CASE WHEN kind IN ('model_request','tool_call','adjustment') THEN total_tokens ELSE 0 END) AS tok, SUM(CASE WHEN kind IN ('model_request','tool_call','adjustment') THEN cost ELSE 0 END) AS cost FROM usage_ledger l WHERE ${where} GROUP BY day ORDER BY day`, ...params).map((r) => ({ day: r.day, tasks: r.tasks, modelRequests: r.mr, tokens: r.tok, cost: r.cost }));
@@ -489,7 +507,16 @@ export class UsageService implements BudgetGate {
 		return {
 			...pub,
 			latency: { count: durations.length, p50: q(0.5), p90: q(0.9), p99: q(0.99), max: durations[durations.length - 1], buckets },
-			largeContext: { thresholdTokens: threshold, requests: large.length, failed: largeFailed.length, failureRate: large.length ? largeFailed.length / large.length : null, byErrorClass: largeBy },
+			largeContext: {
+				thresholdTokens: threshold,
+				requests: large.length,
+				failed: largeFailed.length,
+				failureRate: large.length ? largeFailed.length / large.length : null,
+				byErrorClass: largeBy,
+				byModel: group((r) => r.platform_model_id ?? "unknown"),
+				byRoute: group((r) => r.route ?? "unknown"),
+				byStage: group((r) => (r.automation_id ? "automation" : r.tool_round ? "after_tools" : "first_turn")),
+			},
 			errorClasses,
 			savedHours: { confirmed: confirmed?.n ? Math.round(((confirmed.m ?? 0) / 60) * 100) / 100 : null, estimate },
 			daily,

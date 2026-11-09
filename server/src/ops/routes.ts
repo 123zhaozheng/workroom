@@ -704,9 +704,10 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		const p = await admin(c);
 		const q = c.req.query("q")?.trim() ?? "";
 		if (!q) throw new HttpError(400, "invalid", "q 必填：requestId / runId / requestKey / <spaceId>:<conversationId> / automationId");
+		await usage.importDirty({ orgId: p.orgId });
 		const [spaceId, convStr] = q.includes(":") && !q.startsWith("auto:") ? q.split(":") : [undefined, undefined];
 		const conv = convStr ? Number(convStr) : undefined;
-		const auditRows = db.all<any>("SELECT a.*, u.name AS actor_name FROM id_audit a LEFT JOIN id_users u ON u.id = a.actor_user_id WHERE a.org_id = ? AND (a.request_id = ? OR a.target = ? OR a.detail LIKE ?) ORDER BY a.at LIMIT 200", p.orgId, q, q, `%${q.replace(/[%_]/g, "")}%`);
+		const auditRows = db.all<any>("SELECT a.*, u.name AS actor_name FROM id_audit a LEFT JOIN id_users u ON u.id = a.actor_user_id WHERE a.org_id = ? AND (a.request_id = ? OR a.target = ? OR a.detail LIKE ? ESCAPE '\\') ORDER BY a.at LIMIT 200", p.orgId, q, q, `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
 		const runs = db.all<any>("SELECT * FROM auto_runs WHERE org_id = ? AND (id = ? OR automation_id = ? OR request_id = ? OR (space_id = ? AND conversation_id = ?)) ORDER BY created_at LIMIT 200", p.orgId, q, q, q, spaceId ?? "", conv ?? -1);
 		const convs = new Set<string>(runs.filter((r) => r.conversation_id != null).map((r) => `${r.space_id}:${r.conversation_id}`));
 		if (spaceId && conv !== undefined) convs.add(`${spaceId}:${conv}`);

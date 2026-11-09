@@ -295,7 +295,17 @@ export interface LatencyDistributionDTO {
 
 export interface StatsDTO extends UsageSummaryDTO {
 	latency: LatencyDistributionDTO;
-	largeContext: { thresholdTokens: number; requests: number; failed: number; failureRate: number | null; byErrorClass: Record<string, number> };
+	largeContext: {
+		thresholdTokens: number;
+		requests: number;
+		failed: number;
+		failureRate: number | null;
+		byErrorClass: Record<string, number>;
+		/** key = platform model id / actual route ("provider/upstreamModel") / task stage ("first_turn" | "after_tools" | "automation"). */
+		byModel: { key: string; requests: number; failed: number; failureRate: number }[];
+		byRoute: { key: string; requests: number; failed: number; failureRate: number }[];
+		byStage: { key: string; requests: number; failed: number; failureRate: number }[];
+	};
 	errorClasses: Record<string, number>;
 	/** Never a fabricated number: confirmed = user-confirmed records; estimate only if an admin configured the basis. */
 	savedHours: { confirmed: number | null; estimate: { value: number; basis: string; label: "estimate" } | null };
