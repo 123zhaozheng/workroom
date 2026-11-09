@@ -1,0 +1,217 @@
+// Deterministic fixture model ("测试模型，非真实 AI") built on pi-ai's faux provider with a FauxResponseFactory.
+// It reads the transcript it is given and answers deterministically. Used for credential-free tests and demos only;
+// every answer is prefixed with the label so it can never be mistaken for a real model.
+//
+// Directive protocol (in the newest user message):
+//   [[call <toolName> <json-args>]]   (one or more) → one assistant turn with those tool calls (stopReason toolUse)
+//   [[slow <ms>]]                     → wait <ms> (abortable) before the first answer to that input, then stream
+//   [[fail]]                          → model error (stopReason "error"); pi retries per settings.retry
+//   [[reply <text>]]                  → answer exactly "<label> <text>"
+// After tool results arrive it answers with a deterministic summary that quotes every tool output of that round.
+// Without directives: heuristic demo mode (知识/资料 → kb_search, 生成/报告/文档 → a file tool) when those tools are
+// offered, else a plain labelled echo reply.
+import type { AssistantMessage, Message, TextContent, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Provider } from "@earendil-works/pi-ai/models";
+import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
+
+export const FIXTURE_PROVIDER = "fixture";
+export const FIXTURE_MODEL_ID = "workroom-fixture";
+export const FIXTURE_LABEL = "【测试模型·非真实AI】";
+
+export interface Directive {
+	readonly calls: { name: string; args: Record<string, unknown> }[];
+	readonly slowMs?: number;
+	readonly fail: boolean;
+	readonly reply?: string;
+}
+
+/** Parse directives from a user text. Robust to JSON containing brackets (balanced-brace scan, string aware). */
+export function parseDirectives(text: string): Directive {
+	const calls: Directive["calls"] = [];
+	let slowMs: number | undefined;
+	let fail = false;
+	let reply: string | undefined;
+	let i = 0;
+	while ((i = text.indexOf("[[", i)) !== -1) {
+		const rest = text.slice(i + 2);
+		const m = /^(call|slow|fail|reply)\b\s*/.exec(rest);
+		if (!m) {
+			i += 2;
+			continue;
+		}
+		let p = i + 2 + m[0].length;
+		const word = m[1];
+		if (word === "call") {
+			const nm = /^([A-Za-z0-9_.:\-]+)\s*/.exec(text.slice(p));
+			if (!nm) {
+				i = p;
+				continue;
+			}
+			p += nm[0].length;
+			let args: Record<string, unknown> = {};
+			if (text[p] === "{") {
+				const end = scanJsonObject(text, p);
+				if (end > 0) {
+					try {
+						args = JSON.parse(text.slice(p, end));
+					} catch {
+						args = {};
+					}
+					p = end;
+				}
+			}
+			const close = text.indexOf("]]", p);
+			if (close === -1) break;
+			calls.push({ name: nm[1]!, args });
+			i = close + 2;
+		} else {
+			const close = text.indexOf("]]", p);
+			if (close === -1) break;
+			const arg = text.slice(p, close).trim();
+			if (word === "slow") slowMs = Math.max(0, Math.min(600_000, Number(arg) || 0));
+			else if (word === "fail") fail = true;
+			else reply = arg;
+			i = close + 2;
+		}
+	}
+	return { calls, slowMs, fail, reply };
+}
+
+function scanJsonObject(text: string, start: number): number {
+	let depth = 0;
+	let inStr = false;
+	for (let j = start; j < text.length; j++) {
+		const ch = text[j];
+		if (inStr) {
+			if (ch === "\\") j++;
+			else if (ch === '"') inStr = false;
+			continue;
+		}
+		if (ch === '"') inStr = true;
+		else if (ch === "{") depth++;
+		else if (ch === "}") {
+			depth--;
+			if (depth === 0) return j + 1;
+		}
+	}
+	return -1;
+}
+
+export function textOfContent(content: string | readonly { type: string; text?: string }[]): string {
+	if (typeof content === "string") return content;
+	return content.flatMap((c) => (c.type === "text" && typeof c.text === "string" ? [c.text] : [])).join("");
+}
+
+/** Tools currently offered, reconstructed from the transcript's system messages (toolsAdded / toolsRemoved). */
+export function offeredTools(messages: readonly Message[]): Set<string> {
+	const tools = new Set<string>();
+	for (const m of messages) {
+		if (m.role !== "system") continue;
+		for (const t of m.toolsRemoved ?? []) tools.delete(t.name);
+		for (const t of m.toolsAdded ?? []) tools.add(t.name);
+	}
+	return tools;
+}
+
+const FILE_TOOL_PREFERENCE = ["files_create", "file_create", "create_file", "artifact_create", "generate_document", "files_generate", "document_create"];
+
+function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+	return new Promise((resolve) => {
+		if (signal?.aborted) return resolve();
+		const t = setTimeout(done, ms);
+		function done() {
+			clearTimeout(t);
+			signal?.removeEventListener("abort", done);
+			resolve();
+		}
+		signal?.addEventListener("abort", done, { once: true });
+	});
+}
+
+let callSeq = 0;
+function callId(name: string): string {
+	callSeq = (callSeq + 1) % 1_000_000;
+	return `fx_${Date.now().toString(36)}_${callSeq}_${name.replace(/[^A-Za-z0-9_]/g, "")}`.slice(0, 64);
+}
+
+/** Pure answer function (exported for unit tests): what the fixture answers for a transcript. */
+export function fixtureAnswer(messages: readonly Message[]): { message: AssistantMessage; slowMs?: number } {
+	const visible = messages.filter((m) => m.role !== "system");
+	const last = visible.at(-1);
+	const tools = offeredTools(messages);
+	if (!last) return { message: fauxAssistantMessage(`${FIXTURE_LABEL} 没有可回答的内容。`) };
+
+	if (last.role === "toolResult") {
+		// Summarize the latest tool round: every result after the last assistant message.
+		const results: ToolResultMessage[] = [];
+		for (let k = visible.length - 1; k >= 0; k--) {
+			const m = visible[k]!;
+			if (m.role !== "toolResult") break;
+			results.unshift(m as ToolResultMessage);
+		}
+		const lines = results.map((r) => `- ${r.toolName}${r.isError ? "（失败）" : ""}: ${textOfContent(r.content as TextContent[]).trim().slice(0, 2000)}`);
+		return { message: fauxAssistantMessage(`${FIXTURE_LABEL} 工具执行完成，结果如下：\n${lines.join("\n")}`) };
+	}
+
+	if (last.role === "user") {
+		const text = textOfContent(last.content as TextContent[]);
+		const d = parseDirectives(text);
+		if (d.fail) return { message: fauxAssistantMessage([], { stopReason: "error", errorMessage: "fixture: simulated model failure ([[fail]])" }), slowMs: d.slowMs };
+		if (d.calls.length > 0) {
+			const blocks: ToolCall[] = d.calls.map((c) => fauxToolCall(c.name, c.args as ToolCall["arguments"], { id: callId(c.name) }));
+			return { message: fauxAssistantMessage(blocks, { stopReason: "toolUse" }), slowMs: d.slowMs };
+		}
+		if (d.reply !== undefined) return { message: fauxAssistantMessage(`${FIXTURE_LABEL} ${d.reply}`), slowMs: d.slowMs };
+		const plain = text.replace(/\[\[[^\]]*\]\]/g, "").trim();
+		// Heuristic demo mode, only with tools actually offered.
+		if (/知识|资料/.test(plain) && tools.has("kb_search")) {
+			return { message: fauxAssistantMessage([fauxToolCall("kb_search", { query: plain.slice(0, 200) }, { id: callId("kb_search") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+		}
+		if (/生成|报告|文档/.test(plain)) {
+			const fileTool = FILE_TOOL_PREFERENCE.find((n) => tools.has(n)) ?? [...tools].find((n) => /(create|generate).*(file|doc)|(file|doc).*(create|generate)/i.test(n));
+			if (fileTool) {
+				const args = { title: plain.slice(0, 40) || "报告", format: "md", content: `# ${plain.slice(0, 40) || "报告"}\n\n${FIXTURE_LABEL} 生成的示例内容。` };
+				return { message: fauxAssistantMessage([fauxToolCall(fileTool, args, { id: callId(fileTool) })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+			}
+		}
+		const echo = plain.length > 200 ? `${plain.slice(0, 200)}…` : plain;
+		return { message: fauxAssistantMessage(`${FIXTURE_LABEL} 收到：「${echo}」。这是确定性测试回复，不代表真实 AI 能力。`), slowMs: d.slowMs };
+	}
+	// Last visible message is an assistant answer (continue after an answer): nothing new to say.
+	return { message: fauxAssistantMessage(`${FIXTURE_LABEL} 已经回答过了。`) };
+}
+
+export interface FixtureModel {
+	readonly provider: Provider;
+	readonly providerName: "fixture";
+	readonly modelId: "workroom-fixture";
+	/** Number of model requests served (for tests). */
+	readonly calls: () => number;
+}
+
+/** Create the fixture provider. Register with `models.setProvider(fixture.provider)`. */
+export function createFixtureModel(options: { tokensPerSecond?: number } = {}): FixtureModel {
+	let calls = 0;
+	const faux = fauxProvider({
+		api: "fixture",
+		provider: FIXTURE_PROVIDER,
+		models: [{ id: FIXTURE_MODEL_ID, name: "Workroom 测试模型（非真实 AI）", reasoning: false, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200_000, maxTokens: 16_384 }],
+		tokensPerSecond: options.tokensPerSecond,
+	});
+	const factory: FauxResponseFactory = async (context, streamOptions) => {
+		calls++;
+		// Keep the faux queue topped up: every request consumes one step and adds one.
+		faux.appendResponses([factory]);
+		const { message, slowMs } = fixtureAnswer(context.messages);
+		// [[slow]] applies only to the first answer for an input (not to a retry after the answer started).
+		if (slowMs) await sleep(slowMs, streamOptions?.signal);
+		return message;
+	};
+	faux.setResponses(Array.from({ length: 16 }, () => factory));
+	return { provider: faux.provider, providerName: "fixture", modelId: "workroom-fixture", calls: () => calls };
+}
+
+/** True for refs that point at the fixture model. */
+export const isFixtureModel = (ref: { provider?: string } | undefined): boolean => ref?.provider === FIXTURE_PROVIDER;
+
+export { fauxText };

@@ -1,0 +1,266 @@
+// HTTP + SSE routes for conversations and runs (docs/api.md "会话与运行"). Every route checks ACL on
+// (spaceId, conversation): read for GET/SSE, write for mutations. SSE re-checks ACL periodically.
+import type { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
+import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
+import type { ConversationView } from "@earendil-works/pi-durable";
+import type { AppEnv } from "../core/contracts.ts";
+import { HttpError, jsonBody, principalOf } from "../core/http.ts";
+import type { ConversationState, SendMessageRequest } from "../../../shared/chat.ts";
+import { ApprovalsDoc, EffectsDoc, TeamDoc } from "./docs.ts";
+import type { Effects } from "./effects.ts";
+import type { Runtime } from "./service.ts";
+import type { AssistantStore } from "./assistants.ts";
+
+export interface SseOptions {
+	throttleMs: number;
+	pingMs: number;
+	aclRecheckMs: number;
+}
+
+const ctx0 = BACKGROUND_CONTEXT;
+
+function convId(raw: string): number {
+	const n = Number(raw);
+	if (!Number.isInteger(n) || n <= 0) throw new HttpError(400, "invalid_id", "会话 id 无效");
+	return n;
+}
+
+export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effects, assistants: AssistantStore, sse: SseOptions): void {
+	// ------------------------------------------------------------ conversations
+	api.get("/conversations", async (c) => {
+		const p = principalOf(c);
+		const conversations = await rt.list(p, { spaceId: c.req.query("spaceId"), projectId: c.req.query("projectId"), q: c.req.query("q"), limit: Number(c.req.query("limit")) || undefined, archived: c.req.query("archived") === "1" }, ctx0);
+		return c.json({ conversations });
+	});
+
+	api.post("/conversations", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ spaceId?: string; projectId?: string; title?: string; modelId?: string; assistantId?: string }>(c);
+		const identity = rt.ctx.services.get("identity");
+		let spaceId = b.spaceId;
+		if (b.projectId) {
+			const s = identity.projectSpace(b.projectId);
+			if (!s) throw new HttpError(404, "project_not_found", "项目不存在");
+			if (spaceId && spaceId !== s.id) throw new HttpError(400, "space_mismatch", "spaceId 与 projectId 不一致");
+			spaceId = s.id;
+		}
+		spaceId ??= identity.personalSpace(p.userId, p.orgId).id;
+		const model = await rt.resolveModel(p, b.modelId);
+		const { conversationId } = await rt.createConversation(p, spaceId, { title: b.title, projectId: b.projectId, model, assistantId: b.assistantId }, ctx0);
+		const detail = await rt.detail(p, spaceId, conversationId, ctx0);
+		return c.json({ conversation: detail.conversation, agent: detail.agent });
+	});
+
+	api.get("/conversations/:spaceId/:id", async (c) => {
+		const p = principalOf(c);
+		return c.json(await rt.detail(p, c.req.param("spaceId"), convId(c.req.param("id")), ctx0));
+	});
+
+	api.patch("/conversations/:spaceId/:id", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ title?: string; archived?: boolean }>(c);
+		return c.json({ conversation: await rt.patch(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0) });
+	});
+
+	api.get("/conversations/:spaceId/:id/entries", async (c) => {
+		const p = principalOf(c);
+		return c.json(await rt.entries(p, c.req.param("spaceId"), convId(c.req.param("id")), { before: Number(c.req.query("before")) || undefined, limit: Number(c.req.query("limit")) || undefined }, ctx0));
+	});
+
+	// ------------------------------------------------------------ SSE
+	api.get("/conversations/:spaceId/:id/events", async (c) => {
+		const p = principalOf(c);
+		const spaceId = c.req.param("spaceId");
+		const id = convId(c.req.param("id"));
+		// ACL + existence before any byte is streamed, so a forbidden client gets a plain 403.
+		const { harness, conv } = await rt.access(p, "read", spaceId, id, ctx0);
+		c.header("x-accel-buffering", "no");
+		c.header("cache-control", "no-cache");
+		return streamSSE(c, async (stream) => {
+			const { context, cancel } = withCancel(ctx0);
+			let revision = 0;
+			let view: ConversationView | undefined;
+			let dirty = false;
+			let sending = false;
+			let timer: NodeJS.Timeout | undefined;
+			let closed = false;
+			let finish!: () => void;
+			const done = new Promise<void>((r) => (finish = r));
+			const stopAll: (() => unknown)[] = [];
+			// Resources acquired after the client already left are released at once.
+			const onStop = (fn: () => unknown) => (closed ? void Promise.resolve(fn()).catch(() => {}) : void stopAll.push(fn));
+			const close = () => {
+				if (closed) return;
+				closed = true;
+				if (timer) clearTimeout(timer);
+				cancel();
+				for (const s of stopAll) Promise.resolve(s()).catch(() => {});
+				finish();
+			};
+			stream.onAbort(close); // client disconnect only stops the watch; the run continues server-side
+
+			const ping = setInterval(() => {
+				if (!closed) stream.writeSSE({ event: "ping", data: JSON.stringify({ at: new Date().toISOString() }) }).catch(close);
+			}, sse.pingMs);
+			const recheck = setInterval(async () => {
+				if (closed) return;
+				const d = await rt.acl.check(p, "read", { kind: "conversation", id: String(id), spaceId }).catch(() => ({ allow: false, reason: "error" }));
+				if (!d.allow) {
+					await stream.writeSSE({ event: "error", data: JSON.stringify({ code: "forbidden", message: `访问权限已变更（${d.reason}）`, reason: d.reason }) }).catch(() => {});
+					close();
+				} else if (view?.docs?.["pi.live"]?.run) schedule(); // keep nested subagent state fresh while busy
+			}, sse.aclRecheckMs);
+			stopAll.push(() => clearInterval(ping), () => clearInterval(recheck));
+
+
+			const send = async (event: "snapshot" | "state") => {
+				if (closed || !view) return;
+				sending = true;
+				dirty = false;
+				try {
+					const state: ConversationState = await rt.state(spaceId, harness, conv, view as any, ++revision, context);
+					if (!closed) await stream.writeSSE({ event, data: JSON.stringify(state), id: String(revision) });
+				} catch (err: any) {
+					if (!closed) console.error("[runtime] sse state", err?.message ?? err);
+				} finally {
+					sending = false;
+				}
+				if (dirty) schedule();
+			};
+			const schedule = () => {
+				dirty = true;
+				if (closed || sending || timer) return;
+				timer = setTimeout(() => {
+					timer = undefined;
+					void send("state");
+				}, sse.throttleMs);
+			};
+
+			try {
+				const watch = await conv.watch(context, { min: 50, max: 100 });
+				onStop(() => watch.stop());
+				view = watch.value;
+				watch.start(async (call) => {
+					if (call.kind !== "value") return;
+					view = call.value;
+					schedule();
+				});
+				watch.closed.then((end) => {
+					if (!closed && end.kind !== "stopped" && end.kind !== "aborted") {
+						void stream.writeSSE({ event: "error", data: JSON.stringify({ code: "runtime_closed", message: "运行时已关闭，请重新连接" }) }).finally(close);
+					}
+				});
+				for (const token of [ApprovalsDoc, EffectsDoc, TeamDoc]) {
+					const w = await harness.watchDoc(token as typeof ApprovalsDoc, conv.id, context);
+					if (!w) continue;
+					onStop(() => w.stop());
+					w.start(async () => schedule());
+				}
+				await send("snapshot");
+			} catch (err: any) {
+				await stream.writeSSE({ event: "error", data: JSON.stringify({ code: "watch_failed", message: String(err?.message ?? err) }) }).catch(() => {});
+				close();
+			}
+
+			await done;
+		});
+	});
+
+	// ------------------------------------------------------------ submissions & control
+	api.post("/conversations/:spaceId/:id/messages", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<SendMessageRequest>(c);
+		const mode = b.mode ?? "auto";
+		if (!["auto", "steer", "followUp"].includes(mode)) throw new HttpError(400, "invalid_mode", "mode 无效");
+		const sub = await rt.submit(p, c.req.param("spaceId"), convId(c.req.param("id")), { text: b.text, requestId: b.requestId, attachments: b.attachments, knowledgeRefs: b.knowledgeRefs, userId: p.userId, orgId: p.orgId, whenBusy: mode === "followUp" ? "followUp" : "steer" }, ctx0);
+		return c.json({ submissionId: sub.submissionId, status: sub.status, submission: sub });
+	});
+
+	api.get("/conversations/:spaceId/:id/submissions/:submissionId", async (c) => {
+		const p = principalOf(c);
+		const spaceId = c.req.param("spaceId");
+		const id = convId(c.req.param("id"));
+		const { harness } = await rt.access(p, "read", spaceId, id, ctx0);
+		const sid = Number(c.req.param("submissionId"));
+		if (!Number.isInteger(sid) || sid <= 0) throw new HttpError(400, "invalid_id", "提交 id 无效");
+		const s = await rt.submissionStatus(harness, id, sid, ctx0);
+		return c.json({ ...s, submission: s });
+	});
+
+	api.post("/conversations/:spaceId/:id/submissions/:submissionId/withdraw", async (c) => {
+		const p = principalOf(c);
+		const spaceId = c.req.param("spaceId");
+		const id = convId(c.req.param("id"));
+		const { harness } = await rt.access(p, "write", spaceId, id, ctx0);
+		const sid = Number(c.req.param("submissionId"));
+		const r = await harness.abortSubmission(sid as any, ctx0, id as any);
+		if (r === "not_found") throw new HttpError(404, "not_found", "提交不存在");
+		return c.json({ result: r, submission: await rt.submissionStatus(harness, id, sid, ctx0) });
+	});
+
+	api.post("/conversations/:spaceId/:id/fork", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ entryId: number; title?: string }>(c);
+		return c.json({ conversation: await rt.fork(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0) });
+	});
+	api.post("/conversations/:spaceId/:id/edit", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ entryId: number; text: string; requestId: string }>(c);
+		return c.json(await rt.edit(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0));
+	});
+	api.post("/conversations/:spaceId/:id/regenerate", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ entryId: number }>(c);
+		return c.json(await rt.regenerate(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0));
+	});
+	api.post("/conversations/:spaceId/:id/abort", async (c) => {
+		const p = principalOf(c);
+		const b = (await c.req.json().catch(() => ({}))) as { background?: boolean };
+		await rt.abort(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0);
+		return c.json({ ok: true });
+	});
+	api.post("/conversations/:spaceId/:id/continue", async (c) => {
+		const p = principalOf(c);
+		const b = (await c.req.json().catch(() => ({}))) as { requestId?: string };
+		const s = await rt.continue(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0);
+		return c.json({ submissionId: s.submissionId, status: s.status, submission: s });
+	});
+
+	// ------------------------------------------------------------ approvals, effects, tasks
+	api.post("/conversations/:spaceId/:id/approvals/:approvalId", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ decision: "approved" | "rejected"; note?: string }>(c);
+		return c.json({ approval: await effects.respond(p, c.req.param("spaceId"), convId(c.req.param("id")), c.req.param("approvalId"), b, ctx0) });
+	});
+	api.post("/conversations/:spaceId/:id/effects/:effectId/reconcile", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ outcome: "done" | "failed"; receipt?: unknown; note?: string }>(c);
+		return c.json({ effect: await effects.reconcile(p, c.req.param("spaceId"), convId(c.req.param("id")), c.req.param("effectId"), b, ctx0) });
+	});
+	api.get("/conversations/:spaceId/:id/tasks", async (c) => {
+		const p = principalOf(c);
+		return c.json(await rt.tasks(p, c.req.param("spaceId"), convId(c.req.param("id")), ctx0));
+	});
+
+	// ------------------------------------------------------------ assistants (M03-A)
+	api.get("/assistants", async (c) => c.json({ assistants: assistants.list(principalOf(c)) }));
+	api.post("/assistants", async (c) => c.json({ assistant: await assistants.create(principalOf(c), await jsonBody(c)) }));
+	api.get("/assistants/:id", async (c) => {
+		const a = assistants.get(principalOf(c), c.req.param("id"));
+		if (!a) throw new HttpError(404, "assistant_not_found", "助手不存在");
+		return c.json({ assistant: a });
+	});
+	api.patch("/assistants/:id", async (c) => c.json({ assistant: await assistants.update(principalOf(c), c.req.param("id"), await jsonBody(c)) }));
+	api.delete("/assistants/:id", async (c) => {
+		await assistants.archive(principalOf(c), c.req.param("id"));
+		return c.json({ ok: true });
+	});
+
+	// ------------------------------------------------------------ runtime status (ops)
+	api.get("/runtime/status", async (c) => {
+		const p = principalOf(c);
+		await rt.acl.require(p, "admin", { kind: "org", id: p.orgId });
+		return c.json({ instanceId: rt.manager.instanceId, openSpaces: rt.manager.openSpaces().length, fixtureCalls: rt.manager.fixture.calls() });
+	});
+}
