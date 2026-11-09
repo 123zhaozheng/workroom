@@ -4,15 +4,17 @@ import { AlertCircle, ArrowLeft, BookOpen, CheckCircle2, FolderPlus, Loader2, Pl
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { FileUploadResponse } from "@shared/files";
-import type { KbDecisionDTO, KbDocDTO, KbEvalResult, KbProcessingStatus, KbSearchResponse, KbSummary, RetrievalFailure } from "@shared/knowledge";
-import { del, errorText, post } from "@/lib/api";
+import type { KbDecisionDTO, KbDocDTO, KbDocKind, KbEvalResult, KbGovStatus, KbProcessingStatus, KbScope, KbSearchResponse, KbSummary, RetrievalFailure, UpdateGovernanceRequest } from "@shared/knowledge";
+import type { DepartmentDTO, MemberDTO } from "@shared/ops";
+import type { Project } from "@/lib/types";
+import { del, errorText, patch, post } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/useApi";
 import { cn, formatBytes, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { usePanel } from "@/components/shell/panel";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Textarea } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { FilePickerDialog, listOf } from "@/features/chat/pickers";
@@ -86,11 +88,16 @@ function KbList() {
 function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: (k: KbSummary) => void }) {
 	const [name, setName] = useState("");
 	const [desc, setDesc] = useState("");
+	const [scope, setScope] = useState<KbScope>("personal");
+	const [projectId, setProjectId] = useState("");
+	const [departmentId, setDepartmentId] = useState("");
 	const [err, setErr] = useState<string>();
 	const [busy, setBusy] = useState(false);
+	const projects = useApi<{ projects: Project[] }>(open ? "/projects" : null);
+	const depts = useApi<{ departments: DepartmentDTO[] }>(open ? "/departments" : null);
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="新建知识库">
+			<DialogContent title="新建知识库" description="可见范围决定谁能检索它；检索时按当前成员关系过滤。">
 				<form
 					className="space-y-3"
 					onSubmit={async (e) => {
@@ -98,7 +105,7 @@ function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
 						setBusy(true);
 						setErr(undefined);
 						try {
-							const r = await post<Record<string, unknown>>("/kb", { name, description: desc, scope: "personal" });
+							const r = await post<Record<string, unknown>>("/kb", { name, description: desc, scope, ...(scope === "project" ? { projectId } : {}), ...(scope === "department" ? { departmentId } : {}) });
 							const kb = ((r.kb ?? r.knowledgeBase ?? r) as KbSummary)!;
 							onOpenChange(false);
 							setName("");
@@ -116,12 +123,40 @@ function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
 						<Input id="kbname" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
 					</div>
 					<div>
+						<Label htmlFor="kbscope">可见范围</Label>
+						<Select id="kbscope" value={scope} onChange={(e) => setScope(e.target.value as KbScope)} className="w-full" data-testid="kb-scope">
+							<option value="personal">个人（只有自己）</option>
+							<option value="project">项目成员</option>
+							<option value="department">部门成员</option>
+							<option value="org">整个企业（需管理员）</option>
+						</Select>
+						{scope === "project" ? (
+							<Select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="mt-2 w-full" aria-label="项目" data-testid="kb-scope-project">
+								<option value="">选择项目</option>
+								{(projects.data?.projects ?? []).filter((x) => x.role !== "viewer").map((x) => (
+									<option key={x.id} value={x.id}>
+										{x.name}
+									</option>
+								))}
+							</Select>
+						) : scope === "department" ? (
+							<Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className="mt-2 w-full" aria-label="部门" data-testid="kb-scope-department">
+								<option value="">选择部门</option>
+								{(depts.data?.departments ?? []).map((d) => (
+									<option key={d.id} value={d.id}>
+										{d.name}
+									</option>
+								))}
+							</Select>
+						) : null}
+					</div>
+					<div>
 						<Label htmlFor="kbdesc">说明（可选）</Label>
 						<Textarea id="kbdesc" value={desc} onChange={(e) => setDesc(e.target.value)} rows={2} />
 					</div>
 					{err ? <p className="text-[13px] text-danger">{err}</p> : null}
 					<div className="flex justify-end">
-						<Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+						<Button type="submit" variant="primary" disabled={busy || !name.trim() || (scope === "project" && !projectId) || (scope === "department" && !departmentId)}>
 							创建
 						</Button>
 					</div>
@@ -222,6 +257,7 @@ function KbDetail({ kbId }: { kbId: string }) {
 										key={d.id}
 										d={d}
 										first={i === 0}
+										siblings={list}
 										canWrite={canWrite}
 										kbId={kbId}
 										onChanged={() => {
@@ -257,7 +293,7 @@ function KbDetail({ kbId }: { kbId: string }) {
 	);
 }
 
-function DocRow({ d, first, canWrite, kbId, onChanged, onPreview }: { d: KbDocDTO; first: boolean; canWrite: boolean; kbId: string; onChanged: () => void; onPreview: () => void }) {
+function DocRow({ d, first, canWrite, kbId, onChanged, onPreview, siblings }: { d: KbDocDTO; first: boolean; canWrite: boolean; kbId: string; onChanged: () => void; onPreview: () => void; siblings: KbDocDTO[] }) {
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string>();
 	const a = AVAILABILITY[d.availability];
@@ -274,7 +310,7 @@ function DocRow({ d, first, canWrite, kbId, onChanged, onPreview }: { d: KbDocDT
 					</span>
 				</button>
 				<Badge tone={a.tone}>{d.availability === "processing" ? PROC[d.latest.status] : a.label}</Badge>
-				{d.governance.kind !== "reference" ? <Badge>{d.governance.kind === "policy" ? "制度" : "模板"} · {d.governance.effectiveStatus}</Badge> : null}
+				{d.governance.kind !== "reference" ? <Badge tone={GOV[d.governance.effectiveStatus].tone} data-testid="gov-badge">{KIND_LABEL[d.governance.kind]} · {GOV[d.governance.effectiveStatus].label}</Badge> : null}
 				{canWrite ? (
 					<button
 						aria-label={`移除 ${d.fileName}`}
@@ -336,6 +372,138 @@ function DocRow({ d, first, canWrite, kbId, onChanged, onPreview }: { d: KbDocDT
 				</div>
 			) : null}
 			{err ? <p className="ml-7 mt-1 text-xs text-danger">{err}</p> : null}
+			<Governance d={d} kbId={kbId} canWrite={canWrite} siblings={siblings} onChanged={onChanged} />
+		</div>
+	);
+}
+
+const KIND_LABEL: Record<KbDocKind, string> = { reference: "参考资料", policy: "制度", template: "模板" };
+const GOV: Record<KbDocDTO["governance"]["effectiveStatus"], { label: string; tone: "success" | "neutral" | "warning" | "danger" | "info" }> = {
+	draft: { label: "草稿", tone: "neutral" },
+	effective: { label: "生效中", tone: "success" },
+	expired: { label: "已过期", tone: "warning" },
+	withdrawn: { label: "已下架", tone: "danger" },
+	pending: { label: "待生效", tone: "info" },
+};
+const day = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+
+/** 制度与模板治理 (M07-B): 责任人、版本、生效状态、生效/到期时间；下架、替换。Reference docs only show a compact line. */
+function Governance({ d, kbId, canWrite, siblings, onChanged }: { d: KbDocDTO; kbId: string; canWrite: boolean; siblings: KbDocDTO[]; onChanged: () => void }) {
+	const g = d.governance;
+	const [open, setOpen] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [err, setErr] = useState<string>();
+	const members = useApi<{ members: MemberDTO[] }>(open ? "/admin/members" : null);
+	const [form, setForm] = useState<UpdateGovernanceRequest>({});
+	const apply = async (req: UpdateGovernanceRequest) => {
+		setBusy(true);
+		setErr(undefined);
+		try {
+			await patch(`/kb/${encodeURIComponent(kbId)}/docs/${encodeURIComponent(d.id)}/governance`, req as Record<string, unknown>);
+			setOpen(false);
+			setForm({});
+			onChanged();
+		} catch (e) {
+			setErr(errorText(e));
+		} finally {
+			setBusy(false);
+		}
+	};
+	const replacedBy = g.replacedByDocId ? siblings.find((x) => x.id === g.replacedByDocId) : undefined;
+	return (
+		<div className="ml-7 mt-1 text-xs text-fg-muted" data-testid="governance">
+			<span>
+				{KIND_LABEL[g.kind]}
+				{g.kind !== "reference" ? ` · ${GOV[g.effectiveStatus].label}` : ""}
+				{g.responsibleName || g.responsibleUserId ? ` · 责任人 ${g.responsibleName ?? g.responsibleUserId}` : ""}
+				{g.versionLabel ? ` · 版本 ${g.versionLabel}` : ""}
+				{g.effectiveFrom ? ` · ${day(g.effectiveFrom)} 起生效` : ""}
+				{g.expiresAt ? ` · ${day(g.expiresAt)} 到期` : ""}
+				{replacedBy ? ` · 已由「${replacedBy.fileName}」替换` : ""}
+				{!g.retrievable ? " · 默认不参与检索" : ""} · 更新于 {relTime(g.updatedAt)}
+			</span>
+			{canWrite ? (
+				<span className="ml-2 inline-flex gap-2">
+					<button className="text-info hover:underline" onClick={() => setOpen((o) => !o)} data-testid="gov-edit">
+						治理设置
+					</button>
+					{g.status !== "withdrawn" ? (
+						<button className="text-danger hover:underline" disabled={busy} onClick={() => apply({ status: "withdrawn" })} data-testid="gov-withdraw">
+							下架
+						</button>
+					) : (
+						<button className="text-info hover:underline" disabled={busy} onClick={() => apply({ status: "effective" })}>
+							恢复生效
+						</button>
+					)}
+				</span>
+			) : null}
+			{open ? (
+				<div className="mt-2 grid gap-2 rounded-lg border border-border bg-surface p-3 sm:grid-cols-2" data-testid="gov-form">
+					<label className="flex flex-col gap-1">
+						类型
+						<Select value={form.kind ?? g.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as KbDocKind }))} className="h-8 text-xs">
+							<option value="reference">参考资料</option>
+							<option value="policy">制度</option>
+							<option value="template">模板</option>
+						</Select>
+					</label>
+					<label className="flex flex-col gap-1">
+						状态
+						<Select value={form.status ?? g.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as KbGovStatus }))} className="h-8 text-xs">
+							<option value="draft">草稿</option>
+							<option value="effective">生效</option>
+							<option value="expired">过期</option>
+							<option value="withdrawn">下架</option>
+						</Select>
+					</label>
+					<label className="flex flex-col gap-1">
+						责任人
+						<Select value={form.responsibleUserId ?? g.responsibleUserId ?? ""} onChange={(e) => setForm((f) => ({ ...f, responsibleUserId: e.target.value || null }))} className="h-8 text-xs" data-testid="gov-owner">
+							<option value="">未指定</option>
+							{(members.data?.members ?? []).map((m) => (
+								<option key={m.userId} value={m.userId}>
+									{m.name}
+								</option>
+							))}
+						</Select>
+					</label>
+					<label className="flex flex-col gap-1">
+						版本标识
+						<Input value={form.versionLabel ?? g.versionLabel ?? ""} onChange={(e) => setForm((f) => ({ ...f, versionLabel: e.target.value || null }))} className="h-8 text-xs" placeholder="例如 2026 版" data-testid="gov-version" />
+					</label>
+					<label className="flex flex-col gap-1">
+						生效日期
+						<Input type="date" value={day(form.effectiveFrom ?? g.effectiveFrom ?? undefined)} onChange={(e) => setForm((f) => ({ ...f, effectiveFrom: e.target.value ? new Date(`${e.target.value}T00:00:00Z`).toISOString() : null }))} className="h-8 text-xs" />
+					</label>
+					<label className="flex flex-col gap-1">
+						到期日期
+						<Input type="date" value={day(form.expiresAt ?? g.expiresAt ?? undefined)} onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value ? new Date(`${e.target.value}T00:00:00Z`).toISOString() : null }))} className="h-8 text-xs" data-testid="gov-expires" />
+					</label>
+					<label className="flex flex-col gap-1 sm:col-span-2">
+						由以下文档替换（替换后本文档下架）
+						<Select value={form.replacedByDocId ?? g.replacedByDocId ?? ""} onChange={(e) => setForm((f) => ({ ...f, replacedByDocId: e.target.value || null, ...(e.target.value ? { status: "withdrawn" as const } : {}) }))} className="h-8 text-xs" data-testid="gov-replace">
+							<option value="">不替换</option>
+							{siblings.filter((x) => x.id !== d.id).map((x) => (
+								<option key={x.id} value={x.id}>
+									{x.fileName}
+								</option>
+							))}
+						</Select>
+					</label>
+					{err ? <p className="text-danger sm:col-span-2">{err}</p> : null}
+					<div className="flex justify-end gap-2 sm:col-span-2">
+						<Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+							取消
+						</Button>
+						<Button size="sm" variant="primary" disabled={busy || !Object.keys(form).length} onClick={() => apply(form)} data-testid="gov-save">
+							保存
+						</Button>
+					</div>
+				</div>
+			) : err ? (
+				<p className="mt-1 text-danger">{err}</p>
+			) : null}
 		</div>
 	);
 }

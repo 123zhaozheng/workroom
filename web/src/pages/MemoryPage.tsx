@@ -1,13 +1,13 @@
-import { Brain, Pencil, Plus, Trash2 } from "lucide-react";
+import { Brain, History, Pencil, Plus, Trash2, Wand2 } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
-import type { MemoryDTO, MemoryKind, MemoryScope } from "@shared/knowledge";
+import type { MemoryCorrectionResult, MemoryDTO, MemoryKind, MemoryRevisionDTO, MemoryScope } from "@shared/knowledge";
 import { del, errorText, patch, post } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { relTime } from "@/lib/utils";
+import { fullTime, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
-import { Select, Textarea } from "@/components/ui/input";
+import { Input, Select, Textarea } from "@/components/ui/input";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
 
@@ -21,6 +21,7 @@ export default function MemoryPage() {
 	const [draft, setDraft] = useState("");
 	const [kind, setKind] = useState<MemoryKind>("preference");
 	const [err, setErr] = useState<string>();
+	const [lastCorrection, setLastCorrection] = useState<MemoryCorrectionResult>();
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<TopBar />
@@ -61,13 +62,14 @@ export default function MemoryPage() {
 							{err ? <p className="mt-1 text-[13px] text-danger">{err}</p> : null}
 						</form>
 					) : null}
+					{lastCorrection ? <CorrectionResult r={lastCorrection} /> : null}
 					<Loadable state={res} what="记忆" need="C 组：GET /api/memory">
 						{list.length === 0 ? (
 							<EmptyState icon={<Brain />} title="还没有记忆" />
 						) : (
 							<ul className="space-y-2">
 								{list.map((m) => (
-									<MemoryItem key={m.id} m={m} onChanged={res.reload} />
+									<MemoryItem key={m.id} m={m} onChanged={res.reload} onCorrected={setLastCorrection} />
 								))}
 							</ul>
 						)}
@@ -78,10 +80,18 @@ export default function MemoryPage() {
 	);
 }
 
-function MemoryItem({ m, onChanged }: { m: MemoryDTO; onChanged: () => void }) {
+const CHANGE: Record<MemoryRevisionDTO["change"], string> = { create: "创建", edit: "修改", correct: "纠正", supersede: "被替代", delete: "删除" };
+
+function MemoryItem({ m, onChanged, onCorrected }: { m: MemoryDTO; onChanged: () => void; onCorrected: (r: MemoryCorrectionResult) => void }) {
 	const [editing, setEditing] = useState(false);
 	const [text, setText] = useState(m.content);
 	const [err, setErr] = useState<string>();
+	const [correcting, setCorrecting] = useState(false);
+	const [fix, setFix] = useState(m.content);
+	const [note, setNote] = useState("");
+	const [showHistory, setShowHistory] = useState(false);
+	const history = useApi<{ revisions?: MemoryRevisionDTO[]; history?: MemoryRevisionDTO[] } | MemoryRevisionDTO[]>(showHistory ? `/memory/${m.id}/history` : null);
+	const revs = listOf<MemoryRevisionDTO>(history.data, "revisions", "history");
 	return (
 		<li data-testid="memory-item" className="rounded-xl border border-border bg-surface p-3">
 			{editing ? (
@@ -132,6 +142,14 @@ function MemoryItem({ m, onChanged }: { m: MemoryDTO; onChanged: () => void }) {
 						<Pencil className="size-3.5" />
 					</button>
 				) : null}
+				{m.permissions.edit && !correcting ? (
+					<button aria-label="纠正" data-testid="memory-correct" onClick={() => setCorrecting(true)} className="rounded p-1 hover:bg-surface-2 hover:text-fg" title="纠正（保留历史并说明改了什么）">
+						<Wand2 className="size-3.5" />
+					</button>
+				) : null}
+				<button aria-label="历史" onClick={() => setShowHistory((x) => !x)} className="rounded p-1 hover:bg-surface-2 hover:text-fg" title="变更历史" data-testid="memory-history">
+					<History className="size-3.5" />
+				</button>
 				{m.permissions.delete ? (
 					<button
 						aria-label="删除"
@@ -150,7 +168,66 @@ function MemoryItem({ m, onChanged }: { m: MemoryDTO; onChanged: () => void }) {
 					</button>
 				) : null}
 			</div>
+			{correcting ? (
+				<div className="mt-2 space-y-2 rounded-lg bg-surface-2 p-2" data-testid="memory-correct-form">
+					<Textarea value={fix} onChange={(e) => setFix(e.target.value)} rows={2} aria-label="纠正后的内容" />
+					<Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="为什么纠正（可选）" className="h-8 text-[13px]" />
+					<div className="flex justify-end gap-2">
+						<Button size="sm" variant="ghost" onClick={() => setCorrecting(false)}>
+							取消
+						</Button>
+						<Button
+							size="sm"
+							variant="primary"
+							data-testid="memory-correct-save"
+							disabled={!fix.trim() || fix === m.content}
+							onClick={async () => {
+								try {
+									onCorrected(await post<MemoryCorrectionResult>(`/memory/${m.id}/correct`, { content: fix, ...(note ? { note } : {}) }));
+									setCorrecting(false);
+									onChanged();
+								} catch (e) {
+									setErr(errorText(e));
+								}
+							}}
+						>
+							确认纠正
+						</Button>
+					</div>
+				</div>
+			) : null}
+			{showHistory ? (
+				<ol className="mt-2 space-y-1 border-l border-border pl-3 text-xs text-fg-muted" data-testid="memory-revisions">
+					{revs.map((r) => (
+						<li key={`${r.version}-${r.at}`}>
+							v{r.version} · {CHANGE[r.change]} · {fullTime(r.at)}：{r.content}
+							{r.note ? `（${r.note}）` : ""}
+						</li>
+					))}
+				</ol>
+			) : null}
 			{err ? <p className="mt-1 text-xs text-danger">{err}</p> : null}
 		</li>
+	);
+}
+
+/** Visible result of a correction: what was believed before, what is used from now on. */
+function CorrectionResult({ r }: { r: MemoryCorrectionResult }) {
+	return (
+		<div className="mb-4 rounded-lg border border-success/40 bg-success-soft/40 p-3 text-xs" data-testid="memory-correction-result">
+			<div className="mb-1 font-medium text-success">已纠正，从现在起助手按新内容理解</div>
+			<div>
+				<span className="text-fg-subtle">之前：</span>
+				<s>{r.change.before}</s>
+			</div>
+			<div>
+				<span className="text-fg-subtle">现在：</span>
+				{r.change.after}
+			</div>
+			<div className="mt-0.5 text-fg-subtle">
+				{fullTime(r.change.at)}
+				{r.change.note ? ` · ${r.change.note}` : ""} · 旧版本 v{r.previous.version} 已标记为被替代
+			</div>
+		</div>
 	);
 }

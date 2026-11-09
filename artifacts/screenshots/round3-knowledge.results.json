@@ -1,0 +1,85 @@
+{
+  "at": "2026-11-09T07:34:14.679Z",
+  "results": [
+    {
+      "name": "M07-A: personal / project / department / org scopes chosen in the UI",
+      "ok": true,
+      "detail": "企业制度 | 市场部资料 | 项目资料 | 个人笔记"
+    },
+    {
+      "name": "M07-A: a project member (not in the department) sees only project + org knowledge",
+      "ok": true,
+      "detail": "企业制度 | 项目资料"
+    },
+    {
+      "name": "M07-B: owner, version label, effective status and expiry shown after editing",
+      "ok": true,
+      "detail": "制度 · 生效中 · 责任人 知识管理员 · 版本 2025 版 · 2027-12-31 到期 · 更新于 刚刚\n治理设置\n下架"
+    },
+    {
+      "name": "M07-B: replace → old version withdrawn and pointing at its replacement, excluded from default retrieval",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M07-C: no_evidence / index_not_ready / forbidden have different messages",
+      "ok": true,
+      "detail": "没有找到相关证据 · 知识库中没有与问题相关的内容 · 4.2 ms | 索引尚未就绪 · 1 个文档处理失败，没有可检索的内容 · 2.7 ms | 无权访问"
+    },
+    {
+      "name": "M07-C: model errors are reported as model errors (not as missing evidence)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M06-B: citation shows file, version and page (PDF page 2)",
+      "ok": true,
+      "detail": "[1] travel-policy.pdf · v1 · 第 2 页 Reimbursement deadline: claims must be filed within 30 days with original invoices."
+    },
+    {
+      "name": "M06-B: non-paged sources show section / paragraph",
+      "ok": true,
+      "detail": "引用来源 [1] 删除测试.md · v1 · 章节：条款 · 第 1 段 斑马条款：外勤补贴每天 80 元。"
+    },
+    {
+      "name": "M06-C: deleted and withdrawn sources are flagged on the old answer (snapshot kept)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M06-C: a member without access sees the notice, not the cited snippet",
+      "ok": true,
+      "detail": "[1]\n你已无权查看该引用来源"
+    },
+    {
+      "name": "M08-C: after upload the file is stored but NOT in any knowledge base (explicit step)",
+      "ok": true,
+      "detail": "知识：\n未加入任何知识库（加入是显式操作）"
+    },
+    {
+      "name": "M08-C: after the explicit add, knowledge state moves to 可检索 separately from storage",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M10-A: memories show source (manual / extracted from a conversation, with link) and scope",
+      "ok": true,
+      "detail": "汇报对象是销售总监 偏好 仅自己 手动添加 · v1 · 刚刚 | 周报使用英文 偏好 仅自己 从对话提取 · 来源对话 · v1 · 刚刚"
+    },
+    {
+      "name": "M10-C: correction shows before / after and that the old version is superseded",
+      "ok": true,
+      "detail": "已纠正，从现在起助手按新内容理解 之前：周报使用英文 现在：周报使用中文 2026/11/9 07:34:14 · 团队统一用中文 · 旧版本 v1 已标记为被替代"
+    },
+    {
+      "name": "M10-A: edit and delete work from the memory page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M10-C: history of the memory is visible",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
