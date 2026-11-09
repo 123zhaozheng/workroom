@@ -2,7 +2,7 @@
 // All conversation / entry / branch / submission / run facts are read from pi-durable; rt_conversations holds only
 // spaceId, createdBy, title, projectId, kind, archived, createdAt/updatedAt.
 import { type Context } from "@earendil-works/chord/context";
-import { ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi } from "@earendil-works/pi-durable";
+import { ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi, type PromptInput, type Extension } from "@earendil-works/pi-durable";
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, SubagentDTO, SubmissionDTO, TasksResponse } from "../../../shared/chat.ts";
@@ -121,10 +121,10 @@ export class Runtime implements RuntimeService {
 	}
 
 	/**
-	 * The user a run acts for: the first input of the current run (pi.live run inputs → submissions → wr.input data);
-	 * else the newest wr.input entry; else (task-owned child) the owner conversation's run, transitively.
+	 * The input a run acts for: the first placed input of the current run (pi.live run inputs → submissions →
+	 * wr.input data); else the newest wr.input entry; else (task-owned child) the owner conversation's, transitively.
 	 */
-	async principalOfRun(harness: Harness, conversationId: number, context: Context, depth = 0): Promise<{ userId: string; orgId: string } | null> {
+	async inputOfRun(harness: Harness, conversationId: number, context: Context, depth = 0): Promise<(InputEntryData & { entryId: number }) | null> {
 		if (depth > 8) return null;
 		const live = await harness.snapshot(LiveDoc, cid(conversationId), context);
 		for (const sid of live?.run?.inputs ?? []) {
@@ -133,20 +133,70 @@ export class Runtime implements RuntimeService {
 			const entryId = (rec as any)?.entry as EntryId | undefined;
 			if (entryId === undefined) continue;
 			const e = await harness.commit((tx) => tx.entry(InputEntry, entryId), context);
-			if (e?.data?.userId) return { userId: e.data.userId, orgId: e.data.orgId };
+			if (e?.data?.userId) return { ...(e.data as InputEntryData), entryId: e.id as number };
 		}
 		const conv = await harness.conversation(cid(conversationId), context);
 		if (!conv) return null;
 		let cursor: any;
 		for (let page = 0; page < 20; page++) {
 			const p = await conv.entries({ order: "descending" }, 100, cursor, context);
-			for (const e of p.items) if (InputEntry.is(e) && e.data?.userId) return { userId: e.data.userId, orgId: e.data.orgId };
+			for (const e of p.items) if (InputEntry.is(e) && e.data?.userId) return { ...(e.data as InputEntryData), entryId: e.id as number };
 			if (!p.next) break;
 			cursor = p.next;
 		}
 		const rec = await harness.commit((tx) => tx.conversation(cid(conversationId)), context);
-		if (rec?.owner) return this.principalOfRun(harness, rec.owner.conversationId as number, context, depth + 1);
+		if (rec?.owner) return this.inputOfRun(harness, rec.owner.conversationId as number, context, depth + 1);
 		return null;
+	}
+
+	/** The user a run acts for (see inputOfRun). */
+	async principalOfRun(harness: Harness, conversationId: number, context: Context): Promise<{ userId: string; orgId: string } | null> {
+		const input = await this.inputOfRun(harness, conversationId, context);
+		return input ? { userId: input.userId, orgId: input.orgId } : null;
+	}
+
+	// ------------------------------------------------------------------ extras used by C / D (duck-typed there)
+
+	/** Space id of a running tool call (from the storage's `wr.space` session doc). */
+	async spaceIdForTool(api: { snapshot: ToolExecutionApi["snapshot"] }, context: Context): Promise<string> {
+		const id = (await api.snapshot(SpaceDoc, context))?.spaceId;
+		if (!id) throw new HttpError(500, "no_space", "无法确定工具调用所属空间");
+		return id;
+	}
+
+	/** actorForTool without a spaceId, plus the run's input (attachments, knowledgeRefs, via). */
+	async actorForToolCall(api: ToolExecutionApi, context: Context): Promise<ToolActor & { input?: InputEntryData }> {
+		const spaceId = await this.spaceIdForTool(api, context);
+		const actor = await this.actorForTool(api, spaceId, context);
+		const input = await this.inputOfRun(await this.manager.get(spaceId), api.conversationId as number, context);
+		return { ...actor, ...(input ? { input } : {}) };
+	}
+
+	async inputForTool(api: ToolExecutionApi, context: Context): Promise<InputEntryData | undefined> {
+		const spaceId = await this.spaceIdForTool(api, context);
+		return (await this.inputOfRun(await this.manager.get(spaceId), api.conversationId as number, context)) ?? undefined;
+	}
+
+	/**
+	 * Scope for prompt sections: the conversation's space and the acting principal, re-resolved and re-checked against
+	 * current ACL (null principal = revoked / no access: render nothing actor-dependent).
+	 */
+	async promptScope(input: PromptInput, context: Context): Promise<{ space: Space; principal: Principal | null } | null> {
+		const spaceId = (await input.read.snapshot(SpaceDoc, context))?.spaceId;
+		if (!spaceId) return null;
+		const space = this.ctx.services.get("identity").space(spaceId);
+		if (!space) return null;
+		const who = await this.principalOfRun(await this.manager.get(spaceId), input.conversationId as number, context);
+		if (!who) return { space, principal: null };
+		const principal = await this.ctx.services.get("identity").principalFor(who.userId, who.orgId);
+		if (!principal) return { space, principal: null };
+		const d = await this.acl.check(principal, "read", { kind: "conversation", id: String(input.conversationId), spaceId });
+		return { space, principal: d.allow ? principal : null };
+	}
+
+	/** Re-install an extension by name in every space's registry (e.g. MCP tools changed). */
+	reinstallExtension(ext: Extension): void {
+		this.manager.installExtension(ext);
 	}
 
 	// ------------------------------------------------------------------ catalog
