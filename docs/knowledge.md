@@ -73,7 +73,7 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 - 定位优先级：页码（PDF）→ 工作表 + 行 → 行（CSV）→ 章节路径（+ 段落序号）→ 段落序号 → “原文片段”。
 - **更新**：文件新版本（D 调用 `knowledgeAdmin.fileVersionAdded`，或再次 `POST /kb/:id/docs` 指定更新的版本）在该文档下新建文档版本并排队；新版本**就绪时**在同一事务中：新分片入索引、旧版本分片从 FTS 移除并标记 `superseded`、`serving_version_id` 切换。新版本处理期间旧版本继续提供检索；新版本失败时旧版本继续服务（`latest` 显示失败，`serving` 仍是旧版）。不能加入比现有更旧的版本（409）。
 - **删除/撤权**：`DELETE /api/kb/:id/docs/:docId`、删除知识库、D 删除文件（`fileDeleted`）→ 同一事务中移除 FTS 行并 tombstone，下一次检索即不可见。撤权（移出项目/部门/组织、停用）在下一次检索的 SQL 中直接生效。
-- **已有回答**：引用快照保存在 pi-durable 的工具结果 `details.citations` 中（不可变）。UI 用 `GET /api/kb/citations/:chunkId/status`（或批量 `POST /api/kb/citations/status {chunkIds}`）获取当前有效性：`valid` / `superseded`（附当前 `vN`）/ `deleted` / `withdrawn` / `expired` / `forbidden`（当前用户已无权查看来源，不再透露其他信息）/ `not_found`，以及中文 `message` 用于失效提示。
+- **已有回答**：引用快照保存在 pi-durable 的工具结果 `details.citations` 中（不可变）。UI 用 `GET /api/kb/conversations/:spaceId/:conversationId/citation-status`（一次取整个会话所有 kb_search 引用的当前状态），或 `GET /api/kb/citations/:chunkId/status` / 批量 `POST /api/kb/citations/status {chunkIds ≤1000}` 获取当前有效性：`valid` / `superseded`（附当前 `vN`）/ `deleted` / `withdrawn` / `expired` / `forbidden`（当前用户已无权查看来源，不再透露其他信息）/ `not_found`，以及中文 `message` 用于失效提示。
 
 ## 6. 制度治理（M07-B）
 

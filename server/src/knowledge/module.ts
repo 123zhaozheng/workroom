@@ -1,6 +1,7 @@
 // Knowledge & memory module (group C). Auto-loaded by server/src/modules.ts.
 // Services: "knowledge" (core KnowledgeService contract), "knowledgeAdmin" (full Knowledge facade, incl. file hooks for D).
 import type { Hono } from "hono";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AppContext, AppEnv, FileVersionRef, Principal, ResourceRef, WorkroomModule } from "../core/contracts.ts";
 import { HttpError, jsonBody, principalOf } from "../core/http.ts";
 import type {
@@ -12,6 +13,7 @@ import type {
 	KbEvalSample,
 	KbScope,
 	KbSearchRequest,
+	ConversationCitationStatus,
 	MemoryScope,
 	RetrievalEventDTO,
 	UpdateGovernanceRequest,
@@ -75,6 +77,28 @@ export class Knowledge {
 }
 
 const instances = new WeakMap<AppContext, Knowledge>();
+const MAX_STATUS_BATCH = 1000;
+
+/** kb_search tool results of a conversation (pi transcript, read-only): callId, entry id and cited chunk ids. */
+async function conversationCitations(ctx: AppContext, spaceId: string, conversationId: number): Promise<ConversationCitationStatus["calls"]> {
+	const harness = await ctx.services.get("runtime").harness(spaceId, BACKGROUND_CONTEXT);
+	const conv = await harness.conversation(conversationId as any, BACKGROUND_CONTEXT);
+	if (!conv) throw new HttpError(404, "not_found", "会话不存在");
+	const out: { entryId: number; callId: string; chunkIds: string[] }[] = [];
+	let cursor: any;
+	for (let page = 0; page < 200; page++) {
+		const r = await conv.entries({ order: "ascending" }, 500, cursor, BACKGROUND_CONTEXT);
+		for (const e of r.items) {
+			const m = e.kind === "pi.tool-result" ? (e.model?.[0] as any) : undefined;
+			if (m?.toolName !== "kb_search") continue;
+			const cits = Array.isArray(m.details?.citations) ? m.details.citations : [];
+			out.push({ entryId: e.id as number, callId: m.toolCallId, chunkIds: cits.map((x: any) => String(x.chunkId)).filter(Boolean) });
+		}
+		if (!r.next) break;
+		cursor = r.next;
+	}
+	return out;
+}
 export function knowledgeOf(ctx: AppContext): Knowledge {
 	const k = instances.get(ctx);
 	if (!k) throw new Error("knowledge module not initialised");
@@ -117,8 +141,28 @@ function mountRoutes(api: Hono<AppEnv>, ctx: AppContext): void {
 	api.post("/kb/citations/status", async (c) => {
 		const p = principalOf(c);
 		const b = await jsonBody<{ chunkIds: string[] }>(c);
-		const ids = Array.isArray(b.chunkIds) ? b.chunkIds.slice(0, 200) : [];
-		return c.json({ statuses: ids.map((id) => s().citationStatus(p, id)) });
+		if (!Array.isArray(b.chunkIds) || b.chunkIds.length > MAX_STATUS_BATCH) throw new HttpError(400, "invalid", `chunkIds 必须是数组（最多 ${MAX_STATUS_BATCH} 个）`);
+		const statuses = [...new Set(b.chunkIds.map(String))].map((id) => s().citationStatus(p, id));
+		return c.json({ statuses, byChunkId: Object.fromEntries(statuses.map((x) => [x.chunkId, x])) });
+	});
+	// Every citation kb_search produced in one conversation, with its current validity (M06-C 失效提示 for old answers).
+	api.get("/kb/conversations/:spaceId/:conversationId/citation-status", async (c) => {
+		const p = principalOf(c);
+		const spaceId = c.req.param("spaceId");
+		const conversationId = Number(c.req.param("conversationId"));
+		if (!Number.isInteger(conversationId) || conversationId <= 0) throw new HttpError(400, "invalid_id", "会话 id 无效");
+		await ctx.services.get("acl").require(p, "read", { kind: "conversation", id: String(conversationId), spaceId });
+		const calls = await conversationCitations(ctx, spaceId, conversationId);
+		const ids = [...new Set(calls.flatMap((x) => x.chunkIds))];
+		const statuses = ids.map((id) => s().citationStatus(p, id));
+		const out: ConversationCitationStatus = {
+			spaceId,
+			conversationId,
+			calls,
+			byChunkId: Object.fromEntries(statuses.map((x) => [x.chunkId, x])),
+			stale: statuses.filter((x) => x.status !== "valid").length,
+		};
+		return c.json(out);
 	});
 	api.get("/kb/files/:fileId/status", (c) => {
 		const p = principalOf(c);

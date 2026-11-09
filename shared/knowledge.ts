@@ -220,6 +220,19 @@ export interface CitationStatusDTO {
 	readonly message: string;
 }
 
+/**
+ * GET /kb/conversations/:spaceId/:conversationId/citation-status — every citation kb_search produced in a conversation
+ * with its CURRENT validity for the caller. `calls[].entryId` is the pi tool-result entry; `byChunkId` keys the statuses.
+ */
+export interface ConversationCitationStatus {
+	readonly spaceId: string;
+	readonly conversationId: number;
+	readonly calls: readonly { entryId: number; callId: string; chunkIds: string[] }[];
+	readonly byChunkId: Record<string, CitationStatusDTO>;
+	/** Number of cited chunks that are no longer valid (non-"valid" status). */
+	readonly stale: number;
+}
+
 export interface KbCapabilities {
 	readonly fulltext: { status: "ready"; detail: string };
 	readonly vector: { status: "blocked"; detail: string };

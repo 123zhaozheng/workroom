@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
 import { isSettled, waitFor } from "../src/runtime/testing.ts";
-import { joinOrg, kbWithDoc, MIME } from "../src/knowledge/testing.ts";
+import { joinOrg, kbWithDoc, MIME, uploadVersion, waitDoc } from "../src/knowledge/testing.ts";
 
 type Conv = { spaceId: string; conversationId: number };
 const base = (c: Conv) => `/api/conversations/${c.spaceId}/${c.conversationId}`;
@@ -237,6 +237,55 @@ test("subagent knowledge scope: a member only searches its declared KBs, even wh
 		const childSections = await sections(t, { spaceId: c.spaceId, conversationId: sas[0].childConversationId });
 		assert.match(childSections.knowledge_scope ?? "", /公开资料/);
 		assert.doesNotMatch(childSections.knowledge_scope ?? "", /机密资料/);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("conversation citation status (M06-C 失效提示): every kb_search citation of a conversation with its current validity", async () => {
+	const t = await startTestApp();
+	try {
+		const alice = await t.user("alice@example.com", { name: "Alice" });
+		const bob = await joinOrg(t, alice.me.orgId, "bob@example.com");
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Apollo" } });
+		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "editor" } });
+		const a = await kbWithDoc(t, alice.token, { name: "Apollo 资料", scope: "project", projectId: project.id }, { name: "plan.md", mime: MIME.md, bytes: "# 计划\n\nThe launch window opens November 20." });
+		const b = await kbWithDoc(t, alice.token, { name: "Apollo 风险", scope: "project", projectId: project.id }, { name: "risk.md", mime: MIME.md, bytes: "# 风险\n\nThe weather risk is moderate." });
+		const c = await newChat(t, bob.token, { spaceId: project.spaceId });
+		await run(t, bob.token, c, '[[call kb_search {"query":"launch window"}]]');
+		await run(t, bob.token, c, '[[call kb_search {"query":"weather risk"}]]');
+		const url = `/api/kb/conversations/${c.spaceId}/${c.conversationId}/citation-status`;
+		let st = await t.json("GET", url, { token: bob.token });
+		assert.equal(st.calls.length, 2);
+		const [planChunk] = st.calls[0].chunkIds;
+		const [riskChunk] = st.calls[1].chunkIds;
+		assert.ok(st.calls[0].entryId > 0 && st.calls[0].callId);
+		assert.equal(st.byChunkId[planChunk].status, "valid");
+		assert.equal(st.stale, 0);
+
+		// The plan gets v2 (superseded) and the risk doc is removed (deleted): the old answer keeps its snapshot, status changes.
+		await uploadVersion(t, alice.token, a.file.fileId, { name: "plan.md", mime: MIME.md, bytes: "# 计划\n\nThe launch window moved to December 2." });
+		await waitDoc(t, alice.token, a.kb.id, a.doc.id, (d) => d.serving?.versionNo === 2);
+		await t.json("DELETE", `/api/kb/${b.kb.id}/docs/${b.doc.id}`, { token: alice.token });
+		st = await t.json("GET", url, { token: bob.token });
+		assert.equal(st.byChunkId[planChunk].status, "superseded");
+		assert.equal(st.byChunkId[planChunk].current.versionNo, 2);
+		assert.equal(st.byChunkId[riskChunk].status, "deleted");
+		assert.equal(st.stale, 2);
+		// The snapshot in the transcript is unchanged (still v1 text).
+		const snap = (await toolResults(t, c, "kb_search"))[0]!.details.citations[0];
+		assert.equal(snap.versionNo, 1);
+		assert.match(snap.snippet, /November 20/);
+		// POST batch accepts the same ids (deduplicated) and keys them.
+		const batch = await t.json("POST", "/api/kb/citations/status", { token: bob.token, json: { chunkIds: [planChunk, planChunk, riskChunk] } });
+		assert.equal(batch.statuses.length, 2);
+		assert.equal(batch.byChunkId[riskChunk].status, "deleted");
+		// Outsiders cannot read the conversation's citations; a removed member loses access entirely.
+		const eve = await t.user("eve@other.com");
+		await t.json("GET", url, { token: eve.token, expect: 403 });
+		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: null } });
+		await t.json("GET", url, { token: bob.token, expect: 403 });
+		assert.equal((await t.json("POST", "/api/kb/citations/status", { token: bob.token, json: { chunkIds: [planChunk] } })).statuses[0].status, "forbidden");
 	} finally {
 		await t.dispose();
 	}

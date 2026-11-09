@@ -51,6 +51,26 @@ org-scoped, ≤200 rows, returns `RetrievalEventDTO[]` (`shared/knowledge.ts`). 
 `redactText` per `WORKROOM_REDACT` (strict → not stored, only hash + length). Until you merge it, admins can use
 `GET /api/kb/admin/retrieval-events?q=` (org owner/admin only). Retention: `WORKROOM_KB_EVENT_RETENTION_DAYS` (default 30), pruned on start.
 
+## To B (web) — M06-C 失效提示 on old answers, M06-A / M07-C UI
+
+1. **Old answers keep their snapshot** (`tool_result.details.citations` of `kb_search`, DTO `CitationDTO`): render those as-is.
+2. **Current validity for a whole conversation, one call** when the conversation opens (and after SSE `state` changes if you like):
+   `GET /api/kb/conversations/:spaceId/:conversationId/citation-status` → `ConversationCitationStatus`
+   `{ calls: [{ entryId, callId, chunkIds }], byChunkId: { [chunkId]: CitationStatusDTO }, stale }`.
+   For each citation chip look up `byChunkId[c.chunkId]`: `valid` → normal; otherwise show `status.message` as 失效提示 —
+   `superseded` ("来源已更新：引用的是 v1，当前为 v2"; `current.versionId` lets you link the new version), `deleted`, `withdrawn`,
+   `expired`, `forbidden` (user lost access: hide snippet/link, show the message only), `not_found`. `stale` = count for a banner.
+   Needs read access to the conversation (403 otherwise).
+3. Ad-hoc batch (any chunk ids, ≤1000, deduplicated): `POST /api/kb/citations/status {chunkIds}` → `{ statuses, byChunkId }`.
+4. **Processing state (M06-A)**: `GET /api/kb/:id/docs` → `KbDocDTO.availability` (ready / processing / failed) is "知识可用"; show
+   `latest.status` (queued/parsing/indexing/ready/failed), `latest.error` and a retry button when `latest.status === "failed"`
+   (`POST /api/kb/:id/docs/:docId/retry`; `latest.retryable === false` means retrying will probably fail again). While a newer
+   version processes, `serving` still answers. File library: `GET /api/kb/files/:fileId/status` per file (do not show “上传成功” as knowledge).
+5. **Retrieval debug (M07-C)**: `POST /api/kb/search {query, kbIds?, projectId?, debug: true}` → `debug.kbDecisions[]` explains for
+   every KB in the caller's org why it was searched or excluded (see `KbDecisionDTO`), plus `diagnostics.reason`
+   (no_evidence / index_not_ready / forbidden / error). Eval: `POST /api/kb/eval {samples, kbIds?}`.
+6. Subagent results: `diagnostics.memberScope` is set when a subagent searched within its declared knowledge scope.
+
 ## To integrator
 
 - Dependencies added with `--save-exact`: `unpdf@2.1.0`, `mammoth@1.13.0`, `exceljs@4.4.0`, `node-html-parser@9.0.7`,
