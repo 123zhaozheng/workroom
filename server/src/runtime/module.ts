@@ -100,6 +100,7 @@ export const runtimeModule: WorkroomModule = {
 		const effects = new Effects(rt);
 		const assistants = new AssistantStore(ctx);
 		rt.assistants = assistants;
+		assistants.checkModel = (p, ref) => rt.checkModel(p, ref);
 		states.set(ctx, { rt, effects, assistants, manager });
 		ctx.services.provide("runtime", rt);
 		ctx.services.provide("effects", effects);

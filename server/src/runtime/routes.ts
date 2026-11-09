@@ -4,9 +4,9 @@ import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { BACKGROUND_CONTEXT, withCancel } from "@earendil-works/chord/context";
 import type { ConversationView } from "@earendil-works/pi-durable";
-import type { AppEnv } from "../core/contracts.ts";
+import type { AppEnv, Principal } from "../core/contracts.ts";
 import { HttpError, jsonBody, principalOf } from "../core/http.ts";
-import type { ConversationState, SendMessageRequest } from "../../../shared/chat.ts";
+import type { AssistantDTO, ConversationState, SendMessageRequest } from "../../../shared/chat.ts";
 import { ApprovalsDoc, EffectsDoc, TeamDoc } from "./docs.ts";
 import type { Effects } from "./effects.ts";
 import type { Runtime } from "./service.ts";
@@ -49,9 +49,9 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		}
 		spaceId ??= identity.personalSpace(p.userId, p.orgId).id;
 		const model = await rt.resolveModel(p, b.modelId);
-		const { conversationId } = await rt.createConversation(p, spaceId, { title: b.title, projectId: b.projectId, model, assistantId: b.assistantId }, ctx0);
+		const { conversationId, notice } = await rt.createConversation(p, spaceId, { title: b.title, projectId: b.projectId, model, assistantId: b.assistantId }, ctx0);
 		const detail = await rt.detail(p, spaceId, conversationId, ctx0);
-		return c.json({ conversation: detail.conversation, agent: detail.agent });
+		return c.json({ conversation: detail.conversation, agent: detail.agent, ...(notice ? { notice } : {}) });
 	});
 
 	api.get("/conversations/:spaceId/:id", async (c) => {
@@ -258,14 +258,29 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 	api.get("/projects/:projectId/handoff", async (c) => c.json(await handoff.project(principalOf(c), c.req.param("projectId"), ctx0)));
 
 	// ------------------------------------------------------------ assistants (M03-A)
-	api.get("/assistants", async (c) => c.json({ assistants: assistants.list(principalOf(c)) }));
-	api.post("/assistants", async (c) => c.json({ assistant: await assistants.create(principalOf(c), await jsonBody(c)) }));
-	api.get("/assistants/:id", async (c) => {
-		const a = assistants.get(principalOf(c), c.req.param("id"));
-		if (!a) throw new HttpError(404, "assistant_not_found", "助手不存在");
-		return c.json({ assistant: a });
+	const withAvailability = async (p: Principal, a: AssistantDTO): Promise<AssistantDTO> => {
+		if (!a.model) return a;
+		const chk = await rt.checkModel(p, a.model);
+		return { ...a, modelAvailability: chk.ok ? { status: "ok" } : { status: chk.code === "model_blocked" ? "blocked" : "not_allowed", reason: chk.reason } };
+	};
+	api.get("/assistants", async (c) => {
+		const p = principalOf(c);
+		return c.json({ assistants: await Promise.all(assistants.list(p).map((a) => withAvailability(p, a))) });
 	});
-	api.patch("/assistants/:id", async (c) => c.json({ assistant: await assistants.update(principalOf(c), c.req.param("id"), await jsonBody(c)) }));
+	api.post("/assistants", async (c) => {
+		const p = principalOf(c);
+		return c.json({ assistant: await withAvailability(p, await assistants.create(p, await jsonBody(c))) });
+	});
+	api.get("/assistants/:id", async (c) => {
+		const p = principalOf(c);
+		const a = assistants.get(p, c.req.param("id"));
+		if (!a) throw new HttpError(404, "assistant_not_found", "助手不存在");
+		return c.json({ assistant: await withAvailability(p, a) });
+	});
+	api.patch("/assistants/:id", async (c) => {
+		const p = principalOf(c);
+		return c.json({ assistant: await withAvailability(p, await assistants.update(p, c.req.param("id"), await jsonBody(c))) });
+	});
 	api.delete("/assistants/:id", async (c) => {
 		await assistants.archive(principalOf(c), c.req.param("id"));
 		return c.json({ ok: true });

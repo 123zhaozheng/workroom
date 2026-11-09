@@ -123,9 +123,14 @@ export interface ToolResultEntryDTO extends EntryBase {
 }
 
 export interface MarkerEntryDTO extends EntryBase {
-	/** start: conversation start marker; reset/compaction: context boundary; system: prompt change (hidden by default). */
-	readonly kind: "start" | "reset" | "compaction" | "system";
+	/**
+	 * start: conversation start marker; reset/compaction: context boundary; system: prompt change (hidden by default);
+	 * notice: a runtime notice shown in the transcript (e.g. the assistant's default model was unavailable → fallback).
+	 */
+	readonly kind: "start" | "reset" | "compaction" | "system" | "notice";
 	readonly text?: string;
+	/** notice only: machine-readable code, e.g. "model_not_allowed" | "model_blocked". */
+	readonly code?: string;
 }
 
 export interface OtherEntryDTO extends EntryBase {
@@ -343,6 +348,8 @@ export interface AssistantDTO {
 	readonly createdAt: string;
 	readonly updatedAt: string;
 	readonly builtin?: boolean;
+	/** For the caller: whether the default model may be used now (gateway list, current ACL / credentials). */
+	readonly modelAvailability?: { readonly status: "ok" | "not_allowed" | "blocked"; readonly reason?: string };
 }
 
 export type SubagentStatus = "running" | "done" | "failed" | "aborted" | "unanswered";

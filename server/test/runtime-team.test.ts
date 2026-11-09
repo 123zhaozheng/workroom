@@ -180,3 +180,34 @@ test("subagent background: continues after the parent's abort and reports back a
 		await t.dispose();
 	}
 });
+
+test("assistant default model is checked against the gateway list; a later-unavailable model falls back with a visible notice", async (tc) => {
+	const t = await startTestApp();
+	try {
+		if (!t.app.ctx.services.has("models")) return tc.skip("model gateway not loaded");
+		const a = await t.user("team-model@example.com");
+		const blocked = (await t.json("GET", "/api/models", { token: a.token })).models.find((m: any) => m.status === "blocked");
+		assert.ok(blocked, "the gateway lists a blocked (no credentials) model");
+		const r1 = await t.json("POST", "/api/assistants", { token: a.token, json: { name: "x", model: blocked.ref, members: [] }, expect: 409 });
+		assert.equal(r1.error.code, "model_blocked");
+		const r2 = await t.json("POST", "/api/assistants", { token: a.token, json: { name: "x", model: { provider: "nope", modelId: "y" }, members: [] }, expect: 400 });
+		assert.equal(r2.error.code, "model_not_allowed");
+		const { assistant } = await t.json("POST", "/api/assistants", { token: a.token, json: { name: "测试助手", model: { provider: "fixture", modelId: "workroom-fixture" }, members: [] } });
+		assert.deepEqual(assistant.modelAvailability, { status: "ok" });
+		await t.json("PATCH", `/api/assistants/${assistant.id}`, { token: a.token, json: { model: blocked.ref }, expect: 409 });
+		// later the model becomes unusable for this assistant (e.g. credentials were removed after it was configured)
+		t.app.ctx.db.run("UPDATE rt_assistants SET model = ? WHERE id = ?", JSON.stringify(blocked.ref), assistant.id);
+		const got = await t.json("GET", `/api/assistants/${assistant.id}`, { token: a.token });
+		assert.equal(got.assistant.modelAvailability.status, "blocked");
+		const created = await t.json("POST", "/api/conversations", { token: a.token, json: { assistantId: assistant.id } });
+		assert.match(created.notice, /默认模型不可用/);
+		assert.equal(created.agent.model.provider, "fixture");
+		const c = created.conversation;
+		const es = (await t.json("GET", `/api/conversations/${c.spaceId}/${c.conversationId}/entries`, { token: a.token })).items;
+		const n = es.find((e: any) => e.kind === "notice");
+		assert.equal(n.code, "model_blocked");
+		assert.match(n.text, /本会话改用/);
+	} finally {
+		await t.dispose();
+	}
+});

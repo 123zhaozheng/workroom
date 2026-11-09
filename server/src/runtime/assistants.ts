@@ -70,6 +70,14 @@ export function validateMember(m: any, i: number): MemberDeclaration {
 
 export class AssistantStore {
 	readonly #ctx: AppContext;
+	/** Set by the runtime module: checks a model ref against the gateway's list for the principal. */
+	checkModel?: (p: Principal, ref: { provider: string; modelId: string }) => Promise<{ ok: true } | { ok: false; code: string; reason: string }>;
+
+	async #requireModel(p: Principal, modelJson: unknown): Promise<void> {
+		if (typeof modelJson !== "string" || !this.checkModel) return;
+		const chk = await this.checkModel(p, JSON.parse(modelJson));
+		if (!chk.ok) throw new HttpError(chk.code === "model_blocked" ? 409 : 400, chk.code, chk.reason);
+	}
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
 	}
@@ -135,6 +143,7 @@ export class AssistantStore {
 		const scope = b.scope === "org" ? "org" : "personal";
 		if (scope === "org") await this.#ctx.services.get("acl").require(p, "admin", { kind: "org", id: p.orgId });
 		const v = this.#validate(b, false);
+		await this.#requireModel(p, v.model);
 		const id = newId("ast");
 		const now = nowIso();
 		this.#ctx.db.run(
@@ -168,6 +177,7 @@ export class AssistantStore {
 		if (id === BUILTIN_ASSISTANT.id) throw new HttpError(403, "builtin", "内置助手不可修改");
 		await this.#own(p, id);
 		const v = this.#validate(b, true);
+		await this.#requireModel(p, v.model);
 		const cols = Object.keys(v);
 		if (cols.length) this.#ctx.db.run(`UPDATE rt_assistants SET ${cols.map((c) => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`, ...(cols.map((c) => v[c] ?? null) as any[]), nowIso(), id);
 		return this.byId(id)!;

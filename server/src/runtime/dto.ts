@@ -103,6 +103,8 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 		}
 		case "wr.start":
 			return { ...base, kind: "start" };
+		case "wr.notice":
+			return { ...base, kind: "notice", text: String((e.data as any)?.text ?? ""), code: String((e.data as any)?.code ?? "") };
 		case "pi.reset":
 			return { ...base, kind: "reset", text: msg ? textOfContent((msg as any).content ?? "") : undefined };
 		case "pi.compaction":

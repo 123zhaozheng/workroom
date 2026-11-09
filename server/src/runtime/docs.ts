@@ -68,3 +68,5 @@ export const InputEntry = defineEntry<InputEntryData & Record<string, any>>("wr.
 export const StartEntry = defineEntry<{ createdBy: string; at: string }>("wr.start");
 /** Display-only trace of an input that was withdrawn / aborted before it was placed (so the outcome survives reload). */
 export const UnplacedInputEntry = defineEntry<InputEntryData & Record<string, any>>("wr.input-unplaced");
+/** Display-only runtime notice in the transcript (not seen by the model), e.g. a model fallback with its reason. */
+export const NoticeEntry = defineEntry<{ text: string; code: string }>("wr.notice");

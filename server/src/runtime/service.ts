@@ -6,7 +6,7 @@ import { ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentD
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, SubagentDTO, SubmissionDTO, TasksResponse } from "../../../shared/chat.ts";
-import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
+import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
@@ -69,12 +69,24 @@ export class Runtime implements RuntimeService {
 		return this.ctx.services.get("identity").space(spaceId);
 	}
 
-	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: Context): Promise<{ conversationId: number }> {
+	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: Context): Promise<{ conversationId: number; notice?: string }> {
 		const space = this.manager.space(spaceId);
 		await this.acl.require(principal, "write", { kind: "space", id: spaceId });
 		const assistant = options.assistantId ? this.assistants?.get(principal, options.assistantId) : undefined;
 		if (options.assistantId && !assistant) throw new HttpError(404, "assistant_not_found", "助手不存在或无权使用");
-		const model = options.model ?? (assistant?.model as ModelRef | undefined) ?? (await this.defaultModel(principal));
+		// The assistant's default model is re-checked for THIS principal; when it is not allowed or blocked the
+		// conversation falls back to the default model and records a visible notice (never a silent swap).
+		let notice: { text: string; code: string } | undefined;
+		let model = options.model;
+		if (!model && assistant?.model) {
+			const chk = await this.checkModel(principal, assistant.model);
+			if (chk.ok) model = chk.ref;
+			else {
+				model = await this.defaultModel(principal);
+				notice = { code: chk.code, text: `助手「${assistant.name}」的默认模型不可用（${chk.reason}），本会话改用「${this.modelLabel(model)}」。` };
+			}
+		}
+		model ??= await this.defaultModel(principal);
 		const harness = await this.manager.get(spaceId);
 		const conv = await harness.createConversation(
 			{
@@ -86,6 +98,7 @@ export class Runtime implements RuntimeService {
 				},
 				init: async (tx, id) => {
 					await tx.appendEntry(StartEntry, id, { data: { createdBy: principal.userId, at: nowIso() } });
+					if (notice) await tx.appendEntry(NoticeEntry, id, { data: notice });
 					if (assistant) {
 						const d = await tx.doc(AssistantDoc, id);
 						d.assistantId = assistant.id;
@@ -108,7 +121,7 @@ export class Runtime implements RuntimeService {
 			now,
 			now,
 		);
-		return { conversationId: conv.id as number };
+		return { conversationId: conv.id as number, ...(notice ? { notice: notice.text } : {}) };
 	}
 
 	async submitInput(principal: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string; whenBusy?: "steer" | "followUp" | "reject" }, context: Context): Promise<{ submissionId: number }> {
@@ -347,6 +360,19 @@ export class Runtime implements RuntimeService {
 		}
 		if (modelId === `${FIXTURE_PROVIDER}/${FIXTURE_MODEL_ID}` || modelId === FIXTURE_MODEL_ID) return { provider: FIXTURE_PROVIDER, modelId: FIXTURE_MODEL_ID };
 		throw new HttpError(400, "unknown_model", "未知模型");
+	}
+
+	/** Is `ref` usable by `p` now? Checked against the gateway's list for the principal (org/department scope, enabled, credentials). */
+	async checkModel(p: Principal, ref: { provider: string; modelId: string }): Promise<{ ok: true; ref: ModelRef } | { ok: false; code: "model_not_allowed" | "model_blocked"; reason: string }> {
+		if (this.ctx.services.has("models")) {
+			const list = await this.ctx.services.get("models").listFor(p);
+			const m = list.find((x) => x.ref.provider === ref.provider && x.ref.modelId === ref.modelId);
+			if (!m) return { ok: false, code: "model_not_allowed", reason: `模型 ${ref.provider}/${ref.modelId} 不在你可用的模型列表中` };
+			if (m.status === "blocked") return { ok: false, code: "model_blocked", reason: `模型「${m.label}」不可用：${m.statusDetail ?? "未配置凭据"}` };
+			return { ok: true, ref: m.ref };
+		}
+		if (isFixtureModel(ref) && ref.modelId === FIXTURE_MODEL_ID) return { ok: true, ref: { provider: ref.provider, modelId: ref.modelId } };
+		return { ok: false, code: "model_not_allowed", reason: `模型 ${ref.provider}/${ref.modelId} 未配置` };
 	}
 
 	/** Validate client-supplied attachment / knowledge chips (shape only; tools re-check access when they read them). */
