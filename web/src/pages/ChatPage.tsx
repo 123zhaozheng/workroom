@@ -154,6 +154,9 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	useEffect(() => {
 		if (conv?.title) document.title = conv.title;
 	}, [conv?.title]);
+	useEffect(() => {
+		window.dispatchEvent(new Event("wr:conversations-changed"));
+	}, [runStatus, conv?.title]);
 
 	// ----- error / unavailable states -----
 	if (detailError && !state) {
@@ -265,7 +268,10 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 										<BranchPointSwitcher key={p.entryId} options={p.options} currentId={id} onSelect={goBranch} />
 									))}
 									{t.kind === "user" ? (
-										<UserMessage entry={t.entry} readOnly={readOnly} onFork={() => fork(t.entry.id)} onEdit={(text) => edit(t.entry.id, text)} />
+										<>
+											<UserMessage entry={t.entry} readOnly={readOnly} onFork={() => fork(t.entry.id)} onEdit={(text) => edit(t.entry.id, text)} />
+											{turns[i + 1]?.kind === "user" ? <p className="text-right text-xs text-fg-subtle">这条消息没有得到单独回复（可能被取消、合并处理或运行失败）</p> : null}
+										</>
 									) : t.kind === "marker" ? (
 										<div className="flex items-center gap-3 text-xs text-fg-subtle">
 											<span className="h-px flex-1 bg-border" />
@@ -353,9 +359,14 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						footer={
 							agent ? (
 								<span data-testid="model-label" className="inline-flex items-center gap-1">
-									{agent.fixture ? <FlaskConical className="size-3 text-warning" /> : null}
-									{agent.modelLabel}
-									{agent.fixture ? <span className="text-warning">· {FIXTURE_LABEL}</span> : null}
+									{agent.fixture ? (
+										<>
+											<FlaskConical className="size-3 text-warning" />
+											<span className="text-warning">{FIXTURE_LABEL}</span>
+										</>
+									) : (
+										agent.modelLabel
+									)}
 								</span>
 							) : null
 						}

@@ -5,6 +5,7 @@ import { useMedia, usePrefs } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { Sheet, Tip } from "@/components/ui/overlay";
 import { Spinner } from "@/components/ui/misc";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { Sidebar } from "./Sidebar";
 import { PanelProvider, usePanel } from "./panel";
 
@@ -55,7 +56,9 @@ function ShellLayout() {
 				</div>
 			}
 		>
-			{panel.kind === "preview" ? <PreviewPanel target={panel.target} onClose={close} /> : <WorkPanel state={panel} onClose={close} />}
+			<ErrorBoundary label="面板" resetKey={panel}>
+				{panel.kind === "preview" ? <PreviewPanel target={panel.target} onClose={close} /> : <WorkPanel state={panel} onClose={close} />}
+			</ErrorBoundary>
 		</Suspense>
 	) : null;
 
@@ -73,7 +76,9 @@ function ShellLayout() {
 					</Sheet>
 				) : null}
 				<main className="flex min-w-0 flex-1 flex-col">
-					<Outlet />
+					<ErrorBoundary label="页面" resetKey={loc.pathname}>
+						<Outlet />
+					</ErrorBoundary>
 				</main>
 				{panel && wide ? (
 					<aside data-testid="side-panel" className="flex w-[clamp(380px,40vw,680px)] shrink-0 flex-col border-l border-border bg-surface wr-drawer-right">

@@ -1,0 +1,155 @@
+{
+  "at": "2026-11-09T02:20:50.911Z",
+  "results": [
+    {
+      "name": "home: heavy chunks not loaded (markdown/shiki/katex/recharts/preview/work panel)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "home: no external requests (fonts/CDN)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "home: one composer, no dashboard",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat: tool step rendered in message",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat: fixture model labelled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "preview: right-side panel opened",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "preview: closing returns to single column",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: pending card shown with run status waiting",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: card resolves after approve",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steer: feedback shown (received/queued/applied)",
+      "ok": true,
+      "detail": "status=received"
+    },
+    {
+      "name": "steer: feedback progresses to applied/done (or explicit 未应用)",
+      "ok": true,
+      "detail": "status=done"
+    },
+    {
+      "name": "files api: deliverable is in the file library",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat: v2 file card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "branch: edit created a branch (original untouched)",
+      "ok": true,
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8mw5855768a46e5e40c002/46"
+    },
+    {
+      "name": "branch: switcher returns to the original conversation with its results",
+      "ok": true,
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8mw5855768a46e5e40c002/3"
+    },
+    {
+      "name": "files: two versions listed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files: switched preview to v1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "knowledge: new doc never shown as ready before the server says so",
+      "ok": true,
+      "detail": "initial=ready"
+    },
+    {
+      "name": "knowledge: doc reaches 可检索 (or explicit 失败 with retry)",
+      "ok": true,
+      "detail": "final=ready"
+    },
+    {
+      "name": "1366: no horizontal overflow with preview open",
+      "ok": true,
+      "detail": "{\"sw\":1366,\"cw\":1366}"
+    },
+    {
+      "name": "1366: sidebar collapsible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: sidebar not inline",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: preview opens as a drawer (no side column)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: no horizontal page scroll",
+      "ok": true,
+      "detail": "{\"sw\":390,\"cw\":390}"
+    },
+    {
+      "name": "reduced-motion (system): state animations disabled",
+      "ok": true,
+      "detail": "animation-duration=1e-06s"
+    },
+    {
+      "name": "reduced-motion (in-app toggle): animations disabled",
+      "ok": true,
+      "detail": "{\"d\":\"1e-06s\",\"attr\":\"true\"}"
+    },
+    {
+      "name": "no ambient animation on idle pages",
+      "ok": true,
+      "detail": "infinite animations=0"
+    },
+    {
+      "name": "session: no external requests at all (fonts work offline)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "session: fonts served from same origin /assets",
+      "ok": true,
+      "detail": "/assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2, /assets/inter-latin-wght-normal-Dx4kXJAl.woff2"
+    },
+    {
+      "name": "no uncaught page errors",
+      "ok": true,
+      "detail": "Failed to load resource: the server responded with a status of 401 (Unauthorized) | Failed to load resource: the server responded with a status of 401 (Unauthorized) | Failed to load resource: the server responded with a status of 404 (Not Found)"
+    }
+  ]
+}

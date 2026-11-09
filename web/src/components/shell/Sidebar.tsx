@@ -1,6 +1,6 @@
 import { BarChart3, BookOpen, ChevronRight, Clock4, FolderClosed, Folders, LogOut, MessageSquarePlus, PanelLeftClose, Plus, Search, Settings, Shield, Sparkles, Workflow } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { NavLink, useNavigate } from "react-router";
+import { useEffect, useState, type ReactNode } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router";
 import { Collapsible } from "radix-ui";
 import type { ConversationSummary } from "@shared/chat";
 import { useSession } from "@/lib/session";
@@ -21,6 +21,15 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 	const projects = useApi<{ projects: Project[] }>("/projects", { pollMs: 30000 });
 	const recent = useApi<{ conversations: ConversationSummary[] }>("/conversations?limit=40", { pollMs: 8000 });
 	const [newProject, setNewProject] = useState(false);
+	const { pathname } = useLocation();
+	const reloadRecent = recent.reload;
+	// Refresh titles / run states whenever the user moves between conversations, and when a conversation reports a change.
+	useEffect(() => reloadRecent(), [pathname, reloadRecent]);
+	useEffect(() => {
+		const on = () => reloadRecent();
+		window.addEventListener("wr:conversations-changed", on);
+		return () => window.removeEventListener("wr:conversations-changed", on);
+	}, [reloadRecent]);
 
 	const go = (to: string) => {
 		navigate(to);

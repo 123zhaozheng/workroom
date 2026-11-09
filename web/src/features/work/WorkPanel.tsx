@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import type { EntriesPage, MemberType, SubagentDTO, TasksResponse } from "@shared/chat";
 import type { SandboxFilesResponse, SandboxInfoDTO, SandboxRunsResponse } from "@shared/files";
 import { useApi } from "@/lib/useApi";
+import { useSession } from "@/lib/session";
 import { cn, durationText, formatBytes, relTime } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
@@ -32,15 +33,15 @@ export default function WorkPanel({ state, onClose }: { state: Extract<PanelStat
 			<Tabs value={state.tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">
 				<div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
 					<TabsList>
-						<TabsTrigger value="tasks">
+						<TabsTrigger value="tasks" data-testid="work-tab-tasks">
 							<Users />
 							子任务
 						</TabsTrigger>
-						<TabsTrigger value="terminal">
+						<TabsTrigger value="terminal" data-testid="work-tab-terminal">
 							<SquareTerminal />
 							终端
 						</TabsTrigger>
-						<TabsTrigger value="browser">
+						<TabsTrigger value="browser" data-testid="work-tab-browser">
 							<Globe />
 							浏览器
 						</TabsTrigger>
@@ -68,6 +69,7 @@ export default function WorkPanel({ state, onClose }: { state: Extract<PanelStat
 
 function TasksTab({ spaceId, conversationId }: { spaceId: string; conversationId: number }) {
 	const res = useApi<TasksResponse>(`/conversations/${spaceId}/${conversationId}/tasks`, { pollMs: 2500 });
+	const { me } = useSession();
 	const subs = res.data?.subagents ?? [];
 	const failed = subs.filter((s) => s.status === "failed" || s.status === "unanswered" || s.status === "aborted").length;
 	return (
@@ -101,7 +103,7 @@ function TasksTab({ spaceId, conversationId }: { spaceId: string; conversationId
 								{s.failure ? <p className="mt-1 text-[12.5px] text-danger">失败原因：{s.failure}</p> : null}
 								<div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] text-fg-subtle">
 									<span>来源：对话 {s.source.conversationId} · 调用 {s.source.callId.slice(0, 10)}</span>
-									{s.ownerUserId ? <span>负责人：{s.ownerUserId}</span> : null}
+									{s.ownerUserId ? <span>负责人：{s.ownerUserId === me?.userId ? `你（${me.name}）` : s.ownerUserId}</span> : null}
 									<span>开始 {relTime(s.startedAt)}</span>
 									{s.endedAt ? <span>用时 {durationText(Date.parse(s.endedAt) - Date.parse(s.startedAt))}</span> : null}
 									{s.usage ? (
@@ -126,7 +128,8 @@ function TasksTab({ spaceId, conversationId }: { spaceId: string; conversationId
 }
 
 function TerminalTab({ spaceId, conversationId }: { spaceId: string; conversationId: number }) {
-	const info = useApi<SandboxInfoDTO>(`/sandbox/${spaceId}`);
+	const infoRes = useApi<{ info: SandboxInfoDTO }>(`/sandbox/${spaceId}`);
+	const info = { ...infoRes, data: infoRes.data?.info };
 	const runs = useApi<SandboxRunsResponse>(`/sandbox/${spaceId}/runs?conversationId=${conversationId}`, { pollMs: 3000 });
 	const files = useApi<SandboxFilesResponse>(`/sandbox/${spaceId}/files?conversationId=${conversationId}`, { pollMs: 5000 });
 	return (

@@ -6,15 +6,9 @@ import { TopBar } from "@/components/shell/AppShell";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
 
-interface MemberRow {
-	userId?: string;
-	id?: string;
-	name: string;
-	email: string;
-	role: string;
-	disabled?: boolean;
-	disabledAt?: string;
-}
+import type { MemberDTO } from "@shared/ops";
+type MemberRow = MemberDTO;
+const ROLE: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员" };
 
 /** Organisation administration — only reachable for org owners/admins (the server re-checks every call). */
 export default function AdminPage() {
@@ -35,13 +29,14 @@ export default function AdminPage() {
 						) : (
 							<div className="overflow-hidden rounded-xl border border-border bg-surface">
 								{list.map((m, i) => (
-									<div key={m.userId ?? m.id ?? m.email} className={`flex items-center gap-3 px-3 py-2.5 ${i ? "border-t border-border" : ""}`}>
+									<div key={m.userId} data-testid="admin-member" className={`flex items-center gap-3 px-3 py-2.5 ${i ? "border-t border-border" : ""}`}>
 										<span className="min-w-0 flex-1">
 											<span className="block truncate text-sm">{m.name}</span>
 											<span className="block truncate text-xs text-fg-subtle">{m.email}</span>
 										</span>
-										{m.disabled || m.disabledAt ? <Badge tone="danger">已停用</Badge> : null}
-										<Badge>{m.role}</Badge>
+										<span className="hidden text-xs text-fg-subtle sm:inline">{m.activeSessions} 个会话{m.totpEnabled ? " · 已开两步验证" : ""}</span>
+										{m.status === "disabled" ? <Badge tone="danger">已停用</Badge> : null}
+										<Badge>{ROLE[m.role] ?? m.role}</Badge>
 									</div>
 								))}
 							</div>

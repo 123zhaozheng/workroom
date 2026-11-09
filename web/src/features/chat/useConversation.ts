@@ -18,33 +18,53 @@ export function useConversationStream(spaceId: string, conversationId: number) {
 		setState(undefined);
 		setError(undefined);
 		setStatus("connecting");
-		const es = new EventSource(`/api/conversations/${spaceId}/${conversationId}/events`, { withCredentials: true });
-		const onState = (ev: MessageEvent<string>) => {
-			try {
-				setState(JSON.parse(ev.data) as ConversationState);
-				setStatus("live");
-			} catch {
-				/* ignore malformed frame */
-			}
-		};
-		es.addEventListener("snapshot", onState);
-		es.addEventListener("state", onState);
-		es.addEventListener("error", (ev) => {
-			const data = (ev as MessageEvent<string>).data;
-			if (data) {
+		let es: EventSource | null = null;
+		let retry: ReturnType<typeof setTimeout> | undefined;
+		let attempts = 0;
+		let disposed = false;
+		const connect = () => {
+			es = new EventSource(`/api/conversations/${spaceId}/${conversationId}/events`, { withCredentials: true });
+			const onState = (ev: MessageEvent<string>) => {
 				try {
-					setError(JSON.parse(data));
+					setState(JSON.parse(ev.data) as ConversationState);
+					setStatus("live");
+					setError(undefined);
+					attempts = 0;
 				} catch {
-					setError({ code: "error", message: data });
+					/* ignore malformed frame */
 				}
-				es.close();
-				setStatus("closed");
-				return;
-			}
-			setStatus(es.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
-		});
-		es.onopen = () => setStatus("live");
-		return () => es.close();
+			};
+			es.addEventListener("snapshot", onState);
+			es.addEventListener("state", onState);
+			es.addEventListener("error", (ev) => {
+				const data = (ev as MessageEvent<string>).data;
+				if (data) {
+					// Server-sent error: the server closes the stream. Transient ones (runtime restarted, lease moved)
+					// are retried with backoff; access errors are final.
+					let err = { code: "error", message: data };
+					try {
+						err = JSON.parse(data);
+					} catch {
+						/* plain text */
+					}
+					es?.close();
+					const final = /forbidden|not_found|unauthenticated/.test(err.code);
+					setError(final || attempts > 5 ? err : undefined);
+					setStatus(final ? "closed" : "reconnecting");
+					if (!final && !disposed) retry = setTimeout(connect, Math.min(8000, 800 * 2 ** attempts++));
+					return;
+				}
+				setStatus(es?.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
+				if (es?.readyState === EventSource.CLOSED && !disposed) retry = setTimeout(connect, Math.min(8000, 800 * 2 ** attempts++));
+			});
+			es.onopen = () => setStatus("live");
+		};
+		connect();
+		return () => {
+			disposed = true;
+			if (retry) clearTimeout(retry);
+			es?.close();
+		};
 	}, [spaceId, conversationId]);
 
 	return { state, status, error };

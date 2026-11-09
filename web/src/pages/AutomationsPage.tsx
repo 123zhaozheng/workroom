@@ -5,17 +5,10 @@ import { TopBar } from "@/components/shell/AppShell";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
 
-/** Minimal shape until shared/ops.ts lands (group E). Only fields actually returned are rendered. */
-interface AutomationRow {
-	id: string;
-	name: string;
-	enabled?: boolean;
-	schedule?: string;
-	cron?: string;
-	timezone?: string;
-	nextRunAt?: string;
-	lastRun?: { status: string; at?: string; error?: string };
-}
+import type { AutomationDTO, AutomationRunStatus, AutomationTrigger } from "@shared/ops";
+type AutomationRow = AutomationDTO;
+const RUN: Record<AutomationRunStatus, string> = { pending: "等待中", running: "运行中", succeeded: "成功", failed: "失败", cancelled: "已取消", timeout: "超时", skipped: "已跳过（防重入）", refused: "被拒绝" };
+const trig = (t: AutomationTrigger) => (t.kind === "cron" ? `周期：${t.expr}` : t.kind === "once" ? `一次性：${fullTime(t.at)}` : t.kind === "manual" ? "手动触发" : "Webhook 触发");
 
 export default function AutomationsPage() {
 	const res = useApi<unknown>("/automations");
@@ -39,15 +32,19 @@ export default function AutomationsPage() {
 											<Badge tone={a.enabled === false ? "neutral" : "success"}>{a.enabled === false ? "已停用" : "启用中"}</Badge>
 										</div>
 										<p className="mt-1 text-xs text-fg-muted">
-											{a.schedule ?? a.cron ?? ""}
-											{a.timezone ? ` · ${a.timezone}` : ""}
+											{trig(a.trigger)} · 时区 {a.timezone}
 											{a.nextRunAt ? ` · 下次运行 ${fullTime(a.nextRunAt)}` : ""}
 										</p>
 										{a.lastRun ? (
 											<p className="mt-0.5 text-xs text-fg-subtle">
-												上次：{a.lastRun.status}
-												{a.lastRun.at ? ` · ${fullTime(a.lastRun.at)}` : ""}
+												上次：{RUN[a.lastRun.status] ?? a.lastRun.status}
+												{a.lastRun.startedAt ? ` · ${fullTime(a.lastRun.startedAt)}` : ""}
 												{a.lastRun.error ? ` · ${a.lastRun.error}` : ""}
+												{a.lastRun.link ? (
+													<a className="ml-1 text-info hover:underline" href={a.lastRun.link}>
+														查看结果
+													</a>
+												) : null}
 											</p>
 										) : null}
 									</div>

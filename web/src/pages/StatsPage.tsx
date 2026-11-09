@@ -1,5 +1,6 @@
 // 统计 (separate page, never the home). Recharts is a lazy chunk loaded only here.
 import { lazy, Suspense } from "react";
+import type { StatsDTO } from "@shared/ops";
 import { useApi } from "@/lib/useApi";
 import { TopBar } from "@/components/shell/AppShell";
 import { Loadable, Page, PageHeader, Spinner } from "@/components/ui/misc";
@@ -7,7 +8,7 @@ import { Loadable, Page, PageHeader, Spinner } from "@/components/ui/misc";
 const StatsCharts = lazy(() => import("@/features/stats/StatsCharts"));
 
 export default function StatsPage() {
-	const res = useApi<Record<string, unknown>>("/stats");
+	const res = useApi<StatsDTO>("/stats");
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<TopBar />

@@ -1,0 +1,55 @@
+{
+  "at": "2026-11-09T02:25:07.844Z",
+  "results": [
+    {
+      "name": "setup: knowledge base created through C's API",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "composer: file chip + knowledge chip in one input",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat: sent message carries attachment and knowledge references",
+      "ok": true,
+      "detail": "会议纪要.txt\n制度库\n根据附件和制度库整理要点 [[reply 已阅读附件与知识库引用。]]\n周岚"
+    },
+    {
+      "name": "state: failed shown with reason + 继续",
+      "ok": true,
+      "detail": "失败 · 模型出错：fixture: simulated model failure ([[fail]]) 继续"
+    },
+    {
+      "name": "state: cancelled is its own terminal state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "work panel: subagent with source/status/result",
+      "ok": true,
+      "detail": "subagents=1"
+    },
+    {
+      "name": "work panel: one panel, switchable tabs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "project page: members with roles",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin entry visible for org owner",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark theme follows system",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
