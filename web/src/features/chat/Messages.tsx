@@ -1,7 +1,7 @@
 import { BookOpen, Check, ChevronLeft, ChevronRight, Copy, Download, FileText, FlaskConical, GitBranch, Pencil, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { FIXTURE_LABEL, type ConversationSummary, type UserEntryDTO } from "@shared/chat";
-import { copyText, cn, downloadText } from "@/lib/utils";
+import { copyText, cn, downloadText, isSimulatedUsage, SIMULATED_USAGE } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Tip } from "@/components/ui/overlay";
@@ -171,8 +171,8 @@ export function AssistantMessage({
 							</ActionButton>
 						) : null}
 						{turn.usage ? (
-							<span className="ml-1 text-[11.5px] text-fg-subtle" title="本轮 Token 用量">
-								{turn.usage.totalTokens.toLocaleString()} tokens{turn.usage.fixture ? "（测试模型，费用 0）" : ""}
+							<span data-testid="turn-usage" className="ml-1 text-[11.5px] text-fg-subtle" title="本轮用量">
+								{isSimulatedUsage(turn.usage, turn.fixture) ? SIMULATED_USAGE : `${turn.usage.totalTokens.toLocaleString()} tokens`}
 							</span>
 						) : null}
 					</div>

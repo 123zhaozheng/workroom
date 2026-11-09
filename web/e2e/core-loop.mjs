@@ -42,6 +42,8 @@ try {
 		const blocked = models.models.filter((m) => m.status === "blocked").length;
 		const disabled = await page.locator('[data-testid="model-option"][data-disabled]').count();
 		check("home: blocked models shown with reason and not selectable", disabled === blocked, `blocked=${blocked} disabled=${disabled}`);
+		const pick = await page.locator('[data-testid="model-picker"]').innerText();
+		check("home: model picker label not duplicated", (pick.match(/测试模型/g) ?? []).length <= 1, pick);
 		await shot(page, "1440-home-model-picker");
 		await page.keyboard.press("Escape");
 	} else check("home: model list unavailable → picker hidden (no fake models)", (await page.locator('[data-testid="model-picker"]').count()) === 0);
@@ -53,6 +55,14 @@ try {
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 20000 });
 	check("chat: tool step rendered in message", (await page.locator('[data-testid="step-chain"]').count()) > 0);
 	check("chat: fixture model labelled", (await page.locator('[data-testid="fixture-badge"]').count()) > 0);
+	await page.waitForSelector('[data-testid="turn-usage"]', { timeout: 10000 });
+	const usageTxt = await page.locator('[data-testid="turn-usage"]').first().innerText();
+	const anyTokens = await page.evaluate(() => /\d[\d,]*\s*tokens/i.test(document.querySelector("main")?.innerText ?? ""));
+	check("honesty: fixture usage shown as simulated, no token number", usageTxt.includes("模拟用量") && !anyTokens, usageTxt);
+	await page.waitForFunction(() => !(document.querySelector('[data-testid="chat-title"]')?.textContent ?? "[[").includes("[["), null, { timeout: 10000 }).catch(() => {});
+	const title = await page.locator('[data-testid="chat-title"]').innerText();
+	const sideTitles = await page.locator('nav[aria-label="主导航"] a[href^="/c/"]').allInnerTexts();
+	check("title: server-side title without [[directives]] in header and sidebar", !title.includes("[[") && sideTitles.length > 0 && sideTitles.every((t) => !t.includes("[[")), `${title} | ${sideTitles[0] ?? ""}`);
 	await sleep(400);
 	await shot(page, "1440-chat-file-card");
 	const chatUrl = page.url();

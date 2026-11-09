@@ -6,7 +6,7 @@ import type { EntriesPage, MemberType, SubagentDTO, TasksResponse } from "@share
 import type { SandboxFilesResponse, SandboxInfoDTO, SandboxRunsResponse } from "@shared/files";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
-import { cn, durationText, formatBytes, relTime } from "@/lib/utils";
+import { cn, durationText, formatBytes, isSimulatedUsage, relTime, SIMULATED_USAGE } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { usePanel, type PanelState, type WorkTab } from "@/components/shell/panel";
@@ -108,7 +108,7 @@ function TasksTab({ spaceId, conversationId }: { spaceId: string; conversationId
 									{s.endedAt ? <span>用时 {durationText(Date.parse(s.endedAt) - Date.parse(s.startedAt))}</span> : null}
 									{s.usage ? (
 										<span>
-											{s.usage.totalTokens.toLocaleString()} tokens · {s.usage.fixture ? "测试模型（费用 0）" : `$${s.usage.costTotal.toFixed(4)}`}
+											{isSimulatedUsage(s.usage) ? SIMULATED_USAGE : `${s.usage.totalTokens.toLocaleString()} tokens · $${s.usage.costTotal.toFixed(4)}`}
 										</span>
 									) : null}
 								</div>

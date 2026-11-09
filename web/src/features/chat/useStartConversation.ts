@@ -11,7 +11,7 @@ export function useStartConversation() {
 			...(opts.spaceId && !opts.projectId ? { spaceId: opts.spaceId } : {}),
 			...(opts.projectId ? { projectId: opts.projectId } : {}),
 			...(opts.modelId ? { modelId: opts.modelId } : {}),
-			title: v.text.slice(0, 40) || v.attachments[0]?.name || "新对话",
+			// no client title: the server derives it from the first message (directives stripped)
 		});
 		const requestId = uuid();
 		await post<SendMessageResponse>(`/conversations/${conversation.spaceId}/${conversation.conversationId}/messages`, {

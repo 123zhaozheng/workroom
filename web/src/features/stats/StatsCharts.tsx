@@ -23,7 +23,11 @@ export default function StatsCharts({ data }: { data: StatsDTO }) {
 	return (
 		<div className="space-y-6" data-testid="stats-charts">
 			<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-				<Tile label="Token 合计" value={(data.tokens?.total ?? 0).toLocaleString()} />
+				{data.fixtureRequests > 0 && data.fixtureRequests >= (data.modelRequests?.total ?? 0) ? (
+					<Tile label="Token 合计" value="—" hint="仅有测试模型请求：模拟用量，不显示数字" />
+				) : (
+					<Tile label="Token 合计" value={(data.tokens?.total ?? 0).toLocaleString()} hint={data.fixtureRequests ? "不含测试模型的模拟用量" : undefined} />
+				)}
 				<Tile label="费用（USD）" value={`$${(data.cost ?? 0).toFixed(4)}`} hint="测试模型用量不计费" />
 				<Tile label="测试模型请求" value={String(data.fixtureRequests ?? 0)} />
 				<Tile

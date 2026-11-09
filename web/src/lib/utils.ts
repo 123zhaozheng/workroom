@@ -74,3 +74,9 @@ export function downloadText(name: string, text: string, mime = "text/markdown")
 	a.click();
 	setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** Usage that is simulated (fixture model / faux provider) must never be shown as a token count. */
+export function isSimulatedUsage(u: { fixture?: boolean; simulated?: boolean } | undefined, fixtureTurn = false): boolean {
+	return !!(u?.simulated || u?.fixture || fixtureTurn);
+}
+export const SIMULATED_USAGE = "测试模型 · 模拟用量，不计费";

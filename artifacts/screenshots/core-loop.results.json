@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T02:33:44.896Z",
+  "at": "2026-11-09T06:49:00.381Z",
   "results": [
     {
       "name": "home: heavy chunks not loaded (markdown/shiki/katex/recharts/preview/work panel)",
@@ -22,6 +22,11 @@
       "detail": "blocked=2 disabled=2"
     },
     {
+      "name": "home: model picker label not duplicated",
+      "ok": true,
+      "detail": "测试模型（非真实 AI）"
+    },
+    {
       "name": "chat: tool step rendered in message",
       "ok": true,
       "detail": ""
@@ -30,6 +35,16 @@
       "name": "chat: fixture model labelled",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "honesty: fixture usage shown as simulated, no token number",
+      "ok": true,
+      "detail": "测试模型 · 模拟用量，不计费"
+    },
+    {
+      "name": "title: server-side title without [[directives]] in header and sidebar",
+      "ok": true,
+      "detail": "帮我写一份项目周报 | 帮我写一份项目周报"
     },
     {
       "name": "preview: right-side panel opened",
@@ -74,12 +89,12 @@
     {
       "name": "branch: edit created a branch (original untouched)",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw8ncpd9c3a9c153b500724a/46"
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8wgzk92ca69e195d42d43f/46"
     },
     {
       "name": "branch: switcher returns to the original conversation with its results",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw8ncpd9c3a9c153b500724a/3"
+      "detail": "http://127.0.0.1:8802/c/sp_0mw8wgzk92ca69e195d42d43f/3"
     },
     {
       "name": "files: two versions listed",
