@@ -7,6 +7,7 @@
 //   [[slow <ms>]]                     → wait <ms> (abortable) before the first answer to that input, then stream
 //   [[fail]]                          → non-retryable model error (stopReason "error") → run ends model_error
 //   [[fail transient]]                → retryable provider error (503); pi retries after a durable backoff (settings.retry)
+//   [[fail timeout]]                  → non-retryable upstream timeout (as a provider stream timeout reports it) → run status "timeout"
 //   [[reply <text>]]                  → answer exactly "<label> <text>"
 // After tool results arrive it answers with a deterministic summary that quotes every tool output of that round.
 // Without directives: heuristic demo mode (知识/资料 → kb_search, 生成/报告/文档 → a file tool) when those tools are
@@ -25,6 +26,8 @@ export interface Directive {
 	readonly fail: boolean;
 	/** [[fail transient]]: a retryable provider error (pi retries it after a durable backoff). */
 	readonly failTransient?: boolean;
+	/** [[fail timeout]]: a non-retryable upstream timeout error. */
+	readonly failTimeout?: boolean;
 	readonly reply?: string;
 }
 
@@ -34,6 +37,7 @@ export function parseDirectives(text: string): Directive {
 	let slowMs: number | undefined;
 	let fail = false;
 	let failTransient = false;
+	let failTimeout = false;
 	let reply: string | undefined;
 	let i = 0;
 	while ((i = text.indexOf("[[", i)) !== -1) {
@@ -76,12 +80,13 @@ export function parseDirectives(text: string): Directive {
 			else if (word === "fail") {
 				fail = true;
 				if (arg === "transient") failTransient = true;
+				if (arg === "timeout") failTimeout = true;
 			}
 			else reply = arg;
 			i = close + 2;
 		}
 	}
-	return { calls, slowMs, fail, failTransient, reply };
+	return { calls, slowMs, fail, failTransient, failTimeout, reply };
 }
 
 /** Remove every [[call …]] / [[slow …]] / [[fail]] / [[reply …]] directive (JSON-aware), leaving the human text. */
@@ -220,7 +225,7 @@ export function fixtureAnswer(messages: readonly Message[]): { message: Assistan
 		const d = parseDirectives(text);
 		if (d.fail)
 			return {
-				message: fauxAssistantMessage([], { stopReason: "error", errorMessage: d.failTransient ? "fixture: simulated 503 service unavailable ([[fail transient]], retryable)" : "fixture: simulated model failure ([[fail]])" }),
+				message: fauxAssistantMessage([], { stopReason: "error", errorMessage: d.failTransient ? "fixture: simulated 503 service unavailable ([[fail transient]], retryable)" : d.failTimeout ? "fixture: upstream request timed out ([[fail timeout]])" : "fixture: simulated model failure ([[fail]])" }),
 				slowMs: d.slowMs,
 			};
 		if (d.calls.length > 0) {
