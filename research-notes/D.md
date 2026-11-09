@@ -31,3 +31,10 @@
 - stdio MCP 会在服务器上启动进程：仅系统连接 + 管理员 + 运维白名单命令前缀；个人连接只能 HTTP 并受 URL 策略约束。
 - 未配置 `WORKROOM_SECRET_KEY` 时拒绝保存密钥（不降级为明文）。
 - 写类 MCP 工具在没有 effects 服务时拒绝执行（fail closed）。
+
+## 第二轮
+
+- 后台任务：`TaskOptions.background` 只对会话所有的任务有效（不参与普通 idle 等待、会话 abort 与级联）。phase 中途因 Harness 关闭或 abort 标记而抛错时调度器返回 END（不 fault），因此任务在重启后从 phase 顶部重跑，或由 abort 处理器收尾；用 durable memo `attempt:N` 区分“首次运行”和“被中断后的重跑”。
+- `--kill-child` 下若沙箱程序直接 exec 为 pid 1 并被信号杀死，unshare 会以 “sigprocmask unblock failed” 退出 1；改为 shell 留作 pid 1，退出码恢复为 128+N。RLIMIT_CPU 软硬相同会直接 SIGKILL，需设软/硬两档。
+- DNS 固定：Playwright 的 `route.fulfill` 让服务端完全接管网络（Chromium 不解析域名）；MCP SDK 的 `StreamableHTTPClientTransport` 接受自定义 `fetch`。
+- LibreOffice 在沙箱内可运行，但需要绑定 `/etc/libreoffice`（`share/registry` 是指向它的符号链接）并设置可写的 `UserInstallation`。

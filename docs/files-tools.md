@@ -110,7 +110,7 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 - `unshare --user --map-root-user --mount --pid --fork --net --ipc --uts --kill-child`：独立 user/mount/pid/net/ipc/uts 命名空间。
 - 新的 tmpfs 根 → 只读绑定 `/usr`、`/bin`、`/lib*`、`/sbin`、少量 `/etc` 文件（passwd、hosts、ld.so、ssl、fonts…）、Node 运行时（仅 node 语言）；`/work` = 本会话工作目录（唯一可写的持久位置），`/tmp` 为 64 MB 内存盘，`/code` 只读；`pivot_root` 后卸载旧根，根文件系统再设为只读。**看不到**数据目录（app.sqlite、blobs、其他空间/会话）、源码、`/home`、`/root`、`/opt` 其余部分（测试断言 app.sqlite 与仓库路径不存在、写 `/usr` 失败）。
 - `setpriv --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all`：丢弃全部 capabilities（不能再 mount/chroot），`env -i` 最小环境。
-- `prlimit`：地址空间 512 MB（node 1 GB + `--max-old-space-size`）、CPU 秒 = 超时秒数、单文件 64 MB、256 个文件描述符、进程数（相对当前 uid 进程数 + 64）、无 core。
+- `prlimit`：地址空间 512 MB（node 1 GB + `--max-old-space-size`）、CPU 秒（软限 = 预算，先发 SIGXCPU → 报告“超过 CPU 时间限制”；硬限 = 预算 + 2 s）、单文件 64 MB、256 个文件描述符、进程数（相对当前 uid 进程数 + 64）、无 core。
 - 墙钟超时（默认 30 s，最大 300 s）或运行被取消（pi 任务 abort）→ `kill(-pgid, SIGKILL)`；`--kill-child` + pid 命名空间保证所有子孙进程随之结束（测试用后台 `sleep` 验证无残留）。
 - 无网络：只有未启用的 `lo`（测试 `connect_ex` 返回 ENETUNREACH）。
 - 主机无法创建命名空间时拒绝执行（503），绝不退化为无隔离执行。
