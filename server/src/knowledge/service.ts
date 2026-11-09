@@ -89,7 +89,16 @@ interface ChunkHit {
 	rank?: number;
 }
 
-export type SearchOptions = Omit<KbSearchRequest, "query">;
+/** Correlation for retrieval events (M18-B). */
+export interface RetrievalTrace {
+	source: "api" | "tool" | "eval";
+	requestId?: string;
+	spaceId?: string;
+	conversationId?: number;
+	taskId?: number;
+	callId?: string;
+}
+export type SearchOptions = Omit<KbSearchRequest, "query"> & { trace?: RetrievalTrace };
 export interface SearchResult extends KbSearchResponse {
 	citations: CitationDTO[];
 }
@@ -508,6 +517,16 @@ export class KnowledgeStore implements KnowledgeService {
 	}
 
 	// ---------- retrieval ----------
+	/** A retrieval refused before searching (e.g. outside a subagent's knowledge scope); recorded like any search. */
+	refused(p: Principal, query: string, diagnostics: RetrievalDiagnostics, trace?: RetrievalTrace): SearchResult {
+		const result: SearchResult = { citations: [], diagnostics: { ...diagnostics, vector: "blocked", tookMs: 0 } };
+		this.recordRetrieval(p, query, result, trace);
+		return result;
+	}
+
+	/** Retrieval event sink (M18-B); filled in by the events module. */
+	recordRetrieval(_p: Principal, _query: string, _result: SearchResult, _trace?: RetrievalTrace): void {}
+
 	/** KnowledgeService contract. */
 	async search(p: Principal, query: string, options: SearchOptions = {}): Promise<SearchResult> {
 		const t0 = performance.now();

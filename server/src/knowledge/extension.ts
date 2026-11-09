@@ -32,6 +32,28 @@ async function spaceDocToken(): Promise<any | undefined> {
 	}
 }
 
+/**
+ * Knowledge scope of a subagent member: A copies the member declaration into the child conversation's `wr.assistant` doc
+ * (`member.knowledgeScope.kbIds`). undefined = not a scoped member (normal conversation, or member without a scope).
+ */
+export async function memberKnowledgeScope(read: { snapshot: (...a: any[]) => Promise<any> }, conversationId: unknown, context: Context): Promise<string[] | undefined> {
+	try {
+		const { AssistantDoc } = await import("../runtime/docs.ts");
+		const ad = await read.snapshot(AssistantDoc, conversationId, context);
+		const ks = ad?.member?.knowledgeScope?.kbIds;
+		return Array.isArray(ks) ? ks.map(String) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Narrow a request to a member scope: what may be searched, and what was asked for outside the scope. */
+export function narrowToScope(requested: readonly string[] | undefined, scope: readonly string[] | undefined): { kbIds: string[] | undefined; outOfScope: string[] } {
+	if (!scope) return { kbIds: requested ? [...requested] : undefined, outOfScope: [] };
+	const want = requested?.length ? requested : scope;
+	return { kbIds: want.filter((id) => scope.includes(id)), outOfScope: want.filter((id) => !scope.includes(id)) };
+}
+
 export async function resolveToolActor(ctx: AppContext, api: ToolExecutionApi, context: Context): Promise<ToolActor & { input?: InputEntryData }> {
 	const rt = ctx.services.get("runtime") as RuntimeExtras;
 	if (typeof rt.actorForToolCall === "function") return rt.actorForToolCall(api, context);
@@ -120,14 +142,22 @@ export function knowledgeExtension(ctx: AppContext, store: KnowledgeStore, memor
 		async execute(args, api, context) {
 			const actor = await resolveToolActor(ctx, api, context);
 			const refs = args.kbIds?.length ? [] : ((await runInput(ctx, api, actor, context))?.knowledgeRefs ?? []);
-			const kbIds = args.kbIds?.length ? args.kbIds : refs.length ? [...new Set(refs.map((r) => r.kbId))] : undefined;
+			const requested = args.kbIds?.length ? args.kbIds : refs.length ? [...new Set(refs.map((r) => r.kbId))] : undefined;
 			const docIds = !args.kbIds?.length && refs.some((r) => r.docId) ? refs.filter((r) => r.docId).map((r) => r.docId!) : undefined;
-			const res = await store.search(actor.principal, args.query, {
-				kbIds,
-				docIds,
-				projectId: kbIds ? undefined : actor.space.projectId,
-				limit: args.limit ?? 6,
-			});
+			// A subagent member may only search its declared knowledge scope, even when its parent (same user) could see more.
+			const scope = await memberKnowledgeScope(api, api.conversationId, context);
+			const { kbIds, outOfScope } = narrowToScope(requested, scope);
+			const trace = { source: "tool" as const, spaceId: actor.space.id, conversationId: actor.conversationId, taskId: actor.taskId, callId: actor.callId };
+			let res: Awaited<ReturnType<KnowledgeStore["search"]>>;
+			if (kbIds && kbIds.length === 0) {
+				res = store.refused(actor.principal, args.query, { searchedKbIds: [], forbiddenKbIds: outOfScope, memberScope: scope, reason: "forbidden", detail: scope?.length ? "所选知识库超出该成员声明的知识范围" : "该成员没有被授予任何知识库" }, trace);
+			} else {
+				res = await store.search(actor.principal, args.query, { kbIds, docIds, projectId: kbIds ? undefined : actor.space.projectId, limit: args.limit ?? 6, trace });
+				if (scope) {
+					const forbiddenKbIds = [...new Set([...(res.diagnostics.forbiddenKbIds ?? []), ...outOfScope])];
+					res = { ...res, diagnostics: { ...res.diagnostics, memberScope: scope, ...(forbiddenKbIds.length ? { forbiddenKbIds } : {}), ...(outOfScope.length ? { detail: [res.diagnostics.detail, `已跳过 ${outOfScope.length} 个超出成员知识范围的知识库`].filter(Boolean).join("；") } : {}) } };
+				}
+			}
 			const citations = res.citations.map((c, i) => ({ ...c, n: i + 1 }));
 			return {
 				output: [{ type: "text" as const, text: formatSearchOutput(args.query, citations, res.diagnostics) }],
@@ -174,7 +204,10 @@ export function knowledgeExtension(ctx: AppContext, store: KnowledgeStore, memor
 			section("knowledge_scope", async (input, context) => {
 				const scope = await resolvePromptScope(ctx, input, context).catch(() => null);
 				if (!scope?.principal) return undefined;
-				const kbs = store.listKbs(scope.principal).filter((k) => (scope.space.projectId ? (k.scope === "project" && k.projectId === scope.space.projectId) || k.scope === "org" : true));
+				const member = await memberKnowledgeScope(input.read, input.conversationId, context);
+				const kbs = store
+					.listKbs(scope.principal)
+					.filter((k) => (member ? member.includes(k.id) : scope.space.projectId ? (k.scope === "project" && k.projectId === scope.space.projectId) || k.scope === "org" : true));
 				if (!kbs.length) return undefined;
 				const label = { personal: "个人", project: "项目", department: "部门", org: "企业" } as const;
 				return [

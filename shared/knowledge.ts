@@ -175,6 +175,8 @@ export interface RetrievalDiagnostics {
 	/** Matching strategy used: "fts" (trigram MATCH), "like" (short-term fallback) or both. */
 	readonly strategy?: "fts" | "like" | "fts+like";
 	readonly cached?: boolean;
+	/** Set for a subagent member with a declared knowledge scope: the only KBs it may search. */
+	readonly memberScope?: string[];
 	readonly vector?: "blocked";
 	readonly tookMs?: number;
 }

@@ -188,3 +188,56 @@ test("compaction: key constraints from memory are still in the prompt after the 
 		await t.dispose();
 	}
 });
+
+test("subagent knowledge scope: a member only searches its declared KBs, even when the parent's user could see more", async () => {
+	const t = await startTestApp();
+	try {
+		const alice = await t.user("alice@example.com", { name: "Alice" });
+		const allowed = await kbWithDoc(t, alice.token, { name: "公开资料", scope: "personal" }, { name: "public.md", mime: MIME.md, bytes: "# 资料\n\nThe marmot report is public." });
+		const secret = await kbWithDoc(t, alice.token, { name: "机密资料", scope: "personal" }, { name: "secret.md", mime: MIME.md, bytes: "# 机密\n\nThe marmot budget is 7731 units." });
+		const { assistant } = await t.json("POST", "/api/assistants", {
+			token: alice.token,
+			json: { name: "研究助手", members: [{ id: "researcher", name: "研究员", type: "builtin_subagent", tools: ["kb_search"], maxTurns: 3, knowledgeScope: { kbIds: [allowed.kb.id] } }, { id: "noscope", name: "无范围", type: "builtin_subagent", tools: ["kb_search"], maxTurns: 3, knowledgeScope: { kbIds: [] } }] },
+		});
+		const c = (await t.json("POST", "/api/conversations", { token: alice.token, json: { assistantId: assistant.id } })).conversation as Conv;
+		// The parent (Alice, no member scope) sees both KBs.
+		await run(t, alice.token, c, '[[call kb_search {"query":"marmot"}]]');
+		const parent = (await toolResults(t, c, "kb_search"))[0]!;
+		assert.deepEqual(parent.details.citations.map((x: any) => x.fileName).sort(), ["public.md", "secret.md"]);
+		assert.equal(parent.details.diagnostics.memberScope, undefined);
+
+		const delegate = (member: string, task: string) => `[[call delegate ${JSON.stringify({ member, task })}]]`;
+		// 1) default search inside the child: only the scoped KB.
+		await run(t, alice.token, c, delegate("researcher", '[[call kb_search {"query":"marmot"}]]'));
+		// 2) explicitly asking for the secret KB: refused, nothing leaked.
+		await run(t, alice.token, c, delegate("researcher", `[[call kb_search {"query":"marmot budget","kbIds":["${secret.kb.id}"]}]]`));
+		// 3) asking for both: only the in-scope one is searched.
+		await run(t, alice.token, c, delegate("researcher", `[[call kb_search {"query":"marmot","kbIds":["${secret.kb.id}","${allowed.kb.id}"]}]]`));
+		// 4) a member with an empty scope can search nothing.
+		await run(t, alice.token, c, delegate("noscope", '[[call kb_search {"query":"marmot"}]]'));
+		const sas = (await t.json("GET", `${base(c)}/tasks`, { token: alice.token })).subagents as any[];
+		assert.equal(sas.length, 4);
+		const childResult = async (i: number) => (await toolResults(t, { spaceId: c.spaceId, conversationId: sas[i].childConversationId }, "kb_search"))[0]!;
+		const r1 = await childResult(0);
+		assert.deepEqual(r1.details.citations.map((x: any) => x.fileName), ["public.md"]);
+		assert.deepEqual(r1.details.diagnostics.memberScope, [allowed.kb.id]);
+		assert.deepEqual(r1.details.diagnostics.searchedKbIds, [allowed.kb.id]);
+		const r2 = await childResult(1);
+		assert.equal(r2.details.citations.length, 0);
+		assert.equal(r2.details.diagnostics.reason, "forbidden");
+		assert.deepEqual(r2.details.diagnostics.forbiddenKbIds, [secret.kb.id]);
+		assert.doesNotMatch(r2.text, /7731/);
+		const r3 = await childResult(2);
+		assert.deepEqual(r3.details.citations.map((x: any) => x.fileName), ["public.md"]);
+		assert.deepEqual(r3.details.diagnostics.forbiddenKbIds, [secret.kb.id]);
+		const r4 = await childResult(3);
+		assert.equal(r4.details.diagnostics.reason, "forbidden");
+		assert.equal(r4.details.citations.length, 0);
+		// The child's knowledge_scope prompt section lists only its scope.
+		const childSections = await sections(t, { spaceId: c.spaceId, conversationId: sas[0].childConversationId });
+		assert.match(childSections.knowledge_scope ?? "", /公开资料/);
+		assert.doesNotMatch(childSections.knowledge_scope ?? "", /机密资料/);
+	} finally {
+		await t.dispose();
+	}
+});
