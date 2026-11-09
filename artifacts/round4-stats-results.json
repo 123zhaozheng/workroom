@@ -1,0 +1,290 @@
+{
+  "at": "2026-11-09T23:23:25.251Z",
+  "results": [
+    {
+      "name": "seed-demo.mjs runs against a live server",
+      "ok": true,
+      "detail": "live: 4 conversations driven through the API with the fixture model | backfill: 7235 runs, 37275 ledger rows (demo=1, simulated), 2169 knowledge searches, 1165 file versions, 418 automation runs over 365 days"
+    },
+    {
+      "name": "fresh real org: no records and an explanatory note",
+      "ok": true,
+      "detail": "此范围内没有记录：该范围内还没有任何对话产生用量。"
+    },
+    {
+      "name": "home + chat load neither the StatsPage chunk nor Recharts",
+      "ok": true,
+      "detail": "62 asset requests, 88 before send"
+    },
+    {
+      "name": "lazy chunks load on /stats (page + Recharts)",
+      "ok": true,
+      "detail": "StatsPage-BTN95a0X.js, StatsPage-DMDFVS2t.css, RechartsPanels-gsmFav9h.js"
+    },
+    {
+      "name": "real org: no demo banner",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "real org, test model only: tokens and cost are labelled 模拟, never numbers or $",
+      "ok": true,
+      "detail": "模拟 / —"
+    },
+    {
+      "name": "real org: runs KPI equals the API",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "simulated-only note is shown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "table drilldown link to the conversation (own conversation)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "drilldown opens the conversation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "real org never contains demo rows or demo cost",
+      "ok": true,
+      "detail": "runs=2"
+    },
+    {
+      "name": "member: scope list offers only 个人",
+      "ok": true,
+      "detail": "个人"
+    },
+    {
+      "name": "member: org scope via URL is refused (403 error state, no data)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "member: empty personal state explains why",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "loading skeleton shown while data loads",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "demo org: 演示数据 banner",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "14 KPI tiles with sparklines",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "demo tokens/cost shown as 模拟, no $ amount",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "KPI 运行 equals the API figure",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "KPI 模型请求 equals the API figure",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "calendar heatmap: 365 days drawn, most with activity",
+      "ok": true,
+      "detail": "365 cells, 343 active"
+    },
+    {
+      "name": "punch card: 7 x 24 dots, size varies with volume",
+      "ok": true,
+      "detail": "168 dots, 141 with data, 68 sizes"
+    },
+    {
+      "name": "waffle: 100 dots, legend counts add up to the API total",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stacked area chart renders one area per model",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "donut renders sectors with a legend",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tool ranking rows with error-rate overlay",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "latency histogram: bars plus P50 / P95 markers",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "knowledge + large-context + automation cards have data",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "drilldown table lists conversations, demo rows carry no link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "成员 tab ranks users",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "最近失败 tab lists failed requests",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no page errors / console errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "calendar tooltip shows the day and its counts",
+      "ok": true,
+      "detail": "4月9日 周四 运行 41 模型请求 74 工具调用 47 Token 71.9万 失败/超时运行 7"
+    },
+    {
+      "name": "punch card tooltip shows weekday and hour",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "waffle tooltip shows outcome and share",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "area chart tooltip lists the models with a total",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tool tooltip shows error rate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sparkline tooltip",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "calendar metric switch to Token",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "series dimension switch to provider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "waffle unit switch",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CSV: tools chart downloads with header and rows",
+      "ok": true,
+      "detail": "stats-tools-org.csv"
+    },
+    {
+      "name": "CSV: calendar days",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CSV: series by model marks simulated rows",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CSV: punch card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CSV content equals the API tools ranking",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CSV export of another org never contains demo rows",
+      "ok": true,
+      "detail": "status 200"
+    },
+    {
+      "name": "range preset 近 7 天 requests a 7-day window with tz offset",
+      "ok": true,
+      "detail": "7 days tz=480"
+    },
+    {
+      "name": "granularity 小时 changes the series (hourly buckets)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "custom range shows two date inputs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "custom range 2026-01-01…2026-03-31 applies (URL + adjusted granularity hint absent for week default)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin scope list: 个人 / 组织 / 部门 / 项目",
+      "ok": true,
+      "detail": "个人 | 组织：演示组织（Demo） | 部门：市场部 | 部门：研发部 | 部门：运营部 | 项目：产品调研 | 项目：季度报告 | 项目：客户知识库整理"
+    },
+    {
+      "name": "project scope loads",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1366: no horizontal page overflow",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark mode swaps the chart palette tokens",
+      "ok": true,
+      "detail": "dark #3987e5"
+    },
+    {
+      "name": "390: no horizontal page scroll (wide charts scroll inside their own card)",
+      "ok": true,
+      "detail": "{\"doc\":390,\"win\":390,\"page\":390,\"pc\":390}"
+    },
+    {
+      "name": "390: all chart cards render",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
