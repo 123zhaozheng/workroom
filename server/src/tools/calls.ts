@@ -157,9 +157,13 @@ export class ToolCallLog {
 		};
 	}
 
-	list(filter: { userId?: string; spaceIds?: readonly string[]; spaceId?: string; conversationId?: number; tool?: string; limit?: number }): ToolCallRecordDTO[] {
+	list(filter: { userId?: string; spaceIds?: readonly string[]; spaceId?: string; conversationId?: number; tool?: string; connectorId?: string; limit?: number }): ToolCallRecordDTO[] {
 		const where: string[] = [];
 		const params: (string | number)[] = [];
+		if (filter.connectorId) {
+			where.push("connector_id = ?");
+			params.push(filter.connectorId);
+		}
 		if (filter.userId) {
 			where.push("user_id = ?");
 			params.push(filter.userId);
