@@ -448,7 +448,15 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	const auditQuery = (orgId: string, q: Record<string, string | undefined>) => {
 		const where = ["a.org_id = ?"];
 		const params: string[] = [orgId];
-		for (const [k, col] of [["category", "a.category"], ["action", "a.action"], ["actorUserId", "a.actor_user_id"], ["target", "a.target"], ["requestId", "a.request_id"]] as const)
+		// category accepts a comma list (e.g. "grant,external_write" = all authorizations and external writes).
+		if (q.category) {
+			const cats = q.category.split(",").map((x) => x.trim()).filter(Boolean);
+			where.push(`a.category IN (${cats.map(() => "?").join(",")})`);
+			params.push(...cats);
+		}
+		// Correlation: any audit row whose detail mentions this conversation / effect / approval id.
+		if (q.ref) (where.push("a.detail LIKE ? ESCAPE '\\'"), params.push(`%${q.ref.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`));
+		for (const [k, col] of [["action", "a.action"], ["actorUserId", "a.actor_user_id"], ["target", "a.target"], ["requestId", "a.request_id"]] as const)
 			if (q[k]) {
 				where.push(k === "action" && q[k]!.endsWith("*") ? `${col} LIKE ?` : `${col} = ?`);
 				params.push(k === "action" && q[k]!.endsWith("*") ? q[k]!.slice(0, -1) + "%" : q[k]!);

@@ -81,8 +81,9 @@ export type AuditCategory = "auth" | "admin" | "grant" | "share" | "external_wri
 function inferCategory(action: string): AuditCategory {
 	if (action.startsWith("auth.") || action.startsWith("session.") || action.startsWith("user.")) return "auth";
 	if (action.startsWith("share.")) return "share";
-	if (action.startsWith("project.member") || action.startsWith("department.member") || action.startsWith("grant.")) return "grant";
-	if (action.startsWith("effect.") || action.startsWith("external.")) return "external_write";
+	// Approvals are authorizations of agent actions; external effects are writes to systems outside Workroom.
+	if (action.startsWith("project.member") || action.startsWith("department.member") || action.startsWith("grant.") || action.startsWith("approval.")) return "grant";
+	if (action.startsWith("effect.") || action.startsWith("external.") || action.startsWith("mcp.write")) return "external_write";
 	if (action.startsWith("model.") || action.startsWith("channel.") || action.startsWith("route.")) return "model";
 	if (action.startsWith("budget.")) return "budget";
 	if (action.startsWith("automation.")) return "automation";

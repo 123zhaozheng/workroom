@@ -2,10 +2,14 @@
 
 ## To A (runtime)
 
-1. **Audit external writes (M16-C).** In `Effects.externalEffect` (and approval decisions), record to the audit service:
-   `ctx.services.get("audit").record({ orgId, actorUserId, action: "effect.dispatching" | "effect.receipt" | "effect.needs_reconciliation", target: spec.target, detail: { key, idempotencyKey, effectId, conversationId, callId }, requestId })`
-   and `action: "grant.approval_decided"` for approvals. Actions starting with `effect.`/`external.` are filed under
-   category `external_write` automatically. Never put secrets or full payloads in `detail`.
+1. **Audit external writes and approvals (M16-C).** Call `ctx.services.get("audit").record({ orgId, actorUserId, action, target, detail, requestId })` with:
+   - `effect.intent` / `effect.dispatching` / `effect.receipt` / `effect.needs_reconciliation` / `effect.reconciled` — `target: spec.target`,
+     `detail: { spaceId, conversationId, taskId, callId, effectId, key, idempotencyKey }` → category `external_write`;
+   - `approval.requested` / `approval.decided` — `target: approvalId`, `detail: { spaceId, conversationId, callId, approvalId, decision, risk }`,
+     `requestId` = the HTTP request id of the decision → category `grant`.
+   Never put secrets or payload bodies in `detail` (summaries are fine). Admins query with
+   `GET /api/admin/audit?category=grant,external_write&ref=<conversationId|effectId|approvalId>`; CSV via `/api/admin/audit.csv`.
+   Test `server/test/identity-audit-effects.test.ts` part 2 activates automatically once `effects.ts` calls the service.
 2. **Assistant default model vs. model ACL.** `rt_assistants.model` is a raw `{provider, modelId}` ref. Please validate it
    against `ctx.services.get("models").listFor(principal)` when an assistant is created/updated *and* when a conversation is
    created from it (models can be org-scoped, department-restricted, disabled or `blocked`).
