@@ -128,6 +128,7 @@ function inferCategory(action: string): AuditCategory {
 	if (action.startsWith("auth.") || action.startsWith("session.") || action.startsWith("user.")) return "auth";
 	if (action.startsWith("share.")) return "share";
 	// Approvals are authorizations of agent actions; external effects are writes to systems outside Workroom.
+	if (action.startsWith("role.") || action.startsWith("group.")) return "grant";
 	if (action.startsWith("project.member") || action.startsWith("department.member") || action.startsWith("grant.") || action.startsWith("approval.")) return "grant";
 	if (action.startsWith("effect.") || action.startsWith("external.") || action.startsWith("mcp.write")) return "external_write";
 	if (action.startsWith("model.") || action.startsWith("channel.") || action.startsWith("route.")) return "model";
@@ -305,7 +306,11 @@ export class Identity implements IdentityService, AccessControl {
 				const pr = this.db.get<{ org_id: string }>("SELECT org_id FROM id_projects WHERE id = ?", resource.id);
 				if (!pr) return { allow: false, reason: "not_found" };
 				if (pr.org_id !== live.orgId) return { allow: false, reason: "other_org" };
-				return this.spaceDecision(live, action, this.projectSpace(resource.id));
+				const dec = this.spaceDecision(live, action, this.projectSpace(resource.id));
+				// RBAC: a role assigned AT this project with project.manage lets a non-member administer the project (settings and
+				// members) — never read its content. Org-wide holders (组织管理员) deliberately do not enter project spaces.
+				if (!dec.allow && action === "admin" && this.authz.hasScopedOnly(live, "project.manage", { kind: "project", id: resource.id })) return { allow: true, reason: "rbac_project_manage" };
+				return dec;
 			}
 			default: {
 				const r = this.#resolvers.get(resource.kind);

@@ -9,39 +9,61 @@ import { audit, hashPassword, shareResourceRef, verifyPassword, type Identity, t
 import { newTotpSecret, otpauthUrl, verifyTotp } from "./totp.ts";
 import { toCsv } from "./csv.ts";
 import { registerOidcRoutes } from "./oidc.ts";
+import { registerRbacRoutes, setBaseRole } from "./rbac-routes.ts";
+import { policyAuthorized, registerPolicyMiddleware } from "./policy.ts";
+import { BASE_ROLE_IDS, builtinRole, permissionDef } from "../../../shared/permissions.ts";
 
 const ORG_ROLES: OrgRole[] = ["owner", "admin", "member"];
+/** Base roles accepted by the legacy `role` fields (guest is a base role that maps to orgRole "member"). */
+const BASE_ROLE_BY_NAME: Record<string, string> = { owner: "builtin:owner", admin: "builtin:admin", member: "builtin:member", guest: "builtin:guest" };
 const PROJECT_ROLES: ProjectRole[] = ["owner", "editor", "viewer"];
 
 export function publicPrincipal(p: Principal, ctx: AppContext) {
 	const org = ctx.db.get<{ name: string }>("SELECT name FROM id_orgs WHERE id = ?", p.orgId);
 	const u = ctx.db.get<{ totp_enabled_at: string | null }>("SELECT totp_enabled_at FROM id_users WHERE id = ?", p.userId);
-	return { userId: p.userId, orgId: p.orgId, orgName: org?.name, orgRole: p.orgRole, name: p.displayName, email: p.email, departmentIds: [...p.departmentIds], totpEnabled: !!u?.totp_enabled_at };
+	const az = (ctx.services.get("identity") as Identity).authz;
+	const a = az.load(p.userId, p.orgId);
+	const permissions = a ? [...az.permissionsAt(a)] : [];
+	const anywhere = a ? [...az.permissionsAnywhere(a)] : [];
+	const baseRoleId = a?.assignments.find((x) => x.via === "direct" && x.scope_kind === "org" && BASE_ROLE_IDS.includes(x.role_id))?.role_id;
+	const roles = a ? a.assignments.map((x) => ({ roleId: x.role_id, name: a.roles.get(x.role_id)?.name ?? x.role_id, scope: x.scope_kind === "org" ? { kind: "org" } : { kind: x.scope_kind, id: x.scope_id } })) : [];
+	return { userId: p.userId, orgId: p.orgId, orgName: org?.name, orgRole: p.orgRole, name: p.displayName, email: p.email, departmentIds: [...p.departmentIds], totpEnabled: !!u?.totp_enabled_at, baseRole: baseRoleId, roles, permissions, permissionsAnywhere: anywhere };
 }
 
 export function setSessionCookie(c: HonoContext<AppEnv>, ctx: AppContext, token: string): void {
 	setCookie(c, SESSION_COOKIE, token, { httpOnly: true, sameSite: "Lax", secure: ctx.config.secureCookies, path: "/", maxAge: 30 * 86400 });
 }
 
+/** Legacy guard kept for other modules: "may change organisation settings" (RBAC: org.settings.manage). */
 export async function requireOrgAdmin(id: Identity, p: Principal): Promise<void> {
-	await id.require(p, "admin", { kind: "org", id: p.orgId });
+	if (policyAuthorized()) return; // the route policy (identity/policy.ts) already required the route's specific permission
+	await id.authz.require(p, "org.settings.manage");
 }
 
 function memberRow(ctx: AppContext, orgId: string, userId: string) {
 	return ctx.db.get<any>("SELECT m.*, u.name, u.email FROM id_org_members m JOIN id_users u ON u.id = m.user_id WHERE m.org_id = ? AND m.user_id = ? AND m.removed_at IS NULL", orgId, userId);
 }
 
-function activeOwnerCount(ctx: AppContext, orgId: string): number {
-	return ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM id_org_members m JOIN id_users u ON u.id = m.user_id WHERE m.org_id = ? AND m.role = 'owner' AND m.removed_at IS NULL AND m.disabled_at IS NULL AND u.disabled_at IS NULL", orgId)!.n;
+function ownerCount(id: Identity, orgId: string): number {
+	return id.authz.activeOwnerIds(orgId).length;
 }
 
-/** Rules: admins manage members/admins; only owners touch owners or grant owner; never leave an org without an active owner. */
-function assertCanManage(ctx: AppContext, actor: Principal, target: any, op: "role" | "disable" | "remove", newRole?: OrgRole): void {
+/** RBAC rule set for acting on a member: permission at org or covering department, target must not outrank the actor, owners need org.owner.manage, last owner is protected. */
+function assertCanManage(ctx: AppContext, id: Identity, actor: Principal, targetId: string, perm: string, op: "role" | "disable" | "remove"): void {
+	const a = id.authz.load(actor.userId, actor.orgId);
+	if (!a) throw new HttpError(401, "revoked", "账号已不在组织中");
+	const target = ctx.db.get<any>("SELECT * FROM id_org_members WHERE org_id = ? AND user_id = ? AND removed_at IS NULL", actor.orgId, targetId);
 	if (!target) throw new HttpError(404, "member_not_found", "组织内没有该成员");
-	if (target.user_id === actor.userId && op !== "role") throw new HttpError(400, "cannot_target_self", "不能对自己执行此操作");
-	const touchesOwner = target.role === "owner" || newRole === "owner";
-	if (touchesOwner && actor.orgRole !== "owner") throw new HttpError(403, "owner_required", "只有所有者可以变更所有者");
-	if (target.role === "owner" && (op !== "role" || newRole !== "owner") && activeOwnerCount(ctx, actor.orgId) <= 1) throw new HttpError(409, "last_owner", "组织至少需要一位有效的所有者");
+	if (targetId === actor.userId && op !== "role") throw new HttpError(400, "cannot_target_self", "不能对自己执行此操作");
+	if (!id.authz.decide(a, perm).allow && !id.authz.permissionsAnywhere(a).has(perm)) throw new HttpError(403, "forbidden", `缺少权限：${permissionDef(perm)?.label ?? perm}（${perm}）`, { reason: "missing_permission", permission: perm });
+	const r = id.authz.canActOnMember(a, perm, targetId);
+	if (!r.ok) {
+		const map: Record<string, [number, string, string]> = { owner_required: [403, "owner_required", "只有所有者可以变更所有者"], target_outranks_actor: [403, "target_outranks", "该成员的权限高于你，无法操作"], outside_scope: [403, "outside_scope", "该成员不在你可管理的部门范围内"], member_not_found: [404, "member_not_found", "组织内没有该成员"] };
+		const [st, code, msg] = map[r.reason] ?? [403, "forbidden", r.reason];
+		throw new HttpError(st, code, msg, { reason: r.reason });
+	}
+	const t = id.authz.load(targetId, actor.orgId, { includeDisabled: true });
+	if (t?.isOwner && op !== "role" && ownerCount(id, actor.orgId) <= 1) throw new HttpError(409, "last_owner", "组织至少需要一位有效的所有者");
 }
 
 function sessionDto(r: any, currentId?: string) {
@@ -67,6 +89,18 @@ function shareDto(id: Identity, r: ShareRow) {
 export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Identity): void {
 	const db = ctx.db;
 	const rid = (c: HonoContext<AppEnv>) => c.get("requestId");
+	registerPolicyMiddleware(api, ctx, id);
+
+	/** Roles carried by an invite: guest replaces the base role; any other role is granted at org (or the invite's department) scope. */
+	const applyInviteRole = (inv: any, userId: string): void => {
+		if (!inv.role_id) return;
+		if (inv.role_id === "builtin:guest") return setBaseRole(ctx, inv.org_id, userId, "builtin:guest", "invite");
+		if (!id.authz.rolePermissions(inv.org_id, inv.role_id)) return; // role deleted since the invite was created
+		const def = builtinRole(inv.role_id);
+		const kind = inv.department_id && (!def || def.scopes.includes("department")) ? "department" : "org";
+		if (def && !def.scopes.includes(kind)) return;
+		db.run("INSERT OR IGNORE INTO id_role_assignments (id, org_id, subject_kind, subject_id, role_id, scope_kind, scope_id, created_by, created_at) VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)", newId("ra"), inv.org_id, userId, inv.role_id, kind, kind === "department" ? inv.department_id : "", inv.created_by ?? "invite", nowIso());
+	};
 
 	// ---------------------------------------------------------------- auth
 	api.post("/auth/register", async (c) => {
@@ -228,7 +262,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	});
 	api.patch("/org", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "org.settings.manage");
 		const b = await jsonBody<{ name?: string }>(c);
 		if (!b.name?.trim()) throw new HttpError(400, "invalid", "名称必填");
 		db.run("UPDATE id_orgs SET name = ? WHERE id = ?", b.name.trim(), p.orgId);
@@ -242,9 +276,39 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 		return c.json({ members: rows.map((r) => ({ userId: r.id, name: r.name, email: r.email, role: r.role })) });
 	});
 
+	/** Authorization helpers: load the actor's access once per request. */
+	const axOf = (p: Principal) => {
+		const a = id.authz.load(p.userId, p.orgId);
+		if (!a) throw new HttpError(401, "revoked", "账号已不在组织中");
+		return a;
+	};
+	const needPerm = (a: ReturnType<typeof axOf>, perm: string, scope?: { kind: "department" | "project"; id: string }): void => {
+		const d = id.authz.decide(a, perm, scope);
+		if (!d.allow) throw new HttpError(403, "forbidden", `缺少权限：${permissionDef(perm)?.label ?? perm}（${perm}）`, { reason: "missing_permission", permission: perm, because: d.because });
+	};
+	/** Departments (ids) where the actor holds `perm`; "all" when org-wide. */
+	const deptScopesFor = (a: ReturnType<typeof axOf>, perm: string): "all" | Set<string> => {
+		if (id.authz.decide(a, perm).allow) return "all";
+		const set = new Set<string>();
+		for (const d of a.deptParent.keys()) if (id.authz.decide(a, perm, { kind: "department", id: d }).allow) set.add(d);
+		if (set.size === 0) needPerm(a, perm);
+		return set;
+	};
+	const rolePermsOf = (orgId: string, roleId: string): string[] => {
+		const perms = id.authz.rolePermissions(orgId, roleId);
+		if (!perms) throw new HttpError(404, "role_not_found", "角色不存在");
+		return perms;
+	};
+	const noEscalation = (a: ReturnType<typeof axOf>, perms: readonly string[], scope?: { kind: "department" | "project"; id: string }): void => {
+		const mine = id.authz.permissionsAt(a, scope);
+		const missing = perms.filter((x) => !mine.has(x));
+		if (missing.length) throw new HttpError(403, "privilege_escalation", `不能授予你自己没有的权限：${missing.map((x) => permissionDef(x)?.label ?? x).join("、")}`, { reason: "privilege_escalation", missing });
+	};
+
 	api.get("/admin/members", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		const a = axOf(p);
+		const scopes = deptScopesFor(a, "member.view");
 		const rows = db.all<any>(
 			`SELECT u.id, u.name, u.email, u.totp_enabled_at, u.disabled_at AS user_disabled, m.role, m.created_at, m.disabled_at,
 			 (SELECT MAX(last_seen_at) FROM id_sessions s WHERE s.user_id = u.id AND s.org_id = m.org_id) AS last_seen,
@@ -254,38 +318,54 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 			p.orgId,
 		);
 		const deps = db.all<any>("SELECT dm.user_id, dm.department_id FROM id_department_members dm JOIN id_departments d ON d.id = dm.department_id WHERE d.org_id = ? AND dm.removed_at IS NULL AND d.archived_at IS NULL", p.orgId);
-		return c.json({
-			members: rows.map((r) => ({
+		const assigns = db.all<any>("SELECT subject_id, role_id, scope_kind, scope_id FROM id_role_assignments WHERE org_id = ? AND subject_kind = 'user'", p.orgId);
+		const members = rows.map((r) => {
+			const myDeps = deps.filter((d) => d.user_id === r.id).map((d) => d.department_id as string);
+			return {
 				userId: r.id,
 				name: r.name,
 				email: r.email,
 				role: r.role,
 				status: r.disabled_at || r.user_disabled ? "disabled" : "active",
-				departmentIds: deps.filter((d) => d.user_id === r.id).map((d) => d.department_id),
+				departmentIds: myDeps,
 				joinedAt: r.created_at,
 				lastSeenAt: r.last_seen ?? undefined,
 				activeSessions: r.active_sessions,
 				totpEnabled: !!r.totp_enabled_at,
-			})),
+				roles: assigns.filter((x) => x.subject_id === r.id).map((x) => ({ roleId: x.role_id, name: id.authz.roleName(p.orgId, x.role_id) ?? x.role_id, scope: x.scope_kind === "org" ? { kind: "org" } : { kind: x.scope_kind, id: x.scope_id } })),
+			};
 		});
+		// Department-scoped viewers only see members of their department subtree (and themselves).
+		return c.json({ members: scopes === "all" ? members : members.filter((m) => m.userId === p.userId || m.departmentIds.some((d: string) => scopes.has(d))) });
 	});
 	api.patch("/admin/members/:userId", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
-		const b = await jsonBody<{ role: OrgRole }>(c);
-		if (!ORG_ROLES.includes(b.role)) throw new HttpError(400, "invalid_role", "角色无效");
-		const target = memberRow(ctx, p.orgId, c.req.param("userId"));
-		assertCanManage(ctx, p, target, "role", b.role);
-		if (target.role === "owner" && b.role !== "owner" && activeOwnerCount(ctx, p.orgId) <= 1) throw new HttpError(409, "last_owner", "组织至少需要一位有效的所有者");
-		db.run("UPDATE id_org_members SET role = ? WHERE org_id = ? AND user_id = ?", b.role, p.orgId, target.user_id);
-		audit(db, p.orgId, p.userId, "grant.org_role", target.user_id, { from: target.role, to: b.role }, { requestId: rid(c), category: "grant" });
+		const a = axOf(p);
+		needPerm(a, "role.assign");
+		const b = await jsonBody<{ role: string }>(c);
+		const newBase = BASE_ROLE_BY_NAME[b.role ?? ""];
+		if (!newBase) throw new HttpError(400, "invalid_role", "角色无效");
+		const targetId = c.req.param("userId");
+		const target = memberRow(ctx, p.orgId, targetId);
+		if (!target) throw new HttpError(404, "member_not_found", "组织内没有该成员");
+		const t = id.authz.load(targetId, p.orgId, { includeDisabled: true })!;
+		const touchesOwner = t.isOwner || newBase === "builtin:owner";
+		if (touchesOwner) {
+			if (!id.authz.decide(a, "org.owner.manage").allow) throw new HttpError(403, "owner_required", "只有所有者可以变更所有者");
+		}
+		assertCanManage(ctx, id, p, targetId, "role.assign", "role");
+		noEscalation(a, rolePermsOf(p.orgId, newBase));
+		if (t.isOwner && newBase !== "builtin:owner" && ownerCount(id, p.orgId) <= 1) throw new HttpError(409, "last_owner", "组织至少需要一位有效的所有者");
+		const from = t.assignments.find((x) => x.via === "direct" && x.scope_kind === "org" && BASE_ROLE_IDS.includes(x.role_id))?.role_id;
+		setBaseRole(ctx, p.orgId, targetId, newBase, p.userId);
+		audit(db, p.orgId, p.userId, "grant.org_role", targetId, { from: target.role, to: b.role, fromRoleId: from, toRoleId: newBase }, { requestId: rid(c), category: "grant" });
 		return c.json({ ok: true });
 	});
 	api.post("/admin/members/:userId/disable", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
-		const target = memberRow(ctx, p.orgId, c.req.param("userId"));
-		assertCanManage(ctx, p, target, "disable");
+		const targetId = c.req.param("userId");
+		assertCanManage(ctx, id, p, targetId, "member.disable", "disable");
+		const target = memberRow(ctx, p.orgId, targetId);
 		const n = db.tx(() => {
 			db.run("UPDATE id_org_members SET disabled_at = ?, disabled_by = ? WHERE org_id = ? AND user_id = ?", nowIso(), p.userId, p.orgId, target.user_id);
 			return id.revokeSessions(target.user_id, p.orgId, "member_disabled");
@@ -295,21 +375,19 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	});
 	api.post("/admin/members/:userId/enable", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		assertCanManage(ctx, id, p, c.req.param("userId"), "member.disable", "role");
 		const target = memberRow(ctx, p.orgId, c.req.param("userId"));
-		if (!target) throw new HttpError(404, "member_not_found", "组织内没有该成员");
-		if (target.role === "owner" && p.orgRole !== "owner") throw new HttpError(403, "owner_required", "只有所有者可以变更所有者");
 		db.run("UPDATE id_org_members SET disabled_at = NULL, disabled_by = NULL WHERE org_id = ? AND user_id = ?", p.orgId, target.user_id);
 		audit(db, p.orgId, p.userId, "member.enable", target.user_id, undefined, { requestId: rid(c) });
 		return c.json({ ok: true });
 	});
 	api.delete("/admin/members/:userId", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		assertCanManage(ctx, id, p, c.req.param("userId"), "member.remove", "remove");
 		const target = memberRow(ctx, p.orgId, c.req.param("userId"));
-		assertCanManage(ctx, p, target, "remove");
 		const out = db.tx(() => {
 			const at = nowIso();
+			// The id_om_rbac_removed trigger also drops this member's role assignments, direct grants and group memberships.
 			db.run("UPDATE id_org_members SET removed_at = ? WHERE org_id = ? AND user_id = ?", at, p.orgId, target.user_id);
 			const projects = db.run("UPDATE id_project_members SET removed_at = ? WHERE user_id = ? AND removed_at IS NULL AND project_id IN (SELECT id FROM id_projects WHERE org_id = ?)", at, target.user_id, p.orgId).changes;
 			db.run("UPDATE id_department_members SET removed_at = ? WHERE user_id = ? AND removed_at IS NULL AND department_id IN (SELECT id FROM id_departments WHERE org_id = ?)", at, target.user_id, p.orgId);
@@ -323,7 +401,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 
 	api.get("/admin/sessions", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "member.session.manage");
 		const userId = c.req.query("userId");
 		const rows = db.all<any>(
 			`SELECT s.*, u.name AS user_name FROM id_sessions s JOIN id_users u ON u.id = s.user_id WHERE s.org_id = ? AND s.revoked_at IS NULL AND s.expires_at > ? ${userId ? "AND s.user_id = ?" : ""} ORDER BY s.created_at DESC LIMIT 500`,
@@ -333,7 +411,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	});
 	api.delete("/admin/sessions/:sid", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "member.session.manage");
 		const r = db.run("UPDATE id_sessions SET revoked_at = ?, revoked_reason = 'admin_revoked' WHERE id = ? AND org_id = ? AND revoked_at IS NULL", nowIso(), c.req.param("sid"), p.orgId);
 		if (r.changes === 0) throw new HttpError(404, "not_found", "会话不存在");
 		audit(db, p.orgId, p.userId, "session.admin_revoke", c.req.param("sid"), undefined, { requestId: rid(c) });
@@ -341,30 +419,50 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	});
 
 	// ---------------------------------------------------------------- invites
+	const inviteDto = (r: any) => ({ code: r.code, email: r.email ?? undefined, role: r.role, roleId: r.role_id ?? undefined, roleName: r.role_id ? id.authz.roleName(r.org_id, r.role_id) : undefined, departmentId: r.department_id ?? undefined, createdBy: r.created_by, createdAt: r.created_at, expiresAt: r.expires_at, usedAt: r.used_at ?? undefined, revokedAt: r.revoked_at ?? undefined });
 	api.get("/admin/invites", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
-		const rows = db.all<any>("SELECT * FROM id_invites WHERE org_id = ? ORDER BY created_at DESC LIMIT 200", p.orgId);
-		return c.json({ invites: rows.map((r) => ({ code: r.code, email: r.email ?? undefined, role: r.role, departmentId: r.department_id ?? undefined, createdBy: r.created_by, createdAt: r.created_at, expiresAt: r.expires_at, usedAt: r.used_at ?? undefined, revokedAt: r.revoked_at ?? undefined })) });
+		const a = axOf(p);
+		const scopes = deptScopesFor(a, "member.invite");
+		const rows = db.all<any>("SELECT * FROM id_invites WHERE org_id = ? ORDER BY created_at DESC LIMIT 200", p.orgId).filter((r) => scopes === "all" || (r.department_id && scopes.has(r.department_id)));
+		return c.json({ invites: rows.map(inviteDto) });
 	});
 	api.post("/admin/invites", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
-		const b = await jsonBody<{ email?: string; role?: OrgRole; departmentId?: string; ttlHours?: number }>(c);
-		const role = b.role ?? "member";
-		if (!ORG_ROLES.includes(role)) throw new HttpError(400, "invalid_role", "角色无效");
-		if (role === "owner" && p.orgRole !== "owner") throw new HttpError(403, "owner_required", "只有所有者可以邀请所有者");
+		const a = axOf(p);
+		const b = await jsonBody<{ email?: string; role?: string; roleId?: string; departmentId?: string; ttlHours?: number }>(c);
+		const baseName = b.role ?? "member";
+		if (!BASE_ROLE_BY_NAME[baseName]) throw new HttpError(400, "invalid_role", "角色无效");
 		if (b.departmentId && !db.get("SELECT 1 FROM id_departments WHERE id = ? AND org_id = ? AND archived_at IS NULL", b.departmentId, p.orgId)) throw new HttpError(404, "department_not_found", "部门不存在");
+		const scope = b.departmentId ? ({ kind: "department", id: b.departmentId } as const) : undefined;
+		needPerm(a, "member.invite", scope);
+		if (baseName === "owner" && !id.authz.decide(a, "org.owner.manage").allow) throw new HttpError(403, "owner_required", "只有所有者可以邀请所有者");
+		noEscalation(a, rolePermsOf(p.orgId, BASE_ROLE_BY_NAME[baseName]!), scope);
+		// `guest` is a base role stored as orgRole "member" + role_id builtin:guest; any other roleId is an extra role granted on accept.
+		let roleId = b.roleId ?? (baseName === "guest" ? "builtin:guest" : undefined);
+		const legacy = baseName === "guest" ? "member" : baseName;
+		if (roleId && roleId !== "builtin:guest") {
+			if (BASE_ROLE_IDS.includes(roleId)) throw new HttpError(400, "invalid_role", "基础角色请用 role 字段指定");
+			const def = builtinRole(roleId);
+			const kind = b.departmentId ? "department" : "org";
+			if (def && !def.scopes.includes(kind)) throw new HttpError(400, "role_scope_mismatch", `「${def.name}」不能分配在该范围`);
+			needPerm(a, "role.assign", scope);
+			noEscalation(a, rolePermsOf(p.orgId, roleId), scope);
+		}
+		if (b.role === "guest" && b.roleId && b.roleId !== "builtin:guest") roleId = b.roleId;
 		const ttl = Math.min(Math.max(b.ttlHours ?? 72, 1), 24 * 30);
 		const code = randomBytes(12).toString("base64url");
 		const expiresAt = new Date(Date.now() + ttl * 3600_000).toISOString();
-		db.run("INSERT INTO id_invites (code, org_id, role, created_by, created_at, expires_at, email, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", code, p.orgId, role, p.userId, nowIso(), expiresAt, b.email ?? null, b.departmentId ?? null);
-		audit(db, p.orgId, p.userId, "grant.invite_create", code.slice(0, 4) + "…", { role, email: b.email, departmentId: b.departmentId }, { requestId: rid(c), category: "grant" });
-		return c.json({ invite: { code, email: b.email, role, departmentId: b.departmentId, createdBy: p.userId, createdAt: nowIso(), expiresAt } });
+		db.run("INSERT INTO id_invites (code, org_id, role, created_by, created_at, expires_at, email, department_id, role_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", code, p.orgId, legacy, p.userId, nowIso(), expiresAt, b.email ?? null, b.departmentId ?? null, roleId ?? null);
+		audit(db, p.orgId, p.userId, "grant.invite_create", code.slice(0, 4) + "…", { role: baseName, roleId, email: b.email, departmentId: b.departmentId }, { requestId: rid(c), category: "grant" });
+		return c.json({ invite: inviteDto(db.get<any>("SELECT * FROM id_invites WHERE code = ?", code)) });
 	});
 	api.delete("/admin/invites/:code", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		const a = axOf(p);
+		const inv = db.get<any>("SELECT * FROM id_invites WHERE code = ? AND org_id = ?", c.req.param("code"), p.orgId);
+		if (!inv) throw new HttpError(404, "not_found", "邀请不存在或已失效");
+		needPerm(a, "member.invite", inv.department_id ? { kind: "department", id: inv.department_id } : undefined);
 		const r = db.run("UPDATE id_invites SET revoked_at = ? WHERE code = ? AND org_id = ? AND used_at IS NULL AND revoked_at IS NULL", nowIso(), c.req.param("code"), p.orgId);
 		if (r.changes === 0) throw new HttpError(404, "not_found", "邀请不存在或已失效");
 		audit(db, p.orgId, p.userId, "grant.invite_revoke", c.req.param("code").slice(0, 4) + "…", undefined, { requestId: rid(c), category: "grant" });
@@ -383,61 +481,78 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 		if (!d) throw new HttpError(404, "department_not_found", "部门不存在");
 		return d;
 	};
+	const deptScope = (deptId: string | null | undefined) => (deptId ? ({ kind: "department", id: deptId } as const) : undefined);
 	api.post("/admin/departments", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		const a = axOf(p);
 		const b = await jsonBody<{ name: string; parentId?: string }>(c);
 		if (!b.name?.trim()) throw new HttpError(400, "invalid", "部门名称必填");
 		if (b.parentId) getDept(p.orgId, b.parentId);
+		needPerm(a, "dept.manage", deptScope(b.parentId));
 		const deptId = newId("dep");
 		db.run("INSERT INTO id_departments (id, org_id, name, parent_id, created_at) VALUES (?, ?, ?, ?, ?)", deptId, p.orgId, b.name.trim(), b.parentId ?? null, nowIso());
-		audit(db, p.orgId, p.userId, "department.create", deptId, { name: b.name.trim() }, { requestId: rid(c) });
+		audit(db, p.orgId, p.userId, "department.create", deptId, { name: b.name.trim(), parentId: b.parentId }, { requestId: rid(c) });
 		return c.json({ department: deptDto(getDept(p.orgId, deptId)) });
 	});
 	api.patch("/admin/departments/:id", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		const a = axOf(p);
 		const d = getDept(p.orgId, c.req.param("id"));
 		const b = await jsonBody<{ name?: string; parentId?: string | null }>(c);
+		const moving = b.parentId !== undefined && (b.parentId ?? null) !== (d.parent_id ?? null);
 		if (b.parentId) {
-			// Reject cycles.
+			// Reject cycles (moving a department under itself or its own descendants).
 			let cur: string | null = b.parentId;
 			while (cur) {
 				if (cur === d.id) throw new HttpError(400, "cycle", "部门层级不能成环");
 				cur = getDept(p.orgId, cur).parent_id;
 			}
 		}
+		if (moving) {
+			// Moving needs authority over BOTH the old and the new parent (a department admin cannot pull a department out of, or into, someone else's subtree).
+			needPerm(a, "dept.manage", deptScope(d.parent_id));
+			needPerm(a, "dept.manage", deptScope(b.parentId));
+		} else needPerm(a, "dept.manage", deptScope(d.id));
 		db.run("UPDATE id_departments SET name = COALESCE(?, name), parent_id = CASE WHEN ? THEN ? ELSE parent_id END WHERE id = ?", b.name?.trim() || null, b.parentId !== undefined ? 1 : 0, b.parentId ?? null, d.id);
-		audit(db, p.orgId, p.userId, "department.update", d.id, b, { requestId: rid(c) });
+		audit(db, p.orgId, p.userId, moving ? "department.move" : "department.update", d.id, { ...b, from: moving ? { parentId: d.parent_id ?? null, name: d.name } : { name: d.name } }, { requestId: rid(c) });
 		return c.json({ department: deptDto(getDept(p.orgId, d.id)) });
 	});
 	api.delete("/admin/departments/:id", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		const a = axOf(p);
 		const d = getDept(p.orgId, c.req.param("id"));
-		db.tx(() => {
+		// Deleting a department needs authority over its parent (a department admin cannot delete the department they administer).
+		needPerm(a, "dept.manage", deptScope(d.parent_id));
+		const removedAssignments = db.tx(() => {
 			db.run("UPDATE id_departments SET archived_at = ? WHERE id = ?", nowIso(), d.id);
 			db.run("UPDATE id_departments SET parent_id = ? WHERE parent_id = ?", d.parent_id, d.id);
+			return db.run("DELETE FROM id_role_assignments WHERE org_id = ? AND ((scope_kind = 'department' AND scope_id = ?) OR (subject_kind = 'department' AND subject_id = ?))", p.orgId, d.id, d.id).changes;
 		});
-		audit(db, p.orgId, p.userId, "department.archive", d.id, undefined, { requestId: rid(c) });
+		audit(db, p.orgId, p.userId, "department.archive", d.id, { name: d.name, removedAssignments }, { requestId: rid(c) });
 		return c.json({ ok: true });
 	});
 	api.get("/admin/departments/:id/members", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		const a = axOf(p);
 		const d = getDept(p.orgId, c.req.param("id"));
+		needPerm(a, "member.view", deptScope(d.id));
 		const rows = db.all<any>("SELECT u.id, u.name, u.email, dm.role FROM id_department_members dm JOIN id_users u ON u.id = dm.user_id JOIN id_org_members m ON m.user_id = u.id AND m.org_id = ? AND m.removed_at IS NULL WHERE dm.department_id = ? AND dm.removed_at IS NULL ORDER BY u.name", p.orgId, d.id);
 		return c.json({ members: rows.map((r) => ({ userId: r.id, name: r.name, email: r.email, role: r.role })) });
 	});
 	api.put("/admin/departments/:id/members", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		const a = axOf(p);
 		const d = getDept(p.orgId, c.req.param("id"));
 		const b = await jsonBody<{ userId: string; role: "member" | "manager" | null }>(c);
+		needPerm(a, "dept.member.manage", deptScope(d.id));
 		if (!memberRow(ctx, p.orgId, b.userId ?? "")) throw new HttpError(404, "member_not_found", "组织内没有该成员");
 		if (b.role === null) db.run("UPDATE id_department_members SET removed_at = ? WHERE department_id = ? AND user_id = ? AND removed_at IS NULL", nowIso(), d.id, b.userId);
 		else {
 			if (!["member", "manager"].includes(b.role)) throw new HttpError(400, "invalid_role", "角色无效");
+			// Joining a department inherits the roles granted to it (and to its ancestors): the actor must hold all of them.
+			const chain = id.authz.deptChain(a, d.id);
+			for (const r of db.all<{ role_id: string; scope_kind: "org" | "department" | "project"; scope_id: string }>(`SELECT role_id, scope_kind, scope_id FROM id_role_assignments WHERE org_id = ? AND subject_kind = 'department' AND subject_id IN (${chain.map(() => "?").join(",") || "''"})`, p.orgId, ...chain))
+				noEscalation(a, rolePermsOf(p.orgId, r.role_id), r.scope_kind === "org" ? undefined : { kind: r.scope_kind, id: r.scope_id });
 			db.run("INSERT INTO id_department_members (department_id, user_id, created_at, role) VALUES (?, ?, ?, ?) ON CONFLICT(department_id, user_id) DO UPDATE SET role = excluded.role, removed_at = NULL", d.id, b.userId, nowIso(), b.role);
 		}
 		audit(db, p.orgId, p.userId, b.role === null ? "department.member.remove" : "department.member.set", d.id, { userId: b.userId, role: b.role }, { requestId: rid(c), category: "grant" });
@@ -470,13 +585,13 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	};
 	api.get("/admin/audit", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "audit.view");
 		const items = auditQuery(p.orgId, c.req.query());
 		return c.json({ items, next: items.length ? items[items.length - 1]!.id : undefined });
 	});
 	api.get("/admin/audit.csv", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "audit.export");
 		const items = auditQuery(p.orgId, { ...c.req.query(), limit: "1000" });
 		audit(db, p.orgId, p.userId, "audit.export", undefined, { rows: items.length }, { requestId: rid(c) });
 		c.header("content-type", "text/csv; charset=utf-8");
@@ -492,6 +607,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	});
 	api.post("/projects", async (c) => {
 		const p = principalOf(c);
+		await id.authz.require(p, "project.create");
 		const b = await jsonBody<{ name: string; description?: string }>(c);
 		if (!b.name?.trim()) throw new HttpError(400, "invalid", "项目名称必填");
 		const projectId = newId("prj");
@@ -562,6 +678,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 		if (!["conversation", "file", "project", "kb", "automation"].includes(b.kind) || !b.id) throw new HttpError(400, "invalid", "资源无效");
 		if (b.kind === "conversation" && !b.spaceId) throw new HttpError(400, "invalid", "会话分享需要 spaceId");
 		const ref = shareResourceRef({ resource_kind: b.kind, resource_id: b.id, space_id: b.spaceId ?? null });
+		await id.authz.require(p, "share.external.create");
 		await id.require(p, "share", ref);
 		const hours = Math.min(Math.max(b.expiresInHours ?? 168, 1), 24 * 30);
 		const { row, token } = id.createShare(p, { kind: b.kind, id: b.id, spaceId: b.spaceId }, hours);
@@ -585,7 +702,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 		const row = db.get<ShareRow>("SELECT * FROM id_share_links WHERE id = ? AND org_id = ?", c.req.param("id"), p.orgId);
 		if (!row) throw new HttpError(404, "not_found", "分享不存在");
 		// Creator, anyone who may share the resource now, or an org admin may revoke.
-		if (row.created_by !== p.userId && !(await id.check(p, "share", shareResourceRef(row))).allow) await requireOrgAdmin(id, p);
+		if (row.created_by !== p.userId && !(await id.check(p, "share", shareResourceRef(row))).allow) await id.authz.require(p, "share.external.manage");
 		id.revokeShare(row.id, p.userId, "revoked");
 		audit(db, p.orgId, p.userId, "share.revoke", row.id, undefined, { requestId: rid(c) });
 		return c.json({ ok: true });
@@ -604,6 +721,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 	});
 
 	registerOidcRoutes(api, ctx, id);
+	registerRbacRoutes(api, ctx, id);
 }
 
 export type { ResourceRef };

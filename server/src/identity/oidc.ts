@@ -5,7 +5,7 @@ import { createHash, createPublicKey, randomBytes, verify as cryptoVerify } from
 import type { AppContext, AppEnv, OrgRole } from "../core/contracts.ts";
 import { HttpError, jsonBody, newId, nowIso, principalOf } from "../core/http.ts";
 import { audit, type Identity } from "./module.ts";
-import { requireOrgAdmin, setSessionCookie } from "./routes.ts";
+import { setSessionCookie } from "./routes.ts";
 
 interface Discovery {
 	issuer: string;
@@ -91,12 +91,12 @@ export function registerOidcRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 
 	api.get("/admin/oidc", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "org.security.manage");
 		return c.json({ providers: db.all<any>("SELECT * FROM id_oidc_providers WHERE org_id = ? ORDER BY created_at", p.orgId).map(providerDto) });
 	});
 	api.post("/admin/oidc", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "org.security.manage");
 		const b = await jsonBody<{ name: string; issuer: string; clientId: string; clientSecret?: string; autoJoinRole?: OrgRole; allowedDomains?: string[] }>(c);
 		if (!b.name?.trim() || !/^https?:\/\//.test(b.issuer ?? "") || !b.clientId) throw new HttpError(400, "invalid", "名称、issuer、clientId 必填");
 		if (b.autoJoinRole === "owner") throw new HttpError(400, "invalid_role", "不能自动授予所有者");
@@ -119,7 +119,7 @@ export function registerOidcRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 	});
 	api.patch("/admin/oidc/:id", async (c) => {
 		const p = principalOf(c);
-		await requireOrgAdmin(id, p);
+		await id.authz.require(p, "org.security.manage");
 		const row = db.get<any>("SELECT * FROM id_oidc_providers WHERE id = ? AND org_id = ?", c.req.param("id"), p.orgId);
 		if (!row) throw new HttpError(404, "not_found", "身份源不存在");
 		const b = await jsonBody<{ enabled?: boolean; clientSecret?: string; allowedDomains?: string[]; autoJoinRole?: OrgRole; name?: string }>(c);

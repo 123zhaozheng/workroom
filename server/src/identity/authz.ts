@@ -167,6 +167,12 @@ export class Authz implements AuthzService {
 		return { allow: allowed, because };
 	}
 
+	/** Decision using only department/project-scoped assignments and grants (org-wide holdings and the owner rule are ignored). */
+	decideScopedOnly(a: Access, permission: string, scope: AuthzScope): boolean {
+		const narrowed: Access = { ...a, isOwner: false, assignments: a.assignments.filter((x) => x.scope_kind !== "org"), grants: a.grants.filter((x) => x.scope_kind !== "org") };
+		return this.decide(narrowed, permission, scope).allow;
+	}
+
 	/** Every catalog permission evaluated at `scope`, with reasons. */
 	effective(a: Access, scope?: AuthzScope): EffectivePermissionDTO[] {
 		return PERMISSIONS.map((p) => {
@@ -208,6 +214,11 @@ export class Authz implements AuthzService {
 	async has(p: Principal, permission: string, scope?: AuthzScope): Promise<boolean> {
 		const a = this.#accessFor(p);
 		return !!a && this.decide(a, permission, scope).allow;
+	}
+	/** has() restricted to explicit department/project-scoped holdings (used where org-wide admins deliberately get no access). */
+	hasScopedOnly(p: Principal, permission: string, scope: AuthzScope): boolean {
+		const a = this.#accessFor(p);
+		return !!a && this.decideScopedOnly(a, permission, scope);
 	}
 	hasSync(p: Principal, permission: string, scope?: AuthzScope): boolean {
 		const a = this.#accessFor(p);
