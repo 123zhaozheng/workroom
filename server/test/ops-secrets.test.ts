@@ -20,7 +20,7 @@ test("rotate WORKROOM_SECRET_KEY: transactional, verified, idempotent; refuses w
 	let ids: Record<string, string> = {};
 	try {
 		const a = await t.user("a@a.example");
-		ids.channel = (await t.json("POST", "/api/admin/channels", { token: a.token, json: { name: "anthropic", provider: "anthropic", apiKey: "sk-ant-api03-ROTATEME-ROTATEME" } })).channel.id;
+		ids.channel = (await t.json("POST", "/api/admin/model-providers", { token: a.token, json: { name: "anthropic", type: "anthropic-messages", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-api03-ROTATEME-ROTATEME" } })).provider.id;
 		(t.app.ctx.services.get("notify") as any).resolver = async () => [{ address: "93.184.216.34", family: 4 }]; // no external DNS in tests
 		ids.webhook = (await t.json("POST", "/api/notify-channels", { token: a.token, json: { kind: "webhook", name: "hook", target: "https://hooks.example.com/x", secret: "whsec-rotate" } })).channel.id;
 		ids.oidc = (await t.json("POST", "/api/admin/oidc", { token: a.token, json: { name: "Corp", issuer: "https://idp.example.com", clientId: "c1", clientSecret: "oidc-secret-rotate" } })).provider.id;
@@ -31,7 +31,10 @@ test("rotate WORKROOM_SECRET_KEY: transactional, verified, idempotent; refuses w
 		assert.equal(conn.status, 200, await conn.clone().text());
 		ids.connector = (await conn.json()).connector?.id;
 		assert.ok(ids.connector);
-		assert.equal((t.app.ctx.services.get("models") as unknown as Gateway).channelHealth(t.app.ctx.db.get("SELECT * FROM ops_channels WHERE id = ?", ids.channel)!).health, "ready");
+		{
+			const gw = t.app.ctx.services.get("models") as unknown as Gateway;
+			assert.equal(gw.providerHealth(gw.rowOf(ids.channel)!).health, "ready");
+		}
 		// Live server holds leases → refused (only when some space is open; force a lease row to be sure).
 		t.app.ctx.db.run("CREATE TABLE IF NOT EXISTS rt_space_leases (space_id TEXT PRIMARY KEY, owner TEXT NOT NULL, acquired_at INTEGER NOT NULL, heartbeat_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)");
 		t.app.ctx.db.run("INSERT OR REPLACE INTO rt_space_leases VALUES ('sp_live', 'x', 0, 0, ?)", Date.now() + 60_000);
@@ -43,7 +46,7 @@ test("rotate WORKROOM_SECRET_KEY: transactional, verified, idempotent; refuses w
 	try {
 		const snapshot = () => {
 			const db = new DatabaseSync(join(dataDir, "app.sqlite"), { readOnly: true });
-			const v = [db.prepare("SELECT api_key_enc AS v FROM ops_channels WHERE id = ?").get(ids.channel), db.prepare("SELECT secret_enc AS v FROM ops_notify_channels WHERE id = ?").get(ids.webhook), db.prepare("SELECT client_secret_enc AS v FROM id_oidc_providers WHERE id = ?").get(ids.oidc), db.prepare("SELECT totp_secret AS v FROM id_users").get()];
+			const v = [db.prepare("SELECT api_key_enc AS v FROM model_providers WHERE id = ?").get(ids.channel), db.prepare("SELECT secret_enc AS v FROM ops_notify_channels WHERE id = ?").get(ids.webhook), db.prepare("SELECT client_secret_enc AS v FROM id_oidc_providers WHERE id = ?").get(ids.oidc), db.prepare("SELECT totp_secret AS v FROM id_users").get()];
 			db.close();
 			return JSON.stringify(v);
 		};
@@ -57,7 +60,7 @@ test("rotate WORKROOM_SECRET_KEY: transactional, verified, idempotent; refuses w
 		assert.equal(snapshot(), before);
 		const r = await rotateSecrets(dataDir, OLD, NEW);
 		const by = Object.fromEntries(r.columns.map((c) => [`${c.table}.${c.col}`, c]));
-		assert.equal(by["ops_channels.api_key_enc"]!.rotated, 1);
+		assert.equal(by["model_providers.api_key_enc"]!.rotated, 1);
 		assert.equal(by["ops_notify_channels.secret_enc"]!.rotated, 1);
 		assert.equal(by["id_oidc_providers.client_secret_enc"]!.rotated, 1);
 		assert.equal(by["id_users.totp_secret"]!.rotated, 1);
@@ -67,13 +70,14 @@ test("rotate WORKROOM_SECRET_KEY: transactional, verified, idempotent; refuses w
 		// Idempotent re-run.
 		const again = await rotateSecrets(dataDir, OLD, NEW);
 		assert.equal(again.total, 0);
-		assert.ok(again.columns.find((c) => c.table === "ops_channels")!.alreadyNew === 1);
+		assert.ok(again.columns.find((c) => c.table === "model_providers" && c.col === "api_key_enc")!.alreadyNew === 1);
 		// Server with the NEW key reads everything.
 		const t2 = await startTestApp({ dataDir, config: { secretKey: NEW } });
 		try {
 			const gw = t2.app.ctx.services.get("models") as unknown as Gateway;
-			const ch = t2.app.ctx.db.get<any>("SELECT * FROM ops_channels WHERE id = ?", ids.channel);
-			assert.equal(gw.channelCredential(ch).key, "sk-ant-api03-ROTATEME-ROTATEME");
+			// pi-ai reads the rotated key through the DB-backed CredentialStore
+			assert.equal((await gw.credentials.read(ids.channel))?.type === "api_key" && (await gw.credentials.read(ids.channel) as any).key, "sk-ant-api03-ROTATEME-ROTATEME");
+			assert.equal((await gw.piModels().getAuth(ids.channel))?.auth.apiKey, "sk-ant-api03-ROTATEME-ROTATEME");
 			const notify = t2.app.ctx.services.get("notify") as any;
 			assert.equal(notify.secrets.open(t2.app.ctx.db.get<any>("SELECT secret_enc FROM ops_notify_channels WHERE id = ?", ids.webhook).secret_enc), "whsec-rotate");
 			const login = await t2.json("POST", "/api/auth/login", { json: { email: "a@a.example", password: "password123", totp: totpAt(totpSecret, Date.now() + 30_000) } });
@@ -90,7 +94,7 @@ test("rotate WORKROOM_SECRET_KEY: transactional, verified, idempotent; refuses w
 		const t3 = await startTestApp({ dataDir, config: { secretKey: OLD } });
 		try {
 			const gw = t3.app.ctx.services.get("models") as unknown as Gateway;
-			assert.equal(gw.channelHealth(t3.app.ctx.db.get<any>("SELECT * FROM ops_channels WHERE id = ?", ids.channel)).health, "blocked");
+			assert.equal(gw.providerHealth(gw.rowOf(ids.channel)!).health, "blocked");
 		} finally {
 			await t3.stop();
 		}

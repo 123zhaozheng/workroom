@@ -19,34 +19,42 @@ export interface FauxChannelSpec {
 	responses: FauxResponseStep[];
 	upstreamModelId?: string;
 	input?: ("text" | "image")[];
-	priority?: number;
-	weight?: number;
-	rpmLimit?: number;
-	concurrencyLimit?: number;
-	capabilities?: string[];
+	/** USD per million tokens; faux providers have no real pricing, so this is what usage is costed with. */
 	price?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
 export const PRICE = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 
-/** Create an org platform model routed to N faux-backed channels through the admin API. */
-export async function fauxModel(t: TestAppLike, adminToken: string, specs: FauxChannelSpec[], model: { label?: string; capabilities?: string[] } = {}) {
+/**
+ * Register scripted in-process pi-ai providers (fauxProvider, type "faux" rows) as ORG providers of the admin's org with their model enabled.
+ * The first spec is the primary model; the rest become its failover chain (`fallbacks`). `pm` = the primary: `pm.ref` is the native pi ref,
+ * `pm.id` its platform id ("<provider>/<modelId>", what /api/models and conversations accept).
+ */
+export async function fauxModel(t: TestAppLike, adminToken: string, specs: FauxChannelSpec[], model: { label?: string } = {}) {
 	const gw = t.app.ctx.services.get("models") as unknown as Gateway;
-	const { model: pm } = await t.json("POST", "/api/admin/models", { token: adminToken, json: { label: model.label ?? "Team Model", capabilities: model.capabilities ?? ["text", "image", "tools"] } });
-	const channels: any[] = [];
+	const me = (await t.json("GET", "/api/me", { token: adminToken })).me as { orgId: string };
+	const now = new Date().toISOString();
+	const refs: { provider: string; modelId: string }[] = [];
 	const fauxes = [];
-	for (const [i, s] of specs.entries()) {
-		const { channel } = await t.json("POST", "/api/admin/channels", { token: adminToken, json: { name: s.name, provider: "faux", price: s.price ?? PRICE, rpmLimit: s.rpmLimit, concurrencyLimit: s.concurrencyLimit } });
+	const channels: { id: string; name: string }[] = [];
+	for (const s of specs) {
 		const upstream = s.upstreamModelId ?? `${s.name}-model`;
-		const faux = fauxProvider({ provider: `up-${s.name}`, api: `faux-${s.name}`, models: [{ id: upstream, input: s.input ?? ["text", "image"] }] });
+		const id = `up-${s.name}`;
+		const faux = fauxProvider({ provider: id, api: `faux-${s.name}`, models: [{ id: upstream, input: s.input ?? ["text", "image"], cost: s.price ?? PRICE }] });
 		faux.setResponses(s.responses);
-		gw.attachProvider(channel.id, faux.provider);
-		await t.json("POST", `/api/admin/models/${pm.id}/routes`, { token: adminToken, json: { channelId: channel.id, upstreamModelId: upstream, priority: s.priority ?? i, weight: s.weight ?? 1, ...(s.capabilities ? { capabilities: s.capabilities } : {}) } });
-		channels.push(channel);
+		t.app.ctx.db.run("INSERT INTO model_providers (id, scope, org_id, name, type, keyless, status, source, created_at, updated_at) VALUES (?, 'org', ?, ?, 'faux', 1, 'enabled', 'test', ?, ?)", id, me.orgId, s.name, now, now);
+		refs.push({ provider: id, modelId: upstream });
 		fauxes.push(faux);
+		channels.push({ id, name: s.name });
+	}
+	for (const [i, r] of refs.entries()) {
+		const fallbacks = i === 0 && refs.length > 1 ? JSON.stringify(refs.slice(1)) : null;
+		t.app.ctx.db.run("INSERT INTO model_entries (provider_id, model_id, manual, spec, enabled, fallbacks, created_at, updated_at) VALUES (?, ?, 0, ?, 1, ?, ?, ?)", r.provider, r.modelId, JSON.stringify({ name: i === 0 ? (model.label ?? "Team Model") : `${specs[i]!.name} model` }), fallbacks, now, now);
 	}
 	gw.invalidate();
-	return { pm, channels, fauxes, gw };
+	for (const [i, f] of fauxes.entries()) gw.attachProvider(refs[i]!.provider, f.provider);
+	const pm = { id: `${refs[0]!.provider}/${refs[0]!.modelId}`, ref: refs[0]! };
+	return { pm, channels, fauxes, gw, refs };
 }
 
 /** A pi-durable Harness on its own storage that uses the gateway's Models and E's extension (no runtime module needed). */

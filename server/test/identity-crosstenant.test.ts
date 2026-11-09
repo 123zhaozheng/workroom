@@ -59,7 +59,6 @@ test("cross-tenant sweep: org B cannot read or change org A's resources through 
 		const fm = await fauxModel(t, A.token, [{ name: `${MARK}ch`, responses: [fauxAssistantMessage("x")] }], { label: `${MARK} model` });
 		ids.pmId = fm.pm.id;
 		ids.chId = fm.channels[0].id;
-		ids.routeId = (await t.json("GET", "/api/admin/models", { token: A.token })).models.find((m: any) => m.id === fm.pm.id).routes[0].id;
 		ids.nchId = (await t.json("POST", "/api/notify-channels", { token: A.token, json: { kind: "email", name: `${MARK} mail`, target: "a@a.example" } })).channel.id;
 		ids.code = (await t.json("POST", "/api/admin/invites", { token: A.token, json: {} })).invite.code;
 		ids.sid = (await t.json("GET", "/api/me/sessions", { token: A.token })).sessions[0].id;
@@ -76,9 +75,8 @@ test("cross-tenant sweep: org B cannot read or change org A's resources through 
 			[/^\/api\/automations\//, ids.autoId],
 			[/^\/api\/conversations\//, ids.convId],
 			[/^\/api\/admin\/departments\//, ids.deptId],
-			[/^\/api\/admin\/models\//, ids.pmId],
-			[/^\/api\/admin\/channels\//, ids.chId],
-			[/^\/api\/admin\/routes\//, ids.routeId],
+			[/^\/api\/admin\/model-providers\//, ids.chId],
+			[/^\/api\/me\/model-providers\//, ids.chId],
 			[/^\/api\/admin\/budgets\//, ids.budgetId],
 			[/^\/api\/shares\//, ids.shareId],
 			[/^\/api\/notifications\/deliveries\//, "x"],

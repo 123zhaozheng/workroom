@@ -7,15 +7,12 @@ import { audit, type Identity } from "../identity/module.ts";
 import { toCsv } from "../identity/csv.ts";
 import { requireOrgAdmin } from "../identity/routes.ts";
 import { localTime, nextRuns, runWhen, validTimezone, type Condition, type Destination, type Trigger } from "./automation.ts";
-import type { ChannelKind, ChannelRow, PlatformModelRow, RouteRow } from "./gateway.ts";
+import { ATTEMPT_SELECT, attemptDto, registerModelRoutes } from "./models-routes.ts";
 import type { OpsState } from "./module.ts";
 import { channelDto, deliveryDto, notificationDto, validateWebhookUrl } from "./notify.ts";
 import { Allowlist } from "./egress.ts";
 import { ledgerDto, newBudgetId, type StatsScope } from "./usage.ts";
 
-const CAPS = ["text", "image", "tools", "reasoning"];
-const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
-const KINDS: ChannelKind[] = ["anthropic", "openai", "openai-compatible", "faux"];
 
 function parseScope(q: string | undefined): StatsScope {
 	if (!q || q === "personal") return { kind: "personal" };
@@ -23,34 +20,6 @@ function parseScope(q: string | undefined): StatsScope {
 	if (q.startsWith("project:")) return { kind: "project", projectId: q.slice(8) };
 	if (q.startsWith("department:")) return { kind: "department", departmentId: q.slice(11) };
 	throw new HttpError(400, "invalid_scope", "scope 取值：personal | org | project:<id> | department:<id>");
-}
-
-function attemptDto(r: any) {
-	return {
-		id: r.id,
-		requestKey: r.request_key,
-		attemptNo: r.attempt_no,
-		platformModelId: r.platform_model_id,
-		channelId: r.channel_id ?? undefined,
-		channelName: r.channel_name ?? undefined,
-		provider: r.channel_provider ?? undefined,
-		upstreamModelId: r.upstream_model ?? undefined,
-		status: r.status,
-		errorClass: r.error_class ?? undefined,
-		errorMessage: r.error_message ?? undefined,
-		retryable: r.retryable == null ? undefined : !!r.retryable,
-		failover: !!r.failover,
-		latencyMs: r.latency_ms ?? undefined,
-		firstTokenMs: r.first_token_ms ?? undefined,
-		usage: r.input_tokens == null ? undefined : { input: r.input_tokens, output: r.output_tokens, cacheRead: r.cache_read, cacheWrite: r.cache_write, costTotal: r.cost_total ?? 0 },
-		costSource: r.cost_source ?? undefined,
-		fixture: !!r.fixture,
-		spaceId: r.space_id ?? undefined,
-		conversationId: r.conversation_id ?? undefined,
-		taskId: r.task_id ?? undefined,
-		startedAt: r.started_at,
-		endedAt: r.ended_at ?? undefined,
-	};
 }
 
 export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsState): void {
@@ -64,272 +33,8 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		return p;
 	};
 
-	// ================================================================ models (user-facing)
-	api.get("/models", async (c) => {
-		const p = principalOf(c);
-		const models = await gateway.listFor(p);
-		let def: string | undefined;
-		try {
-			const ref = await gateway.defaultModel(p);
-			def = models.find((m) => m.ref.provider === ref.provider && m.ref.modelId === ref.modelId)?.id;
-		} catch {
-			/* none */
-		}
-		return c.json({ models, defaultModelId: def });
-	});
-
-	// ================================================================ admin: platform models
-	const pmRow = (p: Principal, pmId: string, forWrite: boolean): PlatformModelRow => {
-		const r = db.get<PlatformModelRow>("SELECT * FROM ops_platform_models WHERE id = ?", pmId);
-		if (!r || (r.org_id && r.org_id !== p.orgId)) throw new HttpError(404, "not_found", "模型不存在");
-		if (forWrite && (r.builtin || !r.org_id)) throw new HttpError(403, "builtin", "内置模型由部署配置（环境变量）管理");
-		return r;
-	};
-	const adminModelDto = (r: PlatformModelRow) => ({
-		...gateway.toPlatformModel(r),
-		orgId: r.org_id ?? undefined,
-		enabled: !!r.enabled,
-		visibility: r.visibility ? JSON.parse(r.visibility) : null,
-		kind: r.kind,
-		builtin: !!r.builtin,
-		routes: db.all<RouteRow>("SELECT * FROM ops_model_routes WHERE platform_model_id = ? ORDER BY priority, id", r.id).map((x) => gateway.routeDto(x)),
-	});
-	api.get("/admin/models", async (c) => {
-		const p = await admin(c);
-		return c.json({ models: db.all<PlatformModelRow>("SELECT * FROM ops_platform_models WHERE org_id IS NULL OR org_id = ? ORDER BY sort, label", p.orgId).map(adminModelDto) });
-	});
-	const validateModelBody = (b: any) => {
-		if (b.capabilities && (!Array.isArray(b.capabilities) || b.capabilities.some((x: string) => !CAPS.includes(x)))) throw new HttpError(400, "invalid_capabilities", "能力取值无效");
-		if (b.thinkingLevels && (!Array.isArray(b.thinkingLevels) || b.thinkingLevels.some((x: string) => !LEVELS.includes(x)))) throw new HttpError(400, "invalid_thinking", "思考档位取值无效");
-		if (b.defaultThinking && !LEVELS.includes(b.defaultThinking)) throw new HttpError(400, "invalid_thinking", "默认思考档位无效");
-	};
-	api.post("/admin/models", async (c) => {
-		const p = await admin(c);
-		const b = await jsonBody<any>(c);
-		if (!b.label?.trim()) throw new HttpError(400, "invalid", "名称必填");
-		validateModelBody(b);
-		const pmId = b.id && /^[a-z0-9][a-z0-9._-]{1,62}$/.test(b.id) ? `${p.orgId.slice(-6)}-${b.id}` : newId("pm");
-		if (db.get("SELECT 1 FROM ops_platform_models WHERE id = ?", pmId)) throw new HttpError(409, "exists", "模型 ID 已存在");
-		db.run(
-			"INSERT INTO ops_platform_models (id, org_id, label, description, kind, pi_provider, capabilities, thinking_levels, default_thinking, context_window, max_tokens, visibility, is_default, enabled, sort, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'real', 'workroom', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
-			pmId,
-			p.orgId,
-			b.label.trim(),
-			b.description ?? null,
-			JSON.stringify(b.capabilities ?? ["text", "tools"]),
-			JSON.stringify(b.thinkingLevels ?? ["off"]),
-			b.defaultThinking ?? null,
-			b.contextWindow ?? null,
-			b.maxTokens ?? null,
-			b.visibility ? JSON.stringify(b.visibility) : null,
-			b.isDefault ? 1 : 0,
-			b.sort ?? 0,
-			p.userId,
-			nowIso(),
-			nowIso(),
-		);
-		if (b.isDefault) db.run("UPDATE ops_platform_models SET is_default = 0 WHERE org_id = ? AND id != ?", p.orgId, pmId);
-		gateway.invalidate();
-		audit(db, p.orgId, p.userId, "model.create", pmId, { label: b.label, capabilities: b.capabilities }, { requestId: rid(c) });
-		return c.json({ model: adminModelDto(pmRow(p, pmId, false)) });
-	});
-	api.patch("/admin/models/:id", async (c) => {
-		const p = await admin(c);
-		const r = pmRow(p, c.req.param("id"), true);
-		const b = await jsonBody<any>(c);
-		validateModelBody(b);
-		db.run(
-			"UPDATE ops_platform_models SET label = COALESCE(?, label), description = COALESCE(?, description), capabilities = COALESCE(?, capabilities), thinking_levels = COALESCE(?, thinking_levels), default_thinking = COALESCE(?, default_thinking), context_window = COALESCE(?, context_window), max_tokens = COALESCE(?, max_tokens), visibility = CASE WHEN ? THEN ? ELSE visibility END, enabled = COALESCE(?, enabled), is_default = COALESCE(?, is_default), updated_at = ? WHERE id = ?",
-			b.label ?? null,
-			b.description ?? null,
-			b.capabilities ? JSON.stringify(b.capabilities) : null,
-			b.thinkingLevels ? JSON.stringify(b.thinkingLevels) : null,
-			b.defaultThinking ?? null,
-			b.contextWindow ?? null,
-			b.maxTokens ?? null,
-			b.visibility !== undefined ? 1 : 0,
-			b.visibility ? JSON.stringify(b.visibility) : null,
-			b.enabled === undefined ? null : b.enabled ? 1 : 0,
-			b.isDefault === undefined ? null : b.isDefault ? 1 : 0,
-			nowIso(),
-			r.id,
-		);
-		if (b.isDefault) db.run("UPDATE ops_platform_models SET is_default = 0 WHERE org_id = ? AND id != ?", p.orgId, r.id);
-		gateway.invalidate();
-		audit(db, p.orgId, p.userId, "model.update", r.id, b, { requestId: rid(c) });
-		return c.json({ model: adminModelDto(pmRow(p, r.id, false)) });
-	});
-
-	// ================================================================ admin: channels
-	const chRow = (p: Principal, chId: string, forWrite: boolean): ChannelRow => {
-		const r = db.get<ChannelRow>("SELECT * FROM ops_channels WHERE id = ?", chId);
-		if (!r || (r.org_id && r.org_id !== p.orgId)) throw new HttpError(404, "not_found", "渠道不存在");
-		if (forWrite && (r.builtin || !r.org_id)) throw new HttpError(403, "builtin", "内置渠道由部署配置（环境变量）管理");
-		return r;
-	};
-	const checkEnvName = (n: string | undefined) => {
-		// Only WORKROOM_-prefixed variables may be referenced, so no admin can read unrelated process secrets.
-		if (n !== undefined && n !== null && !/^WORKROOM_[A-Z0-9_]{3,64}$/.test(n)) throw new HttpError(400, "invalid_env", "环境变量名必须以 WORKROOM_ 开头");
-	};
-	const checkPrice = (pr: any) => {
-		if (pr == null) return;
-		for (const k of ["input", "output", "cacheRead", "cacheWrite"]) if (typeof pr[k] !== "number" || pr[k] < 0) throw new HttpError(400, "invalid_price", "价格需为每百万 Token 的非负数（input/output/cacheRead/cacheWrite）");
-	};
-	api.get("/admin/channels", async (c) => {
-		const p = await admin(c);
-		return c.json({ channels: db.all<ChannelRow>("SELECT * FROM ops_channels WHERE org_id IS NULL OR org_id = ? ORDER BY builtin DESC, created_at", p.orgId).map((r) => gateway.channelDto(r)) });
-	});
-	api.post("/admin/channels", async (c) => {
-		const p = await admin(c);
-		const b = await jsonBody<any>(c);
-		if (!b.name?.trim() || !KINDS.includes(b.provider)) throw new HttpError(400, "invalid", `名称必填；provider 取值 ${KINDS.join("/")}`);
-		if (b.provider === "openai-compatible" && !/^https?:\/\//.test(b.baseUrl ?? "")) throw new HttpError(400, "invalid", "兼容端点需要 baseUrl");
-		if (b.baseUrl && !/^https?:\/\//.test(b.baseUrl)) throw new HttpError(400, "invalid", "baseUrl 无效");
-		checkEnvName(b.apiKeyEnv);
-		checkPrice(b.price);
-		const sealed = b.apiKey ? gateway.sealKey(String(b.apiKey)) : null; // 409 without WORKROOM_SECRET_KEY
-		const chId = newId("ch");
-		db.run(
-			"INSERT INTO ops_channels (id, org_id, name, provider, base_url, api_key_enc, api_key_env, key_hint, status, rpm_limit, concurrency_limit, timeout_ms, price, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'enabled', ?, ?, ?, ?, ?, ?, ?)",
-			chId,
-			p.orgId,
-			b.name.trim(),
-			b.provider,
-			b.baseUrl ?? null,
-			sealed?.enc ?? null,
-			b.apiKeyEnv ?? null,
-			sealed?.hint ?? null,
-			b.rpmLimit ?? null,
-			b.concurrencyLimit ?? null,
-			b.timeoutMs ?? null,
-			b.price ? JSON.stringify(b.price) : null,
-			p.userId,
-			nowIso(),
-			nowIso(),
-		);
-		gateway.invalidate();
-		audit(db, p.orgId, p.userId, "channel.create", chId, { name: b.name, provider: b.provider, baseUrl: b.baseUrl, credential: sealed ? "stored" : b.apiKeyEnv ? `env:${b.apiKeyEnv}` : "none" }, { requestId: rid(c) });
-		return c.json({ channel: gateway.channelDto(chRow(p, chId, false)) });
-	});
-	api.patch("/admin/channels/:id", async (c) => {
-		const p = await admin(c);
-		const r = chRow(p, c.req.param("id"), true);
-		const b = await jsonBody<any>(c);
-		checkEnvName(b.apiKeyEnv ?? undefined);
-		checkPrice(b.price);
-		if (b.status && !["enabled", "disabled"].includes(b.status)) throw new HttpError(400, "invalid", "status 无效");
-		const sealed = b.apiKey ? gateway.sealKey(String(b.apiKey)) : null;
-		db.run(
-			`UPDATE ops_channels SET name = COALESCE(?, name), base_url = COALESCE(?, base_url), status = COALESCE(?, status), rpm_limit = CASE WHEN ? THEN ? ELSE rpm_limit END, concurrency_limit = CASE WHEN ? THEN ? ELSE concurrency_limit END,
-			 timeout_ms = CASE WHEN ? THEN ? ELSE timeout_ms END, price = CASE WHEN ? THEN ? ELSE price END,
-			 api_key_enc = CASE WHEN ? THEN ? WHEN ? THEN NULL ELSE api_key_enc END, key_hint = CASE WHEN ? THEN ? WHEN ? THEN NULL ELSE key_hint END,
-			 api_key_env = CASE WHEN ? THEN ? ELSE api_key_env END, updated_at = ? WHERE id = ?`,
-			b.name ?? null,
-			b.baseUrl ?? null,
-			b.status ?? null,
-			"rpmLimit" in b ? 1 : 0,
-			b.rpmLimit ?? null,
-			"concurrencyLimit" in b ? 1 : 0,
-			b.concurrencyLimit ?? null,
-			"timeoutMs" in b ? 1 : 0,
-			b.timeoutMs ?? null,
-			"price" in b ? 1 : 0,
-			b.price ? JSON.stringify(b.price) : null,
-			sealed ? 1 : 0,
-			sealed?.enc ?? null,
-			b.apiKey === null ? 1 : 0,
-			sealed ? 1 : 0,
-			sealed?.hint ?? null,
-			b.apiKey === null ? 1 : 0,
-			"apiKeyEnv" in b ? 1 : 0,
-			b.apiKeyEnv ?? null,
-			nowIso(),
-			r.id,
-		);
-		gateway.invalidate();
-		const { apiKey: _k, ...safe } = b;
-		audit(db, p.orgId, p.userId, "channel.update", r.id, { ...safe, credentialRotated: !!sealed, credentialCleared: b.apiKey === null }, { requestId: rid(c) });
-		return c.json({ channel: gateway.channelDto(chRow(p, r.id, false)) });
-	});
-	/** Connectivity test: one tiny real request through the channel (not recorded as usage). */
-	api.post("/admin/channels/:id/test", async (c) => {
-		const p = await admin(c);
-		const r = chRow(p, c.req.param("id"), false);
-		const b = await jsonBody<{ upstreamModelId?: string }>(c).catch(() => ({}) as { upstreamModelId?: string });
-		const routeRow = db.get<RouteRow>("SELECT * FROM ops_model_routes WHERE channel_id = ? ORDER BY priority LIMIT 1", r.id);
-		const h = gateway.channelHealth(r);
-		if (h.health === "blocked") return c.json({ ok: false, status: "blocked", detail: h.detail });
-		const t0 = Date.now();
-		const pm = routeRow ? db.get<PlatformModelRow>("SELECT * FROM ops_platform_models WHERE id = ?", routeRow.platform_model_id) : null;
-		if (!routeRow || !pm) return c.json({ ok: false, status: "no_route", detail: "该渠道尚未被任何模型路由引用" });
-		const modelRef = gateway.piModels().getModel(pm.pi_provider, pm.id);
-		if (!modelRef) return c.json({ ok: false, status: "no_route" });
-		const msg = await gateway.piModels().completeSimple(modelRef, { messages: [{ role: "user", content: "Reply with: OK", timestamp: Date.now() }] }, { maxTokens: 16 });
-		audit(db, p.orgId, p.userId, "channel.test", r.id, { ok: msg.stopReason !== "error", upstream: b.upstreamModelId ?? routeRow.upstream_model_id }, { requestId: rid(c) });
-		return c.json({ ok: msg.stopReason !== "error", status: msg.stopReason, latencyMs: Date.now() - t0, error: msg.errorMessage, route: msg.responseModel });
-	});
-
-	// ================================================================ admin: routes
-	api.post("/admin/models/:id/routes", async (c) => {
-		const p = await admin(c);
-		const pm = pmRow(p, c.req.param("id"), true);
-		const b = await jsonBody<any>(c);
-		const ch = chRow(p, b.channelId ?? "", false);
-		if (!ch.org_id) throw new HttpError(403, "builtin_channel", "组织模型只能路由到本组织渠道");
-		if (!b.upstreamModelId) throw new HttpError(400, "invalid", "upstreamModelId 必填");
-		if (b.capabilities && b.capabilities.some((x: string) => !CAPS.includes(x))) throw new HttpError(400, "invalid_capabilities", "能力取值无效");
-		const rId = newId("rt");
-		db.run("INSERT INTO ops_model_routes (id, platform_model_id, channel_id, upstream_model_id, priority, weight, enabled, capabilities, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)", rId, pm.id, ch.id, String(b.upstreamModelId), b.priority ?? 0, Math.max(0, b.weight ?? 1), b.capabilities ? JSON.stringify(b.capabilities) : null, nowIso());
-		gateway.invalidate();
-		audit(db, p.orgId, p.userId, "route.create", rId, { model: pm.id, channel: ch.id, upstream: b.upstreamModelId, priority: b.priority ?? 0, weight: b.weight ?? 1 }, { requestId: rid(c) });
-		return c.json({ route: gateway.routeDto(db.get<RouteRow>("SELECT * FROM ops_model_routes WHERE id = ?", rId)!) });
-	});
-	const routeRow = (p: Principal, routeId: string) => {
-		const r = db.get<RouteRow>("SELECT * FROM ops_model_routes WHERE id = ?", routeId);
-		if (!r) throw new HttpError(404, "not_found", "路由不存在");
-		pmRow(p, r.platform_model_id, true);
-		return r;
-	};
-	api.patch("/admin/routes/:id", async (c) => {
-		const p = await admin(c);
-		const r = routeRow(p, c.req.param("id"));
-		const b = await jsonBody<any>(c);
-		db.run("UPDATE ops_model_routes SET priority = COALESCE(?, priority), weight = COALESCE(?, weight), enabled = COALESCE(?, enabled), upstream_model_id = COALESCE(?, upstream_model_id), capabilities = CASE WHEN ? THEN ? ELSE capabilities END WHERE id = ?", b.priority ?? null, b.weight ?? null, b.enabled === undefined ? null : b.enabled ? 1 : 0, b.upstreamModelId ?? null, "capabilities" in b ? 1 : 0, b.capabilities ? JSON.stringify(b.capabilities) : null, r.id);
-		gateway.invalidate();
-		audit(db, p.orgId, p.userId, "route.update", r.id, b, { requestId: rid(c) });
-		return c.json({ route: gateway.routeDto(db.get<RouteRow>("SELECT * FROM ops_model_routes WHERE id = ?", r.id)!) });
-	});
-	api.delete("/admin/routes/:id", async (c) => {
-		const p = await admin(c);
-		const r = routeRow(p, c.req.param("id"));
-		db.run("DELETE FROM ops_model_routes WHERE id = ?", r.id);
-		gateway.invalidate();
-		audit(db, p.orgId, p.userId, "route.delete", r.id, { model: r.platform_model_id, channel: r.channel_id }, { requestId: rid(c) });
-		return c.json({ ok: true });
-	});
-	api.get("/admin/route-attempts", async (c) => {
-		const p = await admin(c);
-		const q = c.req.query();
-		const where = ["(a.org_id = ? OR (a.org_id IS NULL AND a.platform_model_id IN (SELECT id FROM ops_platform_models WHERE org_id = ?)))"];
-		const params: (string | number)[] = [p.orgId, p.orgId];
-		if (q.spaceId) where.push("a.space_id = ?"), params.push(q.spaceId);
-		if (q.conversationId) where.push("a.conversation_id = ?"), params.push(Number(q.conversationId));
-		if (q.requestKey) where.push("a.request_key = ?"), params.push(q.requestKey);
-		if (q.status) where.push("a.status = ?"), params.push(q.status);
-		if (q.channelId) where.push("a.channel_id = ?"), params.push(q.channelId);
-		const limit = Math.min(Math.max(Number(q.limit) || 200, 1), 2000);
-		const rows = db.all<any>(`SELECT a.*, ch.name AS channel_name FROM ops_route_attempts a LEFT JOIN ops_channels ch ON ch.id = a.channel_id WHERE ${where.join(" AND ")} ORDER BY a.started_at DESC, a.attempt_no DESC LIMIT ${limit}`, ...params);
-		return c.json({ attempts: rows.map(attemptDto) });
-	});
-	/** Route attempts of one conversation, for its participants (model shown ↔ actual provider/route, M15-A). */
-	api.get("/conversations/:spaceId/:conversationId/routes", async (c) => {
-		const p = principalOf(c);
-		const spaceId = c.req.param("spaceId");
-		const cid = Number(c.req.param("conversationId"));
-		await id().require(p, "read", { kind: "conversation", id: String(cid), spaceId });
-		const rows = db.all<any>("SELECT a.*, ch.name AS channel_name FROM ops_route_attempts a LEFT JOIN ops_channels ch ON ch.id = a.channel_id WHERE a.space_id = ? AND a.conversation_id = ? ORDER BY a.started_at, a.attempt_no LIMIT 2000", spaceId, cid);
-		return c.json({ attempts: rows.map(attemptDto) });
-	});
+	// ================================================================ models: providers, models, personal keys, per-request records
+	registerModelRoutes(api, ctx, gateway);
 
 	// ================================================================ usage / stats
 	const range = (c: HonoContext<AppEnv>) => ({ from: c.req.query("from"), to: c.req.query("to") });
@@ -727,12 +432,12 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		const runs = db.all<any>("SELECT * FROM auto_runs WHERE org_id = ? AND (id = ? OR automation_id = ? OR request_id = ? OR (space_id = ? AND conversation_id = ?)) ORDER BY created_at LIMIT 200", p.orgId, q, q, q, spaceId ?? "", conv ?? -1);
 		const convs = new Set<string>(runs.filter((r) => r.conversation_id != null).map((r) => `${r.space_id}:${r.conversation_id}`));
 		if (spaceId && conv !== undefined) convs.add(`${spaceId}:${conv}`);
-		const attempts: any[] = db.all<any>("SELECT a.*, ch.name AS channel_name FROM ops_route_attempts a LEFT JOIN ops_channels ch ON ch.id = a.channel_id WHERE a.org_id = ? AND (a.request_key = ? OR a.id = ?)", p.orgId, q, q);
+		const attempts: any[] = db.all<any>(`${ATTEMPT_SELECT} WHERE a.org_id = ? AND (a.request_key = ? OR a.id = ?)`, p.orgId, q, q);
 		const ledger: any[] = [];
 		for (const k of convs) {
 			const [sp, cid] = k.split(":");
 			if (id().space(sp!)?.orgId !== p.orgId) continue;
-			attempts.push(...db.all<any>("SELECT a.*, ch.name AS channel_name FROM ops_route_attempts a LEFT JOIN ops_channels ch ON ch.id = a.channel_id WHERE a.space_id = ? AND a.conversation_id = ? ORDER BY a.started_at", sp, Number(cid)));
+			attempts.push(...db.all<any>(`${ATTEMPT_SELECT} WHERE a.space_id = ? AND a.conversation_id = ? ORDER BY a.started_at`, sp, Number(cid)));
 			ledger.push(...db.all<any>("SELECT * FROM usage_ledger WHERE space_id = ? AND conversation_id = ? ORDER BY entry_id", sp, Number(cid)));
 		}
 		const notes = runs.length ? db.all<any>(`SELECT * FROM ops_notifications WHERE run_id IN (${runs.map(() => "?").join(",")})`, ...runs.map((r) => r.id)) : [];

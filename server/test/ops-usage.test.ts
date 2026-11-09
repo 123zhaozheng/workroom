@@ -43,7 +43,7 @@ test("ledger import is idempotent, reconciles to pi.usage, and classifies tasks/
 		const { harness, close } = await directHarness(t, spaceId, { extensions: [defineExtension({ name: "t.calc", tools: [calc] })] });
 		const usage = t.app.ctx.services.get("usage") as UsageService;
 		try {
-			const conv = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: "workroom", modelId: pm.id } } }, ctx);
+			const conv = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: pm.ref } }, ctx);
 			assert.equal((await (await conv.submit({ type: "input", content: "一", requestId: "u1" }, ctx)).wait(ctx)).status, "done");
 			assert.equal((await (await conv.submit({ type: "input", content: "二", requestId: "u2" }, ctx)).wait(ctx)).status, "unanswered");
 			assert.equal((await (await conv.submit({ type: "input", content: "三", requestId: "u3" }, ctx)).wait(ctx)).status, "done");
@@ -108,13 +108,13 @@ test("adjustment rows keep the projection equal to pi.usage when spend has no tr
 		const { harness, close } = await directHarness(t, spaceId);
 		const usage = t.app.ctx.services.get("usage") as UsageService;
 		try {
-			const conv = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: "workroom", modelId: pm.id } } }, ctx);
+			const conv = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: pm.ref } }, ctx);
 			await (await conv.submit({ type: "input", content: "x", requestId: "x1" }, ctx)).wait(ctx);
 			// Simulate spend pi recorded without an entry (what compaction does): add to pi.usage directly.
 			const { UsageDoc } = await import("@earendil-works/pi-durable");
 			await harness.commit(async (tx) => {
 				const d = await tx.doc(UsageDoc, conv.id);
-				const k = `workroom/${pm.id}`;
+				const k = pm.id;
 				d.models[k]!.input += 100;
 				d.models[k]!.totalTokens += 100;
 				d.models[k]!.cost.total += 0.0003;
@@ -126,7 +126,7 @@ test("adjustment rows keep the projection equal to pi.usage when spend has no tr
 			assert.ok(Math.abs(adj.cost - 0.0003) < 1e-12);
 			const sum = t.app.ctx.db.get<any>("SELECT SUM(total_tokens) AS t FROM usage_ledger WHERE space_id = ? AND kind IN ('model_request','adjustment')", spaceId);
 			const pi = await harness.usage(ctx);
-			assert.equal(sum.t, pi.models[`workroom/${pm.id}`]!.totalTokens);
+			assert.equal(sum.t, pi.models[pm.id]!.totalTokens);
 			await usage.importConversation(spaceId, conv.id as any, harness);
 			assert.equal(t.app.ctx.db.get<any>("SELECT COUNT(*) AS n FROM usage_ledger WHERE kind = 'adjustment'").n, 1, "still one adjustment after re-import");
 		} finally {

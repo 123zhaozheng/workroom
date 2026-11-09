@@ -96,4 +96,26 @@ CREATE TABLE ops_notify_deliveries (
 CREATE INDEX ops_notify_deliveries_run ON ops_notify_deliveries(run_id);
 `,
 	},
+	{
+		version: 2,
+		name: "model providers (pi-ai native): providers, per-model entries, dynamic catalogs, legacy aliases",
+		sql: `
+CREATE TABLE model_providers (
+  id TEXT PRIMARY KEY, scope TEXT NOT NULL, org_id TEXT, owner_user_id TEXT, name TEXT NOT NULL, type TEXT NOT NULL, builtin_id TEXT, preset TEXT,
+  base_url TEXT, api_key_enc TEXT, api_key_env TEXT, key_hint TEXT, headers_enc TEXT, env_enc TEXT, keyless INTEGER NOT NULL DEFAULT 0,
+  auth_style TEXT NOT NULL DEFAULT 'default', timeout_ms INTEGER, status TEXT NOT NULL DEFAULT 'enabled', source TEXT NOT NULL DEFAULT 'admin',
+  last_check TEXT, last_fetch_at TEXT, created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX model_providers_org ON model_providers(org_id, scope);
+CREATE INDEX model_providers_owner ON model_providers(owner_user_id);
+CREATE TABLE model_entries (
+  provider_id TEXT NOT NULL REFERENCES model_providers(id) ON DELETE CASCADE, model_id TEXT NOT NULL, manual INTEGER NOT NULL DEFAULT 0, spec TEXT,
+  enabled INTEGER NOT NULL DEFAULT 0, visibility TEXT, fallbacks TEXT, default_thinking TEXT, sort INTEGER NOT NULL DEFAULT 0, description TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (provider_id, model_id)
+);
+CREATE TABLE model_catalog (provider_id TEXT PRIMARY KEY, entry TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE model_aliases (alias_id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, model_id TEXT NOT NULL, label TEXT, org_id TEXT, created_at TEXT NOT NULL);
+CREATE TABLE model_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+`,
+	},
 ];

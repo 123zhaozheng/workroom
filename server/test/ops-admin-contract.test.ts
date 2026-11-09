@@ -38,20 +38,19 @@ test("admin pages: members, invites, departments, sessions, audit + CSV, channel
 		const page2 = await t.json("GET", `/api/admin/audit?limit=2&before=${audit.next}`, { token: a.token });
 		assert.ok(page2.items.every((x: any) => x.id < audit.next), "cursor pagination");
 		assert.match(await (await t.req("GET", "/api/admin/audit.csv?category=grant", { token: a.token })).text(), /^at,category,action/);
-		// Channels / models / routes
-		const ch = await t.json("POST", "/api/admin/channels", { token: a.token, json: { name: "OpenAI compat", provider: "openai-compatible", baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-compat-123456789", rpmLimit: 60, concurrencyLimit: 2, price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } });
-		has(ch.channel, ["id", "name", "provider", "credential", "status", "health", "builtin", "createdAt"], "ChannelDTO");
-		await t.json("PATCH", `/api/admin/channels/${ch.channel.id}`, { token: a.token, json: { status: "disabled", apiKey: null } });
-		await t.json("PATCH", `/api/admin/channels/${ch.channel.id}`, { token: a.token, json: { status: "enabled" } });
-		has(await t.json("POST", `/api/admin/channels/${ch.channel.id}/test`, { token: a.token }), ["ok", "status"], "ChannelTestResponse");
-		const pm = await t.json("POST", "/api/admin/models", { token: a.token, json: { id: "team-chat", label: "团队模型", capabilities: ["text", "tools"], thinkingLevels: ["off"], isDefault: true } });
-		has(pm.model, ["id", "label", "ref", "status", "capabilities", "thinkingLevels", "isDefault", "fixture", "enabled", "visibility", "routes", "kind", "builtin"], "AdminPlatformModelDTO");
-		const route = await t.json("POST", `/api/admin/models/${pm.model.id}/routes`, { token: a.token, json: { channelId: ch.channel.id, upstreamModelId: "qwen", priority: 0, weight: 3 } });
-		has(route.route, ["id", "platformModelId", "channelId", "upstreamModelId", "priority", "weight", "enabled", "capabilities"], "ModelRouteDTO");
-		await t.json("PATCH", `/api/admin/routes/${route.route.id}`, { token: a.token, json: { weight: 1, enabled: false } });
-		await t.json("PATCH", `/api/admin/models/${pm.model.id}`, { token: a.token, json: { enabled: false } });
-		await t.json("DELETE", `/api/admin/routes/${route.route.id}`, { token: a.token });
-		await t.json("PATCH", "/api/admin/models/claude", { token: a.token, json: { label: "x" }, expect: 403 }); // builtin
+		// Model providers (pi-ai native) / models
+		const prov = await t.json("POST", "/api/admin/model-providers", { token: a.token, json: { name: "OpenAI compat", type: "openai-completions", baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-compat-123456789", timeoutMs: 30000, models: [{ id: "qwen", name: "通义", contextWindow: 32000, maxTokens: 4000 }] } });
+		has(prov.provider, ["id", "name", "scope", "type", "baseUrl", "credential", "status", "health", "modelCount", "enabledModelCount", "createdAt"], "ModelProviderDTO");
+		assert.equal(prov.provider.credential.kind, "stored");
+		await t.json("PATCH", `/api/admin/model-providers/${prov.provider.id}`, { token: a.token, json: { status: "disabled", apiKey: null } });
+		await t.json("PATCH", `/api/admin/model-providers/${prov.provider.id}`, { token: a.token, json: { status: "enabled", keyless: true } });
+		has(await t.json("POST", `/api/admin/model-providers/${prov.provider.id}/test`, { token: a.token }), ["ok", "list", "completion"], "ProviderTestResponse");
+		const models = await t.json("GET", `/api/admin/model-providers/${prov.provider.id}/models`, { token: a.token });
+		has(models.models[0], ["id", "providerId", "modelId", "name", "enabled", "contextWindow", "maxTokens", "input", "reasoning", "thinkingLevels", "cost", "capabilities", "visibility", "fallbacks"], "AdminModelDTO");
+		await t.json("PATCH", `/api/admin/model-providers/${prov.provider.id}/models/qwen`, { token: a.token, json: { enabled: false, visibility: { departmentIds: [dep.department.id] } } });
+		await t.json("PUT", "/api/admin/model-settings", { token: a.token, json: { personalProviders: true } });
+		await t.json("DELETE", `/api/admin/model-providers/${prov.provider.id}/models/qwen`, { token: a.token });
+		await t.json("DELETE", `/api/admin/model-providers/${prov.provider.id}`, { token: a.token });
 		has(await t.json("GET", "/api/admin/route-attempts", { token: a.token }), ["attempts"], "attempts");
 		// Budgets
 		const b = await t.json("POST", "/api/admin/budgets", { token: a.token, json: { scope: { kind: "department", id: dep.department.id }, period: "month", limitCost: 10, action: "warn" } });

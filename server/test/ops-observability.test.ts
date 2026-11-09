@@ -40,10 +40,10 @@ test("large-context failures are located by model, route and stage; logs carry c
 		const logs = captureLogs(true);
 		const { harness, close } = await directHarness(t, spaceId);
 		try {
-			const c1 = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: "workroom", modelId: good.pm.id } } }, ctx);
+			const c1 = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: good.pm.ref } }, ctx);
 			await (await c1.submit({ type: "input", content: "x".repeat(400), requestId: "g1" }, ctx)).wait(ctx);
 			await (await c1.submit({ type: "input", content: "small", requestId: "g2" }, ctx)).wait(ctx);
-			const c2 = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: "workroom", modelId: bad.pm.id } } }, ctx);
+			const c2 = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: bad.pm.ref } }, ctx);
 			await (await c2.submit({ type: "input", content: "y".repeat(400), requestId: "b1" }, ctx)).wait(ctx);
 			const usage = t.app.ctx.services.get("usage") as UsageService;
 			await usage.importConversation(spaceId, c1.id as any, harness);

@@ -45,6 +45,10 @@ export interface SecretColumn {
 
 export const SECRET_COLUMNS: readonly SecretColumn[] = [
 	{ table: "ops_channels", idCol: "id", col: "api_key_enc", codec: "identity" },
+	// model providers (pi-ai native, round 4): API key, custom headers and provider-scoped env, all sealed with the identity SecretBox
+	{ table: "model_providers", idCol: "id", col: "api_key_enc", codec: "identity" },
+	{ table: "model_providers", idCol: "id", col: "headers_enc", codec: "identity" },
+	{ table: "model_providers", idCol: "id", col: "env_enc", codec: "identity" },
 	{ table: "ops_notify_channels", idCol: "id", col: "secret_enc", codec: "identity" },
 	{ table: "id_oidc_providers", idCol: "id", col: "client_secret_enc", codec: "identity" },
 	{ table: "id_users", idCol: "id", col: "totp_secret", codec: "identity", where: "totp_secret LIKE 'v1:%'" },

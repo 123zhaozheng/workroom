@@ -1,100 +1,62 @@
-// Model gateway (M15): platform models (what users pick) are separate from upstream channels (provider, base URL,
-// credential, limits, price). Routing runs INSIDE pi-ai as providers "workroom" (platform models) and "fixture"
-// (the deterministic test model): each request selects a route per policy (priority, then weighted random), only among
-// routes whose upstream supports what the transcript needs (images, tools), fails over on retryable errors *before any
-// output was streamed*, and records every attempt in ops_route_attempts linked to space/conversation/task.
+// Model gateway (M15), pi-ai native.
+//
+// Every 模型服务商 (provider) an admin / user / config file declares is a REAL pi-ai Provider, built with
+// createProvider({ id, name, baseUrl, headers, auth, models, fetchModels, api }) and registered with setProvider() in the ONE
+// MutableModels instance the runtime hands to every Harness (piModels()). Keys are exposed to pi-ai through a CredentialStore
+// backed by the app DB (encrypted, models-store.ts); fetched catalogs persist through a DB ModelsStore. Conversations store the
+// native pi-durable ref { provider: <provider id>, modelId }.
+//
+// What pi-ai does not do, and this thin layer adds on top of the native providers:
+//   * org visibility / default model / personal providers (listFor, visibleTo)
+//   * failover: each provider's streams are wrapped (wrapProvider); when a request fails BEFORE any output with a retryable error
+//     and the model has fallbacks, the same transcript goes to the next native model. No models are synthesised.
+//   * per-request attempt records (ops_route_attempts) linked to space / conversation / task, for usage attribution.
+import { calculateCost, createAssistantMessageEventStream, createProvider, isContextOverflow, isRetryableAssistantError, getSupportedThinkingLevels, type Api, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type Model, type SimpleStreamOptions, type TranscriptContext, type Usage } from "@earendil-works/pi-ai";
 import { createModels, type MutableModels, type Provider } from "@earendil-works/pi-ai/models";
-import { createAssistantMessageEventStream, isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type Model, type SimpleStreamOptions, type TranscriptContext, type Usage } from "@earendil-works/pi-ai";
+import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import type { AppContext, ModelGateway, ModelRef, PlatformModel, Principal } from "../core/contracts.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
-import { SecretBox, secretHint } from "../identity/secrets.ts";
+import { SecretBox } from "../identity/secrets.ts";
+import { Allowlist, resolveTarget } from "./egress.ts";
 import { logEvent, redactText } from "./log.ts";
+import { builtinProviderMap, listRemoteModels, modelFromRemote, requestAuth, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from "./models-fetch.ts";
+import { normalizeBaseUrl } from "./models-presets.ts";
+import { DbCredentialStore, DbModelsStore, providerEnv, providerHeaders, providerKey } from "./models-store.ts";
+import { FIXTURE_MODEL_ID, FIXTURE_PI_PROVIDER, platformId, RESERVED_PROVIDER_IDS, WORKROOM_PI_PROVIDER, json, type AliasRow, type EntryRow, type ModelSpec, type ProviderRow, type Visibility } from "./models-types.ts";
 
-export type ChannelKind = "anthropic" | "openai" | "openai-compatible" | "faux" | "fixture";
+export { FIXTURE_MODEL_ID, FIXTURE_PI_PROVIDER, WORKROOM_PI_PROVIDER };
 export type Capability = "text" | "image" | "tools" | "reasoning";
-export type ErrorClass =
-	| "rate_limit"
-	| "overloaded"
-	| "server"
-	| "timeout"
-	| "network"
-	| "auth"
-	| "context_overflow"
-	| "bad_request"
-	| "aborted"
-	| "no_credentials"
-	| "concurrency"
-	| "local_rate_limit"
-	| "circuit_open"
-	| "capability_mismatch"
-	| "unknown";
+export type ErrorClass = "rate_limit" | "overloaded" | "server" | "timeout" | "network" | "auth" | "context_overflow" | "bad_request" | "aborted" | "no_credentials" | "capability_mismatch" | "unknown";
 
-export const FIXTURE_PI_PROVIDER = "fixture";
-export const FIXTURE_MODEL_ID = "workroom-fixture";
-export const WORKROOM_PI_PROVIDER = "workroom";
-const ROUTE_API = "workroom-route";
-const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const ALIAS_API = "workroom-alias";
 
-export interface ChannelRow {
-	id: string;
-	org_id: string | null;
-	name: string;
-	provider: ChannelKind;
-	base_url: string | null;
-	api_key_enc: string | null;
-	api_key_env: string | null;
-	key_hint: string | null;
-	status: "enabled" | "disabled";
-	rpm_limit: number | null;
-	concurrency_limit: number | null;
-	timeout_ms: number | null;
-	price: string | null;
-	builtin: number;
-	created_at: string;
-	updated_at: string;
-}
-export interface PlatformModelRow {
-	id: string;
-	org_id: string | null;
-	label: string;
-	description: string | null;
-	kind: "real" | "fixture";
-	pi_provider: string;
-	capabilities: string;
-	thinking_levels: string;
-	default_thinking: string | null;
-	context_window: number | null;
-	max_tokens: number | null;
-	visibility: string | null;
-	is_default: number;
-	enabled: number;
-	sort: number;
-	builtin: number;
-}
-export interface RouteRow {
-	id: string;
-	platform_model_id: string;
-	channel_id: string;
-	upstream_model_id: string;
-	priority: number;
-	weight: number;
-	enabled: number;
-	capabilities: string | null;
-}
-
-interface Candidate {
-	route: RouteRow;
-	channel: ChannelRow;
-	upstream: Model<Api>;
-	streams: { streamSimple(model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream };
-	apiKey: string | undefined;
-	caps: Capability[];
-	price: { input: number; output: number; cacheRead: number; cacheWrite: number } | null;
+export interface ListedModel extends PlatformModel {
+	description?: string;
+	thinkingLevels: string[];
+	defaultThinking?: string;
+	contextWindow?: number;
+	maxTokens?: number;
+	isDefault: boolean;
+	fixture: boolean;
+	providerId: string;
+	providerName: string;
+	providerType: string;
+	scope: "instance" | "org" | "user" | "fixture";
+	personal: boolean;
+	input: string[];
+	reasoning: boolean;
+	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	/** Pre-4 refs { provider: "workroom", modelId } kept working through an alias; hidden from /api/models. */
+	legacy?: boolean;
 }
 
 interface Link {
 	spaceId?: string;
 	orgId?: string;
+	/** The user the run acts for (set by the wr.ops hook from the run's input): the model is re-checked against THEIR current access. */
+	userId?: string;
 	conversationId?: number;
 	taskId?: number;
 	at: number;
@@ -115,15 +77,26 @@ function addUsage(t: Usage, u: Usage | undefined): void {
 	t.cost.total += u.cost.total;
 }
 
-/** Classify a failed upstream message. `retryable` = another route may succeed (failover allowed). */
+/** Classify a failed upstream message. `retryable` = another model may succeed (failover allowed). */
 export function classifyError(m: AssistantMessage): { cls: ErrorClass; retryable: boolean } {
 	if (m.stopReason === "aborted") return { cls: "aborted", retryable: false };
 	const msg = (m.errorMessage ?? "").toLowerCase();
 	if (isContextOverflow(m)) return { cls: "context_overflow", retryable: false };
+	// pi-ai's provider errors start with the HTTP status ("503 …", "400: {…}"): the status decides before any word in the body does.
+	const status = Number(/^\s*(?:http\s*)?(\d{3})\b/.exec(msg)?.[1]);
+	if (status) {
+		if (status === 429) return { cls: "rate_limit", retryable: true };
+		if (status === 529) return { cls: "overloaded", retryable: true };
+		if (status === 408 || status === 504) return { cls: "timeout", retryable: true };
+		if (status === 401 || status === 403) return { cls: "auth", retryable: true };
+		if (status >= 500) return { cls: "server", retryable: true };
+		if (status >= 400) return { cls: "bad_request", retryable: false };
+	}
 	if (/\b429\b|rate.?limit|too many requests|quota/.test(msg)) return { cls: "rate_limit", retryable: true };
 	if (/\b529\b|overloaded|capacity/.test(msg)) return { cls: "overloaded", retryable: true };
 	if (/timed? ?out|timeout|etimedout|deadline/.test(msg)) return { cls: "timeout", retryable: true };
 	if (/econnrefused|econnreset|enotfound|eai_again|fetch failed|network|socket hang up|connection (error|closed|reset)/.test(msg)) return { cls: "network", retryable: true };
+	if (/provider is not configured|no api key/.test(msg)) return { cls: "no_credentials", retryable: true };
 	if (/\b(401|403)\b|unauthori[sz]ed|invalid (x-)?api.?key|authentication|permission denied|forbidden/.test(msg)) return { cls: "auth", retryable: true };
 	if (/\b5\d\d\b|internal server error|bad gateway|service unavailable|gateway timeout|upstream/.test(msg)) return { cls: "server", retryable: true };
 	if (/\b(400|404|413|422)\b|invalid request|bad request|not found|unsupported/.test(msg)) return { cls: "bad_request", retryable: false };
@@ -141,84 +114,247 @@ function transcriptNeeds(context: TranscriptContext): { image: boolean; tools: b
 	return { image, tools };
 }
 
-const json = <T>(s: string | null | undefined, fallback: T): T => {
-	if (!s) return fallback;
-	try {
-		return JSON.parse(s) as T;
-	} catch {
-		return fallback;
-	}
-};
+const errorMessage = (model: { provider: string; id: string; api?: string }, text: string, stopReason: "error" | "aborted" = "error"): AssistantMessage => ({ role: "assistant", content: [], api: (model.api ?? "unknown") as Api, provider: model.provider, model: model.id, usage: zeroUsage(), stopReason, errorMessage: text, timestamp: Date.now() });
+
+/** Merge admin overrides (ModelSpec) onto a pi-ai Model. `compat` / `cost` merge per key; `thinkingLevelMap` replaces. */
+export function applySpec(model: Model<Api>, spec: ModelSpec | undefined): Model<Api> {
+	if (!spec) return model;
+	const m: Record<string, unknown> = { ...model };
+	if (spec.name) m.name = spec.name;
+	if (spec.contextWindow) m.contextWindow = spec.contextWindow;
+	if (spec.maxTokens) m.maxTokens = spec.maxTokens;
+	if (spec.input) m.input = spec.input;
+	if (spec.reasoning !== undefined) m.reasoning = spec.reasoning;
+	if (spec.thinkingLevelMap) m.thinkingLevelMap = spec.thinkingLevelMap;
+	if (spec.cost) m.cost = { ...model.cost, ...spec.cost };
+	if (spec.compat) m.compat = { ...((model as any).compat ?? {}), ...spec.compat };
+	return m as unknown as Model<Api>;
+}
 
 export class Gateway implements ModelGateway {
 	readonly #ctx: AppContext;
 	readonly #models: MutableModels;
 	readonly secrets: SecretBox;
-	/** In-process providers attached to "faux" channels (tests / local fakes). */
+	readonly credentials: DbCredentialStore;
+	/** In-process providers attached to "faux" rows (tests / local fakes). */
 	readonly #attached = new Map<string, Provider>();
 	#fixtureProvider: Provider | null = null;
 	#fixtureDetail = "";
-	#anthropic: Provider | null = null;
-	#openai: Provider | null = null;
-	#compat: { streamSimple(model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream } | null = null;
-	readonly #inflight = new Map<string, number>();
-	readonly #rpm = new Map<string, number[]>();
-	readonly #breaker = new Map<string, { fails: number; openUntil: number }>();
+	#builtins = new Map<string, Provider>();
 	readonly #links = new Map<string, Link>();
-	#cache: { models: PlatformModelRow[]; routes: RouteRow[]; channels: ChannelRow[] } | null = null;
+	#rows: Map<string, ProviderRow> | null = null;
+	#entries: Map<string, Map<string, EntryRow>> | null = null;
 	/** Injectable for deterministic tests. */
-	random: () => number = Math.random;
 	now: () => number = () => Date.now();
 	/** Called after each finished request with its linkage (usage importer marks the conversation dirty). */
 	onRequestFinished?: (link: { spaceId?: string; conversationId?: number }) => void;
+	/** Resolver override for tests of the personal-provider egress guard. */
+	resolver?: Parameters<typeof resolveTarget>[2];
 
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
 		this.secrets = new SecretBox(ctx.config.secretKey);
-		// Ambient credentials are never used: the auth context sees no environment variables or files.
-		this.#models = createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
-		this.#models.setProvider(this.#routingProvider(WORKROOM_PI_PROVIDER, "Workroom"));
-		this.#models.setProvider(this.#routingProvider(FIXTURE_PI_PROVIDER, "Workroom 测试模型"));
-	}
-
-	async loadUpstreams(): Promise<void> {
-		this.#anthropic = (await import("@earendil-works/pi-ai/providers/anthropic")).anthropicProvider();
-		this.#openai = (await import("@earendil-works/pi-ai/providers/openai")).openaiProvider();
-		this.#compat = (await import("@earendil-works/pi-ai/api/openai-completions.lazy")).openAICompletionsApi();
-		if (this.#ctx.config.fixtureModel) {
-			try {
-				const m = await import("../runtime/fixture-model.ts");
-				this.#fixtureProvider = m.createFixtureModel().provider;
-			} catch (e) {
-				this.#fixtureDetail = `fixture script unavailable: ${(e as Error).message}`;
-			}
-		}
+		this.credentials = new DbCredentialStore(ctx.db, this.secrets);
+		// Ambient credentials are never used: pi-ai sees no environment variables or files, so the dev/CI `ANTHROPIC_API_KEY`
+		// etc. can never leak into a request. Keys come ONLY from the CredentialStore (or a WORKROOM_-prefixed env ref we resolve).
+		this.#models = createModels({ credentials: this.credentials, modelsStore: new DbModelsStore(ctx.db), authContext: { env: async () => undefined, fileExists: async () => false } });
 	}
 
 	get db() {
 		return this.#ctx.db;
 	}
-
-	piModels() {
+	piModels(): MutableModels {
 		return this.#models;
 	}
 
-	invalidate(): void {
-		this.#cache = null;
+	/** Build every registered provider from the DB. Called once from the module's init (async: loads pi-ai catalogs). */
+	async loadBuiltins(): Promise<void> {
+		this.#builtins = await builtinProviderMap();
 	}
-	#data() {
-		if (!this.#cache)
-			this.#cache = {
-				models: this.db.all<PlatformModelRow>("SELECT * FROM ops_platform_models ORDER BY sort, label"),
-				routes: this.db.all<RouteRow>("SELECT * FROM ops_model_routes ORDER BY priority, id"),
-				channels: this.db.all<ChannelRow>("SELECT * FROM ops_channels"),
-			};
-		return this.#cache;
+	async load(): Promise<void> {
+		if (this.#builtins.size === 0) await this.loadBuiltins();
+		if (this.#ctx.config.fixtureModel) {
+			try {
+				const m = await import("../runtime/fixture-model.ts");
+				this.#fixtureProvider = m.createFixtureModel().provider;
+				this.#models.setProvider(this.wrapProvider(this.#fixtureProvider, null));
+			} catch (e) {
+				this.#fixtureDetail = `fixture script unavailable: ${(e as Error).message}`;
+			}
+		}
+		for (const row of this.providerRows()) this.#register(row);
+		this.#registerAliases();
+		await this.#models.refresh({ allowNetwork: false }); // restore persisted catalogs (DbModelsStore) without any network call
 	}
 
-	/** Attach an in-process pi-ai provider to a "faux" channel (tests, local fakes). */
-	attachProvider(channelId: string, provider: Provider): void {
-		this.#attached.set(channelId, provider);
+	// ------------------------------------------------------------------ rows & entries (cached; invalidate on every write)
+	invalidate(): void {
+		this.#rows = null;
+		this.#entries = null;
+	}
+	providerRows(): ProviderRow[] {
+		this.#rows ??= new Map(this.db.all<ProviderRow>("SELECT * FROM model_providers ORDER BY created_at, id").map((r) => [r.id, r]));
+		return [...this.#rows.values()];
+	}
+	rowOf(id: string): ProviderRow | undefined {
+		this.providerRows();
+		return this.#rows!.get(id);
+	}
+	entriesOf(providerId: string): Map<string, EntryRow> {
+		if (!this.#entries) {
+			this.#entries = new Map();
+			for (const e of this.db.all<EntryRow>("SELECT * FROM model_entries ORDER BY sort, model_id")) {
+				let m = this.#entries.get(e.provider_id);
+				if (!m) this.#entries.set(e.provider_id, (m = new Map()));
+				m.set(e.model_id, e);
+			}
+		}
+		return this.#entries.get(providerId) ?? new Map();
+	}
+	entryOf(providerId: string, modelId: string): EntryRow | undefined {
+		return this.entriesOf(providerId).get(modelId);
+	}
+
+	/** (Re)build one provider from its DB row and register it; removes it when the row is gone. */
+	async reload(id: string): Promise<void> {
+		this.invalidate();
+		const row = this.rowOf(id);
+		if (!row) {
+			this.#models.deleteProvider(id);
+			this.#attached.delete(id);
+			return;
+		}
+		this.#register(row);
+		await this.#models.refresh({ providers: [id], allowNetwork: false });
+	}
+
+	attachProvider(providerId: string, provider: Provider): void {
+		this.#attached.set(providerId, provider);
+		const row = this.rowOf(providerId);
+		if (row) this.#register(row);
+	}
+
+	#register(row: ProviderRow): void {
+		try {
+			const p = this.#build(row);
+			if (p) this.#models.setProvider(p);
+			else this.#models.deleteProvider(row.id);
+		} catch (e) {
+			logEvent("error", "model.provider_build_failed", { provider: row.id, detail: (e as Error).message });
+			this.#models.deleteProvider(row.id);
+		}
+	}
+
+	baseUrlOf(row: ProviderRow): string {
+		return row.base_url ? normalizeBaseUrl(row.type, row.base_url) : "";
+	}
+
+	#api(type: ProviderRow["type"]) {
+		switch (type) {
+			case "openai-completions":
+				return openAICompletionsApi();
+			case "openai-responses":
+				return openAIResponsesApi();
+			case "anthropic-messages":
+				return anthropicMessagesApi();
+		}
+		return undefined;
+	}
+
+	/** The pi-ai provider for a row. Generic types use createProvider(); builtin / faux wrap an existing provider. */
+	#build(row: ProviderRow): Provider | null {
+		if (row.type === "faux") {
+			const p = this.#attached.get(row.id);
+			return p ? this.wrapProvider(this.#withPolicy(p, row), row) : null;
+		}
+		if (row.type === "builtin") {
+			const b = this.#builtins.get(row.builtin_id ?? row.id);
+			return b ? this.wrapProvider(this.#withPolicy(b, row), row) : null;
+		}
+		const api = this.#api(row.type);
+		if (!api) return null;
+		const baseUrl = this.baseUrlOf(row);
+		const id = row.id;
+		const base = createProvider({
+			id,
+			name: row.name,
+			baseUrl: baseUrl || undefined,
+			// Custom headers are applied through auth (below) so they are decrypted per request and never sit in the provider object.
+			auth: {
+				apiKey: {
+					name: `${row.name} API key`,
+					resolve: async ({ credential }) => {
+						const r = this.rowOf(id);
+						if (!r) return undefined;
+						const custom = providerHeaders(r, this.secrets);
+						const hasHeaders = Object.keys(custom).length > 0;
+						if (!credential?.key && !r.keyless && !hasHeaders) return undefined;
+						const a = requestAuth(r.type, r.auth_style, credential?.key);
+						const headers = { ...a.headers, ...custom };
+						// OpenAI/Anthropic SDKs refuse to send without SOME auth value; keyless local servers get a placeholder
+						// unless the headers already carry an Authorization / x-api-key.
+						const hasAuthHeader = Object.keys(headers).some((k) => ["authorization", "x-api-key"].includes(k.toLowerCase()));
+						const apiKey = a.apiKey ?? (hasAuthHeader ? undefined : "not-required");
+						return { auth: { ...(apiKey ? { apiKey } : {}), ...(Object.keys(headers).length ? { headers } : {}) }, env: credential?.env, source: credential?.key ? "stored credential" : "keyless / custom headers" };
+					},
+				},
+			},
+			models: this.#manualModels(row, baseUrl),
+			fetchModels: async (c) => {
+				const r = this.rowOf(id);
+				if (!r) return [];
+				await this.guardTarget(r);
+				const { models } = await listRemoteModels({ row: r, baseUrl: this.baseUrlOf(r), key: r.keyless ? undefined : providerKey(r, this.secrets).key, headers: providerHeaders(r, this.secrets), signal: c.signal }); // key from the store, not c.credential.key: bearer-style auth resolves without an apiKey
+				this.db.run("UPDATE model_providers SET last_fetch_at = ? WHERE id = ?", nowIso(), id);
+				return models.map((m) => modelFromRemote(r, this.baseUrlOf(r), m, this.#builtins));
+			},
+			api,
+		});
+		return this.wrapProvider(this.#withPolicy(base, row), row);
+	}
+
+	#manualModels(row: ProviderRow, baseUrl: string): Model<Api>[] {
+		return [...this.entriesOf(row.id).values()].filter((e) => e.manual).map((e) => this.#manualModel(row, e, baseUrl, row.type as Api));
+	}
+	#manualModel(row: ProviderRow, e: EntryRow, baseUrl: string, api: Api): Model<Api> {
+		const spec = json<ModelSpec>(e.spec, {});
+		const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...(spec.cost ?? {}) };
+		return {
+			id: e.model_id,
+			name: spec.name ?? e.model_id,
+			api,
+			provider: row.id,
+			baseUrl,
+			reasoning: !!spec.reasoning,
+			input: spec.input ?? ["text"],
+			cost,
+			contextWindow: spec.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+			maxTokens: spec.maxTokens ?? DEFAULT_MAX_TOKENS,
+			...(spec.thinkingLevelMap ? { thinkingLevelMap: spec.thinkingLevelMap } : {}),
+			...(spec.compat ? { compat: spec.compat } : {}),
+		} as unknown as Model<Api>;
+	}
+
+	/** Overlay the admin's per-model overrides on whatever the provider lists (static, fetched, or built-in catalog) and add manual models it lacks. */
+	#withPolicy(base: Provider, row: ProviderRow): Provider {
+		const effective = (): Model<Api>[] => {
+			const entries = this.entriesOf(row.id);
+			const list = base.getModels().map((m) => applySpec(m as Model<Api>, json<ModelSpec | undefined>(entries.get(m.id)?.spec, undefined)));
+			for (const e of entries.values()) {
+				if (!e.manual || list.some((m) => m.id === e.model_id)) continue;
+				const first = base.getModels()[0];
+				list.push(this.#manualModel(row, e, row.base_url ? this.baseUrlOf(row) : (first?.baseUrl ?? base.baseUrl ?? ""), (first?.api ?? row.type) as Api));
+			}
+			return list;
+		};
+		return { ...base, getModels: effective, getAllModels: effective };
+	}
+
+	// ------------------------------------------------------------------ streams: failover + attempt records
+	/** Wrap a native provider's streams. Everything else (auth, catalog, refreshModels, ...) is the provider's own. */
+	wrapProvider(p: Provider, row: ProviderRow | null): Provider {
+		const run = (streamer: (m: Model<Api>, c: TranscriptContext, o?: any) => AssistantMessageEventStream) => (model: Model<Api>, context: TranscriptContext, options?: any) => this.#instrument(model, context, options ?? {}, row, (m, o) => streamer(m, context, o));
+		return { ...p, stream: run((m, c, o) => p.stream(m as any, c, o)) as Provider["stream"], streamSimple: run((m, c, o) => p.streamSimple(m, c, o)) };
 	}
 
 	link(sessionId: string, l: Omit<Link, "at">): void {
@@ -229,391 +365,86 @@ export class Gateway implements ModelGateway {
 		}
 	}
 
-	// ------------------------------------------------------------------ catalog
-	channelCredential(ch: ChannelRow): { key?: string; source: "stored" | "env" | "none"; detail?: string } {
-		if (ch.api_key_enc) {
-			try {
-				return { key: this.secrets.open(ch.api_key_enc), source: "stored" };
-			} catch (e) {
-				return { source: "none", detail: (e as Error).message };
-			}
-		}
-		if (ch.api_key_env) {
-			const v = process.env[ch.api_key_env];
-			return v ? { key: v, source: "env" } : { source: "none", detail: `环境变量 ${ch.api_key_env} 未设置` };
-		}
-		return { source: "none" };
+	/** Personal providers resolve user-supplied hosts: re-check before every request that they are not internal addresses. */
+	async guardTarget(row: ProviderRow): Promise<void> {
+		if (row.scope !== "user" || !row.base_url) return;
+		await resolveTarget(row.base_url, new Allowlist([]), this.resolver);
 	}
 
-	channelHealth(ch: ChannelRow): { health: "ready" | "blocked" | "circuit_open"; detail?: string } {
-		if (ch.provider === "fixture" && !this.#fixtureProvider) return { health: "blocked", detail: this.#fixtureDetail || "fixture model disabled" };
-		if (ch.provider === "faux" && !this.#attached.has(ch.id)) return { health: "blocked", detail: "未附加进程内 provider（仅测试用渠道）" };
-		if (ch.provider !== "fixture" && ch.provider !== "faux") {
-			const cred = this.channelCredential(ch);
-			if (!cred.key && ch.provider !== "openai-compatible") return { health: "blocked", detail: cred.detail ?? "未配置凭据" };
-			if (ch.provider === "openai-compatible" && !ch.base_url) return { health: "blocked", detail: "缺少 base URL" };
-		}
-		const b = this.#breaker.get(ch.id);
-		if (b && b.openUntil > this.now()) return { health: "circuit_open", detail: `连续失败 ${b.fails} 次，熔断至 ${new Date(b.openUntil).toISOString()}` };
-		return { health: "ready" };
+	#fallbacksOf(provider: string, modelId: string): ModelRef[] {
+		return json<ModelRef[]>(this.entryOf(provider, modelId)?.fallbacks, []);
 	}
 
-	#upstreamModel(ch: ChannelRow, route: RouteRow, pm: PlatformModelRow): { model: Model<Api>; streams: Candidate["streams"] } | null {
-		const caps = json<Capability[]>(route.capabilities, json<Capability[]>(pm.capabilities, ["text"]));
-		const synth = (api: string, provider: string, baseUrl: string): Model<Api> => ({
-			id: route.upstream_model_id,
-			name: route.upstream_model_id,
-			api,
-			provider,
-			baseUrl,
-			reasoning: caps.includes("reasoning"),
-			input: caps.includes("image") ? ["text", "image"] : ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: pm.context_window ?? 128_000,
-			maxTokens: pm.max_tokens ?? 8192,
-		});
-		const fromProvider = (p: Provider | null) => {
-			if (!p) return null;
-			const base = p.getModels().find((m) => m.id === route.upstream_model_id) ?? synth(p.getModels()[0]?.api ?? "", p.id, p.baseUrl ?? p.getModels()[0]?.baseUrl ?? "");
-			return { model: { ...base, ...(ch.base_url ? { baseUrl: ch.base_url } : {}) } as Model<Api>, streams: p };
-		};
-		switch (ch.provider) {
-			case "anthropic":
-				return fromProvider(this.#anthropic);
-			case "openai":
-				return fromProvider(this.#openai);
-			case "openai-compatible":
-				return this.#compat && ch.base_url ? { model: synth("openai-completions", "openai-compatible", ch.base_url), streams: this.#compat } : null;
-			case "faux":
-				return fromProvider(this.#attached.get(ch.id) ?? null);
-			case "fixture":
-				return fromProvider(this.#fixtureProvider);
-		}
-		return null;
-	}
-
-	#routeCaps(route: RouteRow, upstream: Model<Api>): Capability[] {
-		const explicit = json<Capability[] | null>(route.capabilities, null);
-		if (explicit) return explicit;
-		const caps: Capability[] = ["text", "tools"];
-		if (upstream.input.includes("image")) caps.push("image");
-		if (upstream.reasoning) caps.push("reasoning");
-		return caps;
-	}
-
-	platformStatus(pm: PlatformModelRow): { status: PlatformModel["status"]; detail?: string } {
-		const d = this.#data();
-		const routes = d.routes.filter((r) => r.platform_model_id === pm.id && r.enabled);
-		const details: string[] = [];
-		for (const r of routes) {
-			const ch = d.channels.find((c) => c.id === r.channel_id);
-			if (!ch || ch.status !== "enabled") continue;
-			const h = this.channelHealth(ch);
-			if (h.health !== "blocked") return { status: pm.kind === "fixture" ? "fixture" : "ready" };
-			if (h.detail) details.push(`${ch.name}: ${h.detail}`);
-		}
-		return { status: "blocked", detail: routes.length === 0 ? "未配置路由" : `无可用渠道（${details.join("；") || "渠道已停用"}）` };
-	}
-
-	visibleTo(pm: PlatformModelRow, p: Principal): boolean {
-		if (!pm.enabled) return false;
-		if (pm.org_id && pm.org_id !== p.orgId) return false;
-		const vis = json<{ departmentIds?: string[]; projectIds?: string[] } | null>(pm.visibility, null);
-		if (!vis) return true;
-		if (p.orgRole !== "member") return true;
-		if (vis.departmentIds?.length && vis.departmentIds.some((d) => p.departmentIds.includes(d))) return true;
-		if (vis.projectIds?.length) {
-			const ph = vis.projectIds.map(() => "?").join(",");
-			if (this.db.get(`SELECT 1 FROM id_project_members WHERE user_id = ? AND removed_at IS NULL AND project_id IN (${ph})`, p.userId, ...vis.projectIds)) return true;
-		}
-		return !vis.departmentIds?.length && !vis.projectIds?.length;
-	}
-
-	toPlatformModel(pm: PlatformModelRow): PlatformModel & { thinkingLevels: string[]; defaultThinking?: string; contextWindow?: number; isDefault: boolean; fixture: boolean; description?: string } {
-		const st = this.platformStatus(pm);
-		const thinkingLevels = json<string[]>(pm.thinking_levels, ["off"]);
-		return {
-			id: pm.id,
-			label: pm.kind === "fixture" ? `${pm.label}（测试模型，非真实 AI）` : pm.label,
-			description: pm.description ?? undefined,
-			ref: { provider: pm.pi_provider, modelId: pm.id, ...(pm.default_thinking ? { thinkingLevel: pm.default_thinking as ModelRef["thinkingLevel"] } : {}) },
-			status: st.status,
-			statusDetail: st.detail,
-			capabilities: json(pm.capabilities, ["text"]),
-			thinkingLevels,
-			defaultThinking: pm.default_thinking ?? undefined,
-			contextWindow: pm.context_window ?? undefined,
-			isDefault: !!pm.is_default,
-			fixture: pm.kind === "fixture",
-		};
-	}
-
-	async listFor(p: Principal): Promise<PlatformModel[]> {
-		return this.#data()
-			.models.filter((m) => this.visibleTo(m, p))
-			.map((m) => this.toPlatformModel(m));
-	}
-
-	async defaultModel(p: Principal): Promise<ModelRef> {
-		const list = await this.listFor(p);
-		const pick = list.find((m) => (m as any).isDefault && m.status === "ready") ?? list.find((m) => m.status === "ready") ?? list.find((m) => m.status === "fixture") ?? list[0];
-		if (!pick) throw new HttpError(409, "no_model", "没有可用模型");
-		return pick.ref;
-	}
-
-	/** Model id → platform row for pi models of one routing provider. */
-	#piModelsFor(provider: string): Model<Api>[] {
-		return this.#data()
-			.models.filter((m) => m.pi_provider === provider && m.enabled)
-			.map((m) => {
-				const caps = json<Capability[]>(m.capabilities, ["text"]);
-				const levels = json<string[]>(m.thinking_levels, ["off"]);
-				const map: Record<string, null> = {};
-				for (const l of THINKING) if (l !== "off" && !levels.includes(l)) map[l] = null;
-				return {
-					id: m.id,
-					name: m.kind === "fixture" ? `${m.label}（测试模型，非真实 AI）` : m.label,
-					api: ROUTE_API,
-					provider,
-					baseUrl: "",
-					reasoning: caps.includes("reasoning"),
-					...(caps.includes("reasoning") ? { thinkingLevelMap: map } : {}),
-					input: caps.includes("image") ? ["text", "image"] : ["text"],
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-					contextWindow: m.context_window ?? 128_000,
-					maxTokens: m.max_tokens ?? 8192,
-				} as Model<Api>;
-			});
-	}
-
-	#routingProvider(id: string, name: string): Provider {
-		return {
-			id,
-			name,
-			auth: { apiKey: { name: "Workroom gateway (server-side credentials)", resolve: async () => ({ auth: {}, source: "workroom-gateway" }) } },
-			getModels: () => this.#piModelsFor(id),
-			stream: (model, context, options) => this.route(model as Model<Api>, context, options as SimpleStreamOptions),
-			streamSimple: (model, context, options) => this.route(model, context, options),
-		};
-	}
-
-	// ------------------------------------------------------------------ routing
-	#candidates(pm: PlatformModelRow, needs: { image: boolean; tools: boolean }): { ordered: Candidate[]; skipped: { channel?: ChannelRow; route: RouteRow; cls: ErrorClass; detail: string }[] } {
-		const d = this.#data();
-		const skipped: { channel?: ChannelRow; route: RouteRow; cls: ErrorClass; detail: string }[] = [];
-		const ok: Candidate[] = [];
-		for (const route of d.routes.filter((r) => r.platform_model_id === pm.id && r.enabled)) {
-			const channel = d.channels.find((c) => c.id === route.channel_id);
-			if (!channel || channel.status !== "enabled") continue;
-			const up = this.#upstreamModel(channel, route, pm);
-			if (!up) {
-				skipped.push({ channel, route, cls: "no_credentials", detail: this.channelHealth(channel).detail ?? "provider unavailable" });
-				continue;
-			}
-			const caps = this.#routeCaps(route, up.model);
-			const missing = [needs.image && !caps.includes("image") ? "image" : null, needs.tools && !caps.includes("tools") ? "tools" : null].filter(Boolean);
-			if (missing.length) {
-				skipped.push({ channel, route, cls: "capability_mismatch", detail: `route lacks ${missing.join("+")}` });
-				continue;
-			}
-			const cred = this.channelCredential(channel);
-			if ((channel.provider === "anthropic" || channel.provider === "openai") && !cred.key) {
-				skipped.push({ channel, route, cls: "no_credentials", detail: cred.detail ?? "no credentials" });
-				continue;
-			}
-			const b = this.#breaker.get(channel.id);
-			if (b && b.openUntil > this.now()) {
-				skipped.push({ channel, route, cls: "circuit_open", detail: `circuit open until ${new Date(b.openUntil).toISOString()}` });
-				continue;
-			}
-			ok.push({ route, channel, upstream: up.model, streams: up.streams, apiKey: cred.key ?? (channel.provider === "openai-compatible" ? "not-required" : undefined), caps, price: json(channel.price, null) });
-		}
-		// priority ascending; within a priority, weighted random order without replacement
-		const ordered: Candidate[] = [];
-		const prios = [...new Set(ok.map((c) => c.route.priority))].sort((a, b) => a - b);
-		for (const pr of prios) {
-			const group = ok.filter((c) => c.route.priority === pr);
-			while (group.length) {
-				const total = group.reduce((s, c) => s + Math.max(0, c.route.weight), 0);
-				let pick = 0;
-				if (total > 0) {
-					let x = this.random() * total;
-					pick = group.findIndex((c) => (x -= Math.max(0, c.route.weight)) < 0);
-					if (pick < 0) pick = group.length - 1;
-				}
-				ordered.push(group.splice(pick, 1)[0]!);
-			}
-		}
-		return { ordered, skipped };
-	}
-
-	#rewriteForUpstream(context: TranscriptContext, pm: PlatformModelRow, cand: Candidate): TranscriptContext {
-		const routeTag = `${cand.upstream.provider}/${cand.upstream.id}`;
-		const messages = context.messages.map((m) => {
-			if (m.role !== "assistant" || m.provider !== pm.pi_provider || m.model !== pm.id) return m;
-			// Same upstream produced it → restore upstream identity so provider-native data (thinking signatures, ids) is kept.
-			if (m.responseModel === routeTag) return { ...m, provider: cand.upstream.provider, api: cand.upstream.api, model: cand.upstream.id };
-			return m;
-		});
-		return { ...context, messages } as TranscriptContext;
-	}
-
-	#priced(cand: Candidate | null, pm: PlatformModelRow, u: Usage): { usage: Usage; source: string } {
-		const usage: Usage = { ...u, cost: { ...u.cost } };
-		if (pm.kind === "fixture" || cand?.channel.provider === "fixture") {
-			usage.cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
-			return { usage, source: "fixture" };
-		}
-		if (cand?.price) {
-			const p = cand.price;
-			usage.cost = { input: (u.input * p.input) / 1e6, output: (u.output * p.output) / 1e6, cacheRead: (u.cacheRead * p.cacheRead) / 1e6, cacheWrite: (u.cacheWrite * p.cacheWrite) / 1e6, total: 0 };
-			usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
-			return { usage, source: "channel_price" };
-		}
-		return { usage, source: u.cost.totalFromProvider ? "provider" : "catalog" };
-	}
-
-	#acquire(ch: ChannelRow): ErrorClass | null {
-		const now = this.now();
-		if (ch.concurrency_limit && (this.#inflight.get(ch.id) ?? 0) >= ch.concurrency_limit) return "concurrency";
-		if (ch.rpm_limit) {
-			const w = (this.#rpm.get(ch.id) ?? []).filter((t) => t > now - 60_000);
-			if (w.length >= ch.rpm_limit) {
-				this.#rpm.set(ch.id, w);
-				return "local_rate_limit";
-			}
-			w.push(now);
-			this.#rpm.set(ch.id, w);
-		}
-		this.#inflight.set(ch.id, (this.#inflight.get(ch.id) ?? 0) + 1);
-		return null;
-	}
-	#release(ch: ChannelRow): void {
-		this.#inflight.set(ch.id, Math.max(0, (this.#inflight.get(ch.id) ?? 1) - 1));
-	}
-	#breakerResult(ch: ChannelRow, ok: boolean, cls?: ErrorClass): void {
-		if (ok) return void this.#breaker.delete(ch.id);
-		if (!cls || !["server", "network", "timeout", "overloaded", "auth"].includes(cls)) return;
-		const b = this.#breaker.get(ch.id) ?? { fails: 0, openUntil: 0 };
-		b.fails++;
-		if (b.fails >= 3) b.openUntil = this.now() + 30_000;
-		this.#breaker.set(ch.id, b);
-	}
-	inflight(channelId: string): number {
-		return this.#inflight.get(channelId) ?? 0;
-	}
-	resetBreakers(): void {
-		this.#breaker.clear();
-	}
-
-	#insertAttempt(a: { requestKey: string; attemptNo: number; pm: PlatformModelRow; cand?: Candidate | null; channel?: ChannelRow; link: Link; status: string; cls?: ErrorClass; error?: string; retryable?: boolean; failover: boolean; latency?: number; firstToken?: number | null; usage?: Usage; costSource?: string; stopReason?: string; startedAt: string; endedAt?: string }): string {
-		const id = newId("ra");
-		const u = a.usage;
-		const ch = a.cand?.channel ?? a.channel;
-		this.db.run(
-			`INSERT INTO ops_route_attempts (id, request_key, attempt_no, platform_model_id, pi_provider, channel_id, channel_provider, upstream_model, status, error_class, error_message, retryable, failover, latency_ms, first_token_ms, input_tokens, output_tokens, cache_read, cache_write, cost_total, cost_source, stop_reason, fixture, session_id, space_id, org_id, conversation_id, task_id, started_at, ended_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id,
-			a.requestKey,
-			a.attemptNo,
-			a.pm.id,
-			a.pm.pi_provider,
-			ch?.id ?? null,
-			ch?.provider ?? null,
-			a.cand?.upstream.id ?? null,
-			a.status,
-			a.cls ?? null,
-			a.error ? redactText(a.error).slice(0, 1000) : null,
-			a.retryable === undefined ? null : a.retryable ? 1 : 0,
-			a.failover ? 1 : 0,
-			a.latency ?? null,
-			a.firstToken ?? null,
-			u?.input ?? null,
-			u?.output ?? null,
-			u?.cacheRead ?? null,
-			u?.cacheWrite ?? null,
-			u?.cost.total ?? null,
-			a.costSource ?? null,
-			a.stopReason ?? null,
-			a.pm.kind === "fixture" || ch?.provider === "fixture" ? 1 : 0,
-			(a.link as any).sessionId ?? null,
-			a.link.spaceId ?? null,
-			a.link.orgId ?? null,
-			a.link.conversationId ?? null,
-			a.link.taskId ?? null,
-			a.startedAt,
-			a.endedAt ?? null,
-		);
-		return id;
-	}
-
-	route(model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream {
+	#instrument(model: Model<Api>, context: TranscriptContext, options: SimpleStreamOptions & { metadata?: Record<string, unknown> }, row: ProviderRow | null, run: (m: Model<Api>, o: any) => AssistantMessageEventStream): AssistantMessageEventStream {
 		const out = createAssistantMessageEventStream();
-		void this.#route(model, context, options ?? {}, out).catch((err) => {
-			const msg: AssistantMessage = { role: "assistant", content: [], api: ROUTE_API, provider: model.provider, model: model.id, usage: zeroUsage(), stopReason: "error", errorMessage: `gateway: ${(err as Error).message}`, timestamp: Date.now() };
+		void this.#runAttempts(model, context, options, row, run, out).catch((err) => {
+			const msg = errorMessage(model, `gateway: ${redactText((err as Error).message)}`);
 			out.push({ type: "error", reason: "error", error: msg });
 			out.end(msg);
 		});
 		return out;
 	}
 
-	async #route(model: Model<Api>, context: TranscriptContext, options: SimpleStreamOptions, out: AssistantMessageEventStream): Promise<void> {
-		const pm = this.#data().models.find((m) => m.id === model.id && m.pi_provider === model.provider);
+	async #runAttempts(model: Model<Api>, context: TranscriptContext, options: SimpleStreamOptions & { metadata?: Record<string, unknown> }, row: ProviderRow | null, run: (m: Model<Api>, o: any) => AssistantMessageEventStream, out: AssistantMessageEventStream): Promise<void> {
 		const t0 = this.now();
 		const requestKey = newId("rq");
-		const sessionId = options.sessionId;
 		const meta = (options.metadata ?? {}) as Record<string, unknown>;
-		const link: Link & { sessionId?: string } = { ...(sessionId ? this.#links.get(sessionId) : undefined), at: t0, sessionId };
+		const record = meta.wrNoRecord !== true;
+		const link: Link & { sessionId?: string } = { ...(options.sessionId ? this.#links.get(options.sessionId) : undefined), at: t0, sessionId: options.sessionId };
 		if (!link.spaceId && typeof meta.wrSpaceId === "string") link.spaceId = meta.wrSpaceId;
-		const fail = (text: string, cls: ErrorClass): void => {
-			const msg: AssistantMessage = { role: "assistant", content: [], api: ROUTE_API, provider: model.provider, model: model.id, usage: zeroUsage(), stopReason: "error", errorMessage: text, timestamp: t0 };
-			out.push({ type: "error", reason: "error", error: msg });
-			out.end(msg);
-			logEvent("warn", "model.route_failed", { requestKey, spaceId: link.spaceId, conversationId: link.conversationId, taskId: link.taskId, cls, detail: text });
-			this.onRequestFinished?.(link);
-		};
-		if (!pm) return fail(`gateway: unknown platform model ${model.provider}/${model.id}`, "bad_request");
-		const needs = transcriptNeeds(context);
-		const { ordered, skipped } = this.#candidates(pm, needs);
-		let attemptNo = 0;
-		for (const s of skipped) this.#insertAttempt({ requestKey, attemptNo: ++attemptNo, pm, channel: s.channel, link, status: "skipped", cls: s.cls, error: s.detail, retryable: true, failover: false, startedAt: new Date(t0).toISOString(), endedAt: new Date(t0).toISOString() });
-		if (ordered.length === 0) {
-			const why = skipped.length ? skipped.map((s) => `${s.channel?.name ?? s.route.channel_id}: ${s.cls} (${s.detail})`).join("; ") : "no route configured";
-			return fail(`gateway: no available route for ${pm.id} [needs ${needs.image ? "image " : ""}${needs.tools ? "tools" : "text"}]: ${why}`, skipped.some((s) => s.cls === "capability_mismatch") ? "capability_mismatch" : "no_credentials");
-		}
-		const spent = zeroUsage();
-		let last: { msg: AssistantMessage; cand: Candidate } | null = null;
-		let failovers = 0;
-		for (let i = 0; i < ordered.length; i++) {
-			const cand = ordered[i]!;
-			const startedAt = this.now();
-			const denied = this.#acquire(cand.channel);
-			if (denied) {
-				this.#insertAttempt({ requestKey, attemptNo: ++attemptNo, pm, cand, link, status: "skipped", cls: denied, error: denied === "concurrency" ? `concurrency limit ${cand.channel.concurrency_limit}` : `rpm limit ${cand.channel.rpm_limit}`, retryable: true, failover: failovers > 0, startedAt: new Date(startedAt).toISOString(), endedAt: new Date(startedAt).toISOString() });
-				continue;
+		// Enforced here, at the one place every request passes: a model the acting user may no longer use (visibility changed,
+		// personal-key policy switched off, a collaborator continuing someone else's personal-key conversation) never reaches the upstream.
+		if (link.userId && link.orgId && meta.wrNoFailover !== true) {
+			const why = await this.#denial(link.userId, link.orgId, model);
+			if (why) {
+				const msg = errorMessage(model, `model_not_allowed: ${why}`);
+				if (record) this.#insertAttempt({ requestKey, attemptNo: 1, model, row, link, status: "error", cls: "bad_request", error: msg.errorMessage, retryable: false, failover: false, startedAt: new Date(t0).toISOString(), endedAt: nowIso(), fixture: false });
+				out.push({ type: "error", reason: "error", error: msg });
+				out.end(msg);
+				if (record) this.onRequestFinished?.(link);
+				return;
 			}
+		}
+		const upstreamMeta = Object.fromEntries(Object.entries(meta).filter(([k]) => !k.startsWith("wr")));
+		const { metadata: _m, ...rest } = options;
+		const baseOpts: SimpleStreamOptions = { ...rest, ...(Object.keys(upstreamMeta).length ? { metadata: upstreamMeta } : {}), ...(!rest.timeoutMs && row?.timeout_ms ? { timeoutMs: row.timeout_ms } : {}) };
+
+		const needs = transcriptNeeds(context);
+		const chain: Model<Api>[] = [model];
+		// A fallback is called through Models (its own auth) with wrNoRecord/wrNoFailover: the OUTER loop records its attempt and
+		// the fallback's own wrapper must neither record again nor chain further fallbacks (no A→B→A loops).
+		for (const fb of meta.wrNoFailover === true ? [] : this.#fallbacksOf(model.provider, model.id)) {
+			const m = this.#models.getModel(fb.provider, fb.modelId);
+			if (!m || chain.some((c) => c.provider === m.provider && c.id === m.id)) continue;
+			const frow = this.rowOf(m.provider);
+			if (frow && frow.status !== "enabled") continue;
+			if (needs.image && !m.input.includes("image")) continue;
+			if (needs.tools && this.entryOf(m.provider, m.id)?.spec && json<ModelSpec>(this.entryOf(m.provider, m.id)!.spec, {}).tools === false) continue;
+			chain.push(m);
+		}
+
+		const spent = zeroUsage();
+		let last: { msg: AssistantMessage; model: Model<Api> } | undefined;
+		let attemptNo = 0;
+		let failovers = 0;
+		for (let i = 0; i < chain.length; i++) {
+			const cand = chain[i]!;
+			const candRow = i === 0 ? row : (this.rowOf(cand.provider) ?? null);
+			const startedAt = this.now();
 			let started = false;
 			let firstToken: number | null = null;
 			let final: AssistantMessage | undefined;
 			try {
-				const { metadata: _m, ...rest } = options;
-				const upstreamMeta = Object.fromEntries(Object.entries(meta).filter(([k]) => !k.startsWith("wr")));
-				const upOpts: SimpleStreamOptions = {
-					...rest,
-					...(Object.keys(upstreamMeta).length ? { metadata: upstreamMeta } : {}),
-					apiKey: cand.apiKey,
-					...(cand.channel.timeout_ms ? { timeoutMs: cand.channel.timeout_ms } : {}),
-				};
-				if (upOpts.reasoning && !cand.upstream.reasoning) delete upOpts.reasoning;
-				const stream = cand.streams.streamSimple(cand.upstream, this.#rewriteForUpstream(context, pm, cand), upOpts);
+				let stream: AssistantMessageEventStream;
+				if (i === 0) {
+					if (candRow) await this.guardTarget(candRow);
+					stream = run(cand, baseOpts);
+				} else {
+					// Fallback providers resolve THEIR OWN auth through Models: drop whatever was resolved for the primary.
+					const { apiKey: _k, headers: _h, env: _e, ...fbOpts } = baseOpts as SimpleStreamOptions & { env?: unknown };
+					stream = this.#models.streamSimple(cand, context as never, { ...fbOpts, metadata: { ...(fbOpts.metadata ?? {}), wrNoRecord: true, wrNoFailover: true }, ...(candRow?.timeout_ms && !fbOpts.timeoutMs ? { timeoutMs: candRow.timeout_ms } : {}) });
+				}
 				let startEv: AssistantMessageEvent | undefined;
-				const rw = (m: AssistantMessage): AssistantMessage => {
-					m.provider = pm.pi_provider;
-					m.model = pm.id;
-					m.api = ROUTE_API;
-					m.responseModel = `${cand.upstream.provider}/${cand.upstream.id}`;
-					return m;
-				};
 				for await (const ev of stream) {
 					if (ev.type === "start") {
 						startEv = ev;
@@ -630,75 +461,420 @@ export class Gateway implements ModelGateway {
 					if (!started) {
 						started = true;
 						firstToken = this.now() - startedAt;
-						out.push({ type: "start", partial: rw((startEv as any)?.partial ?? ev.partial) });
+						if (startEv) out.push(startEv);
 					}
-					rw(ev.partial);
 					out.push(ev);
 				}
 				final ??= await stream.result();
 			} catch (e) {
-				final = { role: "assistant", content: [], api: cand.upstream.api, provider: cand.upstream.provider, model: cand.upstream.id, usage: zeroUsage(), stopReason: options.signal?.aborted ? "aborted" : "error", errorMessage: (e as Error).message, timestamp: startedAt };
-			} finally {
-				this.#release(cand.channel);
+				final = errorMessage(cand, redactText((e as Error).message), options.signal?.aborted ? "aborted" : "error");
 			}
-			const priced = this.#priced(cand, pm, final.usage ?? zeroUsage());
-			addUsage(spent, priced.usage);
-			const latency = this.now() - startedAt;
+			// Scripted in-process (faux) providers report zero cost; real pi-ai APIs price usage from model.cost themselves.
+			if (candRow?.type === "faux" && final.usage && !final.usage.cost.total) calculateCost(cand, final.usage);
 			const isErr = final.stopReason === "error" || final.stopReason === "aborted";
+			addUsage(spent, final.usage ?? zeroUsage());
 			const cls = isErr ? classifyError(final) : undefined;
-			this.#breakerResult(cand.channel, !isErr, cls?.cls);
-			const canFailover = isErr && !started && final.stopReason === "error" && cls!.retryable && !options.signal?.aborted && i < ordered.length - 1;
-			const attemptId = this.#insertAttempt({ requestKey, attemptNo: ++attemptNo, pm, cand, link, status: !isErr ? "ok" : final.stopReason === "aborted" ? "aborted" : "error", cls: cls?.cls, error: final.errorMessage, retryable: cls?.retryable, failover: failovers > 0, latency, firstToken, usage: priced.usage, costSource: priced.source, stopReason: final.stopReason, startedAt: new Date(startedAt).toISOString(), endedAt: nowIso() });
-			logEvent(isErr ? "warn" : "debug", "model.route_attempt", { requestKey, routeAttemptId: attemptId, spaceId: link.spaceId, conversationId: link.conversationId, taskId: link.taskId, platformModel: pm.id, channel: cand.channel.id, upstream: cand.upstream.id, status: isErr ? final.stopReason : "ok", cls: cls?.cls, latency });
-			last = { msg: final, cand };
+			const canFailover = isErr && !started && final.stopReason === "error" && !!cls?.retryable && !options.signal?.aborted && i < chain.length - 1;
+			const isFixture = cand.provider === FIXTURE_PI_PROVIDER;
+			if (record) {
+				const id = this.#insertAttempt({ requestKey, attemptNo: ++attemptNo, model: cand, row: candRow, link, status: !isErr ? "ok" : final.stopReason === "aborted" ? "aborted" : "error", cls: cls?.cls, error: final.errorMessage, retryable: cls?.retryable, failover: failovers > 0, latency: this.now() - startedAt, firstToken, usage: final.usage, costSource: isFixture ? "fixture" : final.usage?.cost?.totalFromProvider ? "provider" : (cand.cost.input || cand.cost.output) ? "model_price" : "unpriced", stopReason: final.stopReason, startedAt: new Date(startedAt).toISOString(), endedAt: nowIso(), fixture: isFixture });
+				logEvent(isErr ? "warn" : "debug", "model.route_attempt", { requestKey, routeAttemptId: id, spaceId: link.spaceId, conversationId: link.conversationId, taskId: link.taskId, provider: cand.provider, model: cand.id, status: isErr ? final.stopReason : "ok", cls: cls?.cls });
+			}
+			last = { msg: final, model: cand };
 			if (canFailover) {
 				failovers++;
 				continue;
 			}
 			break;
 		}
-		if (!last) {
-			return fail(`gateway: all routes for ${pm.id} are saturated (concurrency/rate limits)`, "concurrency");
+		const msg: AssistantMessage = last!.msg;
+		if (failovers > 0) {
+			// Several upstream calls served this request: the message bills ALL of them (M15-C: actual calls), identity = the model that answered.
+			msg.usage = spent;
+			msg.timestamp = t0;
+			msg.durationMs = this.now() - t0;
 		}
-		// Final message: platform identity, upstream route recorded in responseModel, usage = every actual attempt.
-		// timestamp/durationMs: the whole routed request as the user experienced it (including failed attempts).
-		const msg: AssistantMessage = { ...last.msg, provider: pm.pi_provider, model: pm.id, api: ROUTE_API, responseModel: `${last.cand.upstream.provider}/${last.cand.upstream.id}`, usage: spent, timestamp: t0, durationMs: this.now() - t0 };
+		// Latency stats (M17-C) read durationMs from the message: the whole request as the user experienced it.
+		if (msg.durationMs === undefined) msg.durationMs = this.now() - t0;
+		if (!msg.responseModel) msg.responseModel = `${msg.provider}/${msg.model}`;
 		if (msg.stopReason === "error" || msg.stopReason === "aborted") out.push({ type: "error", reason: msg.stopReason, error: msg });
 		else out.push({ type: "done", reason: msg.stopReason as "stop" | "length" | "toolUse" | "deferred", message: msg });
 		out.end(msg);
-		this.onRequestFinished?.(link);
+		if (record) this.onRequestFinished?.(link);
+	}
+
+	#insertAttempt(a: { requestKey: string; attemptNo: number; model: Model<Api>; row: ProviderRow | null; link: Link & { sessionId?: string }; status: string; cls?: ErrorClass; error?: string; retryable?: boolean; failover: boolean; latency?: number; firstToken?: number | null; usage?: Usage; costSource?: string; stopReason?: string; startedAt: string; endedAt?: string; fixture: boolean }): string {
+		const id = newId("ra");
+		const u = a.usage;
+		this.db.run(
+			`INSERT INTO ops_route_attempts (id, request_key, attempt_no, platform_model_id, pi_provider, channel_id, channel_provider, upstream_model, status, error_class, error_message, retryable, failover, latency_ms, first_token_ms, input_tokens, output_tokens, cache_read, cache_write, cost_total, cost_source, stop_reason, fixture, session_id, space_id, org_id, conversation_id, task_id, started_at, ended_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id,
+			a.requestKey,
+			a.attemptNo,
+			platformId(a.model.provider, a.model.id),
+			a.model.provider,
+			a.row?.id ?? a.model.provider,
+			a.row?.type ?? null,
+			a.model.id,
+			a.status,
+			a.cls ?? null,
+			a.error ? redactText(a.error).slice(0, 1000) : null,
+			a.retryable === undefined ? null : a.retryable ? 1 : 0,
+			a.failover ? 1 : 0,
+			a.latency ?? null,
+			a.firstToken ?? null,
+			u?.input ?? null,
+			u?.output ?? null,
+			u?.cacheRead ?? null,
+			u?.cacheWrite ?? null,
+			u?.cost.total ?? null,
+			a.costSource ?? null,
+			a.stopReason ?? null,
+			a.fixture ? 1 : 0,
+			a.link.sessionId ?? null,
+			a.link.spaceId ?? null,
+			a.link.orgId ?? a.row?.org_id ?? null,
+			a.link.conversationId ?? null,
+			a.link.taskId ?? null,
+			a.startedAt,
+			a.endedAt ?? null,
+		);
+		return id;
+	}
+
+	// ------------------------------------------------------------------ legacy alias provider
+	#registerAliases(): void {
+		const aliases = this.db.all<AliasRow>("SELECT * FROM model_aliases");
+		if (aliases.length === 0) {
+			this.#models.deleteProvider(WORKROOM_PI_PROVIDER);
+			return;
+		}
+		const target = (a: AliasRow) => this.#models.getModel(a.provider_id, a.model_id);
+		const retag = (src: AssistantMessageEventStream, alias: Model<Api>): AssistantMessageEventStream => {
+			const out = createAssistantMessageEventStream();
+			const tag = (m: AssistantMessage | undefined) => {
+				if (m) {
+					m.provider = alias.provider;
+					m.model = alias.id;
+					m.api = ALIAS_API as Api;
+				}
+			};
+			void (async () => {
+				let final: AssistantMessage | undefined;
+				for await (const ev of src) {
+					tag((ev as any).partial);
+					tag((ev as any).message);
+					tag((ev as any).error);
+					out.push(ev);
+					if (ev.type === "done") final = ev.message;
+					else if (ev.type === "error") final = ev.error;
+				}
+				out.end(final ?? (await src.result()));
+			})().catch((e) => {
+				const m = errorMessage(alias, `gateway: ${redactText((e as Error).message)}`);
+				out.push({ type: "error", reason: "error", error: m });
+				out.end(m);
+			});
+			return out;
+		};
+		const stream = (model: Model<Api>, context: TranscriptContext, options?: any) => {
+			const a = this.db.get<AliasRow>("SELECT * FROM model_aliases WHERE alias_id = ?", model.id);
+			const t = a ? target(a) : undefined;
+			if (!t) {
+				const out = createAssistantMessageEventStream();
+				const m = errorMessage(model, `gateway: legacy model ${model.id} no longer maps to an available model`);
+				out.push({ type: "error", reason: "error", error: m });
+				out.end(m);
+				return out;
+			}
+			const { apiKey: _k, headers: _h, env: _e, ...opts } = options ?? {};
+			return retag(this.#models.streamSimple(t, context as never, opts), model);
+		};
+		this.#models.setProvider({
+			id: WORKROOM_PI_PROVIDER,
+			name: "Workroom (legacy model ids)",
+			auth: { apiKey: { name: "legacy alias", resolve: async () => ({ auth: {}, source: "alias" }) } },
+			getModels: () =>
+				this.db.all<AliasRow>("SELECT * FROM model_aliases").flatMap((a) => {
+					const t = target(a);
+					return t ? [{ ...t, id: a.alias_id, name: a.label ?? t.name, provider: WORKROOM_PI_PROVIDER, api: ALIAS_API as Api, baseUrl: "" } as Model<Api>] : [];
+				}),
+			stream: stream as Provider["stream"],
+			streamSimple: stream,
+		});
+	}
+	refreshAliases(): void {
+		this.#registerAliases();
+	}
+
+	// ------------------------------------------------------------------ availability
+	/** Does the provider have everything needed to send a request? (credentials / base URL) */
+	providerHealth(row: ProviderRow): { health: "ready" | "blocked" | "disabled"; detail?: string } {
+		if (row.status !== "enabled") return { health: "disabled", detail: "已停用" };
+		if (!this.#models.getProvider(row.id)) return { health: "blocked", detail: row.type === "faux" ? "未附加进程内 provider（仅测试用）" : row.type === "builtin" ? `pi-ai 没有内置 provider「${row.builtin_id}」` : "provider 未能构建（见服务端日志）" };
+		if (row.type !== "builtin" && row.type !== "faux" && !row.base_url) return { health: "blocked", detail: "缺少 Base URL" };
+		if (row.type === "faux") return { health: "ready" };
+		const k = providerKey(row, this.secrets);
+		const hasHeaders = !!row.headers_enc;
+		const hasEnv = !!row.env_enc;
+		if (!k.key && !row.keyless && !hasHeaders && !(row.type === "builtin" && hasEnv)) return { health: "blocked", detail: k.detail ?? "未配置密钥（可勾选“无需密钥”用于本地服务）" };
+		return { health: "ready" };
+	}
+
+	// ------------------------------------------------------------------ visibility
+	/** Fine-grained permission when the RBAC service is present (round 4), else the org role (owner/admin). */
+	async can(p: Principal, permission: "model.use" | "model.manage" | "model.provider.manage"): Promise<boolean> {
+		if (this.#ctx.services.has("authz")) {
+			try {
+				return await this.#ctx.services.get("authz").has(p, permission);
+			} catch {
+				/* unknown permission id etc.: fall back to the org role */
+			}
+		}
+		return permission === "model.use" ? true : p.orgRole !== "member";
+	}
+	/** Sees every enabled model regardless of visibility rules (model.manage). */
+	isModelAdmin(p: Principal): Promise<boolean> {
+		return this.can(p, "model.manage");
+	}
+
+	personalProvidersAllowed(orgId: string): boolean {
+		return this.db.get<{ value: string }>("SELECT value FROM ops_settings WHERE org_id = ? AND key = 'personal_providers'", orgId)?.value === "on";
+	}
+
+	providerVisibleTo(row: ProviderRow, p: Principal, personalOn: boolean): boolean {
+		if (row.scope === "instance") return true;
+		if (row.org_id !== p.orgId) return false;
+		if (row.scope === "user") return row.owner_user_id === p.userId && personalOn;
+		return true;
+	}
+
+	entryVisibleTo(e: EntryRow | undefined, p: Principal, admin: boolean): boolean {
+		if (!e || !e.enabled) return false;
+		const vis = json<Visibility | null>(e.visibility, null);
+		if (!vis || admin) return true;
+		if (vis.userIds?.includes(p.userId)) return true;
+		if (vis.departmentIds?.length && vis.departmentIds.some((d) => p.departmentIds.includes(d))) return true;
+		if (vis.projectIds?.length) {
+			const ph = vis.projectIds.map(() => "?").join(",");
+			if (this.db.get(`SELECT 1 FROM id_project_members WHERE user_id = ? AND removed_at IS NULL AND project_id IN (${ph})`, p.userId, ...vis.projectIds)) return true;
+		}
+		return !vis.departmentIds?.length && !vis.projectIds?.length && !vis.userIds?.length;
+	}
+
+	orgDefault(orgId: string): ModelRef | undefined {
+		const r = this.db.get<{ value: string }>("SELECT value FROM ops_settings WHERE org_id = ? AND key = 'default_model'", orgId);
+		// no org choice: the operator's default from workroom.models.json ("defaultModel")
+		return json<ModelRef | undefined>(r?.value ?? this.db.get<{ value: string }>("SELECT value FROM model_meta WHERE key = 'instance_default'")?.value, undefined);
+	}
+
+	#toListed(row: ProviderRow, m: Model<Api>, e: EntryRow | undefined, health: { health: string; detail?: string }, isDefault: boolean): ListedModel {
+		const spec = json<ModelSpec>(e?.spec, {});
+		const levels = getSupportedThinkingLevels(m as Model<Api>).filter((l) => l !== ("max" as string)) as string[];
+		const caps: Capability[] = ["text", ...(spec.tools === false ? [] : (["tools"] as const)), ...(m.input.includes("image") ? (["image"] as const) : []), ...(m.reasoning ? (["reasoning"] as const) : [])];
+		return {
+			id: platformId(row.id, m.id),
+			label: m.name,
+			description: e?.description ?? undefined,
+			ref: { provider: row.id, modelId: m.id, ...(e?.default_thinking ? { thinkingLevel: e.default_thinking as ModelRef["thinkingLevel"] } : {}) },
+			status: health.health === "ready" ? "ready" : "blocked",
+			statusDetail: health.health === "ready" ? undefined : health.detail,
+			capabilities: caps,
+			thinkingLevels: levels,
+			defaultThinking: e?.default_thinking ?? undefined,
+			contextWindow: m.contextWindow,
+			maxTokens: m.maxTokens,
+			isDefault,
+			fixture: false,
+			providerId: row.id,
+			providerName: row.name,
+			providerType: row.type === "builtin" ? `builtin:${row.builtin_id}` : row.type,
+			scope: row.scope,
+			personal: row.scope === "user",
+			input: [...m.input],
+			reasoning: m.reasoning,
+			cost: m.cost ? { input: m.cost.input, output: m.cost.output, cacheRead: m.cost.cacheRead, cacheWrite: m.cost.cacheWrite } : undefined,
+		};
+	}
+
+	fixtureListed(): ListedModel | null {
+		if (!this.#fixtureProvider) return null;
+		const m = this.#fixtureProvider.getModels()[0];
+		return {
+			id: FIXTURE_MODEL_ID,
+			label: "测试模型（非真实 AI）",
+			description: "确定性脚本回复，用于测试与演示；不是真实 AI，费用记 0。",
+			ref: { provider: FIXTURE_PI_PROVIDER, modelId: FIXTURE_MODEL_ID },
+			status: "fixture",
+			capabilities: ["text", "image", "tools"],
+			thinkingLevels: ["off"],
+			contextWindow: m?.contextWindow ?? 200_000,
+			maxTokens: m?.maxTokens ?? 16_384,
+			isDefault: false,
+			fixture: true,
+			providerId: FIXTURE_PI_PROVIDER,
+			providerName: "测试模型（Fixture）",
+			providerType: "fixture",
+			scope: "fixture",
+			personal: false,
+			input: ["text", "image"],
+			reasoning: false,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		};
+	}
+
+	async listFor(p: Principal): Promise<PlatformModel[]> {
+		if (!(await this.can(p, "model.use"))) return [];
+		const admin = await this.isModelAdmin(p);
+		const personalOn = this.personalProvidersAllowed(p.orgId);
+		const def = this.orgDefault(p.orgId);
+		const out: ListedModel[] = [];
+		for (const row of this.providerRows()) {
+			if (!this.providerVisibleTo(row, p, personalOn)) continue;
+			const health = this.providerHealth(row);
+			if (health.health === "disabled") continue;
+			const prov = this.#models.getProvider(row.id);
+			if (!prov) continue;
+			const entries = this.entriesOf(row.id);
+			for (const m of prov.getModels()) {
+				const e = entries.get(m.id);
+				if (!this.entryVisibleTo(e, p, admin)) continue;
+				out.push(this.#toListed(row, m as Model<Api>, e, health, def?.provider === row.id && def.modelId === m.id));
+			}
+		}
+		// Same display name from different providers: add the provider so users can tell them apart.
+		const counts = new Map<string, number>();
+		for (const m of out) counts.set(m.label, (counts.get(m.label) ?? 0) + 1);
+		for (const m of out) if ((counts.get(m.label) ?? 0) > 1) (m as { label: string }).label = `${m.label} · ${m.providerName}`;
+		out.sort((a, b) => Number(a.personal) - Number(b.personal) || (this.entryOf(a.providerId, a.ref.modelId)?.sort ?? 0) - (this.entryOf(b.providerId, b.ref.modelId)?.sort ?? 0) || a.label.localeCompare(b.label));
+		const fx = this.fixtureListed();
+		if (fx) out.push(fx);
+		// Legacy ids (conversations created before provider-native refs) stay valid but are not offered in pickers.
+		for (const a of this.db.all<AliasRow>("SELECT * FROM model_aliases WHERE org_id IS NULL OR org_id = ?", p.orgId)) {
+			const t = out.find((x) => x.ref.provider === a.provider_id && x.ref.modelId === a.model_id);
+			if (t) out.push({ ...t, id: a.alias_id, label: a.label ?? t.label, ref: { provider: WORKROOM_PI_PROVIDER, modelId: a.alias_id }, isDefault: false, legacy: true });
+		}
+		return out;
+	}
+
+	async defaultModel(p: Principal): Promise<ModelRef> {
+		const list = (await this.listFor(p)).filter((m) => !(m as ListedModel).legacy);
+		const pick = list.find((m) => (m as ListedModel).isDefault && m.status === "ready") ?? list.find((m) => m.status === "ready") ?? list.find((m) => m.status === "fixture") ?? list[0];
+		if (!pick) throw new HttpError(409, "no_model", "没有可用模型");
+		return pick.ref;
+	}
+
+	/** Why the acting user may not use `model` now (undefined = allowed). Fixture and the legacy alias are always allowed (the alias re-checks its target). */
+	async #denial(userId: string, orgId: string, model: Model<Api>): Promise<string | undefined> {
+		if (model.provider === FIXTURE_PI_PROVIDER || model.provider === WORKROOM_PI_PROVIDER) return undefined;
+		let p: Principal | null = null;
+		try {
+			p = await this.#ctx.services.get("identity").principalFor(userId, orgId);
+		} catch {
+			return undefined; // no identity service (unit harness): nothing to enforce against
+		}
+		if (!p) return "用户已停用或移出组织";
+		const row = this.rowOf(model.provider);
+		if (!row) return `服务商 ${model.provider} 不存在`;
+		if (!(await this.can(p, "model.use"))) return "没有使用模型的权限";
+		if (!this.providerVisibleTo(row, p, this.personalProvidersAllowed(p.orgId))) return row.scope === "user" ? "这是他人的个人自带密钥模型，或管理员已关闭个人自带密钥" : "该模型不属于当前组织";
+		if (this.providerHealth(row).health === "disabled") return "服务商已停用";
+		if (!this.entryVisibleTo(this.entryOf(row.id, model.id), p, await this.isModelAdmin(p))) return `模型 ${model.id} 已停用或对你不可见`;
+		return undefined;
+	}
+
+	/** May `p` use this native ref right now? */
+	async canUse(p: Principal, ref: { provider: string; modelId: string }): Promise<boolean> {
+		return (await this.listFor(p)).some((m) => m.ref.provider === ref.provider && m.ref.modelId === ref.modelId);
 	}
 
 	// ------------------------------------------------------------------ admin helpers
-	channelDto(ch: ChannelRow) {
-		const h = this.channelHealth(ch);
-		return {
-			id: ch.id,
-			orgId: ch.org_id ?? undefined,
-			name: ch.name,
-			provider: ch.provider,
-			baseUrl: ch.base_url ?? undefined,
-			credential: ch.api_key_enc ? { kind: "stored" as const, hint: ch.key_hint ?? undefined } : ch.api_key_env ? { kind: "env" as const, envVar: ch.api_key_env } : { kind: "none" as const },
-			status: ch.status,
-			health: h.health,
-			healthDetail: h.detail,
-			rpmLimit: ch.rpm_limit ?? undefined,
-			concurrencyLimit: ch.concurrency_limit ?? undefined,
-			timeoutMs: ch.timeout_ms ?? undefined,
-			price: json(ch.price, undefined),
-			builtin: !!ch.builtin,
-			createdAt: ch.created_at,
-			updatedAt: ch.updated_at,
-		};
-	}
-	routeDto(r: RouteRow) {
-		const d = this.#data();
-		const ch = d.channels.find((c) => c.id === r.channel_id);
-		const pm = d.models.find((m) => m.id === r.platform_model_id);
-		const up = ch && pm ? this.#upstreamModel(ch, r, pm) : null;
-		return { id: r.id, platformModelId: r.platform_model_id, channelId: r.channel_id, upstreamModelId: r.upstream_model_id, priority: r.priority, weight: r.weight, enabled: !!r.enabled, capabilities: up ? this.#routeCaps(r, up.model) : json(r.capabilities, []) };
+	credentialInfo(row: ProviderRow): { kind: "none" | "stored" | "env"; envVar?: string; hint?: string } {
+		return row.api_key_enc ? { kind: "stored", hint: row.key_hint ?? undefined } : row.api_key_env ? { kind: "env", envVar: row.api_key_env } : { kind: "none" };
 	}
 	sealKey(key: string): { enc: string; hint: string } {
-		return { enc: this.secrets.seal(key), hint: secretHint(key) };
+		return { enc: this.secrets.seal(key), hint: key.length <= 8 ? "****" : `****${key.slice(-4)}` };
+	}
+	/** Effective pi-ai model list of a provider (catalog + overrides + manual), as the runtime sees it. */
+	effectiveModels(providerId: string): Model<Api>[] {
+		return [...(this.#models.getProvider(providerId)?.getModels() ?? [])] as Model<Api>[];
+	}
+	hasAttached(id: string): boolean {
+		return this.#attached.has(id);
+	}
+	builtinProviders(): Map<string, Provider> {
+		return this.#builtins;
+	}
+	isReserved(id: string): boolean {
+		return RESERVED_PROVIDER_IDS.has(id) || this.#builtins.has(id);
+	}
+
+	/**
+	 * "获取模型列表": the provider's native fetchModels() through Models.refresh(). The result is persisted by the DB ModelsStore.
+	 * Throws a sanitised Error (HTTP status / network reason) on failure.
+	 */
+	async fetchCatalog(providerId: string, signal?: AbortSignal): Promise<void> {
+		const row = this.rowOf(providerId);
+		if (!row) throw new HttpError(404, "not_found", "服务商不存在");
+		const h = this.providerHealth(row);
+		if (h.health !== "ready") throw new HttpError(409, "provider_not_ready", h.detail ?? "服务商不可用");
+		if (!(await this.#models.checkAuth(providerId))) throw new HttpError(409, "provider_not_ready", "未配置凭据");
+		const res = await this.#models.refresh({ providers: [providerId], force: true, signal });
+		const err = res.errors.get(providerId);
+		if (err) throw new Error(redactText(err.message));
+	}
+
+	/** Test connection: (1) list models, (2) a tiny real completion. Neither is recorded as usage. */
+	async testProvider(providerId: string, opts: { modelId?: string } = {}): Promise<{ ok: boolean; list: { ok: boolean; skipped?: boolean; detail?: string; count?: number; latencyMs?: number; url?: string }; completion: { ok: boolean; modelId?: string; detail?: string; latencyMs?: number; text?: string } }> {
+		const row = this.rowOf(providerId);
+		if (!row) throw new HttpError(404, "not_found", "服务商不存在");
+		const h = this.providerHealth(row);
+		if (h.health === "blocked") return { ok: false, list: { ok: false, skipped: true, detail: h.detail }, completion: { ok: false, detail: h.detail } };
+		const result: Awaited<ReturnType<Gateway["testProvider"]>> = { ok: false, list: { ok: false }, completion: { ok: false } };
+		const generic = row.type === "openai-completions" || row.type === "openai-responses" || row.type === "anthropic-messages";
+		if (generic) {
+			try {
+				await this.guardTarget(row);
+				const k = providerKey(row, this.secrets);
+				const r = await listRemoteModels({ row, baseUrl: this.baseUrlOf(row), key: row.keyless ? undefined : k.key, headers: providerHeaders(row, this.secrets), signal: AbortSignal.timeout(20_000) });
+				result.list = { ok: true, count: r.models.length, latencyMs: r.latencyMs, url: r.url };
+			} catch (e) {
+				result.list = { ok: false, detail: redactText((e as Error).message) };
+			}
+		} else result.list = { ok: true, skipped: true, detail: "该类型不使用 /models 列表接口" };
+		const candidates = this.effectiveModels(providerId);
+		const enabled = candidates.filter((m) => this.entryOf(providerId, m.id)?.enabled);
+		const model = (opts.modelId ? candidates.find((m) => m.id === opts.modelId) : undefined) ?? enabled[0] ?? candidates[0];
+		if (!model) result.completion = { ok: false, detail: "没有可用于测试的模型：请先“获取模型列表”或手动添加一个模型" };
+		else {
+			const t0 = Date.now();
+			try {
+				const msg = await this.#models.completeSimple(model, { messages: [{ role: "user", content: "Reply with the single word: OK", timestamp: Date.now() }] }, { maxTokens: 24, signal: AbortSignal.timeout(45_000), metadata: { wrNoRecord: true } });
+				const text = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("").trim();
+				result.completion = msg.stopReason === "error" || msg.stopReason === "aborted" ? { ok: false, modelId: model.id, detail: redactText(msg.errorMessage ?? msg.stopReason), latencyMs: Date.now() - t0 } : { ok: true, modelId: model.id, text: text.slice(0, 80), latencyMs: Date.now() - t0 };
+			} catch (e) {
+				result.completion = { ok: false, modelId: model.id, detail: redactText((e as Error).message), latencyMs: Date.now() - t0 };
+			}
+		}
+		result.ok = result.list.ok && result.completion.ok;
+		this.db.run("UPDATE model_providers SET last_check = ? WHERE id = ?", JSON.stringify({ at: nowIso(), ok: result.ok, list: result.list.ok, completion: result.completion.ok, detail: result.ok ? undefined : (result.list.detail ?? result.completion.detail)?.slice(0, 300) }), providerId);
+		this.invalidate();
+		return result;
+	}
+
+	/** platform id → display name for every model the runtime can run (stats / traces label lookups). */
+	modelLabels(): Map<string, string> {
+		const out = new Map<string, string>();
+		for (const row of this.providerRows()) for (const m of this.effectiveModels(row.id)) out.set(platformId(row.id, m.id), m.name);
+		for (const a of this.db.all<AliasRow>("SELECT * FROM model_aliases")) out.set(a.alias_id, a.label ?? this.#models.getModel(a.provider_id, a.model_id)?.name ?? a.alias_id);
+		if (this.#fixtureProvider) out.set(FIXTURE_MODEL_ID, "测试模型（非真实 AI）");
+		return out;
+	}
+	envOf(row: ProviderRow): string[] {
+		return Object.keys(providerEnv(row, this.secrets) ?? {});
+	}
+	headerNames(row: ProviderRow): string[] {
+		return Object.keys(providerHeaders(row, this.secrets));
 	}
 }
