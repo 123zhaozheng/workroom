@@ -67,7 +67,8 @@ export function ModelsAdmin() {
 				) : null}
 			</section>
 
-			<section>
+			{/* data-testid kept from the old channels list so existing e2e checks ("keys never shown") still apply */}
+			<section data-testid="admin-channels">
 				<h3 className="mb-2 text-[13px] font-medium text-fg-muted">模型服务商（每个都是一个 pi-ai provider；密钥只在服务端，从不返回浏览器）</h3>
 				<Loadable state={res} what="模型服务商" need="GET /api/admin/model-providers">
 					<ProviderPanel
