@@ -14,7 +14,7 @@ pi-durable 的 id（conversation/entry/task/submission）是数字，在 API 中
 - `GET /conversations?spaceId=&projectId=&q=&limit=` → `{conversations: ConversationSummary[]}`（默认跨所有可读 space）
 - `POST /conversations {spaceId?, projectId?, title?, modelId?}` → `{conversation}`
 - `GET /conversations/:spaceId/:id` → `{conversation, parent?:{conversationId, entryId}, branches: ConversationSummary[], agent}`
-- `PATCH /conversations/:spaceId/:id {title?, archived?}`
+- `PATCH /conversations/:spaceId/:id {title?, archived?, modelId?, thinkingLevel?}`（`modelId`：切换已有对话的模型，需会话写权限 + 网关可见；`thinkingLevel` 须是该模型支持的档位，缺省为模型默认；记一条 `wr.notice`（code `model_switched`），从下一次请求起生效；分支各自保留自己的模型）
 - `GET /conversations/:spaceId/:id/entries?before=&limit=` → `{items: EntryDTO[], next?}`
 - `GET /conversations/:spaceId/:id/events`（SSE）：`snapshot`（连接时完整 `ConversationState`）、`state`（变化时完整状态，节流）、`ping`。断开只停止订阅。
 - `POST /conversations/:spaceId/:id/messages {text, requestId, attachments?, knowledgeRefs?, mode?: "auto"|"steer"|"followUp"}` → `{submissionId, status}`；同 requestId 返回同一 submission

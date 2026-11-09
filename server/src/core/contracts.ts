@@ -143,6 +143,8 @@ export interface PlatformModel {
 	readonly status: "ready" | "blocked" | "fixture";
 	readonly statusDetail?: string;
 	readonly capabilities: readonly ("text" | "image" | "tools" | "reasoning")[];
+	/** Thinking levels the model supports (gateway-listed models always set it; absent = only "off"). */
+	readonly thinkingLevels?: readonly string[];
 }
 
 // ---------- knowledge (group C) ----------

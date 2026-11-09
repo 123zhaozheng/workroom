@@ -1,8 +1,9 @@
 // RuntimeService implementation: catalog (ACL/display only), conversations, submissions, branches, state.
 // All conversation / entry / branch / submission / run facts are read from pi-durable; rt_conversations holds only
 // spaceId, createdBy, title, projectId, kind, archived, createdAt/updatedAt.
+import { randomUUID } from "node:crypto";
 import { type Context } from "@earendil-works/chord/context";
-import { ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi, type PromptInput, type Extension } from "@earendil-works/pi-durable";
+import { configure, ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi, type PromptInput, type Extension } from "@earendil-works/pi-durable";
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, SubagentDTO, SubmissionDTO, TasksResponse } from "../../../shared/chat.ts";
@@ -316,10 +317,15 @@ export class Runtime implements RuntimeService {
 		this.ctx.db.run("UPDATE rt_conversations SET updated_at = ? WHERE space_id = ? AND conversation_id = ?", nowIso(), spaceId, conversationId);
 	}
 
-	async patch(p: Principal, spaceId: string, conversationId: number, body: { title?: string; archived?: boolean }, context: Context): Promise<ConversationSummary> {
+	async patch(p: Principal, spaceId: string, conversationId: number, body: { title?: string; archived?: boolean; modelId?: string; thinkingLevel?: string }, context: Context): Promise<ConversationSummary> {
 		await this.require(p, "write", spaceId, conversationId);
 		const row = this.row(spaceId, conversationId);
 		if (!row) throw new HttpError(404, "not_found", "会话不存在");
+		// Validate and apply the model switch first: a refused switch must not leave a half-applied PATCH (title/archived).
+		if (body.modelId !== undefined || body.thinkingLevel !== undefined) {
+			if (body.modelId === undefined) throw new HttpError(400, "invalid_model", "切换思考强度需要同时给出 modelId");
+			await this.switchModel(p, spaceId, conversationId, body.modelId, body.thinkingLevel, context);
+		}
 		if (body.title !== undefined) {
 			const t = String(body.title).trim();
 			if (!t || t.length > 200) throw new HttpError(400, "invalid_title", "标题不能为空且不超过 200 字");
@@ -348,18 +354,64 @@ export class Runtime implements RuntimeService {
 	 * (platform id, or "provider/modelId" of a listed ref) — never a raw provider model the gateway did not offer.
 	 * Without a gateway only the fixture model exists.
 	 */
-	async resolveModel(p: Principal, modelId: string | undefined): Promise<ModelRef | undefined> {
-		if (!modelId) return undefined;
+	async resolveModel(p: Principal, modelId: string | undefined, thinkingLevel?: unknown): Promise<ModelRef | undefined> {
+		if (!modelId) {
+			if (thinkingLevel !== undefined && thinkingLevel !== null) throw new HttpError(400, "invalid_thinking_level", "指定思考强度需要同时指定模型");
+			return undefined;
+		}
+		const { ref, levels } = await this.#pickModel(p, modelId);
+		const level = this.#validateThinking(levels, thinkingLevel);
+		return level ? { ...ref, thinkingLevel: level } : ref;
+	}
+
+	/** modelId → the principal's listed model (platform id or "provider/modelId") with the levels it supports. */
+	async #pickModel(p: Principal, modelId: string): Promise<{ ref: ModelRef; levels: readonly string[] }> {
 		if (typeof modelId !== "string" || modelId.length > 200) throw new HttpError(400, "unknown_model", "未知模型");
 		if (this.ctx.services.has("models")) {
 			const list = await this.ctx.services.get("models").listFor(p);
 			const m = list.find((x) => x.id === modelId || `${x.ref.provider}/${x.ref.modelId}` === modelId);
 			if (!m) throw new HttpError(400, "unknown_model", "未知模型或无权使用该模型");
 			if (m.status === "blocked") throw new HttpError(409, "model_blocked", `模型不可用：${m.statusDetail ?? "未配置凭据"}`);
-			return m.ref;
+			return { ref: m.ref, levels: m.thinkingLevels ?? ["off"] };
 		}
-		if (modelId === `${FIXTURE_PROVIDER}/${FIXTURE_MODEL_ID}` || modelId === FIXTURE_MODEL_ID) return { provider: FIXTURE_PROVIDER, modelId: FIXTURE_MODEL_ID };
+		if (modelId === `${FIXTURE_PROVIDER}/${FIXTURE_MODEL_ID}` || modelId === FIXTURE_MODEL_ID) return { ref: { provider: FIXTURE_PROVIDER, modelId: FIXTURE_MODEL_ID }, levels: ["off"] };
 		throw new HttpError(400, "unknown_model", "未知模型");
+	}
+
+	/** undefined / null → no explicit level; otherwise it must be one the model supports. */
+	#validateThinking(levels: readonly string[], level: unknown): ModelRef["thinkingLevel"] | undefined {
+		if (level === undefined || level === null || level === "") return undefined;
+		if (typeof level !== "string" || !levels.includes(level)) throw new HttpError(400, "invalid_thinking_level", `该模型不支持思考强度「${String(level)}」（支持：${levels.join(" / ") || "无"}）`, { supported: [...levels] });
+		return level as ModelRef["thinkingLevel"];
+	}
+
+	/**
+	 * Switch the model (and thinking level) of an existing conversation: pi-durable `configure()` in one commit with a visible
+	 * `wr.notice` entry ("已切换模型"), so the switch is traceable. Applies from the next request (a running one finishes on the
+	 * old model). Write access and the gateway's model visibility for the ACTING user are checked here; the gateway re-checks per
+	 * request. Branches keep their own agent (a fork copies the agent as of its fork point); switching a branch never touches the parent.
+	 */
+	async switchModel(p: Principal, spaceId: string, conversationId: number, modelId: string, thinkingLevel: unknown, context: Context): Promise<{ changed: boolean }> {
+		const { harness, conv, row } = await this.access(p, "write", spaceId, conversationId, context);
+		if (!row) throw new HttpError(409, "read_only", "子任务会话只读");
+		if (typeof modelId !== "string" || !modelId) throw new HttpError(400, "invalid_model", "modelId 必填");
+		const { ref, levels } = await this.#pickModel(p, modelId);
+		// An omitted level means "the model's own default" (a level of the previous model may not exist on this one).
+		const level = this.#validateThinking(levels, thinkingLevel) ?? ref.thinkingLevel;
+		const before = await conv.agent(context);
+		const same = before.model?.provider === ref.provider && before.model?.modelId === ref.modelId;
+		if (same && (before.thinkingLevel === level || level === undefined)) return { changed: false };
+		const from = this.modelLabel(before.model);
+		const to = this.modelLabel(ref);
+		const text = `已切换模型：${from} → ${to}${level ? `（思考强度：${level}）` : ""}，由 ${p.displayName || p.email} 操作，从下一次请求起生效。`;
+		// One commit: the agent change and the notice. The notice goes in as a passive `write` submission (not a raw appendEntry):
+		// that is the supported way to add an entry to a conversation that may be mid-run, and it never changes what the model sees.
+		await harness.commit(async (tx) => {
+			await configure(tx, cid(conversationId), { model: { provider: ref.provider, modelId: ref.modelId }, thinkingLevel: level ?? null });
+			await conv.submit(tx, { type: "write", requestId: `model-switch:${randomUUID()}`, entry: { kind: NoticeEntry.kind, data: { text, code: "model_switched" } } });
+		}, context);
+		this.ctx.db.run("UPDATE rt_conversations SET updated_at = ? WHERE space_id = ? AND conversation_id = ?", nowIso(), spaceId, conversationId);
+		return { changed: true };
 	}
 
 	/** Is `ref` usable by `p` now? Checked against the gateway's list for the principal (org/department scope, enabled, credentials). */

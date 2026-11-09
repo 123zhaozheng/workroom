@@ -44,7 +44,7 @@
 | `GET /conversations?spaceId=&projectId=&q=&limit=&archived=1` | `{conversations: ConversationSummary[]}`，默认跨所有可读 space |
 | `POST /conversations {spaceId?, projectId?, title?, modelId?, assistantId?}` | `{conversation, agent}`；默认个人 space；默认模型来自 E 的 gateway，否则 fixture |
 | `GET /conversations/:spaceId/:id` | `ConversationDetailResponse`（parent、branches、agent） |
-| `PATCH /conversations/:spaceId/:id {title?, archived?}` | |
+| `PATCH /conversations/:spaceId/:id {title?, archived?, modelId?, thinkingLevel?}` | 带 `modelId` 时走 `configure({model, thinkingLevel})` + 一条 `model_switched` 提示；返回 `{conversation, agent}` |
 | `GET .../entries?before=&limit=` | `EntriesPage`（升序；`next` 传回 `before`）。`pi.system` 不返回 |
 | `GET .../events` (SSE) | `snapshot` → `state`（节流，默认 100 ms，完整 `ConversationState`）、`ping`（15 s）、`error`（`forbidden` / `runtime_closed`，随后关闭）。断开只停止 watch。每 5 s 重查 ACL |
 | `GET .../state` | 与 SSE snapshot 同形的一次性状态 |

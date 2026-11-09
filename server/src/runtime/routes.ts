@@ -38,7 +38,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 
 	api.post("/conversations", async (c) => {
 		const p = principalOf(c);
-		const b = await jsonBody<{ spaceId?: string; projectId?: string; title?: string; modelId?: string; assistantId?: string }>(c);
+		const b = await jsonBody<{ spaceId?: string; projectId?: string; title?: string; modelId?: string; thinkingLevel?: string; assistantId?: string }>(c);
 		const identity = rt.ctx.services.get("identity");
 		let spaceId = b.spaceId;
 		if (b.projectId) {
@@ -48,7 +48,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 			spaceId = s.id;
 		}
 		spaceId ??= identity.personalSpace(p.userId, p.orgId).id;
-		const model = await rt.resolveModel(p, b.modelId);
+		const model = await rt.resolveModel(p, b.modelId, b.thinkingLevel);
 		const { conversationId, notice } = await rt.createConversation(p, spaceId, { title: b.title, projectId: b.projectId, model, assistantId: b.assistantId }, ctx0);
 		const detail = await rt.detail(p, spaceId, conversationId, ctx0);
 		return c.json({ conversation: detail.conversation, agent: detail.agent, ...(notice ? { notice } : {}) });
@@ -61,8 +61,12 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 
 	api.patch("/conversations/:spaceId/:id", async (c) => {
 		const p = principalOf(c);
-		const b = await jsonBody<{ title?: string; archived?: boolean }>(c);
-		return c.json({ conversation: await rt.patch(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0) });
+		const b = await jsonBody<{ title?: string; archived?: boolean; modelId?: string; thinkingLevel?: string }>(c);
+		const spaceId = c.req.param("spaceId");
+		const id = convId(c.req.param("id"));
+		const conversation = await rt.patch(p, spaceId, id, b, ctx0);
+		// A model switch answers with the resulting agent too (the composer re-reads it to confirm what is really in use).
+		return c.json({ conversation, ...(b.modelId !== undefined ? { agent: (await rt.detail(p, spaceId, id, ctx0)).agent } : {}) });
 	});
 
 	api.get("/conversations/:spaceId/:id/entries", async (c) => {
