@@ -7,6 +7,11 @@ import { TopBar } from "@/components/shell/AppShell";
 import { Badge, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
 import { AssistantsSection } from "@/features/assistants/Assistants";
+import type { SessionDTO } from "@shared/ops";
+import { del, errorText, post } from "@/lib/api";
+import { fullTime, relTime } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import type { ModelOption } from "@/features/chat/ModelPicker";
 
 export default function SettingsPage() {
@@ -40,6 +45,7 @@ export default function SettingsPage() {
 						</Row>
 						<Row label="产品">{brand.name}</Row>
 					</Group>
+					<SessionsGroup />
 					<Group title="模型">
 						<Loadable state={models} what="模型列表" need="E 组：GET /api/models">
 							{list.length === 0 ? (
@@ -90,5 +96,56 @@ function Seg<T extends string>({ value, onChange, options }: { value: T; onChang
 				</button>
 			))}
 		</div>
+	);
+}
+
+/** 登录设备 (M16-A): every active session of this account; revoke one or all others. Revoked tokens stop working at once. */
+function SessionsGroup() {
+	const res = useApi<{ sessions: SessionDTO[] }>("/me/sessions");
+	const [err, setErr] = useState<string>();
+	const act = async (fn: () => Promise<unknown>) => {
+		setErr(undefined);
+		try {
+			await fn();
+			res.reload();
+		} catch (e) {
+			setErr(errorText(e));
+		}
+	};
+	const others = (res.data?.sessions ?? []).filter((x) => !x.current && !x.revokedAt).length;
+	return (
+		<section className="mb-8" data-testid="my-sessions">
+			<div className="mb-2 flex items-center">
+				<h2 className="flex-1 text-[13px] font-medium text-fg-muted">登录设备</h2>
+				{others ? (
+					<Button size="sm" onClick={() => act(() => post("/me/sessions/revoke-others"))} data-testid="revoke-others">
+						退出其他设备（{others}）
+					</Button>
+				) : null}
+			</div>
+			<Loadable state={res} what="登录设备" need="E 组：GET /api/me/sessions">
+				{err ? <p className="mb-2 text-[13px] text-danger">{err}</p> : null}
+				<div className="divide-y divide-border rounded-xl border border-border bg-surface px-4">
+					{(res.data?.sessions ?? []).filter((x) => !x.revokedAt).map((x) => (
+						<div key={x.id} data-testid="my-session" className="flex flex-wrap items-center gap-2 py-2.5 text-[13px]">
+							<span className="min-w-0 flex-1">
+								<span className="block truncate">{x.userAgent ?? "未知设备"}</span>
+								<span className="block text-xs text-fg-subtle">
+									{x.authMethod === "password" ? "密码登录" : x.authMethod === "oidc" ? "企业登录" : "邀请加入"} · {fullTime(x.createdAt)}
+									{x.lastSeenAt ? ` · 最近活跃 ${relTime(x.lastSeenAt)}` : ""}
+								</span>
+							</span>
+							{x.current ? (
+								<Badge tone="info">当前设备</Badge>
+							) : (
+								<Button size="sm" variant="ghost" onClick={() => act(() => del(`/me/sessions/${x.id}`))}>
+									退出该设备
+								</Button>
+							)}
+						</div>
+					))}
+				</div>
+			</Loadable>
+		</section>
 	);
 }

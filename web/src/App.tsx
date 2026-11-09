@@ -11,6 +11,7 @@ import { HomePage } from "@/pages/HomePage";
 
 // Secondary pages are separate chunks so the home / chat path stays light.
 const ChatPage = lazy(() => import("@/pages/ChatPage").then((m) => ({ default: m.ChatPage })));
+const SharedPage = lazy(() => import("@/features/share/Share").then((m) => ({ default: m.SharedPage })));
 const SearchPage = lazy(() => import("@/pages/SearchPage"));
 const KnowledgePage = lazy(() => import("@/pages/KnowledgePage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
@@ -69,6 +70,7 @@ export function App() {
 							<Routes>
 								<Route path="/login" element={<AuthPage mode="login" />} />
 								<Route path="/register" element={<AuthPage mode="register" />} />
+								<Route path="/s/:token" element={<Lazy><SharedPage /></Lazy>} />
 								<Route
 									element={
 										<RequireAuth>

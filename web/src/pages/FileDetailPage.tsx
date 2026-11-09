@@ -1,4 +1,4 @@
-import { ArrowLeft, BookPlus, Download, GitCommitVertical, MessageSquare, Upload } from "lucide-react";
+import { ArrowLeft, BookPlus, Download, GitCommitVertical, Link2, MessageSquare, Upload } from "lucide-react";
 import { lazy, Suspense, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import type { FileDetailResponse, FileUploadResponse, FileVersionDTO } from "@shared/files";
@@ -14,6 +14,7 @@ import { Badge, Loadable, Page, Spinner, Unavailable } from "@/components/ui/mis
 import { fileIcon } from "@/features/chat/Cards";
 import { listOf } from "@/features/chat/pickers";
 import { ORIGIN } from "./FilesPage";
+import { ShareDialog } from "@/features/share/Share";
 import { AVAILABILITY } from "./KnowledgePage";
 
 const PreviewViewer = lazy(() => import("@/features/preview/PreviewPanel").then((m) => ({ default: m.Viewer })));
@@ -25,6 +26,7 @@ export default function FileDetailPage() {
 	const kstatus = useApi<FileKnowledgeStatus>(`/kb/files/${encodeURIComponent(fileId!)}/status`, { pollMs: 4000 });
 	const [newVersion, setNewVersion] = useState(false);
 	const [addKb, setAddKb] = useState(false);
+	const [share, setShare] = useState(false);
 	const file = res.data?.file;
 	const versions = res.data?.versions ?? [];
 	const sel = versions.find((v) => v.versionId === sp.get("v")) ?? versions[0];
@@ -78,6 +80,10 @@ export default function FileDetailPage() {
 												下载 v{sel.versionNo}
 											</a>
 										</Button>
+										<Button onClick={() => setShare(true)}>
+											<Link2 />
+											分享
+										</Button>
 										<Button onClick={() => setAddKb(true)}>
 											<BookPlus />
 											加入知识库
@@ -121,6 +127,7 @@ export default function FileDetailPage() {
 										setSp({ v: v.versionId });
 									}}
 								/>
+								<ShareDialog open={share} onOpenChange={setShare} kind="file" id={file.id} title={file.name} />
 								<AddToKbDialog open={addKb} onOpenChange={setAddKb} fileId={file.id} version={sel} onDone={() => kstatus.reload()} />
 							</>
 						) : null}

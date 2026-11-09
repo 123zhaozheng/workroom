@@ -1,0 +1,95 @@
+{
+  "at": "2026-11-09T08:35:56.945Z",
+  "results": [
+    {
+      "name": "setup: three connectors created",
+      "ok": true,
+      "detail": "[\"ready\",\"unauthorized\",\"ready\"]"
+    },
+    {
+      "name": "M04-A: needs-reconnect and credentials-rejected are shown as different states",
+      "ok": true,
+      "detail": "外部笔记（错误凭据） 个人 凭据被拒绝 我的任务可用 重新连接 服务端拒绝凭据：Streamable HTTP error: Error POSTing to endpoint: {\"error\":\""
+    },
+    {
+      "name": "M04-A: reconnect (and credential update by the owner) restores 可用",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M04-A: a member sees the admin-only connector as 无权限 (and cannot enable it)",
+      "ok": true,
+      "detail": "财务系统（仅管理员） 系统 无权限：admins_only 可用 4 个工具 上次检查 2026/11/9 08:29:42 工具：echo、whoami、add_note（写操作，需确认）、fail"
+    },
+    {
+      "name": "setup: executable skill created",
+      "ok": true,
+      "detail": "status=200 "
+    },
+    {
+      "name": "M05-A: prompt preset, context-only and executable skills are labelled distinctly",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M05-A: the executable skill lists its entry, sandbox/file permissions and a grant prompt; text skills need none",
+      "ok": true,
+      "detail": "表格汇总脚本 可执行技能 个人 已启用 · 使用 v1（跟随最新） 启用 把 CSV 汇总成统计表 依赖：无工具 · 权限：在沙箱中执行、写入文件库 · 入口 summarize.sh v1 授权：缺少 在沙箱中执行、写入文件库 授予 v1 所需权限 跟随最新（v1） 固定在 v1 升级到 v1 回滚 版本 v1 · 2026/11/9 08:35:43 · 手动 · 初版 运行记录（任务实际使用"
+    },
+    {
+      "name": "M05-A: per-version grant recorded for the executable skill",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M11-B: a viewer can watch the live page but gets no take-over button (same rule as preview)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M11-B: the server refuses a viewer's take-over anyway",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "M09-C: logged-out visitor opens the share read-only (no composer, no membership)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M09-C: the share token is not a session — project API stays closed to the visitor",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "M09-C: after revoke the link stops working",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M18-B: one conversation id joins route attempts, usage and tool events",
+      "ok": true,
+      "detail": "查询 |  | 结果只包含本组织的数据；提示词、检索词、工具参数等敏感内容由服务端按脱敏配置处理后返回。 |  | 审计 0 | 模型路由 4 | 用量 10 | 自动化运行 0"
+    },
+    {
+      "name": "M18-B: secrets in tool arguments are masked in the trace",
+      "ok": true,
+      "detail": "ok · browse → ok (573 ms) · {\"tool\":\"browse\",\"args\":\"{\\\"url\\\":\\\"http://127.0.0.1:8864/?token=***\\\"}\",\"result\":\"200 http://127.0.0.1:8864/?token=***\",\"attempts\":"
+    },
+    {
+      "name": "M16-A: a revoked session is sent back to login on the other device",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "M16-A: a disabled member is logged out and the login form says why",
+      "ok": true,
+      "detail": "账号不属于任何有效组织（可能已被停用或移除）"
+    },
+    {
+      "name": "M16-A: a removed member loses access immediately (back to login)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

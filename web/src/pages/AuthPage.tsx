@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
-import { post, errorText } from "@/lib/api";
+import { ApiError, post, errorText } from "@/lib/api";
+import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -12,7 +13,9 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
 	const [sp] = useSearchParams();
 	const navigate = useNavigate();
 	const next = sp.get("next") || "/";
-	const [form, setForm] = useState({ email: "", password: "", name: "", orgName: "", inviteCode: sp.get("invite") ?? "" });
+	const [form, setForm] = useState({ email: "", password: "", name: "", orgName: "", inviteCode: sp.get("invite") ?? "", totp: "" });
+	const [needTotp, setNeedTotp] = useState(false);
+	const oidc = useApi<{ providers: { id: string; name: string }[] }>(mode === "login" ? "/auth/oidc/providers" : null);
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string>();
 
@@ -23,7 +26,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
 		setBusy(true);
 		setErr(undefined);
 		try {
-			if (mode === "login") await post("/auth/login", { email: form.email, password: form.password });
+			if (mode === "login") await post("/auth/login", { email: form.email, password: form.password, ...(needTotp ? { totp: form.totp } : {}) });
 			else
 				await post("/auth/register", {
 					email: form.email,
@@ -35,7 +38,10 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
 			await refresh();
 			navigate(next, { replace: true });
 		} catch (e) {
-			setErr(errorText(e));
+			if (e instanceof ApiError && e.code === "totp_required") {
+				setNeedTotp(true);
+				setErr("这个账号开启了两步验证，请输入验证器中的 6 位数字");
+			} else setErr(errorText(e));
 		} finally {
 			setBusy(false);
 		}
@@ -65,6 +71,12 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
 						<Label htmlFor="password">密码</Label>
 						<Input id="password" type="password" required minLength={8} autoComplete={mode === "login" ? "current-password" : "new-password"} {...f("password")} placeholder="至少 8 位" />
 					</div>
+					{needTotp ? (
+						<div>
+							<Label htmlFor="totp">两步验证码</Label>
+							<Input id="totp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} {...f("totp")} placeholder="6 位数字" autoFocus />
+						</div>
+					) : null}
 					{mode === "register" ? (
 						<>
 							<div>
@@ -87,6 +99,15 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
 						{mode === "login" ? "登录" : "创建账号"}
 					</Button>
 				</form>
+				{(oidc.data?.providers ?? []).length ? (
+					<div className="mt-4 space-y-2">
+						{oidc.data!.providers.map((pv) => (
+							<Button key={pv.id} asChild className="w-full">
+								<a href={`/api/auth/oidc/${pv.id}/start?returnTo=${encodeURIComponent(next)}`}>使用 {pv.name} 登录</a>
+							</Button>
+						))}
+					</div>
+				) : null}
 				<p className="mt-6 text-center text-[13px] text-fg-muted">
 					{mode === "login" ? (
 						<>

@@ -1,4 +1,4 @@
-import { FolderOpen, MessageSquare, UserPlus, Users } from "lucide-react";
+import { FolderOpen, Link2, MessageSquare, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { errorText, put } from "@/lib/api";
@@ -11,6 +11,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge, EmptyState, Loadable, Page } from "@/components/ui/misc";
 import { Composer } from "@/features/chat/Composer";
 import { ProjectHandoffSummary } from "@/features/handoff/Handoff";
+import { ShareDialog } from "@/features/share/Share";
 import { useStartConversation } from "@/features/chat/useStartConversation";
 
 export const ROLE: Record<ProjectRole, string> = { owner: "所有者", editor: "编辑者", viewer: "查看者" };
@@ -23,6 +24,7 @@ export default function ProjectPage() {
 	const members = useApi<{ members: ProjectMember[] }>(`/projects/${projectId}/members`);
 	const start = useStartConversation();
 	const isOwner = project?.role === "owner";
+	const [share, setShare] = useState(false);
 	const canWrite = project?.role === "owner" || project?.role === "editor";
 
 	return (
@@ -39,7 +41,15 @@ export default function ProjectPage() {
 									<div className="flex items-center gap-2">
 										<h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
 										<Badge>{ROLE[project.role]}</Badge>
+										<span className="flex-1" />
+										{isOwner ? (
+											<Button size="sm" onClick={() => setShare(true)} data-testid="project-share">
+												<Link2 />
+												外部只读分享
+											</Button>
+										) : null}
 									</div>
+									<ShareDialog open={share} onOpenChange={setShare} kind="project" id={project.id} title={project.name} />
 									{project.description ? <p className="mt-1 text-[13px] text-fg-muted">{project.description}</p> : null}
 								</div>
 								{canWrite ? (

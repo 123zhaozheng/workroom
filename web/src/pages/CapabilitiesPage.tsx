@@ -396,6 +396,7 @@ function DraftPanel({ id, onDone }: { id: string; onDone: () => void }) {
 
 function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => void }) {
 	const { busy, err, run } = useAct(onChanged);
+	const [secrets, setSecrets] = useState<Record<string, string>>({});
 	const st = CSTATUS[c.status];
 	return (
 		<div data-testid="connector" className="rounded-xl border border-border bg-surface p-3">
@@ -411,14 +412,31 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 							<input type="checkbox" checked={c.enabledForMe} disabled={busy} onChange={(e) => run(() => put(`/connectors/${c.id}/enablement`, { enabled: e.target.checked }))} />
 							我的任务可用
 						</label>
-						<Button size="sm" disabled={busy} onClick={() => run(() => post(`/connectors/${c.id}/check`))}>
+						<Button size="sm" disabled={busy} data-testid="connector-reconnect" onClick={() => run(() => post(`/connectors/${c.id}/reconnect`))}>
 							<RefreshCw />
-							{c.status === "needs_reconnect" || c.status === "error" ? "重新连接" : "检查"}
+							{c.status === "needs_reconnect" || c.status === "error" || c.status === "unauthorized" ? "重新连接" : "检查"}
 						</Button>
 					</>
 				) : null}
 			</div>
 			{c.statusDetail ? <p className="mt-1 text-xs text-fg-muted">{c.statusDetail}</p> : null}
+			{c.access === "allowed" && c.canManage && c.secretNames.length && (c.status === "unauthorized" || c.status === "needs_reconnect") ? (
+				<form
+					className="mt-2 flex flex-wrap items-center gap-2"
+					data-testid="connector-secrets"
+					onSubmit={(e) => {
+						e.preventDefault();
+						void run(() => post(`/connectors/${c.id}/reconnect`, { secrets }));
+					}}
+				>
+					{c.secretNames.map((n) => (
+						<Input key={n} type="password" value={secrets[n] ?? ""} onChange={(e) => setSecrets((x) => ({ ...x, [n]: e.target.value }))} placeholder={`新的 ${n}`} className="h-8 w-56 text-xs" aria-label={n} />
+					))}
+					<Button size="sm" type="submit" disabled={busy}>
+						更新凭据并重连
+					</Button>
+				</form>
+			) : null}
 			{c.lastCheckedAt ? <p className="mt-0.5 text-xs text-fg-subtle">上次检查 {fullTime(c.lastCheckedAt)}</p> : null}
 			{c.tools.length ? <p className="mt-1 text-xs text-fg-subtle">工具：{c.tools.map((t) => `${t.tool}${t.policy === "write" ? "（写操作，需确认）" : ""}`).join("、")}</p> : null}
 			{err ? <p className="mt-1 text-xs text-danger">{err}</p> : null}

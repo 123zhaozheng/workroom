@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronDown, ClipboardList, Route, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ClipboardList, Link2, Route, FlaskConical, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { FIXTURE_LABEL, type BranchResponse, type ConversationSummary, type EntryDTO, type SendMessageResponse } from "@shared/chat";
@@ -20,6 +20,7 @@ import { buildTurns, type Turn } from "@/features/chat/model";
 import { RUN_LABEL, RunIcon, SUBMISSION_LABEL, reasonText } from "@/features/chat/status";
 import { useConversationDetail, useConversationStream, useEarlierEntries, useSubmissionTracker } from "@/features/chat/useConversation";
 
+const ShareDialog = lazy(() => import("@/features/share/Share").then((m) => ({ default: m.ShareDialog })));
 const RoutesDialog = lazy(() => import("@/features/chat/RoutesDialog"));
 const HandoffDialog = lazy(() => import("@/features/handoff/Handoff").then((m) => ({ default: m.ConversationHandoffDialog })));
 
@@ -45,6 +46,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const [continuing, setContinuing] = useState(false);
 	const [handoff, setHandoff] = useState(false);
 	const [routes, setRoutes] = useState(false);
+	const [share, setShare] = useState(false);
 
 	const conv = state?.conversation ?? detail?.conversation;
 	const agent = state?.agent ?? detail?.agent;
@@ -237,6 +239,10 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 								<MenuItem data-testid="open-handoff" onSelect={() => setHandoff(true)}>
 									<ClipboardList />
 									交接摘要（决定 / 进展 / 待处理 / 成果）
+								</MenuItem>
+								<MenuItem data-testid="open-share" disabled={readOnly} onSelect={() => setShare(true)}>
+									<Link2 />
+									分享只读链接
 								</MenuItem>
 								<MenuItem data-testid="open-routes" onSelect={() => setRoutes(true)}>
 									<Route />
@@ -434,6 +440,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 					/>
 				)}
 			</div>
+			{share ? (
+				<Suspense fallback={null}>
+					<ShareDialog open={share} onOpenChange={setShare} kind="conversation" id={String(id)} spaceId={spaceId} title={conv?.title ?? "对话"} />
+				</Suspense>
+			) : null}
 			{routes ? (
 				<Suspense fallback={null}>
 					<RoutesDialog spaceId={spaceId} conversationId={id} modelLabel={agent?.modelLabel} fixture={agent?.fixture} open={routes} onOpenChange={setRoutes} />
