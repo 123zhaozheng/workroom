@@ -74,7 +74,7 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | `model.manage` | 管理平台模型 | 组织 |  | ● | ● |  |  |  |  |  |  |
 | `model.provider.manage` | 管理渠道与凭据 | 组织 | 高危 | ● | ● |  |  |  |  |  |  |
 | **预算与账单** | | | |||||||||
-| `budget.view` | 查看预算 | 组织/部门/项目 |  | ● | ● |  | ● | ● |  |  |  |
+| `budget.view` | 查看预算 | 组织/部门/项目 |  | ● | ● |  | ● |  |  |  |  |
 | `budget.manage` | 管理预算 | 组织/部门/项目 | 敏感 | ● | ● |  | ● |  |  |  |  |
 | `billing.view` | 查看成本与账单 | 组织 |  | ● | ● |  | ● |  |  |  |  |
 | `billing.export` | 导出账单 | 组织 | 敏感 | ● | ● |  | ● |  |  |  |  |

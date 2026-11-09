@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from "react";
 import { errorText } from "@/lib/api";
 
-export const ROLE: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员" };
+export const ROLE: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员", guest: "访客" };
 
 /** Runs an action, reports its error inline, then refreshes. */
 export function useAct(after: () => void) {

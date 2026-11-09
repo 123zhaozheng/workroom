@@ -13,6 +13,7 @@ import { fullTime, relTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import type { ModelOption } from "@/features/chat/ModelPicker";
+import { MyPermissionsSection } from "@/features/admin/MyPermissions";
 
 export default function SettingsPage() {
 	const prefs = usePrefs();
@@ -35,6 +36,12 @@ export default function SettingsPage() {
 								{prefs.motionReduced ? "已减少" : "正常"}
 							</label>
 						</Row>
+						<Row label="动态点阵背景" hint="首页与对话页背后的低对比点阵（缓慢起伏、轻微跟随指针）。标签页隐藏或滚出视野时完全暂停；开启“减少动画”后只显示静态点阵。">
+							<label className="inline-flex cursor-pointer items-center gap-2 text-[13px]">
+								<input data-testid="dot-matrix-toggle" type="checkbox" checked={prefs.dotMatrix} onChange={(e) => prefs.set("dotMatrix", e.target.checked)} className="size-4 accent-[var(--accent)]" />
+								{!prefs.dotMatrix ? "已关闭" : prefs.motionReduced ? "静态" : "动态"}
+							</label>
+						</Row>
 					</Group>
 					<AssistantsSection />
 					<Group title="账号">
@@ -45,6 +52,7 @@ export default function SettingsPage() {
 						</Row>
 						<Row label="产品">{brand.name}</Row>
 					</Group>
+					<MyPermissionsSection />
 					<SessionsGroup />
 					<Group title="模型">
 						<Loadable state={models} what="模型列表" need="E 组：GET /api/models">

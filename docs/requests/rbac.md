@@ -37,3 +37,7 @@ Admin routes of other modules that need a permission other than `org.settings.ma
 ## Web (chat UI / shell owners)
 1. `web/src/lib/session.tsx` L56: `isOrgAdmin` should become `permissionsAnywhere` based, e.g. `isOrgAdmin: (data?.me.permissionsAnywhere ?? []).some((p) => ADMIN_CONSOLE_PERMISSIONS.includes(p))` (import from `@shared/permissions`); `/api/me` now returns `permissions` (org scope), `permissionsAnywhere`, `baseRole`, `roles`. Sidebar already uses `isOrgAdmin` for the 组织管理 link, so no other change.
 2. Hide/disable UI that needs a permission the viewer lacks using `me.permissions.includes("<id>")`; the server still enforces.
+
+## Integrator
+1. `web/e2e/run.mjs`: add `"round4-rbac.mjs"` to the list (port 8865, uses `data/dev-rbac`; needs `npm run -w web build` first).
+2. `server/src/modules.ts` needs no change: identity already provides service `authz` and registers the route policy middleware.

@@ -1,0 +1,280 @@
+{
+  "at": "2026-11-09T15:39:58.854Z",
+  "results": [
+    {
+      "name": "seed: six members joined the owner's organisation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "seed: guest invite → read-only base role",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "owner sees every admin tab (10)",
+      "ok": true,
+      "detail": "members,invites,departments,roles,authz,sessions,models,budgets,audit,trace"
+    },
+    {
+      "name": "org structure: tree shows 销售部 / 研发部 and sub-departments",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "org structure: 华东 is a child of 销售部",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "org structure: drag 华东 onto 研发部 moves it (server state)",
+      "ok": true,
+      "detail": "parent=dep_0mw9fft6k1208459362c0b0ff"
+    },
+    {
+      "name": "org structure: 移动到 menu moves it back under 销售部",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "org structure: member added to 华东 and made its head (负责人)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "org structure: 张三 is 销售部's department admin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: eight built-in roles listed",
+      "ok": true,
+      "detail": "8 items"
+    },
+    {
+      "name": "roles: built-in role is read-only (every checkbox disabled, no save)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: permission matrix has grouped checkboxes with descriptions",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: custom role created from the matrix",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: clone of a built-in role is an editable custom role",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: deleting a custom role removes it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "authz: custom role assigned org-wide to 赵六",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "authz: department-scoped assignment shows its scope",
+      "ok": true,
+      "detail": "王五 部门「华西」及子部门 技能审核员 撤销"
+    },
+    {
+      "name": "authz: 赵六 can now read the audit log (server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "authz: 王五's department-scoped reviewer role gives no org-level audit access",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "members: base role + extra role chips visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "member detail: effective permissions list the role's grants",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "member detail: 为什么 names the role and scope",
+      "ok": true,
+      "detail": "角色 角色「内部审计」@ 整个组织 结论：允许（禁止优先于允许）"
+    },
+    {
+      "name": "member detail: direct deny wins and the reason is explained",
+      "ok": true,
+      "detail": "– 查看审计日志 audit.view 为什么 直接禁止 对该用户直接禁止（整个组织）：离岗审查 角色 角色「内部审计」@ 整个组织 结论：拒绝（禁止优先于允许）"
+    },
+    {
+      "name": "member detail: deny enforced by the server on the very next request",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "audit: role/department/grant changes are recorded and visible in the audit tab",
+      "ok": true,
+      "detail": "grant.user_deny,grant.role_assign,role.delete,role.clone,role.create,department.member.set,department.move,department.create,grant.invite_create"
+    },
+    {
+      "name": "dept admin: only permitted tabs are shown (no audit / trace / models / budgets / sessions)",
+      "ok": true,
+      "detail": "members,invites,departments,roles,authz"
+    },
+    {
+      "name": "dept admin: member list is limited to the subtree (李四 yes, 王五 no)",
+      "ok": true,
+      "detail": "张三,李四,赵六"
+    },
+    {
+      "name": "dept admin: departments outside the subtree are not draggable / manageable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dept admin: can manage members inside the subtree",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dept admin: creating a department under another department → 403",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "dept admin: disabling a member of another department → 403",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "dept admin: cannot grant roles beyond their own permissions → 403",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "auditor: sees audit + trace (read-only) but not models / budgets / sessions / invites",
+      "ok": true,
+      "detail": "members,departments,roles,authz,audit,trace"
+    },
+    {
+      "name": "auditor: members list has no disable / remove buttons",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "auditor: audit log readable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "auditor: changing org settings → 403",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "guest: /admin redirects home (no admin permission anywhere)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "我的权限: shows the guest role",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "我的权限: sandbox is not granted to a guest",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "我的权限: 为什么 explains the denial",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "我的权限: model use is granted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "guest: creating a project → 403",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1366: 组织架构 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1366/1366"
+    },
+    {
+      "name": "1366: 角色与权限 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1366/1366"
+    },
+    {
+      "name": "1366: 授权 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1366/1366"
+    },
+    {
+      "name": "1366: 成员详情 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1366/1366"
+    },
+    {
+      "name": "1440: 组织架构 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1440/1440"
+    },
+    {
+      "name": "1440: 角色与权限 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1440/1440"
+    },
+    {
+      "name": "1440: 授权 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1440/1440"
+    },
+    {
+      "name": "1440: 成员详情 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "1440/1440"
+    },
+    {
+      "name": "390: 组织架构 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: 角色与权限 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: 授权 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: 成员详情 fits the viewport (no horizontal scroll)",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: 我的权限 fits the viewport",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

@@ -201,7 +201,6 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
 			"dept.member.manage",
 			"role.view",
 			"role.assign",
-			"budget.view",
 			"stats.department.view",
 			"kb.create.department",
 			"kb.publish",

@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { useAct, Table, Row } from "@/features/admin/common";
+import { useViewerPerms } from "@/features/admin/rbac-ui";
 
 export function Budgets() {
+	const perms = useViewerPerms();
 	const res = useApi<{ budgets: BudgetDTO[] }>("/budgets");
 	const projects = useApi<{ projects: Project[] }>("/projects");
 	const { busy, run, note } = useAct(res.reload);
@@ -21,6 +23,7 @@ export function Budgets() {
 	const [action, setAction] = useState<"block" | "warn">("block");
 	return (
 		<div>
+			{perms.org.has("budget.manage") ? (
 			<form
 				className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-surface p-3"
 				onSubmit={(e) => {
@@ -56,6 +59,9 @@ export function Budgets() {
 					新建预算
 				</Button>
 			</form>
+			) : (
+				<p className="mb-3 text-xs text-fg-subtle">你只有查看预算的权限，不能新建或修改。</p>
+			)}
 			{note}
 			<Loadable state={res} what="预算" need="E 组：GET /api/budgets">
 				{(res.data?.budgets ?? []).length === 0 ? (
@@ -77,12 +83,14 @@ export function Budgets() {
 									</span>
 									<Badge tone={b.state === "ok" ? "success" : b.state === "warn" ? "warning" : "danger"}>{b.state === "ok" ? "正常" : b.state === "warn" ? "接近上限" : "已超限"}</Badge>
 									<label className="flex items-center gap-1.5 text-xs text-fg-muted">
-										<input type="checkbox" checked={b.enabled} disabled={busy} onChange={(e) => run(() => patch(`/admin/budgets/${b.id}`, { enabled: e.target.checked }))} />
+										<input type="checkbox" checked={b.enabled} disabled={busy || !perms.org.has("budget.manage")} onChange={(e) => run(() => patch(`/admin/budgets/${b.id}`, { enabled: e.target.checked }))} />
 										启用
 									</label>
-									<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/budgets/${b.id}`), "预算已删除")}>
-										<Trash2 />
-									</Button>
+									{perms.org.has("budget.manage") ? (
+										<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/budgets/${b.id}`), "预算已删除")}>
+											<Trash2 />
+										</Button>
+									) : null}
 								</Row>
 							</div>
 						))}
