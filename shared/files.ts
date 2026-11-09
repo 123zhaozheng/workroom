@@ -316,3 +316,91 @@ export interface BrowseResultDTO {
 	readonly status?: number;
 	readonly screenshot?: FileVersionRefDTO;
 }
+
+// ---------------- background jobs (M14-C) ----------------
+export type JobKind = "sandbox" | "browse" | "generate";
+export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled" | "timeout";
+export interface JobBudgetDTO {
+	/** Wall-clock budget; the job is stopped (status timeout) when it is exceeded. */
+	readonly timeoutMs: number;
+	/** CPU seconds (sandbox jobs). */
+	readonly cpuSeconds: number;
+	readonly memoryBytes: number;
+}
+export interface JobDTO {
+	readonly id: string;
+	readonly kind: JobKind;
+	readonly title: string;
+	readonly status: JobStatus;
+	readonly spaceId: string;
+	readonly conversationId: number;
+	readonly userId: string;
+	/** pi-durable task id of the background job task. */
+	readonly taskId?: number;
+	readonly budget: JobBudgetDTO;
+	/** rerun = restart from scratch after a server restart; fail = mark failed (default for scripts with side effects). */
+	readonly restartPolicy: "rerun" | "fail";
+	readonly attempts: number;
+	readonly progress?: string;
+	/** Short result text (stdout tail, page title, …). */
+	readonly summary?: string;
+	readonly error?: string;
+	/** Results published to the file library. */
+	readonly outputs: readonly FileVersionRefDTO[];
+	readonly sandboxRunId?: string;
+	readonly cancelRequestedBy?: string;
+	readonly createdAt: string;
+	readonly startedAt?: string;
+	readonly finishedAt?: string;
+	readonly updatedAt: string;
+	/** Caller may cancel (space write access). */
+	readonly canCancel?: boolean;
+}
+/** GET /jobs?spaceId=&conversationId=&status= */
+export interface JobListResponse {
+	readonly jobs: JobDTO[];
+}
+
+// ---------------- interactive browser sessions (M11-B) ----------------
+export type BrowserActionType = "navigate" | "click" | "type" | "press" | "scroll" | "back" | "forward" | "reload";
+export interface BrowserActionRequest {
+	readonly type: BrowserActionType;
+	readonly url?: string;
+	/** click: viewport coordinates of the last screenshot (CSS pixels). */
+	readonly x?: number;
+	readonly y?: number;
+	/** type: text to insert at the focused element. press: a key name such as "Enter". */
+	readonly text?: string;
+	readonly key?: string;
+	/** scroll: pixels (positive = down). */
+	readonly deltaY?: number;
+}
+export interface BrowserSessionDTO {
+	readonly id: string;
+	readonly spaceId: string;
+	readonly conversationId: number;
+	readonly url: string;
+	readonly title: string;
+	/** Who drives the session now: the agent (tools) or a user who took over. */
+	readonly controller: { readonly kind: "agent" } | { readonly kind: "user"; readonly userId: string; readonly name?: string };
+	readonly viewport: { readonly width: number; readonly height: number };
+	/** Increments on every action; append `?v=<n>` to the screenshot URL to refresh. */
+	readonly version: number;
+	readonly screenshotUrl: string;
+	readonly lastAction?: string;
+	readonly blockedRequests: number;
+	readonly createdBy: string;
+	readonly createdAt: string;
+	readonly updatedAt: string;
+	readonly expiresAt: string;
+	/** For the caller: may act / take over (space write) or only watch (read). */
+	readonly canControl?: boolean;
+}
+export interface BrowserSessionListResponse {
+	readonly sessions: BrowserSessionDTO[];
+}
+/** Work items of a conversation shown next to the chat (also embeddable in ConversationState as `work`). */
+export interface ConversationWorkDTO {
+	readonly jobs: JobDTO[];
+	readonly browserSessions: BrowserSessionDTO[];
+}

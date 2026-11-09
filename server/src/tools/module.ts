@@ -9,6 +9,7 @@ import { pdfFontStatus } from "../files/generate.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
+import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { contentDisposition } from "../files/module.ts";
@@ -51,6 +52,7 @@ export const toolsModule: WorkroomModule = {
 		...MCP_MIGRATIONS.map((m) => ({ ...m, version: m.version + 100 })),
 		...SANDBOX_MIGRATIONS.map((m) => ({ ...m, version: m.version + 200 })),
 		...SKILL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 300 })),
+		...JOB_MIGRATIONS.map((m) => ({ ...m, version: m.version + 400 })),
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -58,6 +60,7 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("sandbox", new Sandbox(ctx));
 		ctx.services.provide("browser", new BrowserService(ctx));
 		ctx.services.provide("skills", new Skills(ctx));
+		ctx.services.provide("jobs", new Jobs(ctx));
 	},
 	extensions(ctx) {
 		const mgr = ctx.services.get("mcp") as McpManager;
@@ -76,7 +79,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), codemode];
+		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createJobsExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		(ctx.services.get("mcp") as McpManager).start();
@@ -151,6 +154,30 @@ export const toolsModule: WorkroomModule = {
 			const ref = await (ctx.services.get("files") as unknown as Files).putVersion(p, { fileId: b.fileId, name, mime: effectiveMime(undefined, name), bytes: f.bytes, provenance: { createdBy: p.userId, spaceId: space.id, conversationId: b.conversationId, changeNote: b.changeNote ?? `从沙箱 /work/${b.path} 发布`, origin: "upload", tool: "sandbox_publish" } as any });
 			return c.json({ version: ref });
 		});
+
+		// ---- background jobs (M14-C): space ACL; cancel needs write ----
+		const jobs = ctx.services.get("jobs") as Jobs;
+		api.get("/jobs", async (c) => {
+			const p = principalOf(c);
+			const q = c.req.query();
+			let spaceIds: string[];
+			if (q.spaceId) {
+				await acl.require(p, "read", { kind: "space", id: q.spaceId });
+				spaceIds = [q.spaceId];
+			} else spaceIds = (await acl.readableSpaces(p)).map((s) => s.id);
+			const rows = jobs.list(spaceIds, { conversationId: q.conversationId ? Number(q.conversationId) : undefined, status: q.status });
+			const writable = new Map<string, boolean>();
+			for (const id of new Set(rows.map((r) => r.space_id))) writable.set(id, (await acl.check(p, "write", { kind: "space", id })).allow);
+			return c.json({ jobs: rows.map((r) => jobs.dto(r, writable.get(r.space_id))) });
+		});
+		api.get("/jobs/:id", async (c) => {
+			const p = principalOf(c);
+			const r = jobs.row(c.req.param("id"));
+			if (!r) throw new HttpError(404, "not_found", "任务不存在");
+			await acl.require(p, "read", { kind: "space", id: r.space_id });
+			return c.json({ job: jobs.dto(r, (await acl.check(p, "write", { kind: "space", id: r.space_id })).allow) });
+		});
+		api.post("/jobs/:id/cancel", async (c) => c.json({ job: await jobs.cancel(principalOf(c), c.req.param("id")) }));
 
 		// ---- capabilities (M14-A, tools side): what this user can use right now, and what is unavailable and why ----
 		api.get("/tools/capabilities", async (c) => {

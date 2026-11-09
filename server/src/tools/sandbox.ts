@@ -50,6 +50,8 @@ export const DEFAULT_LIMITS: SandboxLimitsDTO = {
 	network: false,
 };
 export const MAX_TIMEOUT_MS = 300_000;
+/** Background jobs (M14-C) may run longer, within their declared budget. */
+export const JOB_MAX_TIMEOUT_MS = Number(process.env.WORKROOM_JOB_MAX_TIMEOUT_MS ?? 3_600_000);
 export const RETENTION_HOURS = Number(process.env.WORKROOM_SANDBOX_RETENTION_HOURS ?? 72);
 export const QUOTA_BYTES = Number(process.env.WORKROOM_SANDBOX_QUOTA_MB ?? 512) * 1024 * 1024;
 const OUTPUT_CAP = 256 * 1024;
@@ -84,12 +86,27 @@ mount -t proc -o nosuid,nodev,noexec proc "$ROOT/proc"
 for n in null zero urandom random; do touch "$ROOT/dev/$n"; mount --bind "/dev/$n" "$ROOT/dev/$n"; done
 mkdir -p "$ROOT/.old"; mount -o remount,ro "$ROOT"
 cd "$ROOT"; pivot_root . .old; umount -l /.old; cd /work
-exec /usr/bin/env -i PATH=/runtime/bin:/usr/local/bin:/usr/bin:/bin HOME=/work TMPDIR=/tmp LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 \
-  /usr/bin/prlimit --nproc="$NPROC" --as="$AS" --cpu="$CPU" --fsize="$FSIZE" --nofile=256 --core=0 -- \
-  /usr/bin/setpriv --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all -- "$@"`;
+# Not exec'd: the shell stays pid 1 so a program killed by a signal (e.g. SIGXCPU) yields a normal 128+N exit status.
+/usr/bin/env -i PATH=/runtime/bin:/usr/local/bin:/usr/bin:/bin HOME=/work TMPDIR=/tmp LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/prlimit --nproc="$NPROC" --as="$AS" --cpu="$CPU:$((CPU + 2))" --fsize="$FSIZE" --nofile=256 --core=0 -- \
+  /usr/bin/setpriv --no-new-privs --bounding-set=-all --inh-caps=-all --ambient-caps=-all -- "$@"
+exit $?`;
 
 let probed: { ok: boolean; detail: string } | undefined;
 /** Whether this host can build the namespace sandbox (cached). */
+/** Kill a sandbox process group left behind by a previous process (crash/restart), if it is still ours. */
+export function killStaleSandbox(pid: number | null | undefined): boolean {
+	if (!pid) return false;
+	try {
+		const cmd = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+		if (!cmd.includes("wr-sandbox")) return false;
+		process.kill(-pid, "SIGKILL");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function probeIsolation(): { ok: boolean; detail: string } {
 	if (probed) return probed;
 	const tools = ["/usr/bin/unshare", "/usr/bin/prlimit", "/usr/bin/setpriv"].filter((p) => !existsSync(p));
@@ -207,13 +224,14 @@ export class Sandbox {
 	}
 
 	/** Execute code in the sandbox. Records a run row (idempotent per tool call). */
-	async run(input: { principal: Principal; space: Space; conversationId?: number; taskId?: number; callId?: string; language: Language; code: string; timeoutMs?: number; network?: boolean; signal?: AbortSignal }): Promise<SandboxRunDTO> {
+	async run(input: { principal: Principal; space: Space; conversationId?: number; taskId?: number; callId?: string; language: Language; code: string; timeoutMs?: number; network?: boolean; signal?: AbortSignal; maxTimeoutMs?: number; cpuSeconds?: number; onSpawn?: (pid: number) => void }): Promise<SandboxRunDTO> {
 		const iso = probeIsolation();
 		if (!iso.ok) throw new HttpError(503, "sandbox_unavailable", `沙箱不可用：${iso.detail}`);
 		if (input.network) throw new HttpError(403, "network_disabled", "沙箱默认不允许联网；本部署未开放沙箱网络");
 		if (!["shell", "python", "node"].includes(input.language)) throw new HttpError(400, "bad_language", "language 必须是 shell、python 或 node");
-		const timeoutMs = Math.min(Math.max(input.timeoutMs ?? DEFAULT_LIMITS.timeoutMs, 1000), MAX_TIMEOUT_MS);
-		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, timeoutMs, cpuSeconds: Math.ceil(timeoutMs / 1000) };
+		const timeoutMs = Math.min(Math.max(input.timeoutMs ?? DEFAULT_LIMITS.timeoutMs, 1000), input.maxTimeoutMs ?? MAX_TIMEOUT_MS);
+		const cpuSeconds = Math.max(1, Math.min(input.cpuSeconds ?? Math.ceil(timeoutMs / 1000), Math.ceil(timeoutMs / 1000)));
+		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, timeoutMs, cpuSeconds };
 		const wd = this.workdir(input.space, input.conversationId);
 		const used = dirSize(this.root(input.space));
 		if (used > QUOTA_BYTES) throw new HttpError(507, "sandbox_quota", `工作目录已用 ${Math.round(used / 1048576)} MB，超过配额 ${Math.round(QUOTA_BYTES / 1048576)} MB；请先发布需要的文件并清理`);
@@ -223,12 +241,12 @@ export class Sandbox {
 			"INSERT INTO tool_sandbox_runs (id, space_id, conversation_id, task_id, call_id, user_id, language, code, status, limits, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)",
 			id, input.space.id, input.conversationId ?? null, input.taskId ?? null, input.callId ?? null, input.principal.userId, input.language, input.code.slice(0, 200_000), JSON.stringify(limits), nowIso(),
 		);
-		const r = await this.#exec(input.space, wd, input.language, input.code, limits, id, input.signal);
+		const r = await this.#exec(input.space, wd, input.language, input.code, limits, id, input.signal, input.onSpawn);
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
 		return this.runDTO(id)!;
 	}
 
-	async #exec(space: Space, wd: string, language: Language, code: string, limits: SandboxLimitsDTO, runId: string, abortSignal?: AbortSignal): Promise<RunResult> {
+	async #exec(space: Space, wd: string, language: Language, code: string, limits: SandboxLimitsDTO, runId: string, abortSignal?: AbortSignal, onSpawn?: (pid: number) => void): Promise<RunResult> {
 		const scratch = join(this.root(space), ".runs", runId);
 		const rootDir = join(scratch, "root");
 		const codeDir = join(scratch, "code");
@@ -247,6 +265,7 @@ export class Sandbox {
 		const out = capped();
 		const err = capped();
 		const child = spawn("/usr/bin/unshare", args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin" } });
+		if (child.pid) onSpawn?.(child.pid);
 		child.stdout.on("data", (b: Buffer) => out.push(b));
 		child.stderr.on("data", (b: Buffer) => err.push(b));
 		let timedOut = false;

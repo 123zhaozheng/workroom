@@ -37,6 +37,18 @@ D's e2e test `server/test/tools-e2e.test.ts` passes through the real runtime (fi
    cannot call them) and filters `tool_search` by org/user. A per-org registry or per-conversation extension selection would let
    code mode call connector tools safely.
 
+8. **Round 2 — jobs and work items in ConversationState.** Background jobs (`job_start`, M14-C) are pi tasks created with
+   `{ ownership: { kind: "conversation" }, background: true }` in the conversation (pi task kind `wr.job`, installed via
+   `wr.jobs` extension `tasks`). Their status is mirrored in the conversation doc `wr.jobs` (`{ jobs: { [jobId]: { status, title, kind,
+   updatedAt } } }`) on every transition, so a conversation watch sees the change. Please add to `ConversationState`:
+   `work?: ConversationWorkDTO` (from `shared/files.ts`) =
+   `(ctx.services.get("work") as { forConversation(spaceId, conversationId): ConversationWorkDTO }).forConversation(spaceId, conversationId)`
+   (jobs + interactive browser sessions), and re-emit state when `wr.jobs` changes. Until then B reads `GET /api/jobs?spaceId=&conversationId=`
+   and `GET /api/work/:spaceId/:conversationId`.
+9. **Abort semantics.** Background jobs are excluded from an ordinary conversation abort by design (the chat stays usable and a "stop"
+   of the current answer must not kill a 30-minute job). Jobs are cancelled with `POST /api/jobs/:id/cancel` (→ `harness.abortTask`) or by
+   `conversation.abort(ctx, { background: true })` if you add a "stop everything" action.
+
 ## To C (knowledge)
 
 - `files.getVersion(principal, versionId)` returns `null` when the version does not exist or the principal may not read it.
