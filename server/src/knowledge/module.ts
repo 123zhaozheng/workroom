@@ -122,9 +122,9 @@ function mountRoutes(api: Hono<AppEnv>, ctx: AppContext): void {
 	});
 	api.post("/kb/eval", async (c) => {
 		const p = principalOf(c);
-		const b = await jsonBody<{ samples: KbEvalSample[]; kbIds?: string[] }>(c);
+		const b = await jsonBody<{ samples: KbEvalSample[]; kbIds?: string[]; explain?: boolean }>(c);
 		if (!Array.isArray(b.samples) || b.samples.length > 200) throw new HttpError(400, "invalid", "samples 必须是数组（最多 200 条）");
-		return c.json(await runEval(s(), p, b.samples, { kbIds: b.kbIds, requestId: c.get("requestId") }));
+		return c.json(await runEval(s(), p, b.samples, { kbIds: b.kbIds, requestId: c.get("requestId"), explain: !!b.explain }));
 	});
 	api.get("/kb/admin/retrieval-events", (c) => {
 		const p = principalOf(c);

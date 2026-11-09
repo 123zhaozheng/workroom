@@ -195,7 +195,28 @@ export interface KbSearchRequest {
 	readonly debug?: boolean;
 }
 
+/** Why one KB was (not) searched for this query (M07-C retrieval debug). Inaccessible KBs appear only if explicitly requested. */
+export interface KbDecisionDTO {
+	readonly kbId: string;
+	readonly kbName?: string;
+	readonly scope?: KbScope;
+	readonly included: boolean;
+	readonly reason: "searched" | "not_requested" | "outside_project_context" | "outside_member_scope" | "forbidden";
+	/** Access basis (current membership): personal_owner, project_owner|editor|viewer, department_member, kb_owner, kb_maintainer, org_member. */
+	readonly access?: string;
+	/** Index readiness (docs by state). */
+	readonly index?: { readonly ready: number; readonly processing: number; readonly failed: number };
+	/** Governance among servable docs: how many are retrievable now, and how many are excluded by status. */
+	readonly governance?: { readonly retrievable: number; readonly excluded: Partial<Record<"draft" | "expired" | "withdrawn" | "pending", number>>; readonly includeInactive: boolean };
+	/** Matching chunks in this KB before the limit, and citations returned from it. */
+	readonly candidates?: number;
+	readonly hits?: number;
+	/** Human-readable explanation lines. */
+	readonly notes: string[];
+}
+
 export interface KbSearchDebug {
+	readonly kbDecisions: KbDecisionDTO[];
 	readonly ftsQuery: string | null;
 	readonly likeTerms: string[];
 	readonly accessibleKbIds: string[];
@@ -277,7 +298,8 @@ export interface KbEvalResult {
 	readonly passed: number;
 	readonly recallAt5: number;
 	readonly mrr: number;
-	readonly samples: readonly { id: string; pass: boolean; rank: number | null; reason?: RetrievalFailure; top?: string }[];
+	/** kbDecisions: always for failed samples, for all samples when requested with `explain: true`. */
+	readonly samples: readonly { id: string; pass: boolean; rank: number | null; reason?: RetrievalFailure; top?: string; kbDecisions?: KbDecisionDTO[] }[];
 }
 
 // ---------- memory ----------

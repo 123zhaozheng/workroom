@@ -111,6 +111,21 @@ export class KbAccess {
 		return { allow: false, reason: perms.read ? `kb_no_${need}` : kb.scope === "project" ? "not_member" : kb.scope === "department" ? "not_in_department" : "kb_forbidden" };
 	}
 
+	/** Why the principal can read this KB right now (for retrieval debug); undefined when it cannot. */
+	basis(p: Principal, kb: KbRow): string | undefined {
+		if (!this.permissions(p, kb).read) return undefined;
+		switch (kb.scope) {
+			case "personal":
+				return "personal_owner";
+			case "project":
+				return `project_${this.projectRole(p.userId, kb.project_id!)}`;
+			case "department":
+				return kb.department_id && this.inDepartment(p.userId, kb.department_id, p.orgId) ? "department_member" : kb.owner_user_id === p.userId ? "kb_owner" : "kb_maintainer";
+			case "org":
+				return "org_member";
+		}
+	}
+
 	accessibleKbIds(orgId: string, userId: string): string[] {
 		const q = accessibleKbQuery(orgId, userId);
 		return this.db.all<{ id: string }>(q.sql, ...q.params).map((r) => r.id);

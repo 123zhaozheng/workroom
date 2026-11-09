@@ -11,17 +11,19 @@ export function matches(c: CitationDTO, e: KbEvalSample["expect"]): boolean {
 	return true;
 }
 
-export async function runEval(store: KnowledgeStore, p: Principal, samples: readonly KbEvalSample[], opts: { kbIds?: string[]; k?: number; requestId?: string } = {}): Promise<KbEvalResult> {
+export async function runEval(store: KnowledgeStore, p: Principal, samples: readonly KbEvalSample[], opts: { kbIds?: string[]; k?: number; requestId?: string; explain?: boolean } = {}): Promise<KbEvalResult> {
 	const k = opts.k ?? 5;
 	const out: KbEvalResult["samples"][number][] = [];
 	let rr = 0;
 	let recall = 0;
 	let positives = 0;
 	for (const s of samples) {
-		const res = await store.search(p, s.query, { kbIds: opts.kbIds, limit: Math.max(k, 10), trace: { source: "eval", requestId: opts.requestId } });
+		const res = await store.search(p, s.query, { kbIds: opts.kbIds, limit: Math.max(k, 10), debug: true, trace: { source: "eval", requestId: opts.requestId } });
+		const why = (pass: boolean) => (opts.explain || !pass ? { kbDecisions: res.debug?.kbDecisions ?? [] } : {});
 		const top = res.citations[0] ? `${res.citations[0].fileName} · ${res.citations[0].locator}` : undefined;
 		if (s.expect.reason) {
-			out.push({ id: s.id, pass: res.diagnostics.reason === s.expect.reason && res.citations.length === 0, rank: null, reason: res.diagnostics.reason, top });
+			const pass = res.diagnostics.reason === s.expect.reason && res.citations.length === 0;
+			out.push({ id: s.id, pass, rank: null, reason: res.diagnostics.reason, top, ...why(pass) });
 			continue;
 		}
 		positives++;
@@ -29,7 +31,8 @@ export async function runEval(store: KnowledgeStore, p: Principal, samples: read
 		const rank = idx >= 0 ? idx + 1 : null;
 		if (rank !== null && rank <= k) recall++;
 		if (rank !== null) rr += 1 / rank;
-		out.push({ id: s.id, pass: rank !== null && rank <= k, rank, reason: res.diagnostics.reason, top });
+		const pass = rank !== null && rank <= k;
+		out.push({ id: s.id, pass, rank, reason: res.diagnostics.reason, top, ...why(pass) });
 	}
 	return {
 		total: samples.length,

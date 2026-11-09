@@ -55,7 +55,11 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 - 治理过滤：默认只检索 `gov_status='effective'` 且在生效期内的文档（`includeInactive: true` 可包含）。
 - 结果缓存：键 = 组织、用户、本次可检索的 kbId 集合、查询与选项、`generation`、到期边界计数；TTL 60s。成员变化改变可检索集合（换键），文档增删改/就绪/治理变化使 `generation` 加一并清空缓存，所以撤权、删除、更新后**下一次**检索不会命中旧缓存。命中缓存时 `diagnostics.cached = true`。
 - 诊断（`RetrievalDiagnostics`）：`reason` 区分 `no_evidence`（可检索文档中无相关内容/范围内无知识库）、`index_not_ready`（有文档在处理中，或全部处理失败）、`forbidden`（请求的知识库无权访问）、`error`（检索异常）；另含 `searchedKbIds`、`forbiddenKbIds`、`readyDocs`/`pendingDocs`/`failedDocs`、`strategy`（fts / like / fts+like）、`tookMs`、`vector: "blocked"`。“模型错误”不属于检索，由运行时（A）在提交结果中反馈（`unanswered` + `model_error`）。
-- 调试：`POST /api/kb/search {query, kbIds?, docIds?, projectId?, limit?, includeInactive?, debug: true}` 额外返回 `debug { ftsQuery, likeTerms, accessibleKbIds, candidates, embedding }`。
+- 调试：`POST /api/kb/search {query, kbIds?, docIds?, projectId?, limit?, includeInactive?, debug: true}` 额外返回 `debug { kbDecisions, ftsQuery, likeTerms, accessibleKbIds, candidates, embedding }`。
+  `kbDecisions[]`（`KbDecisionDTO`）逐个说明调用者可读的每个知识库为何被检索或排除：`reason` = searched / not_requested / outside_project_context /
+  outside_member_scope / forbidden；`access`（当前成员关系依据，如 project_viewer、department_member、kb_maintainer）；`index`（ready/processing/failed）；
+  `governance`（当前可检索数、按 草案/过期/下架/未生效 排除的数量）；`candidates`/`hits`；中文 `notes`。不可读的知识库只有在被显式请求时出现，且只给 id 与 forbidden，不泄露名称或内容。
+  评估 `POST /api/kb/eval` 对失败样例自动附带 `kbDecisions`（`explain: true` 则全部附带）。
 - 评估：`server/src/knowledge/eval-samples.ts`（md/txt/csv/html/json 语料 + 14 个样例，测试中再加 PDF 页码样例）；`POST /api/kb/eval {samples, kbIds?}` 返回 `passed`、`recallAt5`、`mrr`、逐条 rank。当前：16/16，recall@5 = 1，MRR = 1（`knowledge-eval.test.ts`）。
 - **向量检索：blocked**。没有嵌入模型凭据；`embeddings.ts` 定义了 `EmbeddingProvider` 接口和解锁步骤（`kb_vectors` 表、流水线写入、与 FTS 结果做 RRF 融合并保持同一 SQL 权限过滤），没有伪造向量。
 
@@ -84,6 +88,7 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 
 ## 7. pi-durable 扩展（`extension.ts`）
 
+- 子 Agent：成员声明了 `knowledgeScope.kbIds`（A 写入子会话的 `wr.assistant.member`）时，`kb_search` 只检索该范围（与当前用户 ACL 取交集），范围外的请求按 forbidden 记录在 `forbiddenKbIds`，`diagnostics.memberScope` 标出范围；子会话的 `knowledge_scope` 段也只列出范围内知识库。
 - `kb_search {query, kbIds?, limit?}`：`replay: "safe"`——只读：不写任何行、不调用外部服务；崩溃后重放只是以**当前** ACL 与索引再检索一次，与新的调用等价。行动者通过 `runtime.actorForToolCall(api, ctx)` 解析（A 从 `wr.space` 会话文档取空间，从当前运行的第一条输入取用户与 `knowledgeRefs`，并按当前 ACL 复核）。未指定 kbIds 时使用本次输入的 `knowledgeRefs`（含 docId 时限定到文档），否则按空间默认范围。输出给模型的文本带 `[n]` 编号与“只依据片段陈述”的说明；各失败原因有明确指示（如 no_evidence：不得声称有知识库依据）。`details = { kind: "wr.kb_search", query, citations(n), diagnostics }` 供 UI 渲染。
 - `memory_save {content, scope (必填: private|project|org), kind?}`：`replay: "safe"`——按 `{spaceId, callId}` 幂等，重放返回第一次写入的记忆。project 仅允许在项目会话中、需 owner/editor；org 需组织管理员。来源记为 `extracted`，`sourceRef = {spaceId, conversationId, callId, taskId}`。
 - 提示词段 `knowledge_scope`：列出当前会话默认可检索的知识库及就绪文档数。

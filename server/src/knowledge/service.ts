@@ -6,6 +6,7 @@ import type {
 	CitationStatusDTO,
 	CreateKbRequest,
 	FileKnowledgeStatus,
+	KbDecisionDTO,
 	KbDocDTO,
 	KbDocVersionDTO,
 	KbGovEffectiveStatus,
@@ -99,7 +100,18 @@ export interface RetrievalTrace {
 	taskId?: number;
 	callId?: string;
 }
-export type SearchOptions = Omit<KbSearchRequest, "query"> & { trace?: RetrievalTrace };
+interface KbSearchDebugInternal {
+	ftsQuery: string | null;
+	likeTerms: string[];
+	candidateCount: number;
+	candidates: Map<string, number>;
+	hits: Map<string, number>;
+}
+export type SearchOptions = Omit<KbSearchRequest, "query"> & {
+	trace?: RetrievalTrace;
+	/** Subagent member knowledge scope: only these KBs may be searched (requests outside it are refused as forbidden). */
+	memberScope?: readonly string[];
+};
 export interface SearchResult extends KbSearchResponse {
 	citations: CitationDTO[];
 }
@@ -547,28 +559,45 @@ export class KnowledgeStore implements KnowledgeService {
 			// Current membership, evaluated now (SQL), never cached.
 			const accessible = this.access.accessibleKbIds(p.orgId, p.userId);
 			const accSet = new Set(accessible);
+			const scope = options.memberScope ? [...options.memberScope] : undefined;
+			const requested = options.kbIds?.length ? [...new Set(options.kbIds)] : undefined;
 			let searched: string[];
 			let forbidden: string[] = [];
-			if (options.kbIds?.length) {
-				const req = [...new Set(options.kbIds)];
-				searched = req.filter((id) => accSet.has(id));
-				forbidden = req.filter((id) => !accSet.has(id));
+			let outOfScope: string[] = [];
+			const want = requested ?? scope;
+			if (want) {
+				outOfScope = scope ? want.filter((id) => !scope.includes(id)) : [];
+				const inScope = want.filter((id) => !outOfScope.includes(id));
+				searched = inScope.filter((id) => accSet.has(id));
+				forbidden = [...inScope.filter((id) => !accSet.has(id)), ...outOfScope];
 			} else if (options.projectId) {
 				// Project conversation: only that project's KBs + org-wide KBs. Personal/department KBs need an explicit reference.
 				searched = this.db.all<{ id: string }>(`SELECT id FROM kb_bases WHERE id IN (SELECT value FROM json_each(?)) AND ((scope = 'project' AND project_id = ?) OR scope = 'org')`, JSON.stringify(accessible), options.projectId).map((r) => r.id);
 			} else searched = accessible;
-			const base: RetrievalDiagnostics = { searchedKbIds: searched, ...(forbidden.length ? { forbiddenKbIds: forbidden } : {}) };
+			const debugOf = (extra: Partial<KbSearchDebugInternal> = {}): SearchResult["debug"] | undefined =>
+				options.debug
+					? {
+							kbDecisions: this.#kbDecisions(p, { accessible, searched, requested, scope, outOfScope, forbidden, projectId: options.projectId, includeInactive: !!options.includeInactive, docIds: options.docIds, candidates: extra.candidates, hits: extra.hits }),
+							ftsQuery: extra.ftsQuery ?? null,
+							likeTerms: extra.likeTerms ?? [],
+							accessibleKbIds: accessible,
+							candidates: extra.candidateCount ?? 0,
+							embedding: "blocked",
+						}
+					: undefined;
+			const base: RetrievalDiagnostics = { searchedKbIds: searched, ...(forbidden.length ? { forbiddenKbIds: forbidden } : {}), ...(scope ? { memberScope: scope } : {}) };
 			if (!searched.length) {
-				return out([], forbidden.length ? { ...base, reason: "forbidden", detail: "无权访问所选知识库（或知识库不存在）" } : { ...base, reason: "no_evidence", detail: "当前范围内没有可访问的知识库" });
+				const detail = scope && !scope.length ? "该成员没有被授予任何知识库" : outOfScope.length && outOfScope.length === forbidden.length ? "所选知识库超出该成员声明的知识范围" : "无权访问所选知识库（或知识库不存在）";
+				return out([], forbidden.length || scope ? { ...base, reason: "forbidden", detail } : { ...base, reason: "no_evidence", detail: "当前范围内没有可访问的知识库" }, debugOf());
 			}
 			const plan = planQuery(query ?? "");
-			if (!plan.match && !plan.like.length) return out([], { ...base, reason: "no_evidence", detail: "查询为空或没有可检索的词" });
+			if (!plan.match && !plan.like.length) return out([], { ...base, reason: "no_evidence", detail: "查询为空或没有可检索的词" }, debugOf());
 
 			const counts = this.#docCounts(searched, options.docIds);
 			const limit = Math.max(1, Math.min(50, options.limit ?? 8));
 			const now = nowIso();
 			const timeEpoch = this.db.get<{ n: number }>("SELECT count(*) AS n FROM kb_docs WHERE (expires_at IS NOT NULL AND expires_at <= ?) OR (effective_from IS NOT NULL AND effective_from <= ?)", now, now)!.n;
-			const cacheKey = JSON.stringify([p.orgId, p.userId, searched, forbidden, query, options.docIds ?? null, limit, !!options.includeInactive, this.generation(), timeEpoch]);
+			const cacheKey = JSON.stringify([p.orgId, p.userId, searched, forbidden, scope ?? null, query, options.docIds ?? null, limit, !!options.includeInactive, this.generation(), timeEpoch]);
 			const hit = this.#cache.get(cacheKey);
 			if (hit && Date.now() - hit.at < CACHE_TTL_MS && !options.debug) {
 				return out(hit.value.citations, { ...hit.value.diagnostics, cached: true });
@@ -633,15 +662,79 @@ export class KnowledgeStore implements KnowledgeService {
 				else if (counts.ready === 0 && counts.failed > 0) diagnostics = { ...diagnostics, reason: "index_not_ready", detail: `${counts.failed} 个文档处理失败，没有可检索的内容` };
 				else if (forbidden.length) diagnostics = { ...diagnostics, reason: "forbidden", detail: `无权访问 ${forbidden.length} 个所选知识库；其余知识库中没有找到相关内容` };
 				else diagnostics = { ...diagnostics, reason: "no_evidence", detail: counts.ready ? "知识库中没有与问题相关的内容" : "所选范围内还没有可检索的文档" };
-			} else if (forbidden.length) diagnostics = { ...diagnostics, detail: `已跳过 ${forbidden.length} 个无权访问的知识库` };
+			} else if (forbidden.length) diagnostics = { ...diagnostics, detail: `已跳过 ${forbidden.length} 个无权访问${outOfScope.length ? "或超出成员知识范围" : ""}的知识库` };
 			const result: SearchResult = { citations, diagnostics };
 			this.#cache.set(cacheKey, { at: Date.now(), value: result });
 			if (this.#cache.size > CACHE_MAX) this.#cache.delete(this.#cache.keys().next().value!);
-			return out(citations, diagnostics, options.debug ? { ftsQuery: plan.match, likeTerms: plan.like, accessibleKbIds: accessible, candidates: scored.length, embedding: "blocked" } : undefined);
+			const count = (xs: { kb_id?: string; kbId?: string }[]) => xs.reduce((m, x) => m.set(x.kb_id ?? x.kbId!, (m.get(x.kb_id ?? x.kbId!) ?? 0) + 1), new Map<string, number>());
+			return out(citations, diagnostics, debugOf({ ftsQuery: plan.match, likeTerms: plan.like, candidateCount: scored.length, candidates: options.debug ? count(scored.map((x) => x.h)) : undefined, hits: options.debug ? count(citations) : undefined }));
 		} catch (e) {
 			console.error("[knowledge] search failed", e);
 			return out([], { searchedKbIds: [], reason: "error", detail: `检索出错：${(e as Error).message}` });
 		}
+	}
+
+	/** Per-KB explanation for retrieval debug (M07-C): scope/membership, member scope, project context, index, governance. */
+	#kbDecisions(
+		p: Principal,
+		x: { accessible: string[]; searched: string[]; requested?: string[]; scope?: string[]; outOfScope: string[]; forbidden: string[]; projectId?: string; includeInactive: boolean; docIds?: string[]; candidates?: Map<string, number>; hits?: Map<string, number> },
+	): KbDecisionDTO[] {
+		const out: KbDecisionDTO[] = [];
+		const now = nowIso();
+		const label: Record<string, string> = { draft: "草案", expired: "已过期", withdrawn: "已下架", pending: "未到生效日" };
+		for (const id of x.accessible) {
+			const kb = this.kbRow(id)!;
+			const included = x.searched.includes(id);
+			const reason: KbDecisionDTO["reason"] = included ? "searched" : x.scope && !x.scope.includes(id) ? "outside_member_scope" : x.requested && !x.requested.includes(id) ? "not_requested" : "outside_project_context";
+			const notes: string[] = [];
+			const access = this.access.basis(p, kb);
+			notes.push(`可访问：${access}`);
+			if (reason === "outside_member_scope") notes.push("不在子 Agent 成员声明的知识范围内");
+			if (reason === "not_requested") notes.push("本次请求指定了其他知识库（kbIds）");
+			if (reason === "outside_project_context") notes.push("项目会话默认只检索本项目与企业知识库；个人/部门/其他项目知识库需要显式引用");
+			const docs = this.db.all<DocRow & { latest_status: string }>(
+				`SELECT d.*, v.status AS latest_status FROM kb_docs d JOIN kb_doc_versions v ON v.id = d.latest_version_id WHERE d.kb_id = ? AND d.deleted_at IS NULL ${x.docIds?.length ? "AND d.id IN (SELECT value FROM json_each(?))" : ""}`,
+				id, ...(x.docIds?.length ? [JSON.stringify(x.docIds)] : []),
+			);
+			const index = {
+				ready: docs.filter((d) => d.serving_version_id).length,
+				processing: docs.filter((d) => ["queued", "parsing", "indexing"].includes(d.latest_status)).length,
+				failed: docs.filter((d) => !d.serving_version_id && d.latest_status === "failed").length,
+			};
+			const excluded: Partial<Record<"draft" | "expired" | "withdrawn" | "pending", number>> = {};
+			let retrievable = 0;
+			for (const d of docs.filter((d) => d.serving_version_id)) {
+				const eff = govEffectiveStatus(d, now);
+				if (eff === "effective" || x.includeInactive) retrievable++;
+				else excluded[eff] = (excluded[eff] ?? 0) + 1;
+			}
+			if (included) {
+				if (!docs.length) notes.push("知识库中没有文档");
+				if (index.processing) notes.push(`${index.processing} 个文档处理中（索引未就绪）`);
+				if (index.failed) notes.push(`${index.failed} 个文档处理失败`);
+				for (const [k, n] of Object.entries(excluded)) notes.push(`${n} 个文档因${label[k]}被排除（includeInactive 可包含）`);
+				if (docs.length && !retrievable) notes.push("没有当前可检索的文档");
+				if (x.candidates && !(x.candidates.get(id) ?? 0) && retrievable) notes.push("没有与查询匹配的片段");
+			}
+			out.push({
+				kbId: id,
+				kbName: kb.name,
+				scope: kb.scope,
+				included,
+				reason,
+				...(access ? { access } : {}),
+				index,
+				governance: { retrievable, excluded, includeInactive: x.includeInactive },
+				...(included && x.candidates ? { candidates: x.candidates.get(id) ?? 0, hits: x.hits?.get(id) ?? 0 } : {}),
+				notes,
+			});
+		}
+		// Explicitly requested but not accessible (or not existing): no name, no details — existence is not revealed.
+		for (const id of x.forbidden) {
+			if (x.accessible.includes(id)) continue;
+			out.push({ kbId: id, included: false, reason: x.outOfScope.includes(id) ? "outside_member_scope" : "forbidden", notes: [x.outOfScope.includes(id) ? "不在子 Agent 成员声明的知识范围内" : "无权访问或不存在"] });
+		}
+		return out;
 	}
 
 	#docCounts(kbIds: string[], docIds?: string[]): { ready: number; pending: number; failed: number } {

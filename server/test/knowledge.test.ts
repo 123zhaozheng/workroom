@@ -418,3 +418,68 @@ test("KB management: maintainers, rename, delete KB; capabilities (vector blocke
 		await t.dispose();
 	}
 });
+
+test("retrieval debug explains per KB why it was searched or excluded (scope, membership, governance, index readiness)", async () => {
+	const t = await startTestApp();
+	try {
+		const { alice, bob, orgId } = await orgWithTwo(t);
+		const { project: p } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "P" } });
+		const { project: q } = await t.json("POST", "/api/projects", { token: bob.token, json: { name: "Q" } });
+		await t.json("PUT", `/api/projects/${p.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "viewer" } });
+		const dep = addDepartment(t, orgId, "法务", [alice.me.userId]);
+		const pk = await kbWithDoc(t, alice.token, { name: "P 资料", scope: "project", projectId: p.id }, { name: "p.md", mime: MIME.md, bytes: "# P\n\nThe heron milestone is in May." });
+		const personal = await kbWithDoc(t, bob.token, { name: "Bob 笔记", scope: "personal" }, { name: "bob.txt", mime: MIME.txt, bytes: "Bob heron notes." });
+		const deptKb = await kbWithDoc(t, alice.token, { name: "法务库", scope: "department", departmentId: dep }, { name: "legal.txt", mime: MIME.txt, bytes: "Heron contract clause." });
+		const qk = await kbWithDoc(t, bob.token, { name: "Q 资料", scope: "project", projectId: q.id }, { name: "q.md", mime: MIME.md, bytes: "# Q\n\nThe heron budget for Q." });
+		const org = await kbWithDoc(t, alice.token, { name: "制度", scope: "org" }, { name: "old-policy.md", mime: MIME.md, bytes: "# 制度\n\nOld heron policy." });
+		await t.json("PATCH", `/api/kb/${org.kb.id}/docs/${org.doc.id}/governance`, { token: alice.token, json: { kind: "policy", expiresAt: new Date(Date.now() - 1000).toISOString() } });
+		// A pending doc in P's KB (worker paused).
+		knowledgeAdmin(t).pipeline.pause();
+		const up = await uploadFile(t, alice.token, { name: "pending.txt", mime: MIME.txt, bytes: "heron pending text", projectId: p.id });
+		await t.json("POST", `/api/kb/${pk.kb.id}/docs`, { token: alice.token, json: { fileId: up.fileId, versionId: up.versionId } });
+
+		// Bob, in project P's conversation context.
+		const r = await search(t, bob.token, { query: "heron", projectId: p.id, debug: true });
+		const d = Object.fromEntries(r.debug.kbDecisions.map((x: any) => [x.kbId, x]));
+		assert.equal(d[pk.kb.id].included, true);
+		assert.equal(d[pk.kb.id].access, "project_viewer");
+		assert.deepEqual(d[pk.kb.id].index, { ready: 1, processing: 1, failed: 0 });
+		assert.ok(d[pk.kb.id].notes.some((n: string) => n.includes("处理中")));
+		assert.equal(d[pk.kb.id].hits, 1);
+		assert.equal(d[org.kb.id].included, true);
+		assert.deepEqual(d[org.kb.id].governance.excluded, { expired: 1 });
+		assert.equal(d[org.kb.id].governance.retrievable, 0);
+		assert.ok(d[org.kb.id].notes.some((n: string) => n.includes("已过期")));
+		assert.equal(d[org.kb.id].hits, 0);
+		assert.equal(d[personal.kb.id].included, false);
+		assert.equal(d[personal.kb.id].reason, "outside_project_context");
+		assert.equal(d[personal.kb.id].access, "personal_owner");
+		assert.equal(d[qk.kb.id].reason, "outside_project_context");
+		assert.equal(d[deptKb.kb.id], undefined, "a KB the caller cannot read is not revealed");
+		assert.equal(r.diagnostics.pendingDocs, 1);
+
+		// Explicit kbIds: requested accessible → searched; requested inaccessible → forbidden without name; others not_requested.
+		const r2 = await search(t, bob.token, { query: "heron", kbIds: [personal.kb.id, deptKb.kb.id], debug: true });
+		const d2 = Object.fromEntries(r2.debug.kbDecisions.map((x: any) => [x.kbId, x]));
+		assert.equal(d2[personal.kb.id].reason, "searched");
+		assert.deepEqual(d2[deptKb.kb.id], { kbId: deptKb.kb.id, included: false, reason: "forbidden", notes: ["无权访问或不存在"] });
+		assert.equal(d2[pk.kb.id].reason, "not_requested");
+		// includeInactive flips the governance accounting.
+		const r3 = await search(t, bob.token, { query: "heron", kbIds: [org.kb.id], includeInactive: true, debug: true });
+		assert.equal(r3.debug.kbDecisions.find((x: any) => x.kbId === org.kb.id).governance.retrievable, 1);
+		assert.equal(r3.citations.length, 1);
+		// Member scope (subagent) via the service: outside_member_scope.
+		const bobP = (await t.app.ctx.services.get("identity").principalFor(bob.me.userId, orgId))!;
+		const r4 = await knowledgeAdmin(t).store.search(bobP, "heron", { memberScope: [personal.kb.id], debug: true });
+		assert.deepEqual(r4.diagnostics.searchedKbIds, [personal.kb.id]);
+		assert.equal(r4.debug!.kbDecisions.find((x) => x.kbId === pk.kb.id)!.reason, "outside_member_scope");
+
+		// Eval: a failing sample carries the per-KB explanation automatically.
+		const ev = await t.json("POST", "/api/kb/eval", { token: bob.token, json: { samples: [{ id: "expired-policy", query: "old heron policy", expect: { fileName: "old-policy.md" } }], kbIds: [org.kb.id] } });
+		assert.equal(ev.samples[0].pass, false);
+		assert.ok(ev.samples[0].kbDecisions[0].notes.some((n: string) => n.includes("已过期")));
+		knowledgeAdmin(t).pipeline.resume();
+	} finally {
+		await t.dispose();
+	}
+});
