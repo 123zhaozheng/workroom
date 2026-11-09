@@ -5,7 +5,8 @@
 // Directive protocol (in the newest user message):
 //   [[call <toolName> <json-args>]]   (one or more) → one assistant turn with those tool calls (stopReason toolUse)
 //   [[slow <ms>]]                     → wait <ms> (abortable) before the first answer to that input, then stream
-//   [[fail]]                          → model error (stopReason "error"); pi retries per settings.retry
+//   [[fail]]                          → non-retryable model error (stopReason "error") → run ends model_error
+//   [[fail transient]]                → retryable provider error (503); pi retries after a durable backoff (settings.retry)
 //   [[reply <text>]]                  → answer exactly "<label> <text>"
 // After tool results arrive it answers with a deterministic summary that quotes every tool output of that round.
 // Without directives: heuristic demo mode (知识/资料 → kb_search, 生成/报告/文档 → a file tool) when those tools are
@@ -22,6 +23,8 @@ export interface Directive {
 	readonly calls: { name: string; args: Record<string, unknown> }[];
 	readonly slowMs?: number;
 	readonly fail: boolean;
+	/** [[fail transient]]: a retryable provider error (pi retries it after a durable backoff). */
+	readonly failTransient?: boolean;
 	readonly reply?: string;
 }
 
@@ -30,6 +33,7 @@ export function parseDirectives(text: string): Directive {
 	const calls: Directive["calls"] = [];
 	let slowMs: number | undefined;
 	let fail = false;
+	let failTransient = false;
 	let reply: string | undefined;
 	let i = 0;
 	while ((i = text.indexOf("[[", i)) !== -1) {
@@ -69,12 +73,15 @@ export function parseDirectives(text: string): Directive {
 			if (close === -1) break;
 			const arg = text.slice(p, close).trim();
 			if (word === "slow") slowMs = Math.max(0, Math.min(600_000, Number(arg) || 0));
-			else if (word === "fail") fail = true;
+			else if (word === "fail") {
+				fail = true;
+				if (arg === "transient") failTransient = true;
+			}
 			else reply = arg;
 			i = close + 2;
 		}
 	}
-	return { calls, slowMs, fail, reply };
+	return { calls, slowMs, fail, failTransient, reply };
 }
 
 /** Remove every [[call …]] / [[slow …]] / [[fail]] / [[reply …]] directive (JSON-aware), leaving the human text. */
@@ -211,7 +218,11 @@ export function fixtureAnswer(messages: readonly Message[]): { message: Assistan
 	if (last.role === "user") {
 		const text = textOfContent(last.content as TextContent[]);
 		const d = parseDirectives(text);
-		if (d.fail) return { message: fauxAssistantMessage([], { stopReason: "error", errorMessage: "fixture: simulated model failure ([[fail]])" }), slowMs: d.slowMs };
+		if (d.fail)
+			return {
+				message: fauxAssistantMessage([], { stopReason: "error", errorMessage: d.failTransient ? "fixture: simulated 503 service unavailable ([[fail transient]], retryable)" : "fixture: simulated model failure ([[fail]])" }),
+				slowMs: d.slowMs,
+			};
 		if (d.calls.length > 0) {
 			const blocks: ToolCall[] = d.calls.map((c) => fauxToolCall(c.name, c.args as ToolCall["arguments"], { id: callId(c.name) }));
 			return { message: fauxAssistantMessage(blocks, { stopReason: "toolUse" }), slowMs: d.slowMs };

@@ -115,6 +115,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 				finish();
 			};
 			stream.onAbort(close); // client disconnect only stops the watch; the run continues server-side
+			onStop(rt.manager.hold(spaceId)); // a watched space is never evicted while idle
 
 			const ping = setInterval(() => {
 				if (!closed) stream.writeSSE({ event: "ping", data: JSON.stringify({ at: new Date().toISOString() }) }).catch(close);

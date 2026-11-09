@@ -33,6 +33,12 @@ interface Entry {
 	leaseExpiresAt: number;
 	sleepTimer?: NodeJS.Timeout;
 	closing: boolean;
+	/** Last wake value onWake reported. */
+	wake: Wake;
+	/** Last time a caller asked for this harness (get()) or released a hold. */
+	lastUsed: number;
+	/** Active holds (e.g. SSE watchers); a held harness is never evicted. */
+	holds: number;
 }
 
 export interface HarnessManagerOptions {
@@ -40,6 +46,10 @@ export interface HarnessManagerOptions {
 	readonly heartbeatMs: number;
 	readonly settings: () => HarnessSettings;
 	readonly onReport?: (spaceId: string, report: Report) => void;
+	/** Close a harness idle for this long (no active work, no holds, no sleep due within it). 0 disables eviction. */
+	readonly idleMs?: number;
+	/** How often idle harnesses are looked for. */
+	readonly idleSweepMs?: number;
 }
 
 export class HarnessManager {
@@ -51,6 +61,7 @@ export class HarnessManager {
 	readonly #models: () => Models;
 	readonly fixture: FixtureModel;
 	#heartbeat?: NodeJS.Timeout;
+	#sweep?: NodeJS.Timeout;
 	readonly #wakeTimers = new Set<NodeJS.Timeout>();
 	#stopping = false;
 
@@ -100,7 +111,10 @@ export class HarnessManager {
 	async get(spaceId: string): Promise<Harness> {
 		if (this.#stopping) throw new HttpError(503, "stopping", "服务正在停止");
 		const e = this.#open.get(spaceId);
-		if (e && !e.closing) return e.harness;
+		if (e && !e.closing) {
+			e.lastUsed = Date.now();
+			return e.harness;
+		}
 		let p = this.#opening.get(spaceId);
 		if (!p) {
 			p = this.#doOpen(spaceId).finally(() => this.#opening.delete(spaceId));
@@ -164,7 +178,7 @@ export class HarnessManager {
 	async #doOpen(spaceId: string): Promise<Entry> {
 		const space = this.space(spaceId);
 		const leaseExpiresAt = this.acquireLease(spaceId);
-		const entry: Entry = { spaceId, harness: undefined as unknown as Harness, leaseExpiresAt, closing: false };
+		const entry: Entry = { spaceId, harness: undefined as unknown as Harness, leaseExpiresAt, closing: false, wake: { active: true }, lastUsed: Date.now(), holds: 0 };
 		try {
 			mkdirSync(space.dir, { recursive: true });
 			const raw = await openNodeSqliteStorage(join(space.dir, "durable.sqlite"));
@@ -230,7 +244,8 @@ export class HarnessManager {
 	}
 
 	#onWake(entry: Entry, wake: Wake): void {
-		if (this.#stopping) return;
+		if (this.#stopping || entry.closing) return;
+		entry.wake = wake;
 		try {
 			this.#ctx.db.run(
 				"INSERT INTO rt_space_runtime (space_id, wake_active, wake_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(space_id) DO UPDATE SET wake_active = excluded.wake_active, wake_at = excluded.wake_at, updated_at = excluded.updated_at",
@@ -254,9 +269,66 @@ export class HarnessManager {
 	}
 
 	#ensureHeartbeat(): void {
-		if (this.#heartbeat) return;
-		this.#heartbeat = setInterval(() => this.#beat(), this.#opts.heartbeatMs);
-		this.#heartbeat.unref();
+		if (!this.#heartbeat) {
+			this.#heartbeat = setInterval(() => this.#beat(), this.#opts.heartbeatMs);
+			this.#heartbeat.unref();
+		}
+		if (!this.#sweep && this.#opts.idleMs) {
+			this.#sweep = setInterval(() => void this.evictIdle(), this.#opts.idleSweepMs ?? 60_000);
+			this.#sweep.unref();
+		}
+	}
+
+	/**
+	 * Keep a space's harness open while a client watches it (SSE). Returns the release function; releasing counts as use.
+	 */
+	hold(spaceId: string): () => void {
+		const e = this.#open.get(spaceId);
+		if (!e) return () => {};
+		e.holds++;
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			e.holds = Math.max(0, e.holds - 1);
+			e.lastUsed = Date.now();
+		};
+	}
+
+	/**
+	 * Close harnesses that are idle: no active work (wake.active false), no holds (watchers), unused for idleMs, and no
+	 * sleep due within idleMs. rt_space_runtime keeps wake_at, and a timer reopens the space when its sleep is due;
+	 * any request reopens it on demand.
+	 */
+	async evictIdle(): Promise<string[]> {
+		const idle = this.#opts.idleMs;
+		if (!idle || this.#stopping) return [];
+		const now = Date.now();
+		const evicted: string[] = [];
+		for (const [spaceId, e] of this.#open) {
+			if (e.closing || e.holds > 0 || e.wake.active) continue;
+			if (now - e.lastUsed < idle) continue;
+			if (e.wake.at !== undefined && e.wake.at - now <= idle) continue;
+			// re-read pi's own view at the last moment
+			const w = e.harness.wake();
+			if (w.active || (w.at !== undefined && w.at - now <= idle)) continue;
+			const at = w.at;
+			await this.#close(spaceId, "idle");
+			evicted.push(spaceId);
+			if (at !== undefined) this.#armWake(spaceId, at);
+		}
+		return evicted;
+	}
+
+	#armWake(spaceId: string, at: number): void {
+		this.pendingWakeTimers.add(spaceId);
+		const t = setTimeout(() => {
+			this.pendingWakeTimers.delete(spaceId);
+			this.#wakeTimers.delete(t);
+			this.get(spaceId).catch((err) => console.error(`[runtime] wake of ${spaceId} failed`, err?.message ?? err));
+		}, Math.max(0, Math.min(at - Date.now(), 2_147_000_000)));
+		t.unref();
+		this.#wakeTimers.add(t);
 	}
 
 	async #close(spaceId: string, why: string): Promise<void> {
@@ -289,14 +361,7 @@ export class HarnessManager {
 					skipped.push({ spaceId: r.space_id, reason: err?.code ?? err?.message ?? String(err) });
 				}
 			} else if (r.wake_at !== null) {
-				this.pendingWakeTimers.add(r.space_id);
-				const t = setTimeout(() => {
-					this.pendingWakeTimers.delete(r.space_id);
-					this.#wakeTimers.delete(t);
-					this.get(r.space_id).catch((err) => console.error(`[runtime] wake of ${r.space_id} failed`, err?.message ?? err));
-				}, Math.min(r.wake_at - now, 2_147_000_000));
-				t.unref();
-				this.#wakeTimers.add(t);
+				this.#armWake(r.space_id, r.wake_at);
 				armed.push(r.space_id);
 			}
 		}
@@ -306,6 +371,7 @@ export class HarnessManager {
 	async stop(): Promise<void> {
 		this.#stopping = true;
 		if (this.#heartbeat) clearInterval(this.#heartbeat);
+		if (this.#sweep) clearInterval(this.#sweep);
 		for (const t of this.#wakeTimers) clearTimeout(t);
 		this.#wakeTimers.clear();
 		await Promise.allSettled([...this.#opening.values()]);

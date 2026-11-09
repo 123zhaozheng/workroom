@@ -137,3 +137,61 @@ test("recovery: start() reopens spaces with due work and arms a timer for a futu
 		rmSync(dataDir, { recursive: true, force: true });
 	}
 });
+
+test("idle eviction: an idle harness is closed (lease released), reopened on demand; a watched one is kept; a sleep wakes an evicted space", async () => {
+	const saved = { idle: process.env.WORKROOM_RT_IDLE_MS, sweep: process.env.WORKROOM_RT_IDLE_SWEEP_MS, base: process.env.WORKROOM_RT_RETRY_BASE_MS, max: process.env.WORKROOM_RT_RETRY_MAX };
+	process.env.WORKROOM_RT_IDLE_MS = "300";
+	process.env.WORKROOM_RT_IDLE_SWEEP_MS = "100";
+	const t = await startTestApp();
+	try {
+		const a = await t.user("evict@example.com");
+		const { conversation: c } = await t.json("POST", "/api/conversations", { token: a.token, json: {} });
+		const path = `/api/conversations/${c.spaceId}/${c.conversationId}`;
+		const m = runtimeState(t.app.ctx).manager;
+		const r = await t.json("POST", `${path}/messages`, { token: a.token, json: { text: "[[reply 一次]]", requestId: rid() } });
+		await waitFor(async () => (await t.json("GET", `${path}/submissions/${r.submissionId}`, { token: a.token })).status === "done");
+		// idle → evicted, lease released, wake row kept
+		await waitFor(() => !m.isOpen(c.spaceId), { what: "evicted" });
+		assert.equal(t.app.ctx.db.get<any>("SELECT 1 AS x FROM rt_space_leases WHERE space_id = ?", c.spaceId), undefined);
+		assert.ok(t.app.ctx.db.get<any>("SELECT wake_active FROM rt_space_runtime WHERE space_id = ?", c.spaceId));
+		// reopen on demand: reading works and the transcript is intact
+		const es = (await t.json("GET", `${path}/entries`, { token: a.token })).items;
+		assert.ok(es.some((e: any) => e.kind === "assistant" && e.text.includes("一次")));
+		assert.ok(m.isOpen(c.spaceId));
+		// a watched space (SSE open) is never evicted
+		const { sseReader } = await import("../src/runtime/testing.ts");
+		const sse = sseReader(await t.req("GET", `${path}/events`, { token: a.token }));
+		await sse.next((e) => e.event === "snapshot");
+		await new Promise((res) => setTimeout(res, 700));
+		assert.ok(m.isOpen(c.spaceId), "held by the watcher");
+		await sse.close();
+		await waitFor(() => !m.isOpen(c.spaceId), { what: "evicted after the watcher left" });
+
+		// a sleeping task (retry backoff) lets the space be evicted; the armed wake reopens it and the retry runs
+		process.env.WORKROOM_RT_RETRY_MAX = "1";
+		process.env.WORKROOM_RT_RETRY_BASE_MS = "1500";
+		const f = await t.json("POST", `${path}/messages`, { token: a.token, json: { text: "[[fail transient]]", requestId: rid() } });
+		// first attempt failed; pi committed a durable retry backoff (a sleep)
+		await waitFor(async () => (await t.json("GET", `${path}/state`, { token: a.token })).live.retry, { what: "retry backoff" });
+		await waitFor(() => !m.isOpen(c.spaceId) && m.pendingWakeTimers.has(c.spaceId), { what: "evicted while sleeping", timeoutMs: 1400 });
+		const row = t.app.ctx.db.get<any>("SELECT wake_active, wake_at FROM rt_space_runtime WHERE space_id = ?", c.spaceId);
+		assert.equal(row.wake_active, 0);
+		assert.ok(row.wake_at > Date.now(), "wake_at kept for the scheduler");
+		assert.equal(t.app.ctx.db.get<any>("SELECT 1 AS x FROM rt_space_leases WHERE space_id = ?", c.spaceId), undefined);
+		// no request touches the space: the wake timer alone reopens it when the sleep is due
+		await waitFor(() => m.isOpen(c.spaceId), { what: "reopened by the wake timer", timeoutMs: 5000 });
+		assert.equal(m.pendingWakeTimers.has(c.spaceId), false);
+		// the retry ran (the run can only end after its second attempt)
+		const s = await waitFor(async () => {
+			const x = await t.json("GET", `${path}/submissions/${f.submissionId}`, { token: a.token });
+			return x.status === "unanswered" ? x : undefined;
+		});
+		assert.equal(s.reason, "model_error");
+	} finally {
+		await t.dispose();
+		for (const [k, v] of [["WORKROOM_RT_IDLE_MS", saved.idle], ["WORKROOM_RT_IDLE_SWEEP_MS", saved.sweep], ["WORKROOM_RT_RETRY_BASE_MS", saved.base], ["WORKROOM_RT_RETRY_MAX", saved.max]] as const) {
+			if (v === undefined) delete process.env[k];
+			else process.env[k] = v;
+		}
+	}
+});

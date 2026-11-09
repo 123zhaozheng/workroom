@@ -95,7 +95,7 @@ export const runtimeModule: WorkroomModule = {
 	init(ctx) {
 		const registry = createRegistry();
 		const ttl = envNum("WORKROOM_LEASE_TTL_MS", 30_000);
-		const manager = new HarnessManager(ctx, registry, { leaseTtlMs: ttl, heartbeatMs: Math.max(200, Math.floor(ttl / 3)), settings });
+		const manager = new HarnessManager(ctx, registry, { leaseTtlMs: ttl, heartbeatMs: Math.max(200, Math.floor(ttl / 3)), settings, idleMs: envNum("WORKROOM_RT_IDLE_MS", 10 * 60_000), idleSweepMs: envNum("WORKROOM_RT_IDLE_SWEEP_MS", 60_000) });
 		const rt = new Runtime(ctx, manager);
 		const effects = new Effects(rt);
 		const assistants = new AssistantStore(ctx);
