@@ -49,6 +49,15 @@ D's e2e test `server/test/tools-e2e.test.ts` passes through the real runtime (fi
    of the current answer must not kill a 30-minute job). Jobs are cancelled with `POST /api/jobs/:id/cancel` (→ `harness.abortTask`) or by
    `conversation.abort(ctx, { background: true })` if you add a "stop everything" action.
 
+10. **Default toolset (round 2).** No change needed in the runtime: with no `settings.extensions`, every installed extension is selected,
+    so a default conversation is offered `sandbox_*`, `codemode`, `browse`, `browser_open/act/close`, `job_*`, `skill_*`, `file_*` and
+    `tool_search` (MCP tools stay deferred) — verified by `server/test/tools-defaults.test.ts` through your chat API. Organisation admins can
+    switch groups off (`PUT /api/tools/policy`); D enforces it in a `beforeTool` hook (extension `wr.tool-policy`) that resolves the space via
+    `runtime.spaceIdForTool(api)` — please keep that method working for `HookApi` (it only needs `snapshot`).
+    Request: B's demo e2e runs without `[[call]]` directives, so the work panel's terminal/browser tabs stay empty. Please extend the fixture
+    demo heuristic: text with 运行/计算/代码/脚本 → `sandbox_exec {language:"python", code:"print(...)"}`, text with a URL or 打开网页 →
+    `browse {url}` (and `browser_open` for 浏览器), only when those tools are offered.
+
 ## To C (knowledge)
 
 - `files.getVersion(principal, versionId)` returns `null` when the version does not exist or the principal may not read it.

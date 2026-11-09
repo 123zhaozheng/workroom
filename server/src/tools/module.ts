@@ -11,6 +11,7 @@ import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
 import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
 import { BrowserSessions, createBrowserSessionExtension } from "./browser-sessions.ts";
+import { createPolicyExtension, POLICY_MIGRATIONS, TOOL_GROUPS, ToolPolicy } from "./policy.ts";
 import type { BrowserActionRequest, ConversationWorkDTO } from "../../../shared/files.ts";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
@@ -55,6 +56,7 @@ export const toolsModule: WorkroomModule = {
 		...SANDBOX_MIGRATIONS.map((m) => ({ ...m, version: m.version + 200 })),
 		...SKILL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 300 })),
 		...JOB_MIGRATIONS.map((m) => ({ ...m, version: m.version + 400 })),
+		...POLICY_MIGRATIONS.map((m) => ({ ...m, version: m.version + 500 })),
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -63,6 +65,7 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("browser", new BrowserService(ctx));
 		ctx.services.provide("skills", new Skills(ctx));
 		ctx.services.provide("jobs", new Jobs(ctx));
+		ctx.services.provide("toolPolicy", new ToolPolicy(ctx));
 		const sessions = new BrowserSessions(ctx);
 		ctx.services.provide("browserSessions", sessions);
 		// Work items of a conversation (for ConversationState.work — see docs/requests/D.md).
@@ -87,7 +90,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		(ctx.services.get("mcp") as McpManager).start();
@@ -163,6 +166,19 @@ export const toolsModule: WorkroomModule = {
 			const name = b.name ?? f.name;
 			const ref = await (ctx.services.get("files") as unknown as Files).putVersion(p, { fileId: b.fileId, name, mime: effectiveMime(undefined, name), bytes: f.bytes, provenance: { createdBy: p.userId, spaceId: space.id, conversationId: b.conversationId, changeNote: b.changeNote ?? `从沙箱 /work/${b.path} 发布`, origin: "upload", tool: "sandbox_publish" } as any });
 			return c.json({ version: ref });
+		});
+
+		// ---- default toolset policy (per org; enforced per call in a beforeTool hook) ----
+		const policy = ctx.services.get("toolPolicy") as ToolPolicy;
+		const policyDTO = (orgId: string) => {
+			const g = policy.groups(orgId);
+			return { groups: Object.entries(TOOL_GROUPS).map(([id, d]) => ({ id, label: d.label, enabled: g[id as keyof typeof g] })) };
+		};
+		api.get("/tools/policy", (c) => c.json(policyDTO(principalOf(c).orgId)));
+		api.put("/tools/policy", async (c) => {
+			const p = principalOf(c);
+			policy.set(p, (await jsonBody<{ groups: Record<string, boolean> }>(c)).groups ?? {});
+			return c.json(policyDTO(p.orgId));
 		});
 
 		// ---- background jobs (M14-C): space ACL; cancel needs write ----
@@ -262,7 +278,8 @@ export const toolsModule: WorkroomModule = {
 			const sk = ctx.services.get("skills") as Skills;
 			return c.json({
 				deliverables: { formats: ["md", "html", "csv", "docx", "xlsx", "pptx", "pdf"], tools: ["file_create", "file_revise", "file_read", "file_list"], pdfCjkFont: pdfFontStatus() },
-				sandbox: { status: iso.ok ? "ready" : "unavailable", detail: iso.ok ? ISOLATION_TEXT : iso.detail, languages: ["shell", "python", "node"], network: false },
+				policy: policyDTO(p.orgId).groups,
+				sandbox: { status: !policy.groups(p.orgId).sandbox ? "disabled_by_admin" : iso.ok ? "ready" : "unavailable", detail: iso.ok ? ISOLATION_TEXT : iso.detail, languages: ["shell", "python", "node"], network: false },
 				codemode: { status: "ready", detail: "QuickJS（WebAssembly）脚本，可调用会话中的工具" },
 				browser: { status: br.ok ? "ready" : "unavailable", detail: br.detail },
 				connectors: conns.map((x) => ({ id: x.id, name: x.name, status: x.status, statusDetail: x.statusDetail, access: x.access, enabledForMe: x.enabledForMe, tools: x.tools.length, usable: x.access === "allowed" && x.enabledForMe && (x.status === "ready" || x.status === "needs_reconnect") })),
