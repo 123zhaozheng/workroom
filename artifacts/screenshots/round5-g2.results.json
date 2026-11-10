@@ -1,0 +1,255 @@
+{
+  "at": "2026-11-10T09:33:53.275Z",
+  "results": [
+    {
+      "name": "display text: the message bubble shows only what the person wrote",
+      "ok": true,
+      "detail": "\"帮我写周报\""
+    },
+    {
+      "name": "display text: a small 测试 badge says directives were present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "display text: no [[call text visible anywhere on the page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "display text: no raw tool JSON in any message while collapsed",
+      "ok": true,
+      "detail": "帮我写周报\n测试模型（非真实 AI）\n已完成 2 步 · 生成 1 个文件\n\n【测试模型·非真实AI】 工具执行完成，结果如下：\n\nfile_create: 已生成「项目周报.md」v1（text/markdown，53 字节）。fileI"
+    },
+    {
+      "name": "run summary: one line with step count and files",
+      "ok": true,
+      "detail": "已完成 2 步 · 生成 1 个文件"
+    },
+    {
+      "name": "run summary: steps hidden until expanded",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steps: human wording per tool (生成文件「项目周报」 / 查看文件列表)",
+      "ok": true,
+      "detail": "生成文件「项目周报」 | 查看文件列表"
+    },
+    {
+      "name": "steps: tool names and JSON are not in the step rows",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "技术详情: raw arguments hidden until the disclosure is opened",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steps: one human outcome line and a preview link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "技术详情: opening it shows the raw arguments",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "results: the step's preview link opens the preview panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "run summary (running): names the current step, e.g. 正在等待…",
+      "ok": true,
+      "detail": "正在等待…"
+    },
+    {
+      "name": "run summary (finished): 已完成 1 步",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: shows the operation (title + the backend's summary)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: shows risk level with a label, and the requester",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: only 允许 / 拒绝 (+ an optional note) are offered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: default focus is not on 允许",
+      "ok": true,
+      "detail": "composer-input"
+    },
+    {
+      "name": "approval: run bar says waiting and points to the card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: raw tool name / JSON not shown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: 去处理 moves focus to the card, not to 允许",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: keyboard order starts at 拒绝",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: Tab then reaches 允许",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: 拒绝 (by keyboard) is recorded as rejected and the run ends",
+      "ok": true,
+      "detail": "rejected"
+    },
+    {
+      "name": "approval: the run summary says the step was refused",
+      "ok": true,
+      "detail": "已完成 1 步 · 1 步被拒绝"
+    },
+    {
+      "name": "high risk: labelled 高风险 and says it may be irreversible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "high risk: one click on 允许 does not approve (still pending, asks again)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "high risk: focus lands on the safe choice (返回), not on 确认允许",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "high risk: 返回 leaves it pending",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "high risk: the second explicit click approves",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: the optional note is sent with the decision",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steer: feedback chip shows the message without directives and a human status",
+      "ok": true,
+      "detail": "插话 另外请把结论放在最前面 已收到，下一步生效 撤回"
+    },
+    {
+      "name": "steer: a message not yet applied can be withdrawn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steer: 撤回 is confirmed by the server (已撤回)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steer: a kept message progresses to applied / done",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "failure: one human reason line + 重试 (no raw [[fail]])",
+      "ok": true,
+      "detail": "失败 · 模型出错 重试 技术详情"
+    },
+    {
+      "name": "failure: technical detail stays collapsed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "failure: 技术详情 opens to the raw reason, still without directives",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "failure: the message shows one plain line, not the provider text",
+      "ok": true,
+      "detail": "模型调用出错，这一轮没有完成。 技术详情"
+    },
+    {
+      "name": "failure: 重试 calls the backend continue route",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reconcile: says what, where and that nothing is redone automatically",
+      "ok": true,
+      "detail": "待核对：外部操作结果不确定 fixture write crm-sync for g2-1794303203349@example.com 目标 crm://customers 情况 执行过程中被中断，系统不会自动重做。请到目标系统确认后选择： 技术详情 已生效 未生效"
+    },
+    {
+      "name": "reconcile: only 已生效 / 未生效 are offered; the idempotency key is behind 技术详情",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reconcile: 未生效 resolves the card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "branch: switcher shows the position (2 / 2)",
+      "ok": true,
+      "detail": "2/2新对话（分支）"
+    },
+    {
+      "name": "branch: edited message shows its own text, directives hidden",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "branch: switching back reaches the original answer (1 / 2)",
+      "ok": true,
+      "detail": "1/2新对话"
+    },
+    {
+      "name": "handoff: progress list shows cleaned text with a 测试 badge, no [[ directives",
+      "ok": true,
+      "detail": "林夏：（测试指令）测试已回复 → 【测试模型·非真实AI】 方案一：保守推进。"
+    },
+    {
+      "name": "390 dark: approval card fits without horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390 dark: card colours come from tokens (not a light colour)",
+      "ok": true,
+      "detail": "oklab(0.280069 0.03604 0.0148048 / 0.4)"
+    },
+    {
+      "name": "no uncaught page errors",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
