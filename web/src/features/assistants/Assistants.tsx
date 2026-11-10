@@ -31,6 +31,8 @@ const MODEL_STATE = { ok: null, not_allowed: "默认模型不在你可用的列�
 /** Settings → 助手: list, create, edit, delete. */
 export function AssistantsSection() {
 	const res = useApi<{ assistants: Assistant[] }>("/assistants");
+	const modelList = useApi<{ models: PlatformModelDTO[] }>("/models");
+	const modelName = (m: { provider: string; modelId: string }) => modelList.data?.models.find((x) => x.ref.provider === m.provider && x.ref.modelId === m.modelId)?.label ?? m.modelId;
 	const perms = useViewerPerms();
 	const [editing, setEditing] = useState<Assistant | "new" | null>(null);
 	const [err, setErr] = useState<string>();
@@ -57,7 +59,7 @@ export function AssistantsSection() {
 								</div>
 								{a.description ? <p className="mt-0.5 text-fg-muted">{a.description}</p> : null}
 								<p className="mt-0.5 text-xs text-fg-subtle">
-									模型：{a.model ? `${a.model.provider}/${a.model.modelId}` : "平台默认"} · 工具：{a.tools?.length ? a.tools.join("、") : "默认工具集"} · 知识库：{a.knowledge?.kbIds.length ?? 0} 个 · 团队成员：
+									模型：{a.model ? modelName(a.model) : "平台默认"} · 工具：<span title={a.tools?.join("、")}>{a.tools?.length ? `${a.tools.length} 个` : "默认"}</span> · 知识库：{a.knowledge?.kbIds.length ?? 0} 个 · 团队成员：
 									{a.members.length ? a.members.map((m) => m.name).join("、") : "无"}
 								</p>
 							</div>

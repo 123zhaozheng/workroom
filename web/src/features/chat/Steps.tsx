@@ -232,10 +232,10 @@ function Block({ title, body, tone }: { title: string; body: string; tone?: "dan
 	const long = body.length > 1200;
 	return (
 		<div>
-			<div className="mb-0.5 text-[11.5px] text-fg-subtle">{title}</div>
+			<div className="mb-0.5 text-xs text-fg-subtle">{title}</div>
 			<pre className={cn("wr-scroll max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface-2 px-2.5 py-2 font-mono text-[12px] leading-5", tone === "danger" ? "text-danger" : "text-fg-muted")}>{long && !all ? `${body.slice(0, 1200)}…` : body}</pre>
 			{long ? (
-				<button onClick={() => setAll((a) => !a)} className="mt-0.5 text-[11.5px] text-info hover:underline">
+				<button onClick={() => setAll((a) => !a)} className="mt-0.5 text-xs text-info hover:underline">
 					{all ? "收起" : "展开全部"}
 				</button>
 			) : null}

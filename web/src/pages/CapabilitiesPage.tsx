@@ -39,8 +39,8 @@ export default function CapabilitiesPage() {
 				<Page wide>
 					<PageHeader title="能力" actions={<Help label="说明">技能让智能体学会做某类事，连接让它能使用外部服务。上架前都要经过审核；技能只提供做法，需要运行代码或联网时会单独授权。</Help>} />
 					<Tabs value={canReview || tab !== "review" ? tab : "mine"} onValueChange={go}>
-						<div className="mb-5 overflow-x-auto">
-							<TabsList className="min-w-max">
+						<div className="mb-5 overflow-x-auto max-sm:[mask-image:linear-gradient(to_right,black_88%,transparent)]">
+							<TabsList className="min-w-max max-sm:[&_svg]:hidden">
 								<TabsTrigger value="market" data-testid="tab-market">
 									<Store />
 									技能市场

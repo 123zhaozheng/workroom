@@ -112,7 +112,7 @@ function MemberRow({ m, projectId, editable, onChanged }: { m: ProjectMember; pr
 				<span className="flex size-6 items-center justify-center rounded-full bg-surface-3 text-xs">{m.name.slice(0, 1)}</span>
 				<span className="min-w-0 flex-1">
 					<span className="block truncate text-[13px]">{m.name}</span>
-					<span className="block truncate text-[11px] text-fg-subtle">{m.email}</span>
+					<span className="block truncate text-xs text-fg-subtle">{m.email}</span>
 				</span>
 				{editable ? (
 					<Select value={m.role} onChange={(e) => void set(e.target.value === "remove" ? null : (e.target.value as ProjectRole))} className="h-7 text-xs" aria-label={`${m.name} 的角色`}>

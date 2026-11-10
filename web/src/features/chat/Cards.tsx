@@ -45,7 +45,7 @@ export function FileCard({ file }: { file: FileVersionRefDTO }) {
 				<span className="min-w-0 flex-1">
 					<span className="flex items-center gap-2">
 						<MiddleEllipsis name={file.name} className="text-sm font-medium" />
-						<span data-testid="file-version" className="inline-flex h-[18px] shrink-0 items-center rounded bg-surface-2 px-1.5 text-[11px] font-medium tabular-nums text-fg-muted">
+						<span data-testid="file-version" className="inline-flex h-[18px] shrink-0 items-center rounded bg-surface-2 px-1.5 text-xs font-medium tabular-nums text-fg-muted">
 							v{file.versionNo}
 						</span>
 					</span>
@@ -228,7 +228,7 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 									{busy === "approved" ? "正在提交…" : high ? "允许…" : "允许"}
 								</Button>
 								{!showNote ? (
-									<button className="rounded-md px-1 text-[12.5px] text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-info" onClick={() => setShowNote(true)}>
+									<button type="button" className="inline-flex h-8 items-center rounded-md px-2 text-xs text-fg-muted underline-offset-2 hover:bg-surface-2 hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info" onClick={() => setShowNote(true)}>
 										添加说明
 									</button>
 								) : null}
@@ -333,7 +333,7 @@ export function Citations({ citations }: { citations: CitationDTO[] }) {
 					return (
 					<li key={c.chunkId} data-testid="citation" data-status={st?.status ?? "snapshot"}>
 						{st && st.status !== "valid" ? (
-							<div className="ml-8 mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-warning" data-testid="citation-stale">
+							<div className="ml-8 mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-warning" data-testid="citation-stale">
 								<AlertTriangle className="size-3" />
 								{st.message}
 								{st.status === "superseded" && st.current ? (

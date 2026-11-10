@@ -229,7 +229,7 @@ export function PermissionMatrix({ selected, onChange, readOnly, restrictTo, tes
 										const disabled = readOnly || (restrictTo ? !restrictTo.has(p.id) && !selected.has(p.id) : false);
 										return (
 											<li key={p.id} className="border-t border-border first:border-t-0">
-												<label className={cn("flex items-start gap-2.5 px-3 py-2", disabled ? "cursor-default" : "cursor-pointer hover:bg-surface-2/50")} title={`${p.id} · 可设范围：${p.scopes.map((s) => (s === "org" ? "组织" : s === "department" ? "部门" : "项目")).join(" / ")}`}>
+												<label className={cn("flex items-start gap-2.5 px-3 py-2", disabled ? "cursor-default" : "cursor-pointer hover:bg-surface-2/50")} title={`可设范围：${p.scopes.map((s) => (s === "org" ? "组织" : s === "department" ? "部门" : "项目")).join(" / ")}`}>
 													<input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]" data-testid={`perm-${p.id}`} checked={selected.has(p.id)} disabled={disabled} onChange={(e) => toggle([p.id], e.target.checked)} />
 													<span className="min-w-0 flex-1">
 														<span className="flex flex-wrap items-center gap-1.5">

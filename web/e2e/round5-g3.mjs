@@ -217,7 +217,7 @@ try {
 	await p.click('[data-testid="confirm-cancel"]');
 	check("confirm: cancel keeps the service", (await J(await api.get(`${base}/api/admin/model-providers`))).providers.some((x) => x.name === "向导测试服务"));
 	// personal keys policy asks first
-	await p.locator('[data-testid="personal-providers-toggle"]').check({ force: true }).catch(() => {});
+	await p.locator('[data-testid="personal-providers-toggle"]').check({ force: true });
 	check("confirm: allowing members' own keys asks first, cancel leaves the policy off", (await confirmVisible(p)) && ((await p.click('[data-testid="confirm-cancel"]')), !(await J(await api.get(`${base}/api/model-settings`))).personalProviders));
 
 	// ------------------------------------------------------------------ high-risk and sensitive operations

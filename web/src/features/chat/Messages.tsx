@@ -95,7 +95,7 @@ export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEn
 						{shown.text ? shown.text : <span className="text-fg-muted">（测试指令）</span>}
 					</div>
 					{shown.test ? (
-						<span data-testid="test-badge" title="这条消息带有测试指令，已从正文中隐藏" className="mt-1 inline-flex h-[18px] items-center gap-1 rounded bg-surface-2 px-1.5 text-[11px] font-medium text-fg-muted">
+						<span data-testid="test-badge" title="这条消息带有测试指令，已从正文中隐藏" className="mt-1 inline-flex h-[18px] items-center gap-1 rounded bg-surface-2 px-1.5 text-xs font-medium text-fg-muted">
 							<FlaskConical aria-hidden className="size-3" />
 							测试
 						</span>
@@ -167,7 +167,7 @@ export function AssistantMessage({
 			</div>
 			<div className="min-w-0 flex-1">
 				{turn.fixture ? (
-					<div className="mb-1.5 inline-flex items-center gap-1 rounded-md bg-warning-soft px-1.5 py-0.5 text-[11.5px] text-warning" data-testid="fixture-badge">
+					<div className="mb-1.5 inline-flex items-center gap-1 rounded-md bg-warning-soft px-1.5 py-0.5 text-xs text-warning" data-testid="fixture-badge">
 						<FlaskConical className="size-3" />
 						{FIXTURE_LABEL}
 					</div>
@@ -208,7 +208,7 @@ export function AssistantMessage({
 							</ActionButton>
 						) : null}
 						{turn.usage ? (
-							<span data-testid="turn-usage" className="ml-1 text-[11.5px] text-fg-subtle" title="本轮用量">
+							<span data-testid="turn-usage" className="ml-1 text-xs text-fg-subtle" title="本轮用量">
 								{isSimulatedUsage(turn.usage, turn.fixture) ? SIMULATED_USAGE : `${turn.usage.totalTokens.toLocaleString()} tokens`}
 							</span>
 						) : null}
