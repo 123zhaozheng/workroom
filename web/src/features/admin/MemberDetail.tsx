@@ -298,7 +298,7 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 										)
 									) : null}
 									{a.can.remove ? (
-										<Button size="sm" variant="danger" className="dark:text-[#2a0c09]" disabled={busy} data-testid="detail-remove" onClick={() => void remove()}>
+										<Button size="sm" variant="danger" disabled={busy} data-testid="detail-remove" onClick={() => void remove()}>
 											<Trash2 />
 											移出组织
 										</Button>

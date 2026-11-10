@@ -305,7 +305,7 @@ function ReviewScreen({ id, me, onBack, onDecided }: { id: string; me: MarketMeD
 											<span className="min-w-0 flex-1 basis-48 text-xs text-fg-muted">{CONSEQUENCE.request_changes}</span>
 										</div>
 										<div className="flex flex-wrap items-center gap-3">
-											<Button variant="danger" className="w-32 dark:text-[#2a0c09]" disabled={busy || !s.canDecide || needComment} onClick={() => void decide("reject")} data-testid="reject">
+											<Button variant="danger" className="w-32" disabled={busy || !s.canDecide || needComment} onClick={() => void decide("reject")} data-testid="reject">
 												<X />
 												驳回
 											</Button>

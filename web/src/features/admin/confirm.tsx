@@ -60,7 +60,7 @@ export function useConfirm() {
 					<Button ref={cancelRef} onClick={() => settle(false)} data-testid="confirm-cancel">
 						取消
 					</Button>
-					<Button variant={opts.danger ? "danger" : "primary"} className={opts.danger ? "dark:text-[#2a0c09]" : undefined} onClick={() => settle(true)} data-testid="confirm-ok">
+					<Button variant={opts.danger ? "danger" : "primary"} onClick={() => settle(true)} data-testid="confirm-ok">
 						{opts.confirmLabel ?? "确认"}
 					</Button>
 				</div>
