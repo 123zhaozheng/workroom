@@ -75,7 +75,12 @@ interface EntryBase {
 
 export interface UserEntryDTO extends EntryBase {
 	readonly kind: "user";
+	/** Raw input as sent to the model (unchanged; kept for compatibility, copy/edit). */
 	readonly text: string;
+	/** What the person wrote: `text` with test-model directives ([[call …]], [[slow]], [[fail]], [[reply]]) removed. Show this, not `text`. */
+	readonly displayText?: string;
+	/** True when `text` contained test-model directives (the UI shows a small 测试 badge). */
+	readonly hasTestDirectives?: boolean;
 	readonly userId?: string;
 	readonly authorName?: string;
 	readonly attachments?: readonly AttachmentRef[];

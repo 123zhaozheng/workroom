@@ -1,11 +1,13 @@
-import { AlertTriangle, BookMarked, Download, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Hand, Presentation, ShieldAlert } from "lucide-react";
-import { createContext, useContext, useState } from "react";
+import { AlertTriangle, BookMarked, Download, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, OctagonAlert, Presentation, ShieldAlert, ShieldCheck, type LucideIcon } from "lucide-react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { m } from "motion/react";
 import type { ApprovalDTO, EffectDTO } from "@shared/chat";
 import type { FileVersionRefDTO } from "@shared/files";
 import type { CitationDTO, CitationStatusDTO } from "@shared/knowledge";
 import { errorText, post } from "@/lib/api";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, formatBytes, relTime } from "@/lib/utils";
+import { useSession } from "@/lib/session";
+import { describeTool } from "./toolDescribe";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/misc";
 import { Textarea } from "@/components/ui/input";
@@ -59,72 +61,179 @@ export function FileCard({ file }: { file: FileVersionRefDTO }) {
 	);
 }
 
-const RISK: Record<ApprovalDTO["risk"], { label: string; tone: "neutral" | "warning" | "danger" }> = {
-	low: { label: "低风险", tone: "neutral" },
-	medium: { label: "中风险", tone: "warning" },
-	high: { label: "高风险", tone: "danger" },
+const RISK: Record<ApprovalDTO["risk"], { label: string; tone: "neutral" | "warning" | "danger"; note: string; Icon: LucideIcon }> = {
+	low: { label: "低风险", tone: "neutral", note: "影响较小。", Icon: ShieldCheck },
+	medium: { label: "中风险", tone: "warning", note: "会对外部系统产生变化，请核对内容。", Icon: ShieldAlert },
+	high: { label: "高风险", tone: "danger", note: "可能无法撤销，请逐项核对后再允许。", Icon: OctagonAlert },
 };
 
-/** Pending approval / question card, embedded in the current task. Shows exactly what will happen. */
+/** Fields of an approval's detail that are worth a labelled line (everything else stays in 技术详情). */
+const SCOPE_KEYS: [RegExp, string][] = [
+	[/^(to|recipients?|receiver|email)$/i, "收件人"],
+	[/^(cc|bcc)$/i, "抄送"],
+	[/^(target|destination|dest)$/i, "目标"],
+	[/^(path|file|filename|name)$/i, "对象"],
+	[/^(url|link|host)$/i, "地址"],
+	[/^(subject|title)$/i, "标题"],
+	[/^(member|assignee)$/i, "成员"],
+	[/^(count|total)$/i, "数量"],
+];
+function scopeRows(detail: unknown): { label: string; value: string }[] {
+	if (!detail || typeof detail !== "object" || Array.isArray(detail)) return [];
+	const rows: { label: string; value: string }[] = [];
+	for (const [k, v] of Object.entries(detail as Record<string, unknown>)) {
+		const hit = SCOPE_KEYS.find(([re]) => re.test(k));
+		if (!hit || (typeof v !== "string" && typeof v !== "number")) continue;
+		rows.push({ label: hit[1], value: String(v).slice(0, 80) });
+		if (rows.length >= 4) break;
+	}
+	return rows;
+}
+
+/**
+ * Pending approval: what will happen (the backend's own summary), what it touches, the risk and who asked, with 允许 / 拒绝
+ * (the only two decisions the backend accepts, plus an optional note it passes on to the assistant). Nothing is focused on
+ * open; a high-risk 允许 needs a second, explicit click.
+ */
 export function ApprovalCard({ approval, base, canDecide = true }: { approval: ApprovalDTO; base: string; canDecide?: boolean }) {
+	const { me } = useSession();
+	const uid = useId();
 	const [busy, setBusy] = useState<"approved" | "rejected" | null>(null);
+	const [sent, setSent] = useState<"approved" | "rejected" | null>(null);
+	const [confirming, setConfirming] = useState(false);
 	const [note, setNote] = useState("");
 	const [showNote, setShowNote] = useState(false);
 	const [err, setErr] = useState<string>();
+	const backRef = useRef<HTMLButtonElement>(null);
+	const allowRef = useRef<HTMLButtonElement>(null);
+	const risk = RISK[approval.risk] ?? RISK.medium;
+	const high = approval.risk === "high";
+	useEffect(() => {
+		if (confirming) backRef.current?.focus();
+	}, [confirming]);
 	const decide = async (decision: "approved" | "rejected") => {
 		setBusy(decision);
 		setErr(undefined);
 		try {
 			await post(`${base}/approvals/${encodeURIComponent(approval.approvalId)}`, { decision, ...(note.trim() ? { note: note.trim() } : {}) });
+			setSent(decision);
 		} catch (e) {
 			setErr(errorText(e));
 			setBusy(null);
 		}
 	};
-	const risk = RISK[approval.risk] ?? RISK.medium;
+	const scope = scopeRows(approval.detail);
+	const view = approval.toolName ? describeTool({ name: approval.toolName, arguments: approval.detail }) : undefined;
+	const showAction = view && view.kind !== "approval" && view.kind !== "other";
+	const forMe = !approval.requestedFor || approval.requestedFor === me?.userId;
+	const RiskIcon = risk.Icon;
 	return (
 		<m.div
 			initial={{ opacity: 0, y: 6 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ duration: 0.18 }}
 			data-testid="approval-card"
+			data-risk={approval.risk}
 			role="group"
-			aria-label="待确认"
-			className="rounded-xl border border-warning/40 bg-warning-soft/40 p-3.5"
+			tabIndex={-1}
+			aria-labelledby={`${uid}-t`}
+			aria-describedby={`${uid}-s`}
+			className={cn("rounded-xl border p-4 outline-none focus-visible:ring-2 focus-visible:ring-info", high ? "border-danger/50 bg-danger-soft/40" : "border-warning/40 bg-warning-soft/40")}
 		>
-			<div className="flex items-start gap-2.5">
-				<Hand className="mt-0.5 size-4 shrink-0 text-warning" />
+			<div className="flex items-start gap-3">
+				<RiskIcon aria-hidden className={cn("mt-0.5 size-[18px] shrink-0", high ? "text-danger" : approval.risk === "low" ? "text-fg-muted" : "text-warning")} />
 				<div className="min-w-0 flex-1">
 					<div className="flex flex-wrap items-center gap-2">
-						<span className="text-sm font-medium">{approval.title}</span>
-						<Badge tone={risk.tone}>{risk.label}</Badge>
-						{approval.toolName ? <span className="text-xs text-fg-subtle">{approval.toolName}</span> : null}
+						<span className="text-xs text-fg-muted">需要你确认</span>
+						<Badge tone={risk.tone} data-testid="approval-risk">
+							<RiskIcon aria-hidden />
+							{risk.label}
+						</Badge>
 					</div>
-					<p className="mt-1 whitespace-pre-wrap text-[13.5px] text-fg">{approval.summary}</p>
+					<h3 id={`${uid}-t`} className="mt-1 text-[15px] font-medium">
+						{approval.title}
+					</h3>
+					<p id={`${uid}-s`} data-testid="approval-summary" className="mt-1 whitespace-pre-wrap break-words text-sm">
+						{approval.summary}
+					</p>
+					<dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
+						{showAction ? (
+							<>
+								<dt className="text-fg-muted">操作</dt>
+								<dd>{view.title}</dd>
+							</>
+						) : null}
+						{scope.map((r) => (
+							<Row key={r.label} label={r.label} value={r.value} />
+						))}
+						<dt className="text-fg-muted">风险</dt>
+						<dd data-testid="approval-risk-note">{risk.note}</dd>
+						<dt className="text-fg-muted">请求人</dt>
+						<dd>
+							助手{forMe ? "（代你执行）" : "（代另一位成员执行）"}
+							<span className="text-fg-subtle"> · {relTime(approval.requestedAt)}</span>
+						</dd>
+						{approval.approverUserIds?.length ? (
+							<>
+								<dt className="text-fg-muted">审批人</dt>
+								<dd>仅指定的审批人可以处理</dd>
+							</>
+						) : null}
+					</dl>
 					{approval.detail !== undefined ? (
-						<details className="mt-1.5 text-[12.5px]">
-							<summary className="cursor-pointer text-fg-muted">查看详细内容</summary>
+						<details data-testid="tech-details" className="mt-2 text-[12.5px]">
+							<summary className="cursor-pointer text-fg-subtle hover:text-fg">技术详情</summary>
 							<pre className="wr-scroll mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface px-2.5 py-2 font-mono text-[12px] text-fg-muted">{JSON.stringify(approval.detail, null, 2)}</pre>
 						</details>
 					) : null}
-					{showNote ? <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="补充说明（可选），会一并告诉助手" className="mt-2 text-[13px]" /> : null}
-					{err ? <p className="mt-1.5 text-[13px] text-danger">{err}</p> : null}
-					{canDecide ? (
-						<div className="mt-2.5 flex flex-wrap items-center gap-2">
-							<Button size="sm" variant="primary" disabled={!!busy} onClick={() => decide("approved")} data-testid="approve">
-								{busy === "approved" ? "正在提交…" : "批准并继续"}
-							</Button>
-							<Button size="sm" disabled={!!busy} onClick={() => decide("rejected")} data-testid="reject">
-								{busy === "rejected" ? "正在提交…" : "拒绝"}
-							</Button>
-							{!showNote ? (
-								<button className="text-[12.5px] text-fg-muted hover:text-fg" onClick={() => setShowNote(true)}>
-									添加说明
-								</button>
-							) : null}
+					{err ? (
+						<p role="alert" className="mt-2 text-[13px] text-danger">
+							{err}
+						</p>
+					) : null}
+					{!canDecide ? (
+						<p className="mt-3 text-[12.5px] text-fg-muted">需要有权限的成员确认。</p>
+					) : sent ? (
+						<p role="status" className="mt-3 text-[13px] text-fg-muted">
+							{sent === "approved" ? "已允许，正在继续…" : "已拒绝，正在通知助手…"}
+						</p>
+					) : confirming ? (
+						<div data-testid="approval-confirm" role="alertdialog" aria-label="再次确认" className="mt-3 rounded-lg border border-danger/40 bg-surface p-3">
+							<p className="text-[13px] font-medium text-danger">这是高风险操作，确认允许吗？</p>
+							<p className="mt-0.5 text-[12.5px] text-fg-muted">{approval.title}</p>
+							<div className="mt-2.5 flex flex-wrap gap-2">
+								<Button ref={backRef} size="sm" disabled={!!busy} onClick={() => (setConfirming(false), setTimeout(() => allowRef.current?.focus(), 0))} data-testid="approve-back" onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}>
+									返回
+								</Button>
+								<Button size="sm" variant="danger" disabled={!!busy} onClick={() => decide("approved")} data-testid="approve-confirm">
+									{busy === "approved" ? "正在提交…" : "确认允许"}
+								</Button>
+							</div>
 						</div>
 					) : (
-						<p className="mt-2 text-[12.5px] text-fg-muted">需要有权限的成员确认。</p>
+						<>
+							{showNote ? (
+								<div className="mt-3">
+									<label htmlFor={`${uid}-n`} className="mb-1 block text-[12.5px] text-fg-muted">
+										补充说明（可选，会告诉助手）
+									</label>
+									<Textarea id={`${uid}-n`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="text-[13px]" />
+								</div>
+							) : null}
+							<div className="mt-3 flex flex-wrap items-center gap-2">
+								<Button size="sm" disabled={!!busy} onClick={() => decide("rejected")} data-testid="reject">
+									{busy === "rejected" ? "正在提交…" : "拒绝"}
+								</Button>
+								<Button ref={allowRef} size="sm" variant={high ? "secondary" : "primary"} disabled={!!busy} onClick={() => (high ? setConfirming(true) : decide("approved"))} data-testid="approve" className={cn(high && "border-danger/50 text-danger")}>
+									{busy === "approved" ? "正在提交…" : high ? "允许…" : "允许"}
+								</Button>
+								{!showNote ? (
+									<button className="rounded-md px-1 text-[12.5px] text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-info" onClick={() => setShowNote(true)}>
+										添加说明
+									</button>
+								) : null}
+							</div>
+						</>
 					)}
 				</div>
 			</div>
@@ -132,8 +241,18 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 	);
 }
 
+function Row({ label, value }: { label: string; value: string }) {
+	return (
+		<>
+			<dt className="text-fg-muted">{label}</dt>
+			<dd className="min-w-0 break-words">{value}</dd>
+		</>
+	);
+}
+
 /** External write whose outcome is unknown: ask the user to verify at the target instead of re-running blindly. */
 export function ReconcileCard({ effect, base }: { effect: EffectDTO; base: string }) {
+	const uid = useId();
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string>();
 	const resolve = async (outcome: "done" | "failed") => {
@@ -148,21 +267,34 @@ export function ReconcileCard({ effect, base }: { effect: EffectDTO; base: strin
 		}
 	};
 	return (
-		<div data-testid="reconcile-card" className="rounded-xl border border-danger/30 bg-danger-soft/40 p-3.5">
-			<div className="flex items-start gap-2.5">
-				<ShieldAlert className="mt-0.5 size-4 shrink-0 text-danger" />
+		<div data-testid="reconcile-card" role="group" tabIndex={-1} aria-labelledby={`${uid}-t`} className="rounded-xl border border-danger/30 bg-danger-soft/40 p-4 outline-none focus-visible:ring-2 focus-visible:ring-info">
+			<div className="flex items-start gap-3">
+				<ShieldAlert aria-hidden className="mt-0.5 size-[18px] shrink-0 text-danger" />
 				<div className="min-w-0 flex-1">
-					<div className="text-sm font-medium">外部操作结果不确定，需要核对</div>
-					<p className="mt-1 text-[13px] text-fg-muted">
-						{effect.summary}（目标：{effect.target}）。执行过程中被中断，系统不会自动重做。请到目标系统确认是否已经生效。
-					</p>
-					<p className="mt-0.5 text-xs text-fg-subtle">幂等键：{effect.idempotencyKey}</p>
-					{err ? <p className="mt-1 text-[13px] text-danger">{err}</p> : null}
-					<div className="mt-2 flex gap-2">
-						<Button size="sm" disabled={busy} onClick={() => resolve("done")}>
+					<h3 id={`${uid}-t`} className="text-[15px] font-medium">
+						待核对：外部操作结果不确定
+					</h3>
+					<p className="mt-1 break-words text-sm">{effect.summary}</p>
+					<dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
+						<dt className="text-fg-muted">目标</dt>
+						<dd className="min-w-0 break-words">{effect.target}</dd>
+						<dt className="text-fg-muted">情况</dt>
+						<dd>执行过程中被中断，系统不会自动重做。请到目标系统确认后选择：</dd>
+					</dl>
+					<details data-testid="tech-details" className="mt-2 text-[12.5px]">
+						<summary className="cursor-pointer text-fg-subtle hover:text-fg">技术详情</summary>
+						<p className="mt-1 break-all font-mono text-[12px] text-fg-muted">幂等键：{effect.idempotencyKey}</p>
+					</details>
+					{err ? (
+						<p role="alert" className="mt-2 text-[13px] text-danger">
+							{err}
+						</p>
+					) : null}
+					<div className="mt-3 flex flex-wrap gap-2">
+						<Button size="sm" disabled={busy} onClick={() => resolve("done")} data-testid="reconcile-done">
 							已生效
 						</Button>
-						<Button size="sm" disabled={busy} onClick={() => resolve("failed")}>
+						<Button size="sm" disabled={busy} onClick={() => resolve("failed")} data-testid="reconcile-failed">
 							未生效
 						</Button>
 					</div>
@@ -234,11 +366,19 @@ export function Citations({ citations }: { citations: CitationDTO[] }) {
 	);
 }
 
-export function ErrorNote({ text }: { text: string }) {
+export function ErrorNote({ text, detail }: { text: string; detail?: string }) {
 	return (
-		<div className="mt-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-[13px] text-danger">
-			<AlertTriangle className="mt-0.5 size-4 shrink-0" />
-			<span className="min-w-0 break-words">{text}</span>
+		<div data-testid="error-note" className="mt-2 rounded-lg bg-danger-soft px-3 py-2 text-[13px] text-danger">
+			<div className="flex items-start gap-2">
+				<AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
+				<span className="min-w-0 break-words">{text}</span>
+			</div>
+			{detail ? (
+				<details data-testid="tech-details" className="mt-1 pl-6 text-[12.5px]">
+					<summary className="cursor-pointer text-fg-muted hover:text-fg">技术详情</summary>
+					<pre className="wr-scroll mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-fg-muted">{detail}</pre>
+				</details>
+			) : null}
 		</div>
 	);
 }

@@ -13,6 +13,7 @@ import { Citations, ErrorNote, FileCard } from "./Cards";
 import { RefTile } from "@/components/file/FileTile";
 import { MessageAttachment } from "./Attachments";
 import { turnMarkdown, type AssistantTurn } from "./model";
+import { cleanErrorText, userTextOf } from "./testText";
 import { StepChain } from "./Steps";
 import { JobChip } from "@/features/work/live";
 
@@ -44,6 +45,8 @@ function CopyAction({ text }: { text: string }) {
 
 export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEntryDTO; onEdit: (text: string) => Promise<void>; onFork: () => void; readOnly?: boolean }) {
 	const [editing, setEditing] = useState(false);
+	// Show what the person wrote; test-model directives are not message content (a small 测试 badge says they were there).
+	const shown = userTextOf(entry);
 	const [draft, setDraft] = useState(entry.text);
 	const [busy, setBusy] = useState(false);
 	const via = entry.via?.kind === "subagent_report" ? "子任务回报" : entry.via?.kind === "automation" ? "自动化触发" : entry.via?.kind === "delegate" ? "委派" : null;
@@ -88,12 +91,20 @@ export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEn
 							))}
 						</div>
 					) : null}
-					<div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-surface-3 px-4 py-2.5 text-[15px] leading-relaxed">{entry.text}</div>
+					<div data-testid="user-bubble" className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-surface-3 px-4 py-2.5 text-[15px] leading-relaxed">
+						{shown.text ? shown.text : <span className="text-fg-muted">（测试指令）</span>}
+					</div>
+					{shown.test ? (
+						<span data-testid="test-badge" title="这条消息带有测试指令，已从正文中隐藏" className="mt-1 inline-flex h-[18px] items-center gap-1 rounded bg-surface-2 px-1.5 text-[11px] font-medium text-fg-muted">
+							<FlaskConical aria-hidden className="size-3" />
+							测试
+						</span>
+					) : null}
 					<MessageOutcome entry={entry} />
 					<div className="mt-1 flex h-7 items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
 						{via ? <span className="mr-1 text-xs text-fg-subtle">{via}</span> : null}
 						{entry.authorName ? <span className="mr-1 text-xs text-fg-subtle">{entry.authorName}</span> : null}
-						<CopyAction text={entry.text} />
+						<CopyAction text={shown.text} />
 						{!readOnly ? (
 							<>
 								<ActionButton label="编辑（新分支）" testId="action-edit" onClick={() => setEditing(true)}>
@@ -178,7 +189,7 @@ export function AssistantMessage({
 					</div>
 				) : null}
 				<Citations citations={turn.citations} />
-				{turn.error ? <ErrorNote text={`模型出错：${turn.error}`} /> : null}
+				{turn.error ? <ErrorNote text="模型调用出错，这一轮没有完成。" detail={cleanErrorText(turn.error) || turn.error} /> : null}
 				{children}
 				{!turn.streaming && (turn.answer || turn.artifacts.length) ? (
 					<div className="mt-1.5 flex h-7 items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
@@ -224,18 +235,18 @@ export function BranchPointSwitcher({ options, currentId, onSelect }: { options:
 	if (options.length < 2 || idx < 0) return null;
 	const go = (d: number) => onSelect(options[(idx + d + options.length) % options.length]!);
 	return (
-		<div data-testid="branch-switcher" className="flex items-center justify-center gap-1 py-1 text-xs text-fg-subtle">
-			<GitBranch className="size-3.5" />
-			<button aria-label="上一个分支" onClick={() => go(-1)} className="rounded p-0.5 hover:bg-surface-2 hover:text-fg">
-				<ChevronLeft className="size-3.5" />
+		<div data-testid="branch-switcher" role="group" aria-label="切换回答分支" className="flex items-center justify-center gap-1 py-1 text-xs text-fg-muted">
+			<GitBranch aria-hidden className="size-3.5" />
+			<button aria-label="上一个分支" onClick={() => go(-1)} className="rounded p-1 hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-info">
+				<ChevronLeft aria-hidden className="size-3.5" />
 			</button>
-			<span className={cn("tabular-nums")}>
+			<span className="tabular-nums" aria-live="polite" aria-label={`第 ${idx + 1} 个，共 ${options.length} 个分支`}>
 				{idx + 1} / {options.length}
 			</span>
-			<button aria-label="下一个分支" onClick={() => go(1)} className="rounded p-0.5 hover:bg-surface-2 hover:text-fg">
-				<ChevronRight className="size-3.5" />
+			<button aria-label="下一个分支" onClick={() => go(1)} className="rounded p-1 hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-info">
+				<ChevronRight aria-hidden className="size-3.5" />
 			</button>
-			<span className="max-w-[200px] truncate">{options[idx]!.title}</span>
+			<span className="max-w-[200px] truncate text-fg-subtle">{options[idx]!.title}</span>
 		</div>
 	);
 }

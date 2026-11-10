@@ -75,3 +75,22 @@ export const REASON_LABEL: Record<string, string> = {
 	interrupted: "进程中断",
 };
 export const reasonText = (r?: string) => (r ? (REASON_LABEL[r] ?? r) : "");
+
+/** Feedback chip for a message sent while the assistant was working (插话 / 稍后处理): wording and whether it can still be withdrawn. */
+export function steerChip(mode: string, status: SubmissionStatus): { label: string; tone: "info" | "success" | "danger" | "muted"; withdrawable: boolean } {
+	const later = mode === "followUp";
+	switch (status) {
+		case "received":
+			return { label: later ? "排队中，本轮结束后处理" : "已收到，下一步生效", tone: "info", withdrawable: true };
+		case "queued":
+			return { label: "排队中，本轮结束后处理", tone: "info", withdrawable: true };
+		case "applied":
+			return { label: later ? "正在处理" : "已采纳", tone: "success", withdrawable: false };
+		case "done":
+			return { label: "已回复", tone: "success", withdrawable: false };
+		case "withdrawn":
+			return { label: "已撤回", tone: "muted", withdrawable: false };
+		default:
+			return { label: "未采纳", tone: "danger", withdrawable: false };
+	}
+}

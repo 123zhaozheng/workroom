@@ -2,7 +2,7 @@
 import type { EntryRecord, LiveState, InboxState, SubmissionRecord, TaskGraphNode, UsageState } from "@earendil-works/pi-durable";
 import type { AssistantMessage, Message, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
 import type { ApprovalDTO, EntryDTO, LiveDTO, QueuedInputDTO, RunStatus, SubmissionDTO, SubmissionStatus, TaskNodeDTO, ToolCallDTO, UsageDTO } from "../../../shared/chat.ts";
-import { FIXTURE_PROVIDER, textOfContent } from "./fixture-model.ts";
+import { FIXTURE_PROVIDER, stripDirectives, textOfContent } from "./fixture-model.ts";
 
 const ZERO_USAGE: UsageDTO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, costTotal: 0 };
 
@@ -69,6 +69,15 @@ function assistantParts(m: AssistantMessage | undefined): { text: string; thinki
 	return { text, ...(thinking ? { thinking } : {}), toolCalls };
 }
 
+/** Human-facing text of a user input: fixture test directives ([[call …]] / [[slow]] / [[fail]] / [[reply]]) removed (the
+ * same stripping that produces conversation titles), plus whether any were present. `text` itself stays the raw input. */
+export function userDisplay(text: string): { displayText: string; hasTestDirectives: boolean } {
+	const stripped = stripDirectives(text);
+	// Without directives the text is returned untouched; with them, the gaps the directives leave are tidied.
+	if (stripped === text) return { displayText: text, hasTestDirectives: false };
+	return { displayText: stripped.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").trim(), hasTestDirectives: true };
+}
+
 export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string | undefined, isSimulated: SimulatedModel = fixtureOnly): EntryDTO {
 	const base = { id: e.id as number, conversationId: e.conversationId as number };
 	const msg = e.model?.[0] as Message | undefined;
@@ -76,10 +85,12 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 		case "wr.input":
 		case "wr.input-unplaced": {
 			const d = (e.data ?? {}) as any;
+			const text: string = typeof d.text === "string" ? d.text : textOfContent((msg as any)?.content ?? "");
 			return {
 				...base,
 				kind: "user",
-				text: typeof d.text === "string" ? d.text : textOfContent((msg as any)?.content ?? ""),
+				text,
+				...userDisplay(text),
 				userId: d.userId,
 				authorName: d.userId && authorName ? authorName(d.userId) : undefined,
 				...(d.attachments?.length ? { attachments: d.attachments } : {}),
@@ -88,8 +99,10 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 				...(e.kind === "wr.input-unplaced" ? { placed: false } : {}),
 			};
 		}
-		case "pi.user":
-			return { ...base, kind: "user", text: textOfContent((msg as any)?.content ?? "") };
+		case "pi.user": {
+			const text = textOfContent((msg as any)?.content ?? "");
+			return { ...base, kind: "user", text, ...userDisplay(text) };
+		}
 		case "pi.assistant": {
 			const m = msg as AssistantMessage | undefined;
 			const parts = assistantParts(m);

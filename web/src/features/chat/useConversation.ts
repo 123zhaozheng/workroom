@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationDetailResponse, ConversationState, EntriesPage, EntryDTO, SubmissionDTO } from "@shared/chat";
-import { ApiError, get } from "@/lib/api";
+import { ApiError, get, post } from "@/lib/api";
 
 export type StreamStatus = "connecting" | "live" | "reconnecting" | "offline" | "closed";
 
@@ -172,5 +172,16 @@ export function useSubmissionTracker(spaceId: string, conversationId: number) {
 	}, [spaceId, conversationId]);
 	const track = useCallback((s: TrackedSubmission) => setItems((xs) => [...xs.filter((x) => x.requestId !== s.requestId), s]), []);
 	const dismiss = useCallback((requestId: string) => setItems((xs) => xs.filter((x) => x.requestId !== requestId)), []);
-	return { items, track, dismiss };
+	/** Withdraw an input that has not been applied yet (POST …/submissions/:id/withdraw) and show the server's answer. */
+	const withdraw = useCallback(
+		async (requestId: string) => {
+			const it = itemsRef.current.find((x) => x.requestId === requestId);
+			if (!it) return;
+			const r = await post<{ result?: string; submission?: SubmissionDTO }>(`/conversations/${spaceId}/${conversationId}/submissions/${it.submission.submissionId}/withdraw`);
+			const sub = r.submission;
+			if (sub) setItems((xs) => xs.map((x) => (x.requestId === requestId ? { ...x, submission: { ...x.submission, ...sub } } : x)));
+		},
+		[spaceId, conversationId],
+	);
+	return { items, track, dismiss, withdraw };
 }

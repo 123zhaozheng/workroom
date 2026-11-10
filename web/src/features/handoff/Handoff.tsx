@@ -11,6 +11,7 @@ import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { usePanel } from "@/components/shell/panel";
 import { RUN_LABEL, RunIcon, SUBMISSION_LABEL, reasonText } from "@/features/chat/status";
+import { cleanTestText, hasTestDirectives } from "@/features/chat/testText";
 
 const ROLE = { owner: "所有者", editor: "编辑者", viewer: "查看者" } as const;
 
@@ -35,7 +36,7 @@ export function ConversationHandoffDialog({ spaceId, conversationId, open, onOpe
 	const pendingCount = h ? h.pending.approvals.length + h.pending.effects.length + h.pending.queued.length + h.pending.runningSubagents.length + (h.pending.continuable ? 1 : 0) : 0;
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="交接摘要" description="接手这个任务前需要知道的：已做的决定、当前进展、待处理事项和成果位置。" className="max-w-2xl">
+			<DialogContent title="交接摘要" description="已做的决定、当前进展、待处理事项和成果。" className="max-w-2xl">
 				<div data-testid="handoff" className="wr-scroll -mx-1 max-h-[72vh] overflow-y-auto px-1 text-[13px]">
 					<Loadable state={res} what="交接摘要" need="A 组：GET /conversations/:spaceId/:id/handoff">
 						{h ? (
@@ -66,7 +67,7 @@ export function ConversationHandoffDialog({ spaceId, conversationId, open, onOpe
 											))}
 											{h.pending.queued.map((q) => (
 												<li key={q.submissionId}>
-													<Badge tone="info">{q.mode === "steer" ? "插话" : "排队"}</Badge> {q.text}
+													<Badge tone="info">{q.mode === "steer" ? "插话" : "排队"}</Badge> {cleanTestText(q.text) || "（测试指令）"}
 												</li>
 											))}
 											{h.pending.continuable ? (
@@ -112,7 +113,12 @@ export function ConversationHandoffDialog({ spaceId, conversationId, open, onOpe
 											{h.runs.map((r) => (
 												<li key={r.entryId}>
 													<span className="text-fg-subtle">{r.requestedByName ?? r.requestedBy ?? ""}：</span>
-													{r.text.slice(0, 120)}
+													{cleanTestText(r.text).slice(0, 120) || <span className="text-fg-muted">（测试指令）</span>}
+													{hasTestDirectives(r.text) ? (
+														<Badge className="ml-1.5" data-testid="test-badge">
+															测试
+														</Badge>
+													) : null}
 													{r.status ? (
 														<Badge className="ml-1.5" tone={r.status === "done" ? "success" : r.status === "unanswered" || r.status === "withdrawn" ? "danger" : "info"}>
 															{SUBMISSION_LABEL[r.status]}
@@ -162,7 +168,7 @@ export function ConversationHandoffDialog({ spaceId, conversationId, open, onOpe
 										))}
 									</ul>
 								</Section>
-								<p className="text-xs text-fg-subtle">生成于 {fullTime(h.generatedAt)}，数据来自任务记录本身，而不是手写摘要。</p>
+								<p className="text-xs text-fg-subtle">生成于 {fullTime(h.generatedAt)}</p>
 							</>
 						) : null}
 					</Loadable>

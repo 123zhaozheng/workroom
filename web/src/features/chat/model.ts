@@ -1,12 +1,12 @@
 // View model: pi entries (+ live partial) → user turns and assistant turns with an embedded step chain.
-import type { ApprovalDTO, AssistantEntryDTO, ConversationState, EntryDTO, LiveToolDTO, MarkerEntryDTO, ToolCallDTO, ToolResultEntryDTO, UsageDTO, UserEntryDTO } from "@shared/chat";
+import type { ApprovalDTO, AssistantEntryDTO, ConversationState, EntryDTO, LiveToolDTO, MarkerEntryDTO, SubagentDTO, ToolCallDTO, ToolResultEntryDTO, UsageDTO, UserEntryDTO } from "@shared/chat";
 import type { BrowseResultDTO, FileVersionRefDTO, JobDTO } from "@shared/files";
 import type { CitationDTO } from "@shared/knowledge";
 
 export type Step =
 	| { kind: "thinking"; key: string; text: string; streaming?: boolean }
 	| { kind: "narration"; key: string; text: string }
-	| { kind: "tool"; key: string; call: ToolCallDTO; result?: ToolResultEntryDTO; live?: LiveToolDTO; approval?: ApprovalDTO };
+	| { kind: "tool"; key: string; call: ToolCallDTO; result?: ToolResultEntryDTO; live?: LiveToolDTO; approval?: ApprovalDTO; subagent?: SubagentDTO };
 
 export interface AssistantTurn {
 	kind: "assistant";
@@ -69,12 +69,14 @@ export function browseOf(details: unknown): BrowseResultDTO | null {
 
 const modelLabel = (e: AssistantEntryDTO) => `${e.model.provider}/${e.model.modelId}`;
 
-export function buildTurns(entries: readonly EntryDTO[], state?: Pick<ConversationState, "live" | "approvals">): Turn[] {
+export function buildTurns(entries: readonly EntryDTO[], state?: Pick<ConversationState, "live" | "approvals"> & Partial<Pick<ConversationState, "subagents">>): Turn[] {
 	const turns: Turn[] = [];
 	const results = new Map<string, ToolResultEntryDTO>();
 	for (const e of entries) if (e.kind === "tool_result") results.set(e.callId, e);
 	const approvalsByCall = new Map<string, ApprovalDTO>();
 	for (const a of state?.approvals ?? []) approvalsByCall.set(a.callId, a);
+	const subagentsByCall = new Map<string, SubagentDTO>();
+	for (const d of state?.subagents ?? []) subagentsByCall.set(d.source.callId, d);
 	const liveTools = new Map<string, LiveToolDTO>();
 	for (const t of state?.live.tools ?? []) liveTools.set(t.callId, t);
 
@@ -113,7 +115,7 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 					if (e.text.trim()) t.steps.push({ kind: "narration", key: `n${e.id}`, text: e.text });
 					for (const c of e.toolCalls) {
 						const r = results.get(c.id);
-						t.steps.push({ kind: "tool", key: `t${c.id}`, call: c, result: r, live: liveTools.get(c.id), approval: approvalsByCall.get(c.id) });
+						t.steps.push({ kind: "tool", key: `t${c.id}`, call: c, result: r, live: liveTools.get(c.id), approval: approvalsByCall.get(c.id), subagent: subagentsByCall.get(c.id) });
 						if (r) {
 							t.artifacts.push(...artifactsOf(r.details));
 							t.citations.push(...citationsOf(r.details));
@@ -153,7 +155,7 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 			if (p.thinking) t.steps.push({ kind: "thinking", key: "live-th", text: p.thinking, streaming: true });
 			if (p.toolCalls.length) {
 				if (p.text.trim()) t.steps.push({ kind: "narration", key: "live-n", text: p.text });
-				for (const c of p.toolCalls) t.steps.push({ kind: "tool", key: `lt${c.id}`, call: c, live: liveTools.get(c.id) ?? { callId: c.id, name: c.name, status: "pending" } });
+				for (const c of p.toolCalls) t.steps.push({ kind: "tool", key: `lt${c.id}`, call: c, live: liveTools.get(c.id) ?? { callId: c.id, name: c.name, status: "pending" }, approval: approvalsByCall.get(c.id), subagent: subagentsByCall.get(c.id) });
 			} else if (p.text) {
 				if (t.answer) t.steps.push({ kind: "narration", key: "live-prev", text: t.answer });
 				t.answer = p.text;
@@ -196,18 +198,3 @@ export function turnMarkdown(t: AssistantTurn): string {
 	if (t.artifacts.length) parts.push(`\n成果文件：\n${t.artifacts.map((a) => `- ${a.name} (v${a.versionNo})`).join("\n")}`);
 	return parts.join("\n");
 }
-
-export const TOOL_LABEL: Record<string, string> = {
-	kb_search: "检索知识库",
-	file_create: "生成文件",
-	file_update: "更新文件",
-	file_read: "读取文件",
-	sandbox_exec: "执行代码",
-	sandbox_run: "执行代码",
-	sandbox_publish: "发布成果",
-	browse: "打开网页",
-	delegate: "委派子任务",
-	ask_user: "询问你",
-	memory_save: "保存记忆",
-};
-export const toolLabel = (name: string) => TOOL_LABEL[name] ?? (name.startsWith("mcp__") ? `外部工具 · ${name.split("__").slice(1).join(" / ")}` : name);

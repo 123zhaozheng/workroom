@@ -67,7 +67,7 @@ try {
 	await page.waitForSelector('[data-testid="run-bar"][data-status="failed"], [data-testid="run-bar"][data-status="interrupted"]', { timeout: 60000 });
 	await sleep(300);
 	const failText = await page.locator('[data-testid="run-bar"]').innerText();
-	check("state: failed shown with reason + 继续", failText.includes("继续"), failText.replace(/\s+/g, " "));
+	check("state: failed shown with reason + 重试/继续", /重试|继续/.test(failText), failText.replace(/\s+/g, " "));
 	await shot(page, "1440-state-failed");
 
 	// ---------------------------------------------------------------- cancelled
