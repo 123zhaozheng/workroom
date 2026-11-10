@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T00:23:57.918Z",
+  "at": "2026-11-10T09:31:27.337Z",
   "results": [
     {
       "name": "setup: reviewer holds the 技能审核员 role (skill.review / mcp.connector.review)",
@@ -7,7 +7,7 @@
       "detail": "200"
     },
     {
-      "name": "tabs: an ordinary member has 技能市场 / 我的技能 / MCP 市场 / 我的连接 but no 待审核",
+      "name": "tabs: an ordinary member has 技能市场 / 我的技能 / 连接市场 / 我的连接 but no 待审核",
       "ok": true,
       "detail": ""
     },
@@ -37,7 +37,7 @@
       "detail": ""
     },
     {
-      "name": "review: shows manifest, and automated checks",
+      "name": "review: shows what it is, and the automated-check verdict first",
       "ok": true,
       "detail": ""
     },

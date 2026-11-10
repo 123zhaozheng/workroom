@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T00:22:31.576Z",
+  "at": "2026-11-10T09:29:53.876Z",
   "results": [
     {
       "name": "seed: six members joined the owner's organisation",
@@ -14,7 +14,7 @@
     {
       "name": "owner sees every admin tab (10)",
       "ok": true,
-      "detail": "members,invites,departments,roles,authz,sessions,models,budgets,audit,trace"
+      "detail": "members,invites,departments,sessions,roles,authz,models,budgets,audit,trace"
     },
     {
       "name": "org structure: tree shows 销售部 / 研发部 and sub-departments",
@@ -29,7 +29,7 @@
     {
       "name": "org structure: drag 华东 onto 研发部 moves it (server state)",
       "ok": true,
-      "detail": "parent=dep_0mw9y3t5x8113e8e999cd3109"
+      "detail": "parent=dep_0mwahnpex578c31a977b50cb3"
     },
     {
       "name": "org structure: 移动到 menu moves it back under 销售部",
@@ -119,10 +119,15 @@
     {
       "name": "member detail: direct deny wins and the reason is explained",
       "ok": true,
-      "detail": "– 查看审计日志 audit.view 为什么 直接禁止 对该用户直接禁止（整个组织）：离岗审查 角色 角色「内部审计」@ 整个组织 结论：拒绝（禁止优先于允许）"
+      "detail": "– 查看审计日志 为什么 直接禁止 对该用户直接禁止（整个组织）：离岗审查 角色 角色「内部审计」@ 整个组织 结论：拒绝（禁止优先于允许）"
     },
     {
       "name": "member detail: deny enforced by the server on the very next request",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "audit: technical ids appear only after 显示技术详情",
       "ok": true,
       "detail": ""
     },

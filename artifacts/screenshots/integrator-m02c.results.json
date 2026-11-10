@@ -1,10 +1,10 @@
 {
-  "at": "2026-11-10T00:20:35.644Z",
+  "at": "2026-11-10T09:27:56.130Z",
   "results": [
     {
       "name": "M02-C: main-run timeout shown as its own terminal state (已超时), not 已完成/失败/已取消",
       "ok": true,
-      "detail": "已超时 · 模型出错：fixture: upstream request timed out ([[fail timeout]]) 继续"
+      "detail": "已超时 · 模型出错 重试 技术详情"
     },
     {
       "name": "M02-C: a plain model error is shown as failed, distinct from timeout",

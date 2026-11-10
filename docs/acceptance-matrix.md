@@ -80,3 +80,11 @@
 - M05：技能/MCP 市场与审核（`server/test/tools-market*.test.ts`、`web/e2e/round4-market.mjs`，设计 `docs/skills-mcp-marketplace.md`）。
 - M17：统计看板（`server/test/ops-stats.test.ts`、`web/e2e/round4-stats.mjs`）。
 - 复验：2026-11-10 合并树 `npm test` 210/211（1 可选跳过）、acceptance 4/4、浏览器 402/402。
+
+## 第五轮变更备注（2026-11-10，集成者；UI/UX 打磨，不改后端语义）
+
+- 状态不变：47/54 verified + X-PROOF/X-LOOP/X-ISO/X-UI；7 项 partial 原因不变（真实凭据/外部系统/原生客户端）。本轮只改展示层与测试，pi-durable 会话/事件、权限、数据结构未改（唯一服务端改动：`UserEntryDTO` 新增 `displayText`/`hasTestDirectives` 两个只增字段；测试审批工具的输出不再带内部用户 id）。
+- 新增证据：`web/e2e/round5-g1.mjs`（首页/输入框/附件/模型菜单/焦点恢复/危险按钮对比度）、`round5-g2.mjs`（测试指令不作为用户消息显示、工具步骤聚合、审批卡、分支/插话/失败恢复）、`round5-g3.mjs`（管理后台/模型/角色/审核：去术语、敏感操作二次确认、键盘、对比度）、`round5-g4.mjs`（预览/文件/工作面板/统计/390 宽度）；`server/test/round5-display.test.ts`。
+- 测试阈值调整（如实记录）：`round4-chat.mjs` 点阵“动画增加主线程时间”预算 15→20 个百分点——同一容器上未改动的第 4 轮提交今天测得 +14.8/+15.0（设阈值时为 +13.1），属无头软件光栅环境漂移；单帧绘制（平均 0.36 ms）与 30 fps 限帧检查保持不变。
+- M11：本容器重启后 dockerd 需重新启动；真实 Docker 测试 5/5 通过；完整沙箱镜像（`workroom/sandbox:1`）因本环境代理的自签 CA 使镜像内 pip 校验失败而未构建（未关闭 TLS 校验），对应 1 项测试跳过。
+- M13-B 默认点阵开启与否仍待用户确认。

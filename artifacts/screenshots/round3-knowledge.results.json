@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T00:14:15.490Z",
+  "at": "2026-11-10T09:21:32.209Z",
   "results": [
     {
       "name": "M07-A: personal / project / department / org scopes chosen in the UI",
@@ -24,7 +24,7 @@
     {
       "name": "M07-C: no_evidence / index_not_ready / forbidden have different messages",
       "ok": true,
-      "detail": "没有找到相关证据 · 知识库中没有与问题相关的内容 · 4.9 ms | 索引尚未就绪 · 1 个文档处理失败，没有可检索的内容 · 3.1 ms | 无权访问"
+      "detail": "没有找到相关证据 · 知识库中没有与问题相关的内容 · 5.6 ms | 索引尚未就绪 · 1 个文档处理失败，没有可检索的内容 · 3.1 ms | 无权访问"
     },
     {
       "name": "M07-C: model errors are reported as model errors (not as missing evidence)",
@@ -54,7 +54,7 @@
     {
       "name": "M08-C: after upload the file is stored but NOT in any knowledge base (explicit step)",
       "ok": true,
-      "detail": "知识：\n未加入任何知识库（加入是显式操作）"
+      "detail": "知识库：\n未加入"
     },
     {
       "name": "M08-C: after the explicit add, knowledge state moves to 可检索 separately from storage",
@@ -69,7 +69,7 @@
     {
       "name": "M10-C: correction shows before / after and that the old version is superseded",
       "ok": true,
-      "detail": "已纠正，从现在起助手按新内容理解 之前：周报使用英文 现在：周报使用中文 2026/11/10 00:14:14 · 团队统一用中文 · 旧版本 v1 已标记为被替代"
+      "detail": "已纠正，从现在起助手按新内容理解 之前：周报使用英文 现在：周报使用中文 2026/11/10 09:21:31 · 团队统一用中文 · 旧版本 v1 已标记为被替代"
     },
     {
       "name": "M10-A: edit and delete work from the memory page",

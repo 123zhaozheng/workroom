@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T00:10:28.942Z",
+  "at": "2026-11-10T09:17:38.389Z",
   "results": [
     {
       "name": "home: heavy chunks not loaded (markdown/shiki/katex/recharts/preview/work panel)",
@@ -89,7 +89,7 @@
     {
       "name": "branch: edit created a branch (original untouched)",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw9xoayia57e1d26eb4559b5/46"
+      "detail": "http://127.0.0.1:8802/c/sp_0mwah7x1wd5862990333a46df/46"
     },
     {
       "name": "branch: after a refresh the branch, its answer and the switcher are still there",
@@ -99,7 +99,7 @@
     {
       "name": "branch: switcher returns to the original conversation with its results",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mw9xoayia57e1d26eb4559b5/3"
+      "detail": "http://127.0.0.1:8802/c/sp_0mwah7x1wd5862990333a46df/3"
     },
     {
       "name": "files: two versions listed",

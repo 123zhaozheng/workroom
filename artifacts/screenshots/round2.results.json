@@ -1,10 +1,10 @@
 {
-  "at": "2026-11-10T00:12:08.265Z",
+  "at": "2026-11-10T09:19:23.350Z",
   "results": [
     {
       "name": "M01-A: plain chat, attachment and knowledge chip sent from the same composer, no workflow choice",
       "ok": true,
-      "detail": "你好，先简单聊两句 [[reply 你好！有什么可以帮你？]] | 出差行程.txt | 报销制度库"
+      "detail": "你好，先简单聊两句 | 出差行程.txt | 报销制度库"
     },
     {
       "name": "M01-A: knowledge answer carries citations (file · version · locator)",
@@ -74,7 +74,7 @@
     {
       "name": "handoff (editor): decisions, progress and deliverables of the task, and may continue",
       "ok": true,
-      "detail": "已完成 · 整理发布会清单 你可以接手继续 待处理 · 0 没有待处理事项 已做的决定 · 1 批准「预订场地」：向场地方提交 12 月 1 日的预订 · 负责人 · 2026/11/10 00:12:02 进展 · 2 负责人：整理发布会"
+      "detail": "已完成 · 整理发布会清单 你可以接手继续 待处理 · 0 没有待处理事项 已做的决定 · 1 批准「预订场地」：向场地方提交 12 月 1 日的预订 · 负责人 · 2026/11/10 09:19:15 进展 · 2 负责人：整理发布会"
     },
     {
       "name": "viewer: no composer, no edit/regenerate/fork actions in the conversation",
