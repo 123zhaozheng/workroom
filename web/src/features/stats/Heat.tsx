@@ -1,6 +1,6 @@
 // Custom SVG charts: GitHub-style calendar heatmap (365 days), weekday x hour punch card (dot matrix) and the waffle
 // (10 x 10 dot matrix) for outcome share. Colour is one-hue sequential (blue), size carries volume in the punch card.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { OutcomeCounts, StatsOverviewDTO } from "@shared/ops";
 import { fmtDay, fmtInt, fmtCompact, fmtPct, weekdayName } from "./format";
 import { Card, Empty, levelOf, OUTCOME_META, SEQ, Segmented, thresholdsOf, TipRow, useTip } from "./parts";
@@ -16,7 +16,7 @@ const METRIC_LABEL: Record<Metric, string> = { runs: "运行", modelRequests: "�
 
 function Legend({ thresholds, fmt }: { thresholds: number[]; fmt: (n: number) => string }) {
 	return (
-		<div className="flex items-center gap-1.5 text-[11px] text-fg-subtle" aria-label="图例：颜色越深数值越大">
+		<div className="flex items-center gap-1.5 text-xs text-fg-subtle" aria-label="图例：颜色越深数值越大">
 			<span>少</span>
 			{SEQ.map((c, i) => (
 				<span key={i} className="inline-block size-3 rounded-[3px]" style={{ background: c }} title={i === 0 ? "0" : i === 1 ? `1–${fmt(thresholds[0]!)}` : i === 5 ? `> ${fmt(thresholds[3]!)}` : `> ${fmt(thresholds[i - 2]!)}`} />
@@ -30,6 +30,11 @@ function Legend({ thresholds, fmt }: { thresholds: number[]; fmt: (n: number) =>
 export function CalendarHeatmap({ data, csv }: { data: StatsOverviewDTO; csv: string }) {
 	const [metric, setMetric] = useState<Metric>("runs");
 	const { box, show, hide, el } = useTip();
+	// Narrow screens scroll inside the card: start at the most recent weeks.
+	useEffect(() => {
+		const sc = box.current;
+		if (sc) sc.scrollLeft = sc.scrollWidth;
+	}, [box, metric, data]);
 	const cal = data.calendar;
 	const model = useMemo(() => {
 		const byDay = new Map(cal.days.map((d) => [d.day, d]));
@@ -69,8 +74,8 @@ export function CalendarHeatmap({ data, csv }: { data: StatsOverviewDTO; csv: st
 	return (
 		<Card
 			testid="chart-calendar"
-			title="每日活跃度"
-			subtitle={`过去 365 天（${fmtDay(cal.from)} – ${fmtDay(cal.to)}），不受上方时间范围限制；颜色按本图数值分位分级`}
+			title="每日活跃度 · 近 365 天"
+			subtitle={`过去 365 天（${fmtDay(cal.from)} – ${fmtDay(cal.to)}），不受上方时间范围限制；颜色越深数值越高`}
 			csv={csv}
 			actions={<Segmented label="指标" value={metric} onChange={setMetric} options={METRICS} />}
 		>
@@ -81,12 +86,12 @@ export function CalendarHeatmap({ data, csv }: { data: StatsOverviewDTO; csv: st
 					<div ref={box} className="relative overflow-x-auto pb-1">
 						<svg role="img" aria-label={`过去 365 天${METRIC_LABEL[metric]}日历热力图：${model.activeDays} 天有活动，合计 ${fmt(model.total)}，单日最高 ${fmt(model.max)}`} viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block min-w-[720px]" style={{ width: "100%", height: "auto" }} data-testid="calendar-svg">
 							{model.monthMarks.map((m) => (
-								<text key={`${m.col}-${m.label}`} x={LEFT + m.col * (CELL + GAP)} y={10} fontSize={10} fill="var(--fg-subtle)">
+								<text key={`${m.col}-${m.label}`} x={LEFT + m.col * (CELL + GAP)} y={10} fontSize={12} fill="var(--fg-subtle)">
 									{m.label}
 								</text>
 							))}
 							{[0, 2, 4].map((r) => (
-								<text key={r} x={0} y={TOP + r * (CELL + GAP) + CELL - 2} fontSize={10} fill="var(--fg-subtle)">
+								<text key={r} x={0} y={TOP + r * (CELL + GAP) + CELL - 2} fontSize={12} fill="var(--fg-subtle)">
 									{weekdayName(r)}
 								</text>
 							))}
@@ -124,7 +129,7 @@ export function CalendarHeatmap({ data, csv }: { data: StatsOverviewDTO; csv: st
 						</svg>
 						{el}
 					</div>
-					<div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-fg-muted">
+					<div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-fg-muted">
 						<span>
 							{model.activeDays} 个活跃日 · 合计 {METRIC_LABEL[metric]} {fmt(model.total)}
 						</span>
@@ -161,14 +166,14 @@ export function PunchCard({ data, csv }: { data: StatsOverviewDTO; csv: string }
 					<svg role="img" aria-label={`星期 × 小时点阵图（${METRIC_LABEL[metric]}），合计 ${fmt(m.total)}，单格最高 ${fmt(m.max)}`} viewBox={`0 0 ${W} ${H}`} className="block min-w-[640px]" style={{ width: "100%", height: "auto" }} data-testid="punchcard-svg">
 						{Array.from({ length: 7 }, (_, r) => (
 							<g key={r}>
-								<text x={0} y={TOP + r * RH + RH / 2 + 4} fontSize={11} fill="var(--fg-muted)">
+								<text x={0} y={TOP + r * RH + RH / 2 + 4} fontSize={12} fill="var(--fg-muted)">
 									{weekdayName(r)}
 								</text>
 								<line x1={LEFT} x2={W} y1={TOP + r * RH + RH / 2} y2={TOP + r * RH + RH / 2} stroke="var(--border)" strokeWidth={1} strokeDasharray="1 4" />
 							</g>
 						))}
 						{Array.from({ length: 24 }, (_, h) => (
-							<text key={h} x={LEFT + h * CW + CW / 2} y={H - 4} fontSize={10} textAnchor="middle" fill="var(--fg-subtle)">
+							<text key={h} x={LEFT + h * CW + CW / 2} y={H - 4} fontSize={12} textAnchor="middle" fill="var(--fg-subtle)">
 								{h % 3 === 0 ? `${h}时` : ""}
 							</text>
 						))}
@@ -269,7 +274,7 @@ export function OutcomeWaffle({ data, csv }: { data: StatsOverviewDTO; csv: stri
 		for (let n = 0; n < dots[i]!; n++) seq.push(k);
 	});
 	return (
-		<Card testid="chart-waffle" title="结果占比" subtitle="按 docs/ops.md 的终态口径；每个点约占 1%" csv={csv} actions={<Segmented label="统计口径" value={unit} onChange={setUnit} options={UNITS} />}>
+		<Card testid="chart-waffle" title="结果占比" subtitle="按结果统计，每个点约占 1%。" csv={csv} actions={<Segmented label="统计口径" value={unit} onChange={setUnit} options={UNITS} />}>
 			{c.total === 0 ? (
 				<Empty>此范围内没有{UNITS.find((u) => u.value === unit)?.label}记录。</Empty>
 			) : (
@@ -297,7 +302,7 @@ export function OutcomeWaffle({ data, csv }: { data: StatsOverviewDTO; csv: stri
 						</svg>
 						{el}
 					</div>
-					<ul className="min-w-[160px] flex-1 space-y-1.5 text-[13px]" data-testid="waffle-legend">
+					<ul className="min-w-[160px] flex-1 space-y-1.5 text-sm" data-testid="waffle-legend">
 						{ORDER.map((k, i) => (
 							<li key={k} className="flex items-center justify-between gap-3" style={counts[i] === 0 ? { opacity: 0.5 } : undefined}>
 								<span className="inline-flex items-center gap-2">

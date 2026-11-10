@@ -64,10 +64,9 @@ export function JobCard({ job, onChanged }: { job: JobDTO; onChanged?: () => voi
 			{job.summary ? <p className="mt-1 whitespace-pre-wrap text-fg-muted">{job.summary}</p> : null}
 			{job.error ? <p className="mt-1 text-danger">{job.error}</p> : null}
 			<p className="mt-1 text-xs text-fg-subtle">
-				预算：最长 {Math.round(job.budget.timeoutMs / 60000)} 分钟
-				{job.budget.cpuSeconds ? ` · CPU ${job.budget.cpuSeconds} 秒` : ""}
+				最长 {Math.round(job.budget.timeoutMs / 60000)} 分钟
 				{job.budget.memoryBytes ? ` · 内存 ${formatBytes(job.budget.memoryBytes)}` : ""}
-				{took !== undefined ? ` · 已用 ${durationText(took)}` : ""} · 重启后{job.restartPolicy === "rerun" ? "重新执行" : "标记失败"}
+				{took !== undefined ? ` · 已用 ${durationText(took)}` : ""}
 				{job.attempts > 1 ? ` · 第 ${job.attempts} 次尝试` : ""}
 			</p>
 			{err ? <p className="mt-1 text-xs text-danger">{err}</p> : null}

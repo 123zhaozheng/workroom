@@ -1,0 +1,365 @@
+{
+  "at": "2026-11-10T03:33:51.406Z",
+  "results": [
+    {
+      "name": "setup: deliverables (md v2, docx, xlsx, pptx, pdf, csv) and an image published from the workspace",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "preview md: renders (no error state) with the file name in the header",
+      "ok": true,
+      "detail": "alerts=0"
+    },
+    {
+      "name": "preview md: shows the latest version (v2) content and a version switcher",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "popover: the version menu is opaque (solid background, opacity 1)",
+      "ok": true,
+      "detail": "{\"alpha\":1,\"opacity\":\"1\"}"
+    },
+    {
+      "name": "preview md: Esc in the menu closes only the menu",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "preview header: download link, open-in-new-tab link (target=_blank) and a close button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "preview header: one quiet line (size · time), no origin or implementation words",
+      "ok": true,
+      "detail": "149 B · 刚刚"
+    },
+    {
+      "name": "preview docx: renders (no error state) with the file name in the header",
+      "ok": true,
+      "detail": "alerts=0"
+    },
+    {
+      "name": "preview xlsx: renders (no error state) with the file name in the header",
+      "ok": true,
+      "detail": "alerts=0"
+    },
+    {
+      "name": "preview pptx: renders (no error state) with the file name in the header",
+      "ok": true,
+      "detail": "alerts=0"
+    },
+    {
+      "name": "preview pptx: single-version file has no version switcher",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "preview pdf: renders (no error state) with the file name in the header",
+      "ok": true,
+      "detail": "alerts=0"
+    },
+    {
+      "name": "preview csv: renders (no error state) with the file name in the header",
+      "ok": true,
+      "detail": "alerts=0"
+    },
+    {
+      "name": "preview image: renders at its real size, no error state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "work panel: tabs 子任务 / 终端 / 文件 / 浏览器 are reachable with the arrow keys (focus follows)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "work panel: the browser tab has a quiet one-line empty state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "work panel: Home returns to 子任务, which has a quiet empty state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "work panel: Tab moves from the tab list into the panel content or the close button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "work panel: Esc closes it when focus is inside",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "terminal: a run shows the command, output and an exit status line",
+      "ok": true,
+      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 118 ms"
+    },
+    {
+      "name": "terminal: no driver / isolation jargon visible",
+      "ok": true,
+      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 118 ms"
+    },
+    {
+      "name": "files tab: one-line usage indicator (count, used / quota)",
+      "ok": true,
+      "detail": "5 个文件 · 已用 933 B / 512.0 MB"
+    },
+    {
+      "name": "files tab: the compact menu offers 下载 / 发布到文件库 / 删除",
+      "ok": true,
+      "detail": "下载,发布到文件库,删除"
+    },
+    {
+      "name": "delete: asks for confirmation naming the file",
+      "ok": true,
+      "detail": "删除「temp.txt」？ 删除后无法恢复。已发布到文件库的版本不受影响。 取消 删除"
+    },
+    {
+      "name": "delete: cancel keeps the file (row still there, server still serves it)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "delete: confirming removes the file",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "files tab: no jargon (/work, namespaces, sandbox) in visible text",
+      "ok": true,
+      "detail": "子任务 终端 文件 浏览器 4 个文件 · 已用 927 B / 512.0 MB 上传 已删除「temp.txt」 out blob.bin 256 B notes.md 40 B notes.md 40 B 修改于 刚刚 3天后自动清理 # 分析笔记 - 收入同比增长 25% "
+    },
+    {
+      "name": "files page: simple list without explanatory subtitle or jargon",
+      "ok": true,
+      "detail": "文件库 上传文件 全部空间 全部来源 上传 助手生成 自动化 chart.png 上传 · v1 · 608 B · 刚刚 项目周报.md 助手生成 · v2 · 149 B · 刚刚 发布会.pptx 助手生成 · v1 · 56.2 K"
+    },
+    {
+      "name": "file detail: versions timeline lists v2 and v1",
+      "ok": true,
+      "detail": "v2 最新 刚刚 · 149 B 补充风险与下周计划 由 对话「生成成果」生成 · 引用 1 个文件 | v1 刚刚 · 132 B 初版 由 对话「生成成果」生成"
+    },
+    {
+      "name": "file detail: provenance in plain words — 由 对话「…」生成 · 引用 N 个文件",
+      "ok": true,
+      "detail": "由 对话「生成成果」生成 · 引用 1 个文件 | 由 对话「生成成果」生成"
+    },
+    {
+      "name": "file detail: no run / task / tool / version ids",
+      "ok": true,
+      "detail": "文件库 项目周报.md 存储：已保存 · 2 个版本 · 助手生成 知识库： 未加入 下载 v2 分享 加入知识库 上传新版本 本周进展 完成需求评审 完成原型 事项 负责人 需求评审 王明 下周计划 开始开发 版本 v2 最新 刚刚 · 149 B 补充风险与下周计划 由 对话「生成成果」生成 · 引用 1 个文件 "
+    },
+    {
+      "name": "file detail: storage and knowledge states stay separate and concise",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "shell: the top bar never overlaps the page content",
+      "ok": true,
+      "detail": "{\"header\":56,\"title\":96}"
+    },
+    {
+      "name": "sidebar: collapses (no rail left) and the top bar offers the opener",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: expands again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: no interface / jargon wording",
+      "ok": true,
+      "detail": "Workroom 新对话 搜索 个人知识库 文件库 项目 最近对话 生成成果 林 林夏 林夏 的工作区"
+    },
+    {
+      "name": "1366: preview column is within 380–680px and the page does not overflow",
+      "ok": true,
+      "detail": "{\"panel\":546.390625,\"over\":false}"
+    },
+    {
+      "name": "390: home has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: chat has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the preview is a full-width, full-height sheet with a close control of at least 36px",
+      "ok": true,
+      "detail": "{\"w\":390,\"h\":844,\"vh\":844,\"vw\":390,\"cw\":36,\"ch\":36}"
+    },
+    {
+      "name": "390: preview sheet has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: Esc closes the preview sheet and focus returns to the file card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the close button closes the preview sheet",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: work panel (tasks) has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: work panel (terminal) has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: work panel (files) has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: files page has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: file detail has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the navigation drawer traps focus (14 Tab presses stay inside)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the drawer has an explicit close button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: Esc closes the drawer and focus returns to the opener",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stats: demo organisation seeded",
+      "ok": true,
+      "detail": "demo org org_0mwa4xv2d559f41fdae4a9e4e flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2090 runs, 10658 ledger rows (demo=1, simulated), 618 knowledge searches, 356 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8896 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
+    },
+    {
+      "name": "stats: demo banner kept and 模拟 labels kept",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stats: all charts still present (calendar, punch card, waffle, area, donut, tools, latency, knowledge, table)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stats: second-level explanations are tooltips, not permanent subtitles; no docs paths or jargon",
+      "ok": true,
+      "detail": "统计 演示数据：这是演示组织，图表里的记录都是模拟的，不代表真实使用，也没有真实费用。 范围 个人 组织：演示组织（Demo） 部门：市场部 部门：研发部 部门：运营部 项目：产品调研 项目：季度报告"
+    },
+    {
+      "name": "stats: the ? popover on a card holds the explanation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stats: all card headings share one size and weight",
+      "ok": true,
+      "detail": "14px/500"
+    },
+    {
+      "name": "stats: no HTML text below 12px",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "stats: top bar does not overlap the heading",
+      "ok": true,
+      "detail": "{\"header\":56,\"h1\":88}"
+    },
+    {
+      "name": "390: stats has no horizontal page scroll; every card fits the viewport (wide charts scroll inside their card)",
+      "ok": true,
+      "detail": "{\"doc\":390,\"win\":390,\"page\":390,\"pc\":390,\"inCard\":true,\"nCards\":11}"
+    },
+    {
+      "name": "light: reduced motion is honoured (panel animation ≤ 1ms)",
+      "ok": true,
+      "detail": "{\"reduce\":true,\"panelAnim\":0.001,\"bg\":\"rgb(250, 250, 249)\",\"panelBg\":\"rgb(255, 255, 255)\"}"
+    },
+    {
+      "name": "light: light page background",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light: preview header secondary text passes WCAG AA (≥ 4.5:1)",
+      "ok": true,
+      "detail": "{\"worst\":6.31,\"n\":2}"
+    },
+    {
+      "name": "light: terminal blocks (stdout, stderr, exit line) pass AA",
+      "ok": true,
+      "detail": "{\"worst\":4.77,\"n\":6}"
+    },
+    {
+      "name": "light: workspace files tab passes AA",
+      "ok": true,
+      "detail": "{\"worst\":6.31,\"n\":19}"
+    },
+    {
+      "name": "light: file detail secondary text and links pass AA",
+      "ok": true,
+      "detail": "{\"worst\":6.04,\"n\":11}"
+    },
+    {
+      "name": "dark: reduced motion is honoured (panel animation ≤ 1ms)",
+      "ok": true,
+      "detail": "{\"reduce\":true,\"panelAnim\":0.001,\"bg\":\"rgb(22, 23, 25)\",\"panelBg\":\"rgb(29, 30, 33)\"}"
+    },
+    {
+      "name": "dark: dark page and panel backgrounds",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark: preview header secondary text passes WCAG AA (≥ 4.5:1)",
+      "ok": true,
+      "detail": "{\"worst\":6.99,\"n\":2}"
+    },
+    {
+      "name": "dark: terminal blocks (stdout, stderr, exit line) pass AA",
+      "ok": true,
+      "detail": "{\"worst\":6.34,\"n\":6}"
+    },
+    {
+      "name": "dark: workspace files tab passes AA",
+      "ok": true,
+      "detail": "{\"worst\":6.99,\"n\":19}"
+    },
+    {
+      "name": "dark: file detail secondary text and links pass AA",
+      "ok": true,
+      "detail": "{\"worst\":6.62,\"n\":11}"
+    }
+  ]
+}

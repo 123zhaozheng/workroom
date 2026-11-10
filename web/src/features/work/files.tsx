@@ -1,7 +1,7 @@
-// "文件" tab of the work panel: the conversation's persistent workspace (/work) as a tree with preview, download, upload,
-// new folder, delete and publish-to-library. Same ACL as the conversation: viewers can browse and download but every write
-// control is disabled (the server enforces it too). Lifecycle (idle expiry) and quota are always visible.
-import { ChevronDown, ChevronRight, Download, File as FileIcon, FileUp, Folder, FolderOpen, FolderPlus, Loader2, RefreshCw, Trash2, UploadCloud } from "lucide-react";
+// "文件" tab of the work panel: the conversation's workspace as a tree with preview and a compact per-row menu
+// (下载 / 发布到文件库 / 删除, delete is confirmed). Same ACL as the conversation: viewers can browse and download but every
+// write control is disabled (the server enforces it too). One quiet usage line replaces the paragraphs; the cleanup rule is behind "?".
+import { ChevronDown, ChevronRight, Download, File as FileIcon, FileUp, Folder, FolderPlus, Loader2, MoreHorizontal, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { FileVersionRefDTO } from "@shared/files";
 import type { WorkspaceEntryDTO, WorkspaceFilesResponse, WorkspacePreviewDTO } from "@shared/sandbox";
@@ -10,8 +10,11 @@ import { useApi } from "@/lib/useApi";
 import { cn, formatBytes, fullTime, relTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
+import { Badge } from "@/components/ui/misc";
+import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuTrigger, Tip } from "@/components/ui/overlay";
+import { InfoPop } from "@/components/shell/InfoPop";
 import { FileCard } from "@/features/chat/Cards";
+import { LoadState, Notice } from "./states";
 
 const base = (spaceId: string) => `/sandbox/${spaceId}`;
 
@@ -48,7 +51,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 	const [busy, setBusy] = useState(false);
 	const [note, setNote] = useState<{ tone: "ok" | "err"; text: string }>();
 	const [newDir, setNewDir] = useState<string | null>(null);
-	const [confirmDel, setConfirmDel] = useState(false);
+	const [confirmDel, setConfirmDel] = useState<WorkspaceEntryDTO | null>(null);
 	const [published, setPublished] = useState<FileVersionRefDTO>();
 	const input = useRef<HTMLInputElement>(null);
 	const entries = files.data?.entries ?? [];
@@ -73,26 +76,30 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 	};
 	const targetDir = sel ? (sel.kind === "directory" ? sel.path : parentOf(sel.path)) : "";
 	const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+	const select = (e: WorkspaceEntryDTO) => (setSel({ path: e.path, kind: e.kind }), setPublished(undefined));
+	const publish = (e: WorkspaceEntryDTO) =>
+		void run(async () => {
+			const r = await post<{ version: FileVersionRefDTO }>(`${base(spaceId)}/publish`, { conversationId, path: e.path });
+			select(e);
+			setPublished(r.version);
+		}, "已发布到文件库");
 
 	return (
 		<div data-testid="files-tab" className="space-y-3">
-			<Loadable state={files} what="工作区文件" need="GET /sandbox/:spaceId/files">
+			<LoadState state={files} what="工作区文件">
 				{u ? (
-					<div data-testid="ws-usage" className="rounded-lg bg-surface-2 px-3 py-2 text-[12px] text-fg-muted">
-						<div className="flex flex-wrap items-center justify-between gap-x-3">
-							<span>
-								本会话 {formatBytes(u.conversationBytes)} · {u.fileCount} 个文件
-							</span>
-							<span>
-								空间已用 {formatBytes(u.spaceBytes)} / 配额 {formatBytes(u.quotaBytes)}
-							</span>
-						</div>
-						<div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border">
+					<div data-testid="ws-usage" className="flex items-center gap-2 text-xs text-fg-muted">
+						<span className="shrink-0">
+							{u.fileCount} 个文件 · 已用 {formatBytes(u.spaceBytes)} / {formatBytes(u.quotaBytes)}
+						</span>
+						<div role="progressbar" aria-label="工作区用量" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-border">
 							<div className={cn("h-full rounded-full", pct >= 90 ? "bg-danger" : pct >= 70 ? "bg-warning" : "bg-success")} style={{ width: `${Math.max(2, pct)}%` }} />
 						</div>
-						<p className="mt-1.5" data-testid="ws-lifecycle">
-							文件在最后修改后闲置 {u.retentionHours} 小时会被自动清理；需要长期保留的成果请「发布到文件库」。单个文件上限 {formatBytes(u.maxFileBytes)}。
-						</p>
+						<InfoPop label="清理规则" testid="ws-rules">
+							<span data-testid="ws-lifecycle">
+								文件最后修改后闲置 {u.retentionHours} 小时会被自动清理。需要长期保留的成果请「发布到文件库」。单个文件上限 {formatBytes(u.maxFileBytes)}。
+							</span>
+						</InfoPop>
 					</div>
 				) : null}
 
@@ -110,25 +117,28 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 							void run(async () => {
 								for (const f of list) await uploadFile(spaceId, conversationId, join(targetDir, f.name), f);
 								reveal(targetDir);
-							}, `已上传 ${list.length} 个文件到 /work${targetDir ? `/${targetDir}` : ""}`);
+							}, `已上传 ${list.length} 个文件${targetDir ? `到「${targetDir}」` : ""}`);
 						}}
 					/>
-					<Button size="sm" disabled={!canWrite || busy} data-testid="ws-upload" title={canWrite ? undefined : "只读：查看者不能上传"} onClick={() => input.current?.click()}>
+					<Button size="sm" disabled={!canWrite || busy} data-testid="ws-upload" title={canWrite ? undefined : "查看者不能上传"} onClick={() => input.current?.click()}>
 						<FileUp />
 						上传
 					</Button>
-					<Button size="sm" disabled={!canWrite || busy} data-testid="ws-mkdir" title={canWrite ? undefined : "只读：查看者不能新建"} onClick={() => setNewDir(newDir === null ? "" : null)}>
-						<FolderPlus />
-						新建文件夹
-					</Button>
-					<Button size="sm" variant="ghost" data-testid="ws-refresh" onClick={files.reload}>
-						<RefreshCw />
-						刷新
-					</Button>
+					<Tip label="新建文件夹">
+						<Button size="sm" aria-label="新建文件夹" disabled={!canWrite || busy} data-testid="ws-mkdir" title={canWrite ? undefined : "查看者不能新建"} onClick={() => setNewDir(newDir === null ? "" : null)}>
+							<FolderPlus />
+						</Button>
+					</Tip>
+					<Tip label="刷新">
+						<Button size="sm" variant="ghost" aria-label="刷新" data-testid="ws-refresh" onClick={files.reload}>
+							<RefreshCw />
+						</Button>
+					</Tip>
 					<span className="flex-1" />
 					{!canWrite ? <Badge data-testid="ws-readonly">只读</Badge> : null}
 					{files.data?.truncated ? <Badge tone="warning">仅显示前 {entries.length} 项</Badge> : null}
 				</div>
+				{targetDir ? <p className="text-xs text-fg-muted">新文件会放进「{targetDir}」</p> : null}
 				{newDir !== null ? (
 					<form
 						className="flex items-center gap-1.5"
@@ -143,120 +153,131 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 							}, `已创建文件夹 ${join(targetDir, name)}`);
 						}}
 					>
-						<Input autoFocus data-testid="ws-mkdir-name" value={newDir} onChange={(e) => setNewDir(e.target.value)} placeholder={`文件夹名称（位于 /work${targetDir ? `/${targetDir}` : ""}）`} className="h-8 text-[13px]" />
+						<Input autoFocus data-testid="ws-mkdir-name" aria-label="文件夹名称" value={newDir} onChange={(e) => setNewDir(e.target.value)} placeholder="文件夹名称" className="h-8 text-[13px]" />
 						<Button size="sm" variant="primary" type="submit" disabled={busy || !newDir.trim()} data-testid="ws-mkdir-ok">
 							创建
 						</Button>
 					</form>
 				) : null}
 				{note ? (
-					<p data-testid="ws-note" className={cn("text-[12.5px]", note.tone === "err" ? "text-danger" : "text-success")}>
+					<p role="status" data-testid="ws-note" className={cn("text-[13px]", note.tone === "err" ? "text-danger" : "text-success")}>
 						{note.text}
 					</p>
 				) : null}
 
 				{entries.length === 0 ? (
-					<EmptyState icon={<UploadCloud />} title="工作区还是空的">
-						助手在沙箱里写出的文件、你上传的数据都会出现在这里。
-						{canWrite ? "点击「上传」把文件交给助手处理。" : ""}
-					</EmptyState>
+					<Notice icon={<UploadCloud />} title="工作区还是空的" testid="ws-empty">
+						助手生成的文件和你上传的文件会出现在这里。
+					</Notice>
 				) : (
-					<ul data-testid="ws-tree" className="max-h-72 overflow-auto rounded-lg border border-border py-1 text-[12.5px]">
-						<TreeRows nodes={tree} depth={0} expanded={expanded} sel={sel} onToggle={(p) => setExpanded((s) => (s.has(p) ? new Set([...s].filter((x) => x !== p)) : new Set(s).add(p)))} onSelect={(e) => (setSel({ path: e.path, kind: e.kind }), setConfirmDel(false), setPublished(undefined))} />
+					<ul data-testid="ws-tree" role="tree" aria-label="工作区文件" className="wr-scroll max-h-72 overflow-auto rounded-xl border border-border py-1 text-sm">
+						<TreeRows
+							nodes={tree}
+							depth={0}
+							expanded={expanded}
+							sel={sel}
+							canWrite={canWrite}
+							spaceId={spaceId}
+							conversationId={conversationId}
+							onToggle={(p) => setExpanded((s) => (s.has(p) ? new Set([...s].filter((x) => x !== p)) : new Set(s).add(p)))}
+							onSelect={select}
+							onPublish={publish}
+							onDelete={setConfirmDel}
+						/>
 					</ul>
 				)}
 
-				{sel ? (
-					<section data-testid="ws-detail" className="rounded-lg border border-border">
-						<div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-surface-2 px-2.5 py-1.5">
-							{sel.kind === "directory" ? <FolderOpen className="size-3.5 text-fg-muted" /> : <FileIcon className="size-3.5 text-fg-muted" />}
-							<span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={`/work/${sel.path}`}>
-								/work/{sel.path}
+				{sel?.kind === "file" ? (
+					<section data-testid="ws-detail" aria-label={`预览 ${nameOf(sel.path)}`} className="overflow-hidden rounded-xl border border-border">
+						<div className="flex items-center gap-2 border-b border-border bg-surface-2 px-3 py-2">
+							<FileIcon className="size-3.5 shrink-0 text-fg-muted" />
+							<span className="min-w-0 flex-1 truncate text-[13px] font-medium" title={sel.path}>
+								{nameOf(sel.path)}
 							</span>
-							{sel.kind === "file" ? (
-								<>
-									<a data-testid="ws-download" aria-label={`下载 ${sel.path}`} className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12.5px] text-fg-muted hover:bg-surface hover:text-fg" href={`/api${base(spaceId)}/file${qs({ path: sel.path, conversationId })}`}>
-										<Download className="size-3.5" />
-										下载
-									</a>
-									<Button
-										size="sm"
-										variant="ghost"
-										disabled={!canWrite || busy}
-										data-testid="ws-publish"
-										title={canWrite ? "复制为文件库中的不可变版本，不随工作区清理" : "只读：查看者不能发布"}
-										onClick={() =>
-											void run(async () => {
-												const r = await post<{ version: FileVersionRefDTO }>(`${base(spaceId)}/publish`, { conversationId, path: sel.path });
-												setPublished(r.version);
-											}, "已发布到文件库")
-										}
-									>
-										<UploadCloud />
-										发布到文件库
-									</Button>
-								</>
-							) : null}
-							{confirmDel ? (
-								<>
-									<Button size="sm" variant="danger" disabled={busy} data-testid="ws-delete-confirm" onClick={() => void run(async () => (await del(`${base(spaceId)}/file${qs({ path: sel.path, conversationId })}`), setSel(null), setConfirmDel(false)), `已删除 /work/${sel.path}`)}>
-										确认删除
-									</Button>
-									<Button size="sm" variant="ghost" onClick={() => setConfirmDel(false)}>
-										取消
-									</Button>
-								</>
-							) : (
-								<Button size="sm" variant="ghost" disabled={!canWrite || busy} data-testid="ws-delete" title={canWrite ? undefined : "只读：查看者不能删除"} onClick={() => setConfirmDel(true)}>
-									<Trash2 />
-									删除
-								</Button>
-							)}
 						</div>
 						{published ? (
 							<div className="border-b border-border p-2" data-testid="ws-published">
 								<FileCard file={published} />
 							</div>
 						) : null}
-						{sel.kind === "file" ? <Preview spaceId={spaceId} conversationId={conversationId} path={sel.path} /> : <p className="px-3 py-2 text-[12.5px] text-fg-muted">目录。上传与新建会放进这个文件夹。</p>}
+						<Preview spaceId={spaceId} conversationId={conversationId} path={sel.path} />
 					</section>
 				) : null}
-			</Loadable>
+			</LoadState>
+
+			<Dialog open={!!confirmDel} onOpenChange={(o) => !o && setConfirmDel(null)}>
+				{confirmDel ? (
+					<DialogContent title={`删除「${nameOf(confirmDel.path)}」？`} description={confirmDel.kind === "directory" ? "文件夹和里面的所有文件都会被删除，无法恢复。" : "删除后无法恢复。已发布到文件库的版本不受影响。"} data-testid="ws-delete-dialog">
+						<div className="flex justify-end gap-2">
+							<Button data-testid="ws-delete-cancel" onClick={() => setConfirmDel(null)}>
+								取消
+							</Button>
+							<Button
+								variant="danger"
+								disabled={busy}
+								data-testid="ws-delete-confirm"
+								onClick={() => {
+									const e = confirmDel;
+									setConfirmDel(null);
+									void run(async () => {
+										await del(`${base(spaceId)}/file${qs({ path: e.path, conversationId })}`);
+										setSel((s) => (s && (s.path === e.path || s.path.startsWith(`${e.path}/`)) ? null : s));
+									}, `已删除「${nameOf(e.path)}」`);
+								}}
+							>
+								删除
+							</Button>
+						</div>
+					</DialogContent>
+				) : null}
+			</Dialog>
 		</div>
 	);
 }
 
-function TreeRows({ nodes, depth, expanded, sel, onToggle, onSelect }: { nodes: Node[]; depth: number; expanded: Set<string>; sel: { path: string } | null; onToggle: (p: string) => void; onSelect: (e: WorkspaceEntryDTO) => void }) {
+interface RowCtx {
+	expanded: Set<string>;
+	sel: { path: string } | null;
+	canWrite: boolean;
+	spaceId: string;
+	conversationId: number;
+	onToggle: (p: string) => void;
+	onSelect: (e: WorkspaceEntryDTO) => void;
+	onPublish: (e: WorkspaceEntryDTO) => void;
+	onDelete: (e: WorkspaceEntryDTO) => void;
+}
+
+function TreeRows({ nodes, depth, ...ctx }: { nodes: Node[]; depth: number } & RowCtx) {
 	return (
 		<>
 			{nodes.map((n) => {
 				const dir = n.e.kind === "directory";
-				const open = expanded.has(n.e.path);
+				const open = ctx.expanded.has(n.e.path);
+				const selected = ctx.sel?.path === n.e.path;
 				return (
-					<li key={n.e.path}>
-						<div
-							role="button"
-							tabIndex={0}
-							data-testid="ws-entry"
-							data-path={n.e.path}
-							data-kind={n.e.kind}
-							aria-selected={sel?.path === n.e.path}
-							onClick={() => (dir && onToggle(n.e.path), onSelect(n.e))}
-							onKeyDown={(ev) => (ev.key === "Enter" || ev.key === " ") && (ev.preventDefault(), dir && onToggle(n.e.path), onSelect(n.e))}
-							className={cn("flex cursor-pointer items-center gap-1.5 px-2 py-1 hover:bg-surface-2", sel?.path === n.e.path && "bg-surface-2")}
-							style={{ paddingLeft: 8 + depth * 14 }}
-						>
-							{dir ? open ? <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" /> : <ChevronRight className="size-3.5 shrink-0 text-fg-subtle" /> : <span className="size-3.5 shrink-0" />}
-							{dir ? <Folder className="size-3.5 shrink-0 text-fg-muted" /> : <FileIcon className="size-3.5 shrink-0 text-fg-muted" />}
-							<span className={cn("min-w-0 flex-1 truncate font-mono", dir && "text-fg-muted")} title={n.e.path}>
-								{nameOf(n.e.path)}
-								{n.e.symlink ? " →" : ""}
-							</span>
-							{!dir ? <span className="shrink-0 text-fg-subtle">{formatBytes(n.e.size)}</span> : null}
+					<li key={n.e.path} role="treeitem" aria-expanded={dir ? open : undefined} aria-selected={selected}>
+						<div className={cn("flex items-center", selected && "bg-surface-2")} style={{ paddingLeft: 4 + depth * 16 }}>
+							<button
+								type="button"
+								data-testid="ws-entry"
+								data-path={n.e.path}
+								data-kind={n.e.kind}
+								onClick={() => (dir && ctx.onToggle(n.e.path), ctx.onSelect(n.e))}
+								className="flex min-h-9 min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+							>
+								{dir ? open ? <ChevronDown className="size-3.5 shrink-0 text-fg-muted" /> : <ChevronRight className="size-3.5 shrink-0 text-fg-muted" /> : <span className="size-3.5 shrink-0" />}
+								{dir ? <Folder className="size-4 shrink-0 text-fg-muted" /> : <FileIcon className="size-4 shrink-0 text-fg-muted" />}
+								<span className="min-w-0 flex-1 truncate" title={n.e.path}>
+									{nameOf(n.e.path)}
+									{n.e.symlink ? " →" : ""}
+								</span>
+								{!dir ? <span className="shrink-0 text-xs text-fg-muted">{formatBytes(n.e.size)}</span> : null}
+							</button>
+							<RowMenu e={n.e} {...ctx} />
 						</div>
 						{dir && open && n.children.length ? (
-							<ul>
-								<TreeRows nodes={n.children} depth={depth + 1} expanded={expanded} sel={sel} onToggle={onToggle} onSelect={onSelect} />
+							<ul role="group">
+								<TreeRows nodes={n.children} depth={depth + 1} {...ctx} />
 							</ul>
 						) : null}
 					</li>
@@ -266,38 +287,73 @@ function TreeRows({ nodes, depth, expanded, sel, onToggle, onSelect }: { nodes: 
 	);
 }
 
+function RowMenu({ e, canWrite, spaceId, conversationId, onPublish, onDelete }: { e: WorkspaceEntryDTO } & RowCtx) {
+	const file = e.kind === "file";
+	return (
+		<Menu>
+			<MenuTrigger asChild>
+				<button type="button" data-testid="ws-menu" data-path={e.path} aria-label={`${nameOf(e.path)} 的操作`} className="mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+					<MoreHorizontal className="size-4" />
+				</button>
+			</MenuTrigger>
+			<MenuContent align="end" className="w-44">
+				{file ? (
+					<MenuItem asChild data-testid="ws-download">
+						<a href={`/api${base(spaceId)}/file${qs({ path: e.path, conversationId })}`} aria-label={`下载 ${e.path}`}>
+							<Download />
+							下载
+						</a>
+					</MenuItem>
+				) : null}
+				{file ? (
+					<MenuItem disabled={!canWrite} data-testid="ws-publish" onSelect={() => onPublish(e)}>
+						<UploadCloud />
+						发布到文件库
+					</MenuItem>
+				) : null}
+				<MenuItem disabled={!canWrite} data-testid="ws-delete" className="text-danger [&_svg]:text-danger" onSelect={() => onDelete(e)}>
+					<Trash2 />
+					删除
+				</MenuItem>
+			</MenuContent>
+		</Menu>
+	);
+}
+
 function Preview({ spaceId, conversationId, path }: { spaceId: string; conversationId: number; path: string }) {
 	const res = useApi<{ preview: WorkspacePreviewDTO }>(`${base(spaceId)}/preview${qs({ path, conversationId })}`);
 	const p = res.data?.preview;
 	return (
 		<div data-testid="ws-preview">
 			{res.loading ? (
-				<div className="flex items-center gap-2 px-3 py-4 text-[12.5px] text-fg-subtle">
-					<Loader2 className="size-3.5 wr-spin" /> 加载预览…
+				<div role="status" className="flex items-center gap-2 px-3 py-4 text-[13px] text-fg-muted">
+					<Loader2 className="size-3.5 wr-spin" /> 正在加载预览…
 				</div>
 			) : res.error ? (
-				<p className="px-3 py-3 text-[12.5px] text-danger">{errorText(res.error)}</p>
+				<p role="alert" className="px-3 py-3 text-[13px] text-danger">
+					预览失败：{errorText(res.error)}
+				</p>
 			) : p ? (
 				<>
-					<div className="flex flex-wrap gap-x-3 px-3 pt-2 text-[11.5px] text-fg-subtle">
+					<div className="flex flex-wrap gap-x-3 px-3 pt-2 text-xs text-fg-muted">
 						<span>{formatBytes(p.size)}</span>
-						<span>修改于 {fullTime(p.mtime)}</span>
-						<span title={fullTime(p.expiresAt)}>闲置到期 {relTime(p.expiresAt)}</span>
+						<span title={fullTime(p.mtime)}>修改于 {relTime(p.mtime)}</span>
+						<span title={fullTime(p.expiresAt)}>{relTime(p.expiresAt)}自动清理</span>
 					</div>
 					{p.kind === "text" ? (
 						<>
-							<pre data-testid="ws-preview-text" className="m-2 max-h-72 overflow-auto whitespace-pre rounded-md bg-surface-2 p-2.5 font-mono text-[12px] leading-5 text-fg">
+							<pre data-testid="ws-preview-text" className="wr-scroll m-2 max-h-72 overflow-auto whitespace-pre rounded-lg bg-surface-2 p-2.5 font-mono text-[12.5px] leading-5 text-fg">
 								{p.text}
 							</pre>
-							{p.truncated ? <p className="px-3 pb-2 text-[11.5px] text-fg-subtle">只显示前 256 KB，完整内容请下载。</p> : null}
+							{p.truncated ? <p className="px-3 pb-2 text-xs text-fg-muted">只显示前 256 KB，完整内容请下载。</p> : null}
 						</>
 					) : p.kind === "image" ? (
 						<div className="p-2">
-							<img data-testid="ws-preview-image" alt={p.name} src={`/api${base(spaceId)}/file${qs({ path, conversationId, inline: 1 })}`} className="max-h-72 max-w-full rounded-md border border-border object-contain" />
+							<img data-testid="ws-preview-image" alt={p.name} src={`/api${base(spaceId)}/file${qs({ path, conversationId, inline: 1 })}`} className="max-h-72 max-w-full rounded-lg border border-border object-contain" />
 						</div>
 					) : (
-						<p data-testid="ws-preview-binary" className="px-3 py-3 text-[12.5px] text-fg-muted">
-							二进制文件（{p.mime}），无法在这里预览。请下载，或让助手处理后发布。
+						<p data-testid="ws-preview-binary" className="px-3 py-3 text-[13px] text-fg-muted">
+							这种文件无法在这里预览，可以下载查看。
 						</p>
 					)}
 				</>

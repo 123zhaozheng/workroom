@@ -11,7 +11,8 @@ import { TopBar } from "@/components/shell/AppShell";
 import { usePanel } from "@/components/shell/panel";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
+import { EmptyState, Page, PageHeader } from "@/components/ui/misc";
+import { LoadState } from "@/features/work/states";
 import { fileIcon } from "@/features/chat/Cards";
 
 export const ORIGIN: Record<FileOrigin, { label: string; icon?: typeof Bot }> = {
@@ -61,7 +62,6 @@ export default function FilesPage() {
 				<Page wide>
 					<PageHeader
 						title="文件库"
-						description="上传的资料和助手交付的成果都在这里。每次修改都会保留旧版本，可以追溯来源。"
 						actions={
 							<>
 								<input ref={input} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
@@ -73,7 +73,7 @@ export default function FilesPage() {
 						}
 					/>
 					<div className="mb-4 flex flex-wrap items-center gap-2">
-						<div className="relative min-w-[200px] flex-1">
+						<div className="relative min-w-[200px] flex-1 basis-full sm:basis-0">
 							<Search className="absolute left-2.5 top-2.5 size-4 text-fg-subtle" />
 							<Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索文件名" className="pl-8" />
 						</div>
@@ -92,11 +92,11 @@ export default function FilesPage() {
 							<option value="automation">自动化</option>
 						</Select>
 					</div>
-					{upErr ? <p className="mb-3 rounded-lg bg-danger-soft px-3 py-2 text-[13px] text-danger">{upErr}</p> : null}
-					<Loadable state={files} what="文件库" need="D 组：GET /api/files">
+					{upErr ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">上传失败：{upErr}</p> : null}
+					<LoadState state={files} what="文件库">
 						{(files.data?.files ?? []).length === 0 ? (
 							<EmptyState icon={<FolderOpen />} title={q ? "没有匹配的文件" : "文件库还是空的"}>
-								上传资料，或让助手生成文档、表格、演示稿，成果会自动出现在这里。
+								上传资料，或让助手生成文档、表格和演示稿。
 							</EmptyState>
 						) : (
 							<div className="overflow-hidden rounded-xl border border-border bg-surface">
@@ -104,22 +104,18 @@ export default function FilesPage() {
 									const Icon = fileIcon(f.name, f.mime);
 									const o = ORIGIN[f.origin];
 									return (
-										<div key={f.id} data-testid="file-row" className={cn("group flex items-center gap-3 px-3 py-2.5 hover:bg-surface-2/60", i > 0 && "border-t border-border")}>
+										<div key={f.id} data-testid="file-row" className={cn("flex items-center gap-3 px-3 py-2.5 hover:bg-surface-2/60", i > 0 && "border-t border-border")}>
 											<Icon className="size-[18px] shrink-0 text-fg-muted" />
-											<Link to={`/files/${f.id}`} className="min-w-0 flex-1">
+											<Link to={`/files/${f.id}`} className="min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 												<span className="block truncate text-sm font-medium">{f.name}</span>
-												<span className="block truncate text-xs text-fg-subtle">
-													v{f.latestVersionNo} · {formatBytes(f.size)} · {relTime(f.updatedAt)} · {f.spaceKind === "project" ? "项目" : "个人"}
+												<span className="block truncate text-xs text-fg-muted">
+													{o.label} · v{f.latestVersionNo} · {formatBytes(f.size)} · {relTime(f.updatedAt)}
+													{f.spaceKind === "project" ? " · 项目" : ""}
 												</span>
 											</Link>
-											<Badge>
-												{o.icon ? <o.icon /> : null}
-												{o.label}
-											</Badge>
-											{f.latestVersionNo > 1 ? <Badge tone="info">{f.latestVersionNo} 个版本</Badge> : null}
 											<button
 												onClick={() => openPreview({ fileId: f.id, versionId: f.latestVersionId, name: f.name, mime: f.mime })}
-												className="rounded-md p-1.5 text-fg-subtle hover:bg-surface-3 hover:text-fg"
+												className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 												aria-label={`预览 ${f.name}`}
 											>
 												<Eye className="size-4" />
@@ -129,7 +125,7 @@ export default function FilesPage() {
 								})}
 							</div>
 						)}
-					</Loadable>
+					</LoadState>
 				</Page>
 			</div>
 		</div>

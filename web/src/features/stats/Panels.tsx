@@ -20,9 +20,9 @@ export function ToolRanking({ data, csv }: { data: StatsOverviewDTO; csv: string
 				<div ref={box} className="relative">
 					<ol className="space-y-2" data-testid="tool-list">
 						{data.tools.map((t, i) => (
-							<li key={t.tool} data-testid="tool-row" className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 text-[13px] sm:grid-cols-[minmax(0,11rem)_1fr_auto]">
+							<li key={t.tool} data-testid="tool-row" className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 text-sm sm:grid-cols-[minmax(0,11rem)_1fr_auto]">
 								<span className="truncate" title={t.tool}>
-									<span className="mr-1.5 inline-block w-4 text-right text-[11px] tabular-nums text-fg-subtle">{i + 1}</span>
+									<span className="mr-1.5 inline-block w-4 text-right text-xs tabular-nums text-fg-subtle">{i + 1}</span>
 									{t.tool}
 								</span>
 								<div
@@ -50,7 +50,7 @@ export function ToolRanking({ data, csv }: { data: StatsOverviewDTO; csv: string
 								</div>
 								<span className="flex items-center justify-end gap-2 tabular-nums">
 									<span className="font-medium">{fmtInt(t.calls)}</span>
-									<span className={cn("w-12 rounded px-1 text-right text-[11px]", t.errors ? "bg-danger-soft text-danger" : "text-fg-subtle")}>{fmtPct(t.errorRate, 0)}</span>
+									<span className={cn("w-12 rounded px-1 text-right text-xs", t.errors ? "bg-danger-soft text-danger" : "text-fg-subtle")}>{fmtPct(t.errorRate, 0)}</span>
 								</span>
 							</li>
 						))}
@@ -81,9 +81,9 @@ export function KnowledgeCard({ data, csv }: { data: StatsOverviewDTO; csv: stri
 							<div className="text-[26px] font-semibold leading-8 tabular-nums" data-testid="kb-hit-rate">
 								{fmtPct(k.hitRate)}
 							</div>
-							<div className="text-[12px] text-fg-subtle">命中率 · 共 {fmtInt(k.searches)} 次检索</div>
+							<div className="text-xs text-fg-subtle">命中率 · 共 {fmtInt(k.searches)} 次检索</div>
 						</div>
-						<div className="text-right text-[12px] text-fg-muted">
+						<div className="text-right text-xs text-fg-muted">
 							<div>
 								无证据率 <span className="font-medium text-fg tabular-nums">{fmtPct(k.noEvidenceRate)}</span>
 							</div>
@@ -93,7 +93,7 @@ export function KnowledgeCard({ data, csv }: { data: StatsOverviewDTO; csv: stri
 					<div role="img" aria-label={parts.map((p) => `${p.label} ${p.n}`).join("，")} className="mt-3 flex h-3 gap-[2px] overflow-hidden rounded">
 						{parts.map((p) => (p.n ? <span key={p.key} title={`${p.label} ${p.n}`} style={{ flex: p.n, background: p.color }} className="min-w-[3px] first:rounded-l last:rounded-r" /> : null))}
 					</div>
-					<ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-muted">
+					<ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
 						{parts.map((p) => (
 							<li key={p.key} className="inline-flex items-center gap-1.5">
 								<span aria-hidden className="inline-block size-2.5 rounded-sm" style={{ background: p.color }} />
@@ -117,11 +117,11 @@ export function LargeContextCard({ data }: { data: StatsOverviewDTO }) {
 				<>
 					<div className="flex items-baseline gap-2">
 						<span className="text-[26px] font-semibold leading-8 tabular-nums">{fmtPct(lc.failureRate)}</span>
-						<span className="text-[12px] text-fg-subtle">
+						<span className="text-xs text-fg-subtle">
 							失败率 · {fmtInt(lc.failed)} / {fmtInt(lc.requests)} 次
 						</span>
 					</div>
-					<ul className="mt-3 space-y-1.5 text-[12px]" data-testid="lc-rows">
+					<ul className="mt-3 space-y-1.5 text-xs" data-testid="lc-rows">
 						{[...lc.byModel.slice(0, 4).map((r) => ({ ...r, g: "模型" })), ...lc.byStage.map((r) => ({ ...r, g: "阶段" }))].map((r) => (
 							<li key={`${r.g}-${r.key}`} className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-2">
 								<span className="text-fg-subtle">{r.g}</span>
@@ -148,14 +148,14 @@ export function ActivityCard({ data }: { data: StatsOverviewDTO }) {
 			{data.automation.total === 0 && data.files.versions === 0 ? (
 				<Empty height={120}>此范围内没有自动化运行，也没有产出文件。</Empty>
 			) : (
-				<div className="grid gap-4 text-[13px]">
+				<div className="grid gap-4 text-sm">
 					<div>
 						<div className="mb-1 flex justify-between text-fg-muted">
 							<span>自动化运行</span>
 							<span className="font-medium tabular-nums text-fg">{fmtInt(data.automation.total)}</span>
 						</div>
 						{Object.entries(data.automation.byStatus).map(([k, n]) => (
-							<div key={k} className="flex justify-between text-[12px] text-fg-muted">
+							<div key={k} className="flex justify-between text-xs text-fg-muted">
 								<span>{AUTO[k] ?? k}</span>
 								<span className="tabular-nums">{fmtInt(n)}</span>
 							</div>
@@ -167,7 +167,7 @@ export function ActivityCard({ data }: { data: StatsOverviewDTO }) {
 							<span className="font-medium tabular-nums text-fg">{fmtInt(data.files.versions)}</span>
 						</div>
 						{Object.entries(data.files.byOrigin).map(([k, n]) => (
-							<div key={k} className="flex justify-between text-[12px] text-fg-muted">
+							<div key={k} className="flex justify-between text-xs text-fg-muted">
 								<span>{ORIGIN[k] ?? k}</span>
 								<span className="tabular-nums">{fmtInt(n)}</span>
 							</div>
@@ -186,7 +186,7 @@ const td = "px-3 py-2";
 const tdR = "px-3 py-2 text-right tabular-nums";
 
 function Sim({ show }: { show: boolean }) {
-	return show ? <span className="ml-1 rounded bg-surface-3 px-1 text-[10px] text-fg-muted">模拟</span> : null;
+	return show ? <span className="ml-1 rounded bg-surface-3 px-1 text-xs text-fg-muted">模拟</span> : null;
 }
 const when = (iso: string) => new Date(iso).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -224,7 +224,7 @@ export function DrilldownTables({ data, csv }: { data: StatsOverviewDTO; csv: (c
 						<Empty height={100}>此范围内没有对话记录。</Empty>
 					) : (
 						<div className="overflow-x-auto">
-							<table className="w-full text-[13px]" data-testid="table-conversations">
+							<table className="w-full text-sm" data-testid="table-conversations">
 								<thead>
 									<tr>
 										<th className={th}>对话</th>
@@ -270,7 +270,7 @@ export function DrilldownTables({ data, csv }: { data: StatsOverviewDTO; csv: (c
 						<Empty height={100}>此范围内没有失败或超时的模型请求。</Empty>
 					) : (
 						<div className="overflow-x-auto">
-							<table className="w-full text-[13px]" data-testid="table-failures">
+							<table className="w-full text-sm" data-testid="table-failures">
 								<thead>
 									<tr>
 										<th className={th}>时间</th>
@@ -290,7 +290,7 @@ export function DrilldownTables({ data, csv }: { data: StatsOverviewDTO; csv: (c
 												<Sim show={f.simulated} />
 											</td>
 											<td className={td}>{f.outcome === "timeout" ? "超时" : "失败"}</td>
-											<td className={cn(td, "font-mono text-[12px] text-fg-muted")}>{f.errorClass ?? "—"}</td>
+											<td className={cn(td, "font-mono text-xs text-fg-muted")}>{f.errorClass ?? "—"}</td>
 										</tr>
 									))}
 								</tbody>
@@ -306,7 +306,7 @@ export function DrilldownTables({ data, csv }: { data: StatsOverviewDTO; csv: (c
 function CsvLink({ href }: { href: string }) {
 	return (
 		<div className="mt-2 text-right">
-			<a href={href} download className="text-[12px] text-fg-muted underline-offset-2 hover:underline">
+			<a href={href} download className="text-xs text-fg-muted underline-offset-2 hover:underline">
 				导出本表 CSV
 			</a>
 		</div>
@@ -317,7 +317,7 @@ function RankTable({ rows, nameHead, csv }: { rows: StatsOverviewDTO["topUsers"]
 	const max = Math.max(1, ...rows.map((r) => r.runs));
 	return (
 		<div className="overflow-x-auto">
-			<table className="w-full text-[13px]" data-testid="table-rank">
+			<table className="w-full text-sm" data-testid="table-rank">
 				<thead>
 					<tr>
 						<th className={th}>{nameHead}</th>
@@ -346,7 +346,7 @@ function RankTable({ rows, nameHead, csv }: { rows: StatsOverviewDTO["topUsers"]
 							<td className={tdR}>{fmtInt(r.toolCalls)}</td>
 							<td className={tdR}>
 								{fmtCompact(r.tokens)}
-								{r.simulatedTokens ? <span className="ml-1 text-[11px] text-fg-subtle">+{fmtCompact(r.simulatedTokens)} 模拟</span> : null}
+								{r.simulatedTokens ? <span className="ml-1 text-xs text-fg-subtle">+{fmtCompact(r.simulatedTokens)} 模拟</span> : null}
 							</td>
 							<td className={tdR}>{r.tokens === 0 && r.simulatedTokens > 0 ? <span className="text-fg-subtle">模拟</span> : `$${r.cost.toFixed(r.cost < 0.01 ? 4 : 2)}`}</td>
 						</tr>

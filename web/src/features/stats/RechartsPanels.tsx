@@ -18,11 +18,11 @@ const METRICS = [
 	{ value: "tokens", label: "Token" },
 ] as const;
 
-const axisTick = { fontSize: 11, fill: "var(--fg-subtle)" };
+const axisTick = { fontSize: 12, fill: "var(--fg-subtle)" };
 
 function Legend({ items, total, metric }: { items: StatsSeriesItemDTO[]; total: number; metric: Metric }) {
 	return (
-		<ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px]" data-testid="series-legend">
+		<ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs" data-testid="series-legend">
 			{items.map((it, i) => {
 				const v = metric === "requests" ? it.totalRequests : it.totalTokens;
 				return (
@@ -31,7 +31,7 @@ function Legend({ items, total, metric }: { items: StatsSeriesItemDTO[]; total: 
 						<span className="max-w-[140px] truncate text-fg" title={it.label}>
 							{it.label}
 						</span>
-						{it.simulated ? <span className="rounded bg-surface-3 px-1 text-[10px]">模拟</span> : null}
+						{it.simulated ? <span className="rounded bg-surface-3 px-1 text-xs">模拟</span> : null}
 						<span className="tabular-nums">{fmtCompact(v)}{total ? ` · ${fmtPct(v / total, 0)}` : ""}</span>
 					</li>
 				);
@@ -66,7 +66,7 @@ export function SeriesPanel({ data, csv }: { data: StatsOverviewDTO; csv: (dim: 
 	);
 	const metricLabel = metric === "requests" ? "模型请求" : "Token（含模拟）";
 	return (
-		<div className="grid gap-4 lg:grid-cols-3" data-testid="series-panel">
+		<div className="grid gap-4 sm:gap-6 lg:grid-cols-3" data-testid="series-panel">
 			<Card testid="chart-area" className="lg:col-span-2" title={`${metricLabel}趋势`} subtitle={`按${DIMS.find((d) => d.value === dim)!.label}堆叠，${gran === "hour" ? "每小时" : gran === "week" ? "每周" : "每天"}${metric === "tokens" ? "；标“模拟”的是测试模型用量" : ""}`} csv={csv(dim, metric)} actions={controls}>
 				{empty ? (
 					<Empty>此范围内没有模型请求记录。{data.notes[0] ?? ""}</Empty>
@@ -84,7 +84,7 @@ export function SeriesPanel({ data, csv }: { data: StatsOverviewDTO; csv: (dim: 
 											if (!active || !payload?.length) return null;
 											const sum = payload.reduce((s, p) => s + (Number(p.value) || 0), 0);
 											return (
-												<div className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] shadow-[var(--shadow-pop)]" data-testid="chart-tip">
+												<div className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs shadow-[var(--shadow-pop)]" data-testid="chart-tip">
 													<div className="mb-0.5 font-medium">{fmtBucket(String(label), gran, true)}</div>
 													{[...payload].reverse().map((p) => {
 														const idx = items.findIndex((x) => x.key === p.dataKey);
@@ -128,7 +128,7 @@ export function SeriesPanel({ data, csv }: { data: StatsOverviewDTO; csv: (dim: 
 											const p = payload[0]!;
 											const v = Number(p.value) || 0;
 											return (
-												<div className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] shadow-[var(--shadow-pop)]" data-testid="chart-tip">
+												<div className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs shadow-[var(--shadow-pop)]" data-testid="chart-tip">
 													<TipRow label={String(p.name)} value={`${fmtInt(v)}（${fmtPct(v / total)}）`} tag={(p.payload as { sim?: boolean }).sim ? "模拟" : undefined} />
 												</div>
 											);
@@ -138,7 +138,7 @@ export function SeriesPanel({ data, csv }: { data: StatsOverviewDTO; csv: (dim: 
 							</ResponsiveContainer>
 							<div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
 								<div className="text-[20px] font-semibold tabular-nums leading-6">{fmtCompact(total)}</div>
-								<div className="text-[11px] text-fg-subtle">{metric === "requests" ? "请求" : "Token"}</div>
+								<div className="text-xs text-fg-subtle">{metric === "requests" ? "请求" : "Token"}</div>
 							</div>
 						</div>
 						<Legend items={items.filter((_, i) => totals[i]! > 0)} total={total} metric={metric} />
@@ -180,7 +180,7 @@ export function LatencyHistogram({ data, csv }: { data: StatsOverviewDTO; csv: s
 										if (!active || !payload?.length) return null;
 										const p = payload[0]!.payload as { label: string; count: number };
 										return (
-											<div className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] shadow-[var(--shadow-pop)]" data-testid="chart-tip">
+											<div className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs shadow-[var(--shadow-pop)]" data-testid="chart-tip">
 												<TipRow label={p.label} value={`${fmtInt(p.count)} 次（${fmtPct(p.count / L.count)}）`} />
 											</div>
 										);
@@ -191,12 +191,12 @@ export function LatencyHistogram({ data, csv }: { data: StatsOverviewDTO; csv: s
 										<Cell key={i} fill={L.source === "simulated" ? "var(--c-other)" : "var(--c1)"} />
 									))}
 								</Bar>
-								{p50 ? <ReferenceLine x={p50} stroke="var(--fg)" strokeDasharray="4 3" label={{ value: "P50", position: "top", fill: "var(--fg-muted)", fontSize: 11 }} /> : null}
-								{p95 ? <ReferenceLine x={p95} stroke="var(--st-failed)" strokeDasharray="4 3" label={{ value: "P95", position: p95 === p50 ? "insideTopRight" : "top", fill: "var(--fg-muted)", fontSize: 11 }} /> : null}
+								{p50 ? <ReferenceLine x={p50} stroke="var(--fg)" strokeDasharray="4 3" label={{ value: "P50", position: "top", fill: "var(--fg-muted)", fontSize: 12 }} /> : null}
+								{p95 ? <ReferenceLine x={p95} stroke="var(--st-failed)" strokeDasharray="4 3" label={{ value: "P95", position: p95 === p50 ? "insideTopRight" : "top", fill: "var(--fg-muted)", fontSize: 12 }} /> : null}
 							</BarChart>
 						</ResponsiveContainer>
 					</div>
-					<dl className="mt-2 grid grid-cols-3 gap-2 text-[12px]" data-testid="latency-stats">
+					<dl className="mt-2 grid grid-cols-3 gap-2 text-xs" data-testid="latency-stats">
 						{[
 							["P50", fmtMs(L.p50)],
 							["P95", fmtMs(L.p95)],

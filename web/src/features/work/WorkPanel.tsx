@@ -1,6 +1,6 @@
 // One switchable, on-demand work panel: 子任务 / 终端 / 文件 / 浏览器. Never several panels at once.
 // Everything shown here comes from the same server ACL as the conversation itself.
-import { Bot, ExternalLink, FolderOpen, Globe, Plug, SquareTerminal, Users, X } from "lucide-react";
+import { Bot, ExternalLink, FolderOpen, Globe, ListChecks, Plug, SquareTerminal, Users, X } from "lucide-react";
 import { Link } from "react-router";
 import type { EntriesPage, MemberType, SubagentDTO, TasksResponse } from "@shared/chat";
 import type { ConversationWorkDTO } from "@shared/files";
@@ -11,7 +11,8 @@ import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
 import { durationText, isSimulatedUsage, relTime, SIMULATED_USAGE } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
+import { Badge } from "@/components/ui/misc";
+import { LoadState, Notice } from "./states";
 import { usePanel, type PanelState, type WorkTab } from "@/components/shell/panel";
 import { browseOf } from "@/features/chat/model";
 
@@ -33,30 +34,38 @@ export default function WorkPanel({ state, onClose }: { state: Extract<PanelStat
 	const tab: WorkTab = state.tab;
 	const setTab = (t: string) => openWork(t as WorkTab, state.spaceId, state.conversationId);
 	return (
-		<div data-testid="work-panel" className="flex h-full min-h-0 flex-col">
+		<div
+			data-testid="work-panel"
+			role="region"
+			aria-label="工作面板"
+			className="flex h-full min-h-0 flex-col"
+			onKeyDown={(e) => {
+				if (e.key === "Escape" && !e.defaultPrevented && e.currentTarget.contains(e.target as Node)) onClose();
+			}}
+		>
 			<Tabs value={tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">
-				<div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
-					<TabsList>
-						<TabsTrigger value="tasks" data-testid="work-tab-tasks">
-							<Users />
+				<div className="flex h-14 shrink-0 items-center gap-2 border-b border-border pl-3 pr-2">
+					<TabsList aria-label="工作面板" className="min-w-0 overflow-x-auto">
+						<TabsTrigger value="tasks" data-testid="work-tab-tasks" className="h-8 shrink-0 sm:h-7">
+							<ListChecks />
 							子任务
 						</TabsTrigger>
-						<TabsTrigger value="terminal" data-testid="work-tab-terminal">
+						<TabsTrigger value="terminal" data-testid="work-tab-terminal" className="h-8 shrink-0 sm:h-7">
 							<SquareTerminal />
 							终端
 						</TabsTrigger>
-						<TabsTrigger value="files" data-testid="work-tab-files">
+						<TabsTrigger value="files" data-testid="work-tab-files" className="h-8 shrink-0 sm:h-7">
 							<FolderOpen />
 							文件
 						</TabsTrigger>
-						<TabsTrigger value="browser" data-testid="work-tab-browser">
+						<TabsTrigger value="browser" data-testid="work-tab-browser" className="h-8 shrink-0 sm:h-7">
 							<Globe />
 							浏览器
 						</TabsTrigger>
 					</TabsList>
 					<div className="flex-1" />
-					<button data-testid="close-panel" onClick={onClose} className="rounded-md p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg" aria-label="关闭工作面板">
-						<X className="size-4" />
+					<button data-testid="close-panel" onClick={onClose} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-8" aria-label="关闭工作面板">
+							<X className="size-[18px]" />
 					</button>
 				</div>
 				<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
@@ -89,7 +98,7 @@ function TasksTab({ spaceId, conversationId }: { spaceId: string; conversationId
 		<div className="space-y-5">
 			{jobs.length ? (
 				<section>
-					<h3 className="mb-2 text-[12.5px] font-medium text-fg-muted">后台任务（有时间/算力预算，可取消）</h3>
+					<h3 className="mb-2 text-sm font-medium">后台任务</h3>
 					<div className="space-y-2">
 						{jobs.map((j) => (
 							<JobCard key={j.id} job={j} onChanged={work.reload} />
@@ -97,23 +106,23 @@ function TasksTab({ spaceId, conversationId }: { spaceId: string; conversationId
 					</div>
 				</section>
 			) : null}
-			<SubagentsSection spaceId={spaceId} conversationId={conversationId} />
+			<SubagentsSection spaceId={spaceId} conversationId={conversationId} hasJobs={jobs.length > 0} />
 		</div>
 	);
 }
 
-function SubagentsSection({ spaceId, conversationId }: { spaceId: string; conversationId: number }) {
+function SubagentsSection({ spaceId, conversationId, hasJobs }: { spaceId: string; conversationId: number; hasJobs: boolean }) {
 	const res = useApi<TasksResponse>(`/conversations/${spaceId}/${conversationId}/tasks`, { pollMs: 2500 });
 	const { me } = useSession();
 	const subs = res.data?.subagents ?? [];
 	const failed = subs.filter((s) => s.status === "failed" || s.status === "unanswered" || s.status === "aborted").length;
 	return (
-		<Loadable state={res} what="子任务" need="A 组：GET .../tasks">
-			{subs.length === 0 ? (
-				<EmptyState icon={<Users />} title="这个对话还没有子任务">
-					当助手把工作委派给子 Agent 或外部工具时，会在这里显示来源、负责人、状态、结果和费用。
-				</EmptyState>
-			) : (
+		<LoadState state={res} what="子任务">
+			{subs.length === 0 && !hasJobs ? (
+				<Notice icon={<ListChecks />} title="还没有子任务" testid="tasks-empty">
+					助手委派的任务会显示在这里。
+				</Notice>
+			) : subs.length === 0 ? null : (
 				<div className="space-y-2">
 					<div className="text-[12.5px] text-fg-muted">
 						共 {subs.length} 个子任务 · {subs.filter((s) => s.status === "done").length} 个完成
@@ -139,9 +148,9 @@ function SubagentsSection({ spaceId, conversationId }: { spaceId: string; conver
 								{s.resultSummary ? <p className="mt-1 whitespace-pre-wrap text-[12.5px] text-fg-muted">结果：{s.resultSummary}</p> : null}
 								{s.failure ? <p className="mt-1 text-[12.5px] text-danger">{turnLimit ? `未完成：在允许的轮数内没有完成，已停止（${s.failure}）` : `失败原因：${s.failure}`}</p> : null}
 								<div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] text-fg-subtle">
-									<span>来源：对话 {s.source.conversationId} · 调用 {s.source.callId.slice(0, 10)}</span>
-									{s.ownerUserId ? <span>负责人：{s.ownerUserId === me?.userId ? `你（${me.name}）` : s.ownerUserId}</span> : null}
-									<span>开始 {relTime(s.startedAt)}</span>
+									<span>来源：对话 {s.source.conversationId}</span>
+									{s.ownerUserId ? <span>负责人：{s.ownerUserId === me?.userId ? `你（${me.name}）` : "其他成员"}</span> : null}
+									<span>{relTime(s.startedAt)}开始</span>
 									{s.endedAt ? <span>用时 {durationText(Date.parse(s.endedAt) - Date.parse(s.startedAt))}</span> : null}
 									{s.usage ? (
 										<span>
@@ -160,7 +169,7 @@ function SubagentsSection({ spaceId, conversationId }: { spaceId: string; conver
 					})}
 				</div>
 			)}
-		</Loadable>
+		</LoadState>
 	);
 }
 
@@ -170,7 +179,7 @@ function BrowserTab({ spaceId, conversationId }: { spaceId: string; conversation
 	const pages = (res.data?.items ?? []).flatMap((e) => (e.kind === "tool_result" ? [{ e, b: browseOf(e.details) }] : [])).filter((x) => x.b);
 	const sessions = work.data?.work.browserSessions ?? [];
 	return (
-		<Loadable state={res} what="浏览记录" need="A 组：GET .../entries">
+		<LoadState state={res} what="浏览记录">
 			{sessions.length ? (
 				<div className="mb-4 space-y-3">
 					{sessions.map((s) => (
@@ -179,9 +188,9 @@ function BrowserTab({ spaceId, conversationId }: { spaceId: string; conversation
 				</div>
 			) : null}
 			{pages.length === 0 && sessions.length === 0 ? (
-				<EmptyState icon={<Globe />} title="还没有打开过网页">
-					助手使用浏览工具打开网页时，页面标题、地址、截图和提取的正文会显示在这里。
-				</EmptyState>
+				<Notice icon={<Globe />} title="还没有打开过网页" testid="browser-empty">
+					助手浏览的网页会显示在这里。
+				</Notice>
 			) : (
 				<div className="space-y-3">
 					{pages.map(({ e, b }) => (
@@ -202,6 +211,6 @@ function BrowserTab({ spaceId, conversationId }: { spaceId: string; conversation
 					))}
 				</div>
 			)}
-		</Loadable>
+		</LoadState>
 	);
 }

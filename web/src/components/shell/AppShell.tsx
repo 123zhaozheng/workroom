@@ -1,5 +1,5 @@
 import { Menu as MenuIcon, PanelLeftOpen } from "lucide-react";
-import { createContext, lazy, Suspense, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Outlet, useLocation } from "react-router";
 import { useMedia, usePrefs } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,21 @@ export const useShell = () => useContext(Ctx);
 
 export const WIDE_QUERY = "(min-width: 1024px)";
 
+/** Radix returns focus only to a Dialog.Trigger; our drawers and panels are opened by outside buttons, so put focus back ourselves. */
+function useRestoreFocus(open: boolean) {
+	const opener = useRef<HTMLElement | null>(null);
+	const was = useRef(false);
+	useLayoutEffect(() => {
+		if (open && !was.current) opener.current = document.activeElement as HTMLElement | null;
+		if (!open && was.current) {
+			const el = opener.current;
+			opener.current = null;
+			if (el && el !== document.body && el.isConnected) setTimeout(() => el.focus(), 0);
+		}
+		was.current = open;
+	}, [open]);
+}
+
 export function AppShell() {
 	return (
 		<PanelProvider>
@@ -38,6 +53,8 @@ function ShellLayout() {
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const { panel, close } = usePanel();
 	const loc = useLocation();
+	useRestoreFocus(drawerOpen);
+	useRestoreFocus(!!panel);
 
 	// Navigating away closes the panel and the mobile drawer.
 	useEffect(() => {
@@ -51,7 +68,7 @@ function ShellLayout() {
 	const panelBody = panel ? (
 		<Suspense
 			fallback={
-				<div className="flex h-full items-center justify-center gap-2 text-[13px] text-fg-subtle">
+				<div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-fg-muted">
 					<Spinner /> 正在加载…
 				</div>
 			}
@@ -72,7 +89,7 @@ function ShellLayout() {
 				) : null}
 				{!wide ? (
 					<Sheet open={drawerOpen} onOpenChange={setDrawerOpen} side="left" title="导航">
-						<Sidebar onNavigate={() => setDrawerOpen(false)} />
+						<Sidebar onNavigate={() => setDrawerOpen(false)} onClose={() => setDrawerOpen(false)} />
 					</Sheet>
 				) : null}
 				<main className="flex min-w-0 flex-1 flex-col">
@@ -104,7 +121,7 @@ export function TopBar({ children, right, className }: { children?: ReactNode; r
 		<header className={cn("flex h-14 shrink-0 items-center gap-2 px-3 sm:px-4", className)}>
 			{sidebarHidden ? (
 				<Tip label={wide ? "展开侧栏" : "打开导航"}>
-					<button data-testid="open-sidebar" aria-label={wide ? "展开侧栏" : "打开导航"} onClick={openSidebar} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg">
+					<button data-testid="open-sidebar" aria-label={wide ? "展开侧栏" : "打开导航"} onClick={openSidebar} className="inline-flex size-9 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 						{wide ? <PanelLeftOpen className="size-[18px]" /> : <MenuIcon className="size-5" />}
 					</button>
 				</Tip>

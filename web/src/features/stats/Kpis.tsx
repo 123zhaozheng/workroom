@@ -76,18 +76,18 @@ function Sparkline({ points, buckets, gran, fmt, color = "var(--c1)" }: { points
 }
 
 function Delta({ k, def }: { k: StatsKpiDTO; def: Def }) {
-	if (k.value == null || k.previous == null || k.delta == null) return <span className="text-[11px] text-fg-subtle">上一周期无数据</span>;
-	if (k.delta === 0) return <span className="inline-flex items-center gap-0.5 text-[11px] text-fg-subtle"><Minus className="size-3" />与上期持平</span>;
+	if (k.value == null || k.previous == null || k.delta == null) return <span className="text-xs text-fg-subtle">上一周期无数据</span>;
+	if (k.delta === 0) return <span className="inline-flex items-center gap-0.5 text-xs text-fg-subtle"><Minus className="size-3" />与上期持平</span>;
 	const up = k.delta > 0;
 	const good = def.better === "neutral" ? null : (def.better === "up") === up;
 	const tone = good === null ? "text-fg-muted" : good ? "text-[var(--good-text)]" : "text-[var(--bad-text)]";
 	const text = k.key === "successRate" ? `${Math.abs(k.delta * 100).toLocaleString("zh-CN", { maximumFractionDigits: 1 })} pt` : k.deltaPct != null ? (Math.abs(k.deltaPct) > 9.99 ? `上期仅 ${Number(k.previous).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}` : fmtPct(Math.abs(k.deltaPct), 0)) : "新增";
 	return (
-		<span className={cn("inline-flex items-center gap-0.5 text-[11px] font-medium", tone)} data-testid="delta">
+		<span className={cn("inline-flex items-center gap-0.5 text-xs font-medium", tone)} data-testid="delta">
 			{up ? <ArrowUpRight className="size-3" aria-hidden /> : <ArrowDownRight className="size-3" aria-hidden />}
 			<span className="sr-only">{up ? "上升" : "下降"}</span>
 			{text}
-			<span className="font-normal text-fg-subtle"> 较上期</span>
+			{k.key === "successRate" || (k.deltaPct != null && Math.abs(k.deltaPct) <= 9.99) ? <span className="font-normal text-fg-muted"> 较上期</span> : null}
 		</span>
 	);
 }
@@ -115,14 +115,14 @@ export function KpiGrid({ data }: { data: StatsOverviewDTO }) {
 				}
 				return (
 					<div key={def.key} data-testid="kpi" data-kpi={def.key} title={`${def.hint}${note ? `。${note}` : ""}`} className="flex min-w-0 flex-col rounded-xl border border-border bg-surface p-3">
-						<div className="flex items-center justify-between gap-1 text-[12px] text-fg-muted">
+						<div className="flex items-center justify-between gap-1 text-xs text-fg-muted">
 							<span className="truncate">{def.label}</span>
-							{badge ? <span className="shrink-0 rounded bg-surface-3 px-1 text-[10px] font-medium text-fg-muted">{badge}</span> : null}
+							{badge ? <span className="shrink-0 rounded bg-surface-3 px-1 text-xs font-medium text-fg-muted">{badge}</span> : null}
 						</div>
 						<div className="mt-1 truncate text-[22px] font-semibold leading-7 tracking-tight tabular-nums" data-testid="kpi-value">
 							{main}
 						</div>
-						<div className="mt-0.5 min-h-4 truncate text-[11px] text-fg-subtle">{note ?? <Delta k={k} def={def} />}</div>
+						<div className="mt-0.5 min-h-4 truncate text-xs text-fg-subtle">{note ?? <Delta k={k} def={def} />}</div>
 						<div className="mt-2">
 							<Sparkline points={k.spark} buckets={data.series.buckets} gran={data.granularity} fmt={def.fmt} />
 						</div>

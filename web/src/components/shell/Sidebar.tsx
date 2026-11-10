@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, ChevronRight, Clock4, FolderClosed, Folders, LogOut, MessageSquarePlus, PanelLeftClose, Plus, Search, Settings, Shield, Sparkles, Workflow } from "lucide-react";
+import { BarChart3, BookOpen, ChevronRight, Clock4, FolderClosed, Folders, LogOut, MessageSquarePlus, PanelLeftClose, Plus, Search, Settings, Shield, Sparkles, Workflow, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { Collapsible } from "radix-ui";
@@ -16,7 +16,7 @@ import { NewProjectDialog } from "@/features/projects/NewProjectDialog";
 const navCls = ({ isActive }: { isActive: boolean }) =>
 	cn("flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors [&_svg]:size-[17px] [&_svg]:text-fg-muted", isActive ? "bg-surface-3 text-fg font-medium" : "text-fg hover:bg-surface-3/70");
 
-export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; onNavigate?: () => void }) {
+export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () => void; onNavigate?: () => void; onClose?: () => void }) {
 	const { brand, me, logout, isOrgAdmin } = useSession();
 	const navigate = useNavigate();
 	const projects = useApi<{ projects: Project[] }>("/projects", { pollMs: 30000 });
@@ -43,7 +43,7 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 			<div className="flex h-14 shrink-0 items-center gap-2 px-3">
 				<button onClick={() => go("/")} className="flex min-w-0 items-center gap-2 rounded-lg px-1 py-1 hover:bg-surface-3/70">
 					<BrandMark />
-					<span className="truncate text-[15px] font-semibold tracking-tight">{brand.name}</span>
+					<span className="truncate text-base font-semibold tracking-tight">{brand.name}</span>
 				</button>
 				<div className="flex-1" />
 				<NotificationsBell onNavigate={onNavigate} />
@@ -53,6 +53,11 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 							<PanelLeftClose className="size-[18px]" />
 						</button>
 					</Tip>
+				) : null}
+				{onClose ? (
+					<button onClick={onClose} aria-label="关闭导航" data-testid="close-drawer" className="inline-flex size-9 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+						<X className="size-[18px]" />
+					</button>
 				) : null}
 			</div>
 
@@ -81,16 +86,16 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 					storageKey="projects"
 					action={
 						<Tip label="新建项目">
-							<button aria-label="新建项目" onClick={() => setNewProject(true)} className="rounded-md p-1 text-fg-subtle hover:bg-surface-3 hover:text-fg">
+							<button aria-label="新建项目" onClick={() => setNewProject(true)} className="inline-flex size-7 items-center justify-center rounded-md text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 								<Plus className="size-3.5" />
 							</button>
 						</Tip>
 					}
 				>
 					{projects.unavailable ? (
-						<p className="px-2.5 py-1 text-xs text-fg-subtle">项目接口未连接</p>
+						<p className="px-2.5 py-1 text-xs text-fg-muted">项目暂时无法加载</p>
 					) : (projects.data?.projects ?? []).length === 0 ? (
-						<p className="px-2.5 py-1 text-xs text-fg-subtle">还没有项目</p>
+						<p className="px-2.5 py-1 text-xs text-fg-muted">还没有项目</p>
 					) : (
 						projects.data!.projects.map((p) => (
 							<NavLink key={p.id} to={`/projects/${p.id}`} onClick={onNavigate} className={({ isActive }) => cn(navCls({ isActive }), "h-8")}>
@@ -102,11 +107,11 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 				</Section>
 				<Section title="最近对话" storageKey="recent" defaultOpen>
 					{recent.unavailable ? (
-						<p className="px-2.5 py-1 text-xs text-fg-subtle">会话接口未连接</p>
+						<p className="px-2.5 py-1 text-xs text-fg-muted">对话暂时无法加载</p>
 					) : recent.error ? (
-						<p className="px-2.5 py-1 text-xs text-danger">加载失败</p>
+						<p className="px-2.5 py-1 text-xs text-danger">对话加载失败</p>
 					) : convs.length === 0 && !recent.loading ? (
-						<p className="px-2.5 py-1 text-xs text-fg-subtle">还没有对话</p>
+						<p className="px-2.5 py-1 text-xs text-fg-muted">还没有对话</p>
 					) : (
 						convs.map((c) => (
 							<NavLink
@@ -114,10 +119,10 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 								to={`/c/${c.spaceId}/${c.conversationId}`}
 								onClick={onNavigate}
 								title={c.title}
-								className={({ isActive }) => cn("group flex h-8 items-center gap-2 rounded-lg px-2.5 text-[13px]", isActive ? "bg-surface-3 font-medium text-fg" : "text-fg-muted hover:bg-surface-3/70 hover:text-fg")}
+								className={({ isActive }) => cn("group flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm", isActive ? "bg-surface-3 font-medium text-fg" : "text-fg-muted hover:bg-surface-3/70 hover:text-fg")}
 							>
 								<span className="min-w-0 flex-1 truncate">{c.title || "未命名对话"}</span>
-								{c.kind === "branch" ? <span className="text-[11px] text-fg-subtle">分支</span> : null}
+								{c.kind === "branch" ? <span className="text-xs text-fg-muted">分支</span> : null}
 								{c.status ? <RunDot status={c.status} /> : null}
 							</NavLink>
 						))
@@ -129,10 +134,10 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 				<Menu>
 					<MenuTrigger asChild>
 						<button data-testid="user-menu" className="flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left hover:bg-surface-3/70">
-							<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-3 text-[13px] font-medium">{(me?.name ?? "?").slice(0, 1).toUpperCase()}</span>
+							<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-3 text-sm font-medium">{(me?.name ?? "?").slice(0, 1).toUpperCase()}</span>
 							<span className="min-w-0 flex-1">
-								<span className="block truncate text-[13px] font-medium">{me?.name}</span>
-								<span className="block truncate text-[11px] text-fg-subtle">{me?.orgName}</span>
+								<span className="block truncate text-sm font-medium">{me?.name}</span>
+								<span className="block truncate text-xs text-fg-muted">{me?.orgName}</span>
 							</span>
 						</button>
 					</MenuTrigger>
@@ -140,7 +145,7 @@ export function Sidebar({ onCollapse, onNavigate }: { onCollapse?: () => void; o
 						<MenuLabel>{me?.email}</MenuLabel>
 						<MenuItem onSelect={() => go("/capabilities")}>
 							<Sparkles />
-							能力（技能与连接）
+							能力
 						</MenuItem>
 						<MenuItem onSelect={() => go("/automations")}>
 							<Workflow />
@@ -213,7 +218,7 @@ function Section({ title, children, action, defaultOpen, storageKey }: { title: 
 			className="mb-2"
 		>
 			<div className="flex items-center pr-1">
-				<Collapsible.Trigger className="flex h-7 flex-1 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-fg-subtle hover:text-fg">
+				<Collapsible.Trigger className="flex h-7 flex-1 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 					<ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
 					{title}
 				</Collapsible.Trigger>

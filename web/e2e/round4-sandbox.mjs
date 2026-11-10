@@ -97,13 +97,15 @@ try {
 	const runs = a.locator('[data-testid="sandbox-run"]');
 	const first = await runs.nth(0).innerText();
 	const second = await runs.nth(1).innerText();
-	check("terminal: runs are listed oldest first with the command, stdout and an exit line", first.includes("python3 main.py") && first.includes("已写入 4 个文件") && /\[exit 0/.test(first), first.replace(/\s+/g, " ").slice(0, 160));
-	check("terminal: a failing run shows stdout, stderr and a non-zero exit code", second.includes("处理到一半") && second.includes("Traceback: boom") && /\[exit 3/.test(second) && (await runs.nth(1).getAttribute("data-status")) === "error", second.replace(/\s+/g, " ").slice(0, 160));
+	check("terminal: runs are listed oldest first with the command, stdout and an exit line", first.includes("python3 main.py") && first.includes("已写入 4 个文件") && /退出码 0/.test(first), first.replace(/\s+/g, " ").slice(0, 160));
+	check("terminal: a failing run shows stdout, stderr and a non-zero exit code", second.includes("处理到一半") && second.includes("Traceback: boom") && /退出码 3/.test(second) && (await runs.nth(1).getAttribute("data-status")) === "error", second.replace(/\s+/g, " ").slice(0, 160));
 	const termStyle = await a.locator('[data-testid="terminal-log"]').evaluate((el) => ({ overflowY: getComputedStyle(el).overflowY, maxH: getComputedStyle(el).maxHeight }));
 	const monoOk = await a.locator('[data-testid="run-stdout"]').first().evaluate((el) => /mono|courier|consolas/i.test(getComputedStyle(el).fontFamily));
 	check("terminal: the log scrolls (bounded height, overflow auto) and is monospace", termStyle.overflowY === "auto" && termStyle.maxH !== "none" && monoOk, JSON.stringify(termStyle));
+	await a.click('[data-testid="sandbox-limits"]');
 	const driverLine = await a.locator('[data-testid="sandbox-driver"]').innerText();
-	check("terminal: the active sandbox driver and its limits are shown", /Linux 命名空间|Docker/.test(driverLine) && driverLine.includes("网络关闭") && driverLine.includes("/work 可写"), driverLine.replace(/\s+/g, " ").slice(0, 160));
+	check("terminal: the run limits are shown in plain words (time, memory, network, workspace only) without driver names", driverLine.includes("网络关闭") && driverLine.includes("只能写入工作区") && !/命名空间|namespace|Docker|driver/i.test(driverLine), driverLine.replace(/\s+/g, " ").slice(0, 160));
+	await a.keyboard.press("Escape");
 	await sleep(300);
 	await shot(a, "1440-sandbox-terminal");
 
@@ -118,13 +120,16 @@ try {
 	await entry("out/report.csv").waitFor({ timeout: 5000 });
 	check("files: expanding a folder reveals its files", (await entry("out/chart.png").count()) === 1);
 	const usage = await a.locator('[data-testid="ws-usage"]').innerText();
-	check("files: quota, usage and the retention rule are always shown", usage.includes("配额") && usage.includes("72 小时") && usage.includes("发布到文件库") && /\d+ 个文件/.test(usage), usage.replace(/\s+/g, " ").slice(0, 200));
+	await a.click('[data-testid="ws-rules"]');
+	const rule = await a.locator('[data-testid="ws-lifecycle"]').innerText();
+	await a.keyboard.press("Escape");
+	check("files: one usage line shows file count and used/quota; the retention rule is behind the ? button", /\d+ 个文件 · 已用/.test(usage) && usage.split("\n").length <= 2 && rule.includes("72 小时") && rule.includes("发布到文件库"), `${usage.replace(/\s+/g, " ")} | ${rule}`);
 	await entry("notes.md").click();
 	await a.waitForSelector('[data-testid="ws-preview-text"]');
 	const pv = await a.locator('[data-testid="ws-preview-text"]').innerText();
 	check("files: text preview", pv.includes("分析笔记") && pv.includes("同比增长 25%"));
 	const meta = await a.locator('[data-testid="ws-preview"]').innerText();
-	check("files: preview shows size, modified time and when the file expires", meta.includes("闲置到期") && meta.includes("修改于"), meta.replace(/\s+/g, " ").slice(0, 120));
+	check("files: preview shows size, modified time and when the file is cleaned up", meta.includes("自动清理") && meta.includes("修改于"), meta.replace(/\s+/g, " ").slice(0, 120));
 	await shot(a, "1440-sandbox-files-text-preview");
 	await entry("out/chart.png").click();
 	await a.waitForSelector('[data-testid="ws-preview-image"]');
@@ -136,7 +141,9 @@ try {
 	check("files: a binary file says it cannot be previewed and offers download", (await a.locator('[data-testid="ws-preview-binary"]').innerText()).includes("无法在这里预览"));
 	await entry("out/report.csv").click();
 	await a.waitForSelector('[data-testid="ws-preview-text"]');
+	await a.click('[data-testid="ws-menu"][data-path="out/report.csv"]');
 	const href = await a.locator('[data-testid="ws-download"]').getAttribute("href");
+	await a.keyboard.press("Escape");
 	const dl = await a.request.get(`${base}${href}`);
 	check("files: download returns the exact bytes as an attachment", dl.status() === 200 && (await dl.text()) === "月份,收入\n1月,120\n2月,150\n" && /attachment/.test(dl.headers()["content-disposition"] ?? ""), `${dl.status()} ${dl.headers()["content-disposition"]}`);
 
@@ -152,14 +159,16 @@ try {
 	await a.click('[data-testid="ws-mkdir-ok"]');
 	await entry("out/图表").waitFor({ timeout: 10000 });
 	check("files: new folder is created in the selected folder", true);
-	await entry("out/上传的数据.csv").click();
+	await a.click('[data-testid="ws-menu"][data-path="out/上传的数据.csv"]');
 	await a.click('[data-testid="ws-publish"]');
 	await a.waitForSelector('[data-testid="ws-published"]', { timeout: 15000 });
 	const pub = await a.locator('[data-testid="ws-published"]').innerText();
 	const lib = await (await a.request.get(`${base}/api/files?projectId=${proj.id}`)).json();
 	check("files: publish to the library creates a file version (shown as a file card) that outlives the workspace", pub.includes("上传的数据.csv") && lib.files.some((f) => f.name === "上传的数据.csv"), pub.replace(/\s+/g, " ").slice(0, 100));
 	await shot(a, "1440-sandbox-files-published");
+	await a.click('[data-testid="ws-menu"][data-path="out/上传的数据.csv"]');
 	await a.click('[data-testid="ws-delete"]');
+	await a.waitForSelector('[data-testid="ws-delete-confirm"]');
 	check("files: delete asks for confirmation first (nothing is deleted yet)", (await a.locator('[data-testid="ws-delete-confirm"]').count()) === 1 && (await entry("out/上传的数据.csv").count()) === 1);
 	await a.click('[data-testid="ws-delete-confirm"]');
 	await a.waitForFunction((p) => !document.querySelector(`[data-testid="ws-entry"][data-path="${p}"]`), "out/上传的数据.csv", { timeout: 10000 });
@@ -177,9 +186,11 @@ try {
 	await v.waitForSelector('[data-testid="ws-tree"]', { timeout: 20000 });
 	await v.locator('[data-testid="ws-entry"][data-path="notes.md"]').click();
 	await v.waitForSelector('[data-testid="ws-preview-text"]');
+	await v.click('[data-testid="ws-menu"][data-path="notes.md"]');
 	const disabled = await v.evaluate(() => ["ws-upload", "ws-mkdir"].every((id) => document.querySelector(`[data-testid="${id}"]`)?.disabled === true));
 	check("viewer: sees the same tree and previews, upload/new-folder are disabled and the panel says 只读", disabled && (await v.locator('[data-testid="ws-readonly"]').count()) === 1);
-	check("viewer: delete and publish are disabled, download stays available", (await v.locator('[data-testid="ws-delete"]').isDisabled()) && (await v.locator('[data-testid="ws-publish"]').isDisabled()) && (await v.locator('[data-testid="ws-download"]').count()) === 1);
+	check("viewer: delete and publish are disabled, download stays available", (await v.locator('[data-testid="ws-delete"]').getAttribute("data-disabled")) !== null && (await v.locator('[data-testid="ws-publish"]').getAttribute("data-disabled")) !== null && (await v.locator('[data-testid="ws-download"]').count()) === 1);
+	await v.keyboard.press("Escape");
 	await shot(v, "1440-sandbox-files-viewer-readonly");
 	const q = `path=notes.md&conversationId=${convId}`;
 	const vput = await v.request.put(`${base}/api/sandbox/${spaceId}/file?path=hack.txt&conversationId=${convId}`, { data: "x" });
@@ -196,7 +207,8 @@ try {
 	await a.click('[data-testid="work-tab-terminal"]');
 	await a.waitForSelector('[data-testid="sandbox-unavailable"]', { timeout: 15000 });
 	const un = await a.locator('[data-testid="sandbox-unavailable"]').innerText();
-	check("unavailable: the terminal says 沙箱不可用 and explains how to enable it (Docker Desktop / namespaces)", un.includes("沙箱不可用") && un.includes("启用方法") && /Docker/.test(un), un.replace(/\s+/g, " ").slice(0, 200));
+	const unAdmin = await a.locator('[data-testid="sandbox-admin-hint"]').textContent();
+	check("unavailable: one plain sentence (no driver jargon) plus an administrator hint; how-to-enable (Docker Desktop / namespaces) only inside 技术详情", un.includes("代码运行暂时不可用") && !/Docker|命名空间|namespace|driver/i.test(un.replace("技术详情", "")) && un.includes("技术详情") && /启用方法/.test(unAdmin) && /Docker/.test(unAdmin), un.replace(/\s+/g, " ").slice(0, 200));
 	await shot(a, "1440-sandbox-unavailable");
 	await a.click('[data-testid="work-tab-files"]');
 	await a.waitForSelector('[data-testid="ws-entry"][data-path="notes.md"]', { timeout: 15000 });

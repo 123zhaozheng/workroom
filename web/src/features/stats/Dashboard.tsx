@@ -19,10 +19,10 @@ function ChartFallback({ h = "h-72" }: { h?: string }) {
 export default function Dashboard({ data, query }: { data: StatsOverviewDTO; query: string }) {
 	const csv = (chart: string, extra = "") => `/api/stats/export.csv?${query}&chart=${chart}${extra}`;
 	return (
-		<div className="space-y-4" data-testid="stats-dashboard">
+		<div className="space-y-4 sm:space-y-6" data-testid="stats-dashboard">
 			<KpiGrid data={data} />
 			<CalendarHeatmap data={data} csv={csv("calendar")} />
-			<div className="grid gap-4 lg:grid-cols-5">
+			<div className="grid gap-4 sm:gap-6 lg:grid-cols-5">
 				<div className="min-w-0 lg:col-span-3">
 					<PunchCard data={data} csv={csv("punchcard")} />
 				</div>
@@ -33,13 +33,13 @@ export default function Dashboard({ data, query }: { data: StatsOverviewDTO; que
 			<Suspense fallback={<ChartFallback />}>
 				<SeriesPanel data={data} csv={(dim, metric) => csv(`series-${dim}`, `&metric=${metric}`)} />
 			</Suspense>
-			<div className="grid gap-4 lg:grid-cols-2">
+			<div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
 				<ToolRanking data={data} csv={csv("tools")} />
 				<Suspense fallback={<ChartFallback h="h-80" />}>
 					<LatencyHistogram data={data} csv={csv("latency")} />
 				</Suspense>
 			</div>
-			<div className="grid gap-4 lg:grid-cols-3">
+			<div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
 				<KnowledgeCard data={data} csv={csv("knowledge")} />
 				<LargeContextCard data={data} />
 				<ActivityCard data={data} />
@@ -53,7 +53,7 @@ export function DashboardSkeleton() {
 	return (
 		<div className="space-y-4" data-testid="skeleton-dashboard" aria-busy="true" aria-label="统计加载中">
 			<Skeleton className="h-44 w-full rounded-xl" />
-			<div className="grid gap-4 lg:grid-cols-5">
+			<div className="grid gap-4 sm:gap-6 lg:grid-cols-5">
 				<Skeleton className="h-64 w-full rounded-xl lg:col-span-3" />
 				<Skeleton className="h-64 w-full rounded-xl lg:col-span-2" />
 			</div>
