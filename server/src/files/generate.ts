@@ -1,5 +1,6 @@
 // Deliverable generators: structured content → real, openable md / html / csv / docx / xlsx / pptx / pdf bytes.
 import { readFileSync, existsSync } from "node:fs";
+import { win32 } from "node:path";
 import * as docx from "docx";
 import ExcelJS from "exceljs";
 import PptxGenJS from "pptxgenjs";
@@ -264,13 +265,33 @@ export async function toPptx(spec: DocSpec): Promise<Uint8Array> {
 }
 
 // ---------- pdf ----------
-const FONT_CANDIDATES = [
-	process.env.WORKROOM_PDF_FONT,
-	"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-	"/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-	"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-].filter(Boolean) as string[];
+/**
+ * CJK-capable system fonts to try, in order: `WORKROOM_PDF_FONT` first, then the platform's usual ones.
+ * `.ttc` collections are fine: `ttcToTtf` extracts the first font as a standalone TTF before pdf-lib/fontkit sees it
+ * (fontkit itself would return a collection object for a raw `.ttc`, which pdf-lib cannot embed).
+ */
+export function pdfFontCandidates(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
+	const override = env.WORKROOM_PDF_FONT ? [env.WORKROOM_PDF_FONT] : [];
+	if (platform === "win32") {
+		const fonts = win32.join(env.WINDIR ?? env.SystemRoot ?? "C:\\Windows", "Fonts");
+		return [...override, ...["msyh.ttc", "simhei.ttf", "simsun.ttc", "msjh.ttc", "arialuni.ttf"].map((f) => win32.join(fonts, f))];
+	}
+	if (platform === "darwin") return [...override, "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc", "/Library/Fonts/Arial Unicode.ttf", "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"];
+	return [...override, "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"];
+}
+
+/** First candidate that exists and loads (`exists`/`read` injectable for tests). */
+export function pickPdfFont(candidates: readonly string[], exists: (p: string) => boolean = existsSync, read: (p: string) => Buffer = readFileSync): { path: string; bytes: Buffer } | null {
+	for (const p of candidates) {
+		if (!p || !exists(p)) continue;
+		try {
+			return { path: p, bytes: ttcToTtf(read(p)) };
+		} catch {
+			/* unreadable or malformed: try the next one */
+		}
+	}
+	return null;
+}
 
 /** Extract one font of a TrueType Collection as a standalone TTF (pdf-lib embeds single fonts only). */
 export function ttcToTtf(buf: Buffer, index = 0): Buffer {
@@ -299,17 +320,7 @@ export function ttcToTtf(buf: Buffer, index = 0): Buffer {
 let cachedFont: { path: string; bytes: Buffer } | null | undefined;
 function unicodeFont(): { path: string; bytes: Buffer } | null {
 	if (cachedFont !== undefined) return cachedFont;
-	cachedFont = null;
-	for (const p of FONT_CANDIDATES) {
-		if (p && existsSync(p)) {
-			try {
-				cachedFont = { path: p, bytes: ttcToTtf(readFileSync(p)) };
-				break;
-			} catch {
-				/* try next */
-			}
-		}
-	}
+	cachedFont = pickPdfFont(pdfFontCandidates());
 	return cachedFont;
 }
 

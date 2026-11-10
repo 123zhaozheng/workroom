@@ -6,9 +6,9 @@ import { HttpError } from "../core/http.ts";
 
 export type ActorResolver = (api: ToolExecutionApi<any>, context: Context) => Promise<ToolActor>;
 
-/** `…/orgs/<org>/spaces/<spaceId>/…` → spaceId (fallback when the runtime cannot tell us directly). */
+/** `…/orgs/<org>/spaces/<spaceId>/…` (POSIX `/` or Windows `\\` separators) → spaceId (fallback when the runtime cannot tell us directly). */
 export function spaceIdFromPath(p: string | undefined): string | undefined {
-	return p ? /\/spaces\/([A-Za-z0-9_-]+)(?:\/|$)/.exec(p)?.[1] : undefined;
+	return p ? /[\\/]spaces[\\/]([A-Za-z0-9_-]+)(?:[\\/]|$)/.exec(p)?.[1] : undefined;
 }
 
 /**

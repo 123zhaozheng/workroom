@@ -8,7 +8,7 @@
 import { backup as sqliteBackup, DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 
 export interface BackupManifest {
 	format: "workroom-backup/1";
@@ -17,6 +17,11 @@ export interface BackupManifest {
 	files: { path: string; kind: "app" | "durable" | "blob" | "other"; size: number; sha256: string }[];
 	migrations: { module: string; version: number }[];
 }
+
+/** Path with `/` separators (what the manifest stores, so a backup made on Windows verifies and restores anywhere). */
+export const toPosix = (p: string, separator: string = sep): string => p.split(separator).join("/");
+/** Is any directory component of this relative path called `name`? Works for either separator. */
+export const hasPathSegment = (rel: string, name: string): boolean => rel.split(/[\\/]/).includes(name);
 
 const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
 
@@ -51,7 +56,7 @@ export async function backupDataDir(dataDir: string, destDir: string, opts: { in
 	if (existsSync(destDir) && readdirSync(destDir).length > 0) throw new Error(`backup target ${destDir} is not empty`);
 	mkdirSync(destDir, { recursive: true });
 	const files: BackupManifest["files"] = [];
-	const add = (abs: string, kind: BackupManifest["files"][number]["kind"]) => files.push({ path: relative(destDir, abs), kind, size: statSync(abs).size, sha256: sha(abs) });
+	const add = (abs: string, kind: BackupManifest["files"][number]["kind"]) => files.push({ path: toPosix(relative(destDir, abs)), kind, size: statSync(abs).size, sha256: sha(abs) });
 
 	const app = join(dataDir, "app.sqlite");
 	if (!existsSync(app)) throw new Error(`no app.sqlite in ${dataDir}`);
@@ -71,7 +76,7 @@ export async function backupDataDir(dataDir: string, destDir: string, opts: { in
 			await backupSqlite(f, join(destDir, rel));
 			add(join(destDir, rel), "durable");
 		} else if (/durable\.sqlite-(wal|shm)$/.test(f)) continue;
-		else if (opts.includeSandbox || !rel.split("/").includes("sandbox")) {
+		else if (opts.includeSandbox || !hasPathSegment(rel, "sandbox")) {
 			mkdirSync(dirname(join(destDir, rel)), { recursive: true });
 			copyFileSync(f, join(destDir, rel));
 			add(join(destDir, rel), "other");
