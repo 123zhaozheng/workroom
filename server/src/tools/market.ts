@@ -2,8 +2,9 @@
 // scoped reviewer → approve/reject/request changes → publish; install scopes (me / project / department / org); ratings;
 // admin unpublish / force-publish; read-only materialisation of installed skills for the sandbox (/skills/<slug>/).
 // Every state change is an event row (market_events) mirrored into the identity audit log.
-import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { dirname, join, sep } from "node:path";
 import type { AppContext, AuthzScope, Principal, Space } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
@@ -56,7 +57,70 @@ CREATE TABLE skill_ratings (skill_id TEXT NOT NULL, user_id TEXT NOT NULL, stars
 CREATE TABLE market_policy (org_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (org_id, key));
 `,
 	},
+	{
+		version: 2,
+		name: "skills: per-conversation loaded skills (on-demand sandbox mounts)",
+		sql: `
+CREATE TABLE skill_conv_loaded (
+  space_id TEXT NOT NULL, conversation_id INTEGER NOT NULL, skill_id TEXT NOT NULL, version_id TEXT NOT NULL, loaded_at TEXT NOT NULL,
+  PRIMARY KEY (space_id, conversation_id, skill_id)
+);
+`,
+	},
 ];
+
+let tmpSeq = 0;
+/** Remove a directory tree whose directories were made read-only (chmod u+w on the way down; never follows symlinks). */
+function rmReadOnlyTree(path: string): void {
+	try {
+		const walk = (p: string) => {
+			const st = lstatSync(p);
+			if (!st.isDirectory()) return;
+			chmodSync(p, 0o755);
+			for (const n of readdirSync(p)) walk(join(p, n));
+		};
+		walk(path);
+	} catch {
+		/* best effort */
+	}
+	rmSync(path, { recursive: true, force: true });
+}
+
+/**
+ * Write `files` into `dir` atomically and read-only: everything goes to a unique sibling temp directory, which is renamed into place
+ * (a loser of a race with identical content just discards its copy). Paths are re-checked to stay inside the temp directory.
+ * Safe to run concurrently, also from several processes. No-op when `dir` already exists.
+ */
+export function writeContentAddressed(dir: string, files: readonly { path: string; bytes: Uint8Array }[]): void {
+	if (existsSync(dir)) return;
+	// Unique temp dir per call (pid + counter + random): two parallel materialisations of the same content never share a directory.
+	const tmp = `${dir}.tmp-${process.pid}-${(tmpSeq++).toString(36)}-${randomBytes(4).toString("hex")}`;
+	mkdirSync(tmp, { recursive: true });
+	try {
+		const dirs = new Set<string>([tmp]);
+		for (const f of files) {
+			const target = join(tmp, f.path);
+			if (!target.startsWith(tmp + sep)) throw new HttpError(500, "bad_skill_path", `技能资源路径越界：${f.path}`);
+			mkdirSync(dirname(target), { recursive: true });
+			for (let d = dirname(target); d.length > tmp.length; d = dirname(d)) dirs.add(d);
+			writeFileSync(target, f.bytes, { flag: "wx" }); // never follows or overwrites an existing entry
+			chmodSync(target, /(^|\/)scripts\/|\.(sh|py|mjs|js)$/.test(f.path) ? 0o555 : 0o444);
+		}
+		for (const d of [...dirs].sort((a, b) => b.length - a.length)) chmodSync(d, 0o555);
+		try {
+			renameSync(tmp, dir);
+		} catch (e) {
+			if (!existsSync(dir)) throw e; // lost a race with another materialisation of identical content
+			rmReadOnlyTree(tmp);
+		}
+	} catch (e) {
+		rmReadOnlyTree(tmp);
+		throw e;
+	}
+}
+
+/** Hard cap of skill packages mounted into one sandbox run (most recently loaded win; the rest are reported, never dropped silently). */
+export const MAX_SKILL_MOUNTS = 32;
 
 /** Allowed state changes of a submission. Anything else is a 409. */
 export const TRANSITIONS: Readonly<Record<SubmissionState, readonly SubmissionState[]>> = {
@@ -108,6 +172,8 @@ export class Market {
 	authzOverride?: (p: Principal, permission: string, scope?: AuthzScope) => Promise<boolean>;
 	#names = new Map<string, string>();
 	#offProvider: (() => void) | undefined;
+	/** Mount cap per run (tests may lower it). */
+	mountCap = MAX_SKILL_MOUNTS;
 
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
@@ -123,9 +189,13 @@ export class Market {
 		const sb = this.#sandbox();
 		if (!sb) return;
 		// Every run / service of a conversation sees the caller's installed skills read-only at /skills/<slug>/.
-		this.#offProvider = sb.addMountProvider("skills", async ({ principal, space }) => {
-			const plan = await this.mountPlan(principal, space);
-			return plan.map((x) => x.mount);
+		// On demand: only the skills this conversation has loaded (skill load/read/run), re-checked against what is active NOW, so
+		// uninstall / unpublish / department removal / re-pin take effect on the next run. Over the cap the most recent win, and the run says so.
+		this.#offProvider = sb.addMountProvider("skills", async ({ principal, space, conversationId, notes }) => {
+			const plan = await this.loadedMountPlan(principal, space, conversationId);
+			if (plan.skipped.length) notes?.push(`[技能挂载] 已加载的技能超过挂载上限 ${MAX_SKILL_MOUNTS}，以下技能本次未挂载（较早加载的先被省略）：${plan.skipped.map((x) => this.slugOf(x)).join(", ")}；需要时请用 skill 工具 action=load 重新加载。`);
+			if (plan.failed.length) notes?.push(`[技能挂载] 以下技能的文件无法挂载：${plan.failed.map((x) => this.slugOf(x)).join(", ")}`);
+			return plan.mounts.map((x) => x.mount);
 		});
 	}
 	stop(): void {
@@ -431,7 +501,7 @@ export class Market {
 		try {
 			const rt = this.#ctx.services.has("runtime") ? (this.#ctx.services.get("runtime") as any) : null;
 			const reg = rt?.registry ?? rt?.manager?.registry;
-			const names = new Set<string>(["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "browse", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"]);
+			const names = new Set<string>(["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "browse", "skill", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"]);
 			for (const t of reg?.snapshot?.().tools?.() ?? []) names.add(t.tool?.name ?? t.name);
 			for (const t of (this.#ctx.services.get("mcp") as any).piTools()) names.add(t.name);
 			return [...names];
@@ -675,11 +745,20 @@ export class Market {
 		};
 	}
 
+	/**
+	 * Department scope of a user: own departments plus all their ancestors. A department-scoped skill / install applies to members of that
+	 * department AND its sub-departments (same subtree rule as authz grants: a grant on a department covers its descendants).
+	 */
+	deptScope(p: Principal): Set<string> {
+		return new Set(this.#ctx.services.get("identity").departmentScopeIds(p.orgId, p.departmentIds));
+	}
+
 	async #visibleListed(p: Principal): Promise<SkillRow[]> {
 		const rows = this.#db.all<SkillRow>("SELECT * FROM skill_skills WHERE org_id = ? AND status = 'active' AND listed = 1 AND scope != 'personal' ORDER BY updated_at DESC", p.orgId);
 		const spaces = await this.#ctx.services.get("acl").readableSpaces(p);
 		const projects = new Set(spaces.map((x) => x.projectId).filter(Boolean));
-		return rows.filter((s) => s.scope === "org" || (s.scope === "department" && !!s.scope_ref && p.departmentIds.includes(s.scope_ref)) || (s.scope === "project" && !!s.scope_ref && projects.has(s.scope_ref)) || s.owner_user_id === p.userId);
+		const depts = this.deptScope(p);
+		return rows.filter((s) => s.scope === "org" || (s.scope === "department" && !!s.scope_ref && depts.has(s.scope_ref)) || (s.scope === "project" && !!s.scope_ref && projects.has(s.scope_ref)) || s.owner_user_id === p.userId);
 	}
 
 	async list(p: Principal, q: { q?: string; category?: string; scope?: string; sort?: string; installed?: string }): Promise<MarketSkillSummaryDTO[]> {
@@ -933,7 +1012,8 @@ export class Market {
 	/** Scope installs that apply to this user (org, own departments, the space's project). */
 	scopeInstallsFor(p: Principal, space?: Space): { skill_id: string; scope_kind: string; scope_ref: string; pinned_version_no: number | null }[] {
 		const rows = this.#db.all<{ skill_id: string; scope_kind: string; scope_ref: string; pinned_version_no: number | null }>("SELECT i.skill_id, i.scope_kind, i.scope_ref, i.pinned_version_no FROM skill_scope_installs i JOIN skill_skills s ON s.id = i.skill_id WHERE i.enabled = 1 AND s.org_id = ?", p.orgId);
-		return rows.filter((r) => r.scope_kind === "org" || (r.scope_kind === "department" && p.departmentIds.includes(r.scope_ref)) || (r.scope_kind === "project" && !!space?.projectId && r.scope_ref === space.projectId));
+		const depts = this.deptScope(p);
+		return rows.filter((r) => r.scope_kind === "org" || (r.scope_kind === "department" && depts.has(r.scope_ref)) || (r.scope_kind === "project" && !!space?.projectId && r.scope_ref === space.projectId));
 	}
 
 	// ------------------------------------------------------------ materialisation + mounts
@@ -950,43 +1030,56 @@ export class Market {
 	 */
 	materialize(s: SkillRow, v: VersionRow, slugOverride?: string): { dir: string; slug: string } {
 		const slug = slugOverride ?? this.slugOf(s);
+		// Defence in depth: the slug and every stored path end up in host file names. Whatever the database holds, nothing may escape
+		// <mountsRoot>/skills (no separators, no "..", no NUL, no absolute or backslash paths).
+		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(slug) || slug.includes("..")) throw new HttpError(500, "bad_skill_slug", `技能 slug 不合法：${slug}`);
 		const files = this.versionFiles(s, v);
-		const digest = (v.package_sha256 ?? sha256Hex(new TextEncoder().encode(JSON.stringify(files.map((f) => [f.path, sha256Hex(f.bytes)]))))).slice(0, 16);
-		const dir = join(this.mountsRoot(), "skills", `${slug}-${digest}`);
-		if (existsSync(dir)) return { dir, slug };
-		const tmp = `${dir}.tmp-${process.pid}-${Date.now().toString(36)}`;
-		mkdirSync(tmp, { recursive: true });
-		try {
-			const dirs = new Set<string>([tmp]);
-			for (const f of files) {
-				const target = join(tmp, f.path);
-				mkdirSync(dirname(target), { recursive: true });
-				for (let d = dirname(target); d.length > tmp.length; d = dirname(d)) dirs.add(d);
-				writeFileSync(target, f.bytes);
-				chmodSync(target, /(^|\/)scripts\/|\.(sh|py|mjs|js)$/.test(f.path) ? 0o555 : 0o444);
-			}
-			for (const d of [...dirs].sort((a, b) => b.length - a.length)) chmodSync(d, 0o555);
-			try {
-				renameSync(tmp, dir);
-			} catch (e) {
-				if (!existsSync(dir)) throw e; // lost a race with another materialisation of identical content
-				chmodSync(tmp, 0o755);
-				rmSync(tmp, { recursive: true, force: true });
-			}
-		} catch (e) {
-			try {
-				chmodSync(tmp, 0o755);
-				for (const d of readdirSync(tmp)) void d;
-			} catch {
-				/* ignore */
-			}
-			rmSync(tmp, { recursive: true, force: true });
-			throw e;
+		for (const f of files) {
+			if (!f.path || f.path.length > 200 || f.path.includes("\0") || f.path.includes("\\") || f.path.startsWith("/") || f.path.split("/").some((x) => x === "" || x === "." || x === "..")) throw new HttpError(500, "bad_skill_path", `技能资源路径不合法：${JSON.stringify(f.path)}`);
 		}
+		const digest = (v.package_sha256 ?? sha256Hex(new TextEncoder().encode(JSON.stringify(files.map((f) => [f.path, sha256Hex(f.bytes)]))))).slice(0, 16);
+		if (!/^[0-9a-f]{16}$/.test(digest)) throw new HttpError(500, "bad_skill_digest", "技能包摘要不合法");
+		const base = join(this.mountsRoot(), "skills");
+		const dir = join(base, `${slug}-${digest}`);
+		if (existsSync(dir)) return { dir, slug };
+		writeContentAddressed(dir, files);
 		return { dir, slug };
 	}
 
-	/** Mounts for every skill the caller has active (only those that ship more than a SKILL.md or have an entry). */
+	/**
+	 * Mounts of the skills this conversation has loaded, re-validated against skills.active() (so a skill that is no longer usable by this
+	 * principal is never mounted), pinned to the version that is active now. At most `mountCap`, most recently loaded first; the
+	 * overflow is returned in `skipped` for the caller to report.
+	 */
+	async loadedMountPlan(p: Principal, space: Space, conversationId: number | undefined): Promise<{ mounts: { skill: SkillRow; version: VersionRow; mount: SandboxMount }[]; skipped: SkillRow[]; failed: SkillRow[] }> {
+		const none = { mounts: [], skipped: [], failed: [] };
+		if (conversationId == null) return none;
+		const rows = this.skills.loadedRows(space.id, conversationId);
+		if (!rows.length) return none;
+		const active = new Map((await this.skills.active(p, space)).map((a) => [a.skill.id, a]));
+		const cands: { skill: SkillRow; version: VersionRow }[] = [];
+		for (const r of rows) {
+			const a = active.get(r.skill_id);
+			if (!a) continue;
+			const files: Resource[] = JSON.parse(a.version.resources);
+			if (!a.version.entry && !files.some((f) => f.path !== "SKILL.md")) continue;
+			cands.push(a);
+		}
+		const out: { skill: SkillRow; version: VersionRow; mount: SandboxMount }[] = [];
+		const failed: SkillRow[] = [];
+		for (const { skill, version } of cands.slice(0, this.mountCap)) {
+			try {
+				const { dir, slug } = this.materialize(skill, version);
+				out.push({ skill, version, mount: { hostPath: dir, target: `/skills/${slug}`, readOnly: true } });
+			} catch (e) {
+				console.error("[market] materialize failed", skill.id, e);
+				failed.push(skill);
+			}
+		}
+		return { mounts: out, skipped: cands.slice(this.mountCap).map((x) => x.skill).reverse(), failed };
+	}
+
+	/** Mounts for every skill the caller has active (only those that ship more than a SKILL.md or have an entry). Not used by the sandbox any more (on-demand mounts); kept for inspection. */
 	async mountPlan(p: Principal, space?: Space): Promise<{ skill: SkillRow; version: VersionRow; mount: SandboxMount }[]> {
 		const out: { skill: SkillRow; version: VersionRow; mount: SandboxMount }[] = [];
 		for (const { skill, version } of await this.skills.active(p, space)) {
@@ -998,7 +1091,7 @@ export class Market {
 			} catch (e) {
 				console.error("[market] materialize failed", skill.id, e);
 			}
-			if (out.length >= 32) break;
+			if (out.length >= this.mountCap) break;
 		}
 		return out;
 	}

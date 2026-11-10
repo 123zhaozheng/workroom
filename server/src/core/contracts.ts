@@ -77,6 +77,8 @@ export interface IdentityService {
 	space(spaceId: string): Space | null;
 	personalSpace(userId: string, orgId: string): Space;
 	projectSpace(projectId: string): Space | null;
+	/** The given departments plus all their ancestors (archived/foreign-org ones excluded). A department-scoped item applies to a member of any department whose ancestry contains the item's department (subtree rule, as in authz). */
+	departmentScopeIds(orgId: string, departmentIds: readonly string[]): string[];
 }
 
 // ---------- runtime (group A, server/src/runtime) ----------

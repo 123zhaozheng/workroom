@@ -3,10 +3,10 @@
 // permission grants; run records with the exact version; drafts from a finished task → preview → validate → publish.
 // Loading a skill's text (skill_load) never grants anything: skill_run checks the user's grant for that exact version.
 import type { Context } from "@earendil-works/chord/context";
-import { createRegistry, defineExtension, defineTool, Harness, MemoryStorage, ToolResultEntry, type Extension, type ToolExecutionApi } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, MemoryStorage, section, ToolResultEntry, type Extension, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { num, obj, opt, str } from "@earendil-works/pi-schema";
+import { num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AppContext, Principal, Space, ToolActor } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
@@ -63,7 +63,7 @@ const KINDS: SkillKind[] = ["prompt", "context", "executable"];
 const PERM_RE = /^(sandbox\.exec|network|file\.write|tool:[A-Za-z0-9_-]{1,64})$/;
 
 export const SKILL_CONTRACT =
-	"技能内容仅作为上下文参考：加载技能不授予执行脚本、系统命令、联网或未选择工具的权限。只有用户为该技能的这个版本明确授权后，skill_run 才会在沙箱中运行它的脚本。不要编造技能中没有写明的步骤。";
+	"技能内容仅作为上下文参考：加载技能不授予执行脚本、系统命令、联网或未选择工具的权限。只有用户为该技能的这个版本明确授权后，skill 工具的 action=run 才会在沙箱中运行它的脚本。不要编造技能中没有写明的步骤。";
 
 export interface SkillRow {
 	id: string;
@@ -171,7 +171,7 @@ export class Skills {
 			if (s.scope === "personal") return { allow: false, reason: "personal_skill" };
 			if (!s.listed) return { allow: false, reason: "unlisted" };
 			if (s.scope === "org") return { allow: true, reason: "org_skill" };
-			if (s.scope === "department") return s.scope_ref && p.departmentIds.includes(s.scope_ref) ? { allow: true, reason: "department_skill" } : { allow: false, reason: "other_department" };
+			if (s.scope === "department") return s.scope_ref && this.#market.deptScope(p).has(s.scope_ref) ? { allow: true, reason: "department_skill" } : { allow: false, reason: "other_department" };
 			const space = s.scope_ref ? this.#ctx.services.get("identity").projectSpace(s.scope_ref) : null;
 			if (space && (await this.#ctx.services.get("acl").check(p, "read", { kind: "space", id: space.id })).allow) return { allow: true, reason: "project_skill" };
 			return { allow: false, reason: "other_project" };
@@ -347,6 +347,23 @@ export class Skills {
 		return g ? JSON.parse(g.permissions) : [];
 	}
 
+	// ----- on-demand mounts: which skills a conversation has loaded -----
+	/** Remember that this conversation loaded/read/ran `skill` (upsert; moves it to the front of the recency order). */
+	markLoaded(spaceId: string, conversationId: number, skill: SkillRow, version: VersionRow): void {
+		// Strictly increasing per conversation, so "most recently loaded" is well defined even within one millisecond.
+		const max = this.#db.get<{ m: string | null }>("SELECT MAX(loaded_at) AS m FROM skill_conv_loaded WHERE space_id = ? AND conversation_id = ?", spaceId, conversationId)?.m;
+		let at = Date.now();
+		if (max && Date.parse(max) >= at) at = Date.parse(max) + 1;
+		this.#db.run(
+			"INSERT INTO skill_conv_loaded (space_id, conversation_id, skill_id, version_id, loaded_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(space_id, conversation_id, skill_id) DO UPDATE SET version_id = excluded.version_id, loaded_at = excluded.loaded_at",
+			spaceId, conversationId, skill.id, version.id, new Date(at).toISOString(),
+		);
+	}
+	/** Loaded skills of a conversation, most recent first. */
+	loadedRows(spaceId: string, conversationId: number): { skill_id: string; version_id: string; loaded_at: string }[] {
+		return this.#db.all("SELECT skill_id, version_id, loaded_at FROM skill_conv_loaded WHERE space_id = ? AND conversation_id = ? ORDER BY loaded_at DESC, rowid DESC", spaceId, conversationId);
+	}
+
 	recordRun(r: { skill: SkillRow; version: VersionRow; mode: "load" | "run" | "validate"; userId: string; actor?: ToolActor; status: "ok" | "error" | "denied"; detail?: string }): string {
 		const id = newId("skr");
 		this.#db.run(
@@ -406,11 +423,12 @@ export class Skills {
 	async visible(p: Principal): Promise<SkillRow[]> {
 		const rows = this.#db.all<SkillRow>("SELECT * FROM skill_skills WHERE org_id = ? AND status = 'active' ORDER BY updated_at DESC", p.orgId);
 		let projects: Set<string | undefined> | undefined;
+		const depts = this.#market.deptScope(p);
 		const out: SkillRow[] = [];
 		for (const s of rows) {
 			if (s.owner_user_id === p.userId) out.push(s);
 			else if (s.listed === 1 && s.scope === "org") out.push(s);
-			else if (s.listed === 1 && s.scope === "department" && s.scope_ref && p.departmentIds.includes(s.scope_ref)) out.push(s);
+			else if (s.listed === 1 && s.scope === "department" && s.scope_ref && depts.has(s.scope_ref)) out.push(s);
 			else if (s.listed === 1 && s.scope === "project" && s.scope_ref) {
 				projects ??= new Set((await this.#ctx.services.get("acl").readableSpaces(p)).map((x) => x.projectId));
 				if (projects.has(s.scope_ref)) out.push(s);
@@ -493,9 +511,14 @@ export class Skills {
 		if (useMounts) {
 			const { dir, slug } = this.#market.materialize(skill, v, ids.slugOverride);
 			root = `/skills/${slug}`;
-			// The provider contributes every active skill's mount; only add this one explicitly when it is not among them (drafts, inactive).
-			const plan = ids.slugOverride ? [] : await this.#market.mountPlan(p, space);
-			if (!plan.some((x) => x.mount.target === root)) mounts = [{ hostPath: dir, target: root, readOnly: true }];
+			// Mounts are on demand: the provider mounts the skills this conversation has loaded. A skill run always mounts its own skill:
+			// record it as loaded (most recent) and only add it explicitly when the provider would not (drafts, no conversation, slug clash).
+			let provided = false;
+			if (!ids.slugOverride && wdKey != null) {
+				this.markLoaded(space.id, wdKey, skill, v);
+				provided = (await this.#market.loadedMountPlan(p, space, wdKey)).mounts.some((x) => x.mount.target === root);
+			}
+			if (!provided) mounts = [{ hostPath: dir, target: root, readOnly: true }];
 			inputPath = `/work/.skill-run/${runKey}/input.txt`;
 			sb.writeFile(space, wdKey, `.skill-run/${runKey}/input.txt`, new TextEncoder().encode(input));
 		} else {
@@ -570,7 +593,7 @@ export class Skills {
 		const title = (name ?? firstInput?.slice(0, 30) ?? `会话 ${conversationId} 的做法`).trim();
 		const steps = ok.map((c, i) => `${i + 1}. 使用 \`${c.tool}\`（参数摘要：${String(c.args_summary).slice(0, 160)}）`).join("\n");
 		const outputs = files.length ? files.map((f) => `- ${f.name}（v${f.version_no}，由 ${f.tool ?? "上传"} 产生）`).join("\n") : "- （无文件产出）";
-		const instructions = `---\nname: ${title}\ndescription: 从一次成功的任务整理的做法${firstInput ? `：${firstInput.slice(0, 80)}` : ""}\n---\n\n# ${title}\n\n## 何时使用\n${firstInput ? `当用户提出类似需求时：「${firstInput.slice(0, 200)}」` : "当用户需要重复这次任务时。"}\n\n## 步骤\n${steps}\n\n## 产出\n${outputs}\n${entry ? `\n## 脚本\n入口脚本 \`${entry}\` 来自该任务最后一次成功的沙箱运行；用 skill_run 执行（需要用户授权 sandbox.exec）。\n` : ""}\n## 注意\n${SKILL_CONTRACT}${failed ? `\n\n（来源任务中有 ${failed} 个失败的步骤未纳入。）` : ""}\n`;
+		const instructions = `---\nname: ${title}\ndescription: 从一次成功的任务整理的做法${firstInput ? `：${firstInput.slice(0, 80)}` : ""}\n---\n\n# ${title}\n\n## 何时使用\n${firstInput ? `当用户提出类似需求时：「${firstInput.slice(0, 200)}」` : "当用户需要重复这次任务时。"}\n\n## 步骤\n${steps}\n\n## 产出\n${outputs}\n${entry ? `\n## 脚本\n入口脚本 \`${entry}\` 来自该任务最后一次成功的沙箱运行；用 skill 工具 action=run 执行（需要用户授权 sandbox.exec）。\n` : ""}\n## 注意\n${SKILL_CONTRACT}${failed ? `\n\n（来源任务中有 ${failed} 个失败的步骤未纳入。）` : ""}\n`;
 		const sample = { input: firstInput ?? "", expectContains: lastRun ? String(lastRun.stdout).trim().split("\n")[0]?.slice(0, 200) || undefined : undefined };
 		const id = newId("skd");
 		const now = nowIso();
@@ -715,103 +738,245 @@ async function fixtureSampleRun(instructions: string, input: string): Promise<{ 
 }
 
 // ----- agent tools -----
+export const SKILL_PROMPT_MAX_LINES = 50;
+const oneLine = (x: string, max: number) => {
+	const t = String(x ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+	return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
+
+/** Prompt section text for the skills a user may use now: "name (slug) — description", ≤ 50 lines, with an explicit "N more" line (never a silent cut). */
+export function renderSkillIndex(entries: readonly { name: string; slug: string; description: string }[]): string | undefined {
+	if (!entries.length) return undefined;
+	const shown = entries.slice(0, SKILL_PROMPT_MAX_LINES);
+	const lines = [
+		"可用技能（按需使用：用 skill 工具 action=load 读取说明，action=read 读取技能包文件，action=run 运行可执行技能；不要凭记忆假设技能内容）：",
+		...shown.map((e) => `- ${oneLine(e.name, 60)} (${oneLine(e.slug, 80)}) — ${oneLine(e.description, 120) || "（无描述）"}`),
+	];
+	if (entries.length > shown.length) lines.push(`另有 ${entries.length - shown.length} 个技能未列出，用 skill 工具 action=search 查找`);
+	return lines.join("\n");
+}
+
+type SkillAction = "list" | "search" | "load" | "read" | "run";
+const SKILL_ACTIONS: readonly SkillAction[] = ["list", "search", "load", "read", "run"];
+const ACTION_PARAMS: Record<SkillAction, { required: readonly string[]; optional: readonly string[] }> = {
+	list: { required: [], optional: [] },
+	search: { required: ["query"], optional: [] },
+	load: { required: ["name"], optional: [] },
+	read: { required: ["name", "path"], optional: ["offset"] },
+	run: { required: ["name"], optional: ["input", "script"] },
+};
+const PARAM_NAMES = ["name", "query", "path", "offset", "input", "script"] as const;
+
+/** Strict per-action validation of the unified `skill` tool's arguments (400 invalid_args). */
+export function validateSkillArgs(args: Record<string, unknown>): { action: SkillAction; name?: string; query?: string; path?: string; offset?: number; input?: string; script?: string } {
+	const action = args.action as SkillAction;
+	if (!SKILL_ACTIONS.includes(action)) throw new HttpError(400, "invalid_args", `action 必须是 ${SKILL_ACTIONS.join("、")} 之一`);
+	const spec = ACTION_PARAMS[action];
+	const allowed = new Set([...spec.required, ...spec.optional]);
+	const extra = PARAM_NAMES.filter((k) => args[k] !== undefined && args[k] !== null && !allowed.has(k));
+	if (extra.length) throw new HttpError(400, "invalid_args", `action=${action} 不接受参数：${extra.join(", ")}（可用参数：${[...allowed].join(", ") || "无"}）`);
+	const missing = spec.required.filter((k) => args[k] === undefined || args[k] === null || (typeof args[k] === "string" && !String(args[k]).trim()));
+	if (missing.length) throw new HttpError(400, "invalid_args", `action=${action} 缺少必填参数：${missing.join(", ")}`);
+	for (const k of ["name", "query", "path", "input", "script"] as const) if (args[k] != null && typeof args[k] !== "string") throw new HttpError(400, "invalid_args", `参数 ${k} 必须是字符串`);
+	if (args.offset != null && (typeof args.offset !== "number" || !Number.isFinite(args.offset) || args.offset < 0)) throw new HttpError(400, "invalid_args", "参数 offset 必须是不小于 0 的数字");
+	return { action, name: args.name as string | undefined, query: args.query as string | undefined, path: args.path as string | undefined, offset: args.offset as number | undefined, input: args.input as string | undefined, script: args.script as string | undefined };
+}
+
 export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: ActorResolver } = {}): Extension {
 	const skills = () => ctx.services.get("skills") as Skills;
+	const market = () => ctx.services.get("market") as Market;
 	const resolve = (api: ToolExecutionApi<any>, c: Context) => (opts.resolveActor ?? skills().resolveActor)(api, c);
 	const log = () => ctx.services.get("toolCalls") as ToolCallLog;
+	type Out = { text: string; isError?: boolean; details?: Record<string, string | number | boolean | { runId: string; spaceId: string }> };
 
-	const list = defineTool({
-		name: "skill_list",
-		description: "List the skills the user has installed and enabled (name, kind, version, what they need).",
-		parameters: obj({}),
-		replay: "safe",
-		async execute(_a, api, c) {
-			const actor = await resolve(api, c);
-			const act = await skills().active(actor.principal, actor.space);
-			const mk = ctx.services.get("market") as Market;
-			const text = act.length
-				? act.map(({ skill, version }) => `- ${skill.name}（/skills/${mk.slugOf(skill)}，${skill.kind}，v${version.version_no}${version.semver ? ` ${version.semver}` : ""}）：${version.description}${version.required_permissions !== "[]" ? `；需要授权：${JSON.parse(version.required_permissions).join(", ")}` : ""}`).join("\n")
-				: "（用户没有启用的技能）";
-			return { output: [{ type: "text", text }] };
-		},
-	});
+	const describe = (mk: Market, { skill, version }: { skill: SkillRow; version: VersionRow }) =>
+		`- ${skill.name}（/skills/${mk.slugOf(skill)}，${skill.kind}，v${version.version_no}${version.semver ? ` ${version.semver}` : ""}）：${version.description}${version.required_permissions !== "[]" ? `；需要授权：${JSON.parse(version.required_permissions).join(", ")}` : ""}`;
 
-	const load = defineTool({
-		name: "skill_load",
-		description: "Load an installed skill's instructions (SKILL.md) or prompt preset as context. Loading does not grant permission to run its scripts.",
-		parameters: obj({ name: str() }),
-		replay: "safe",
-		async execute(args, api, c) {
-			const actor = await resolve(api, c);
-			return log().around({ tool: "skill_load", actor, args }, async () => {
-				const { skill, version } = await skills().resolveForUse(actor.principal, args.name, actor.space);
-				skills().recordRun({ skill, version, mode: "load", userId: actor.principal.userId, actor, status: "ok" });
-				const res = (JSON.parse(version.resources) as Resource[]).filter((r) => r.path !== "SKILL.md");
-				const slug = (ctx.services.get("market") as Market).slugOf(skill);
-				const text = `<skill name="${skill.name}" kind="${skill.kind}" version="${version.version_no}"${version.semver ? ` semver="${version.semver}"` : ""} dir="/skills/${slug}">\n${version.instructions}\n</skill>\n${res.length ? `资源（沙箱中只读挂载在 /skills/${slug}/ ，可用 skill_read 读取文本）：${res.map((r) => r.path).join(", ")}\n` : ""}${SKILL_CONTRACT}`;
-				return { output: [{ type: "text" as const, text }], details: { skillId: skill.id, versionId: version.id, versionNo: version.version_no } };
-			});
-		},
-	});
+	// ----- shared implementations (the unified `skill` tool and the legacy skill_* tools call the same code) -----
+	async function doList(actor: ToolActor, limit = 100): Promise<Out> {
+		const act = await skills().active(actor.principal, actor.space);
+		const mk = market();
+		if (!act.length) return { text: "（用户没有启用的技能）" };
+		const lines = act.slice(0, limit).map((a) => describe(mk, a));
+		if (act.length > limit) lines.push(`另有 ${act.length - limit} 个技能未列出，用 skill 工具 action=search 查找`);
+		return { text: lines.join("\n") };
+	}
+	async function doSearch(actor: ToolActor, query: string): Promise<Out> {
+		const act = await skills().active(actor.principal, actor.space);
+		const mk = market();
+		const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+		const hits = act
+			.map((a) => {
+				const hay = `${a.skill.name} ${mk.slugOf(a.skill)} ${a.version.description} ${a.skill.category ?? ""} ${a.skill.tags}`.toLowerCase();
+				const name = `${a.skill.name} ${mk.slugOf(a.skill)}`.toLowerCase();
+				return { a, s: words.reduce((n, w) => n + (hay.includes(w) ? 1 : 0) + (name.includes(w) ? 1 : 0), 0), all: words.every((w) => hay.includes(w)) };
+			})
+			.filter((x) => x.s > 0)
+			.sort((x, y) => Number(y.all) - Number(x.all) || y.s - x.s || x.a.skill.name.localeCompare(y.a.skill.name));
+		if (!hits.length) return { text: `没有找到与「${query}」匹配的可用技能（共 ${act.length} 个可用技能；用 action=list 查看全部）` };
+		const top = hits.slice(0, 20);
+		const lines = top.map((h) => describe(mk, h.a));
+		if (hits.length > top.length) lines.push(`另有 ${hits.length - top.length} 个匹配未列出，请换更具体的关键词`);
+		return { text: lines.join("\n") };
+	}
+	/** After a load/read/run: say explicitly when the mount cap pushed older loaded skills out. */
+	async function overflowNote(actor: ToolActor): Promise<string> {
+		const plan = await market().loadedMountPlan(actor.principal, actor.space, actor.conversationId);
+		return plan.skipped.length ? `\n注意：本会话已加载的技能超过沙箱挂载上限 ${market().mountCap}，以下较早加载的技能不再挂载到沙箱：${plan.skipped.map((x) => market().slugOf(x)).join(", ")}；需要在沙箱里使用它们的文件时请重新 action=load。` : "";
+	}
+	async function doLoad(actor: ToolActor, name: string): Promise<Out & { details: Out["details"] }> {
+		const { skill, version } = await skills().resolveForUse(actor.principal, name, actor.space);
+		skills().markLoaded(actor.space.id, actor.conversationId, skill, version);
+		skills().recordRun({ skill, version, mode: "load", userId: actor.principal.userId, actor, status: "ok" });
+		const res = (JSON.parse(version.resources) as Resource[]).filter((r) => r.path !== "SKILL.md");
+		const slug = market().slugOf(skill);
+		const text = `<skill name="${skill.name}" kind="${skill.kind}" version="${version.version_no}"${version.semver ? ` semver="${version.semver}"` : ""} dir="/skills/${slug}">\n${version.instructions}\n</skill>\n${res.length ? `资源（沙箱中只读挂载在 /skills/${slug}/ ，可用 skill 工具 action=read 读取文本）：${res.map((r) => r.path).join(", ")}\n` : ""}${SKILL_CONTRACT}${await overflowNote(actor)}`;
+		return { text, details: { skillId: skill.id, versionId: version.id, versionNo: version.version_no } };
+	}
+	async function doRead(actor: ToolActor, name: string, path: string, offset?: number): Promise<Out> {
+		const { skill, version } = await skills().resolveForUse(actor.principal, name, actor.space);
+		const f = market().versionFiles(skill, version).find((x) => x.path === path.replace(/^\/+/, ""));
+		if (!f) throw new HttpError(404, "file_not_found", `技能「${skill.name}」里没有文件 ${path}`);
+		let text: string;
+		try {
+			text = new TextDecoder("utf-8", { fatal: true }).decode(f.bytes);
+		} catch {
+			throw new HttpError(415, "binary_file", `${path} 不是文本文件`);
+		}
+		skills().markLoaded(actor.space.id, actor.conversationId, skill, version);
+		const off = Math.max(0, Math.floor(offset ?? 0));
+		const chunk = text.slice(off, off + 30_000);
+		return { text: `${chunk}${off + chunk.length < text.length ? `\n…（已截断，继续读取请传 offset=${off + chunk.length}）` : ""}${await overflowNote(actor)}`, details: { skillId: skill.id, versionNo: version.version_no, path: f.path } };
+	}
+	async function doRun(actor: ToolActor, name: string, input: string | undefined, scriptArg: string | undefined): Promise<Out> {
+		const s = skills();
+		const { skill, version } = await s.resolveForUse(actor.principal, name, actor.space);
+		const deny = (msg: string): never => {
+			s.recordRun({ skill, version, mode: "run", userId: actor.principal.userId, actor, status: "denied", detail: msg });
+			throw new HttpError(403, "skill_not_granted", msg);
+		};
+		if (version.kind !== "executable" || !version.entry) deny(`技能「${skill.name}」v${version.version_no} 不是可执行技能，只能用 skill 工具 action=load 作为上下文`);
+		let script: string | undefined;
+		if (scriptArg && scriptArg !== version.entry) {
+			if (!(JSON.parse(version.resources) as Resource[]).some((r) => r.path === scriptArg) || !/\.(py|sh|mjs|js)$/.test(scriptArg)) throw new HttpError(400, "script_not_found", `技能包里没有可运行的脚本 ${scriptArg}`);
+			script = scriptArg;
+		}
+		const need: string[] = JSON.parse(version.required_permissions);
+		const have = s.granted(version.id, actor.principal.userId);
+		const missing = need.filter((x) => !have.includes(x));
+		if (missing.length) deny(`技能「${skill.name}」v${version.version_no} 需要用户授权：${missing.join(", ")}（加载技能文本不等于授权）`);
+		if (need.includes("network")) deny("沙箱未开放网络，无法运行需要 network 权限的技能");
+		await ctx.services.get("acl").require(actor.principal, "write", { kind: "space", id: actor.space.id });
+		const out = await s.execute(actor.principal, actor.space, skill, version, input ?? "", { conversationId: actor.conversationId, taskId: actor.taskId, callId: actor.callId, script });
+		s.recordRun({ skill, version, mode: "run", userId: actor.principal.userId, actor, status: out.status === "ok" ? "ok" : "error", detail: `${out.status} exit=${out.exitCode} run=${out.runId}` });
+		const text = `技能「${skill.name}」v${version.version_no}：${out.status}${out.exitCode !== undefined ? `（exit ${out.exitCode}）` : ""}\n${out.stdout ? `stdout:\n${out.stdout}\n` : ""}${out.stderr ? `stderr:\n${out.stderr}` : ""}`;
+		return { text, isError: out.status !== "ok", details: { skillId: skill.id, versionNo: version.version_no, run: { runId: out.runId, spaceId: actor.space.id } } };
+	}
+	const wrap = (o: Out) => ({ output: [{ type: "text" as const, text: o.text }], ...(o.isError !== undefined ? { isError: o.isError } : {}), ...(o.details ? { details: o.details as any } : {}) });
 
-	const run = defineTool({
-		name: "skill_run",
-		description: "Run an installed executable skill's entry script (or another .py/.sh/.mjs/.js script of the package via `script`) in the sandbox with an input string. The package is mounted read-only at /skills/<slug>/. Requires the user's grant for that exact skill version.",
-		parameters: obj({ name: str(), input: opt(str()), script: opt(str({ description: "Package-relative script path, default: the skill's entry" })) }),
+	// ----- the unified tool -----
+	// replay: "unsafe" — one tool covers action=run, which executes a script with workspace side effects; after a crash mid-call the model
+	// gets an `interrupted` result instead of a silent re-run. The other actions are read-only (load/read only upsert the idempotent
+	// "loaded in this conversation" row), so an interrupted one is simply re-issued by the model.
+	const skillTool = defineTool({
+		name: "skill",
+		description:
+			"Use the skills the user has installed (listed in the system prompt). action=list shows them all; action=search needs `query`; action=load needs `name` (name or slug) and returns the skill's instructions (SKILL.md) — loading also mounts its package read-only at /skills/<slug>/ in later sandbox runs and never grants permission to run scripts; " +
+			"action=read needs `name` and `path` (optional `offset`) and returns a text file of the package; action=run needs `name` (optional `input`, `script`) and runs an executable skill in the sandbox (needs the user's grant for that exact version). Parameters not used by the chosen action are rejected.",
+		parameters: obj({
+			action: oneOf(SKILL_ACTIONS as unknown as ["list", "search", "load", "read", "run"], { description: "list | search | load | read | run" }),
+			name: opt(str({ description: "Skill name or slug (load/read/run)" })),
+			query: opt(str({ description: "Search words (search)" })),
+			path: opt(str({ description: "Package-relative file path (read)" })),
+			offset: opt(num({ description: "Character offset to continue a truncated read (read)" })),
+			input: opt(str({ description: "Input string for the script (run)" })),
+			script: opt(str({ description: "Package-relative script path, default: the skill's entry (run)" })),
+		}),
 		replay: "unsafe",
 		async execute(args, api, c) {
 			const actor = await resolve(api, c);
-			return log().around({ tool: "skill_run", actor, args }, async () => {
-				const s = skills();
-				const { skill, version } = await s.resolveForUse(actor.principal, args.name, actor.space);
-				const deny = (msg: string) => {
-					s.recordRun({ skill, version, mode: "run", userId: actor.principal.userId, actor, status: "denied", detail: msg });
-					throw new HttpError(403, "skill_not_granted", msg);
-				};
-				if (version.kind !== "executable" || !version.entry) deny(`技能「${skill.name}」v${version.version_no} 不是可执行技能，只能用 skill_load 作为上下文`);
-				let script: string | undefined;
-				if (args.script && args.script !== version.entry) {
-					if (!(JSON.parse(version.resources) as Resource[]).some((r) => r.path === args.script) || !/\.(py|sh|mjs|js)$/.test(args.script)) throw new HttpError(400, "script_not_found", `技能包里没有可运行的脚本 ${args.script}`);
-					script = args.script;
+			return log().around({ tool: "skill", actor, args }, async () => {
+				const a = validateSkillArgs(args as Record<string, unknown>);
+				switch (a.action) {
+					case "list":
+						return wrap(await doList(actor));
+					case "search":
+						return wrap(await doSearch(actor, a.query!));
+					case "load":
+						return wrap(await doLoad(actor, a.name!));
+					case "read":
+						return wrap(await doRead(actor, a.name!, a.path!, a.offset));
+					case "run":
+						return wrap(await doRun(actor, a.name!, a.input, a.script));
 				}
-				const need: string[] = JSON.parse(version.required_permissions);
-				const have = s.granted(version.id, actor.principal.userId);
-				const missing = need.filter((x) => !have.includes(x));
-				if (missing.length) deny(`技能「${skill.name}」v${version.version_no} 需要用户授权：${missing.join(", ")}（加载技能文本不等于授权）`);
-				if (need.includes("network")) deny("沙箱未开放网络，无法运行需要 network 权限的技能");
-				await ctx.services.get("acl").require(actor.principal, "write", { kind: "space", id: actor.space.id });
-				const out = await s.execute(actor.principal, actor.space, skill, version, args.input ?? "", { conversationId: actor.conversationId, taskId: actor.taskId, callId: actor.callId, script });
-				s.recordRun({ skill, version, mode: "run", userId: actor.principal.userId, actor, status: out.status === "ok" ? "ok" : "error", detail: `${out.status} exit=${out.exitCode} run=${out.runId}` });
-				const text = `技能「${skill.name}」v${version.version_no}：${out.status}${out.exitCode !== undefined ? `（exit ${out.exitCode}）` : ""}\n${out.stdout ? `stdout:\n${out.stdout}\n` : ""}${out.stderr ? `stderr:\n${out.stderr}` : ""}`;
-				return { output: [{ type: "text" as const, text }], isError: out.status !== "ok", details: { skillId: skill.id, versionNo: version.version_no, run: { runId: out.runId, spaceId: actor.space.id } } };
 			});
 		},
 	});
 
-	const read = defineTool({
-		name: "skill_read",
-		description: "Read a text file from an installed skill's package (references/, assets/, scripts/) by relative path. Progressive disclosure: load the SKILL.md first, read only the files it points to.",
-		parameters: obj({ name: str(), path: str(), offset: opt(num()) }),
+	// ----- legacy tools: still executable (replay of existing transcripts, old calls), not offered to the model -----
+	const list = defineTool({
+		name: "skill_list",
+		description: "(legacy; use the skill tool) List the skills the user has installed and enabled.",
+		parameters: obj({}),
 		replay: "safe",
+		deferred: true,
+		async execute(_a, api, c) {
+			const actor = await resolve(api, c);
+			return wrap(await doList(actor, 1000));
+		},
+	});
+	const load = defineTool({
+		name: "skill_load",
+		description: "(legacy; use the skill tool action=load) Load an installed skill's instructions (SKILL.md) or prompt preset as context. Loading does not grant permission to run its scripts.",
+		parameters: obj({ name: str() }),
+		replay: "safe",
+		deferred: true,
 		async execute(args, api, c) {
 			const actor = await resolve(api, c);
-			return log().around({ tool: "skill_read", actor, args }, async () => {
-				const { skill, version } = await skills().resolveForUse(actor.principal, args.name, actor.space);
-				const mk = ctx.services.get("market") as Market;
-				const f = mk.versionFiles(skill, version).find((x) => x.path === args.path.replace(/^\/+/, ""));
-				if (!f) throw new HttpError(404, "file_not_found", `技能「${skill.name}」里没有文件 ${args.path}`);
-				let text: string;
-				try {
-					text = new TextDecoder("utf-8", { fatal: true }).decode(f.bytes);
-				} catch {
-					throw new HttpError(415, "binary_file", `${args.path} 不是文本文件`);
-				}
-				const off = Math.max(0, Math.floor(args.offset ?? 0));
-				const chunk = text.slice(off, off + 30_000);
-				return { output: [{ type: "text" as const, text: `${chunk}${off + chunk.length < text.length ? `\n…（已截断，继续读取请传 offset=${off + chunk.length}）` : ""}` }], details: { skillId: skill.id, versionNo: version.version_no, path: f.path } };
-			});
+			return log().around({ tool: "skill_load", actor, args }, async () => wrap(await doLoad(actor, args.name)));
+		},
+	});
+	const run = defineTool({
+		name: "skill_run",
+		description: "(legacy; use the skill tool action=run) Run an installed executable skill's entry script in the sandbox with an input string. Requires the user's grant for that exact skill version.",
+		parameters: obj({ name: str(), input: opt(str()), script: opt(str({ description: "Package-relative script path, default: the skill's entry" })) }),
+		replay: "unsafe",
+		deferred: true,
+		async execute(args, api, c) {
+			const actor = await resolve(api, c);
+			return log().around({ tool: "skill_run", actor, args }, async () => wrap(await doRun(actor, args.name, args.input, args.script)));
+		},
+	});
+	const read = defineTool({
+		name: "skill_read",
+		description: "(legacy; use the skill tool action=read) Read a text file from an installed skill's package by relative path.",
+		parameters: obj({ name: str(), path: str(), offset: opt(num()) }),
+		replay: "safe",
+		deferred: true,
+		async execute(args, api, c) {
+			const actor = await resolve(api, c);
+			return log().around({ tool: "skill_read", actor, args }, async () => wrap(await doRead(actor, args.name, args.path, args.offset)));
 		},
 	});
 
-	return defineExtension({ name: "wr.skills", tools: [list, load, run, read] });
+	return defineExtension({
+		name: "wr.skills",
+		tools: [list, load, run, read, skillTool],
+		sections: [
+			section("skills", async (input, context) => {
+				try {
+					if (!ctx.services.has("runtime")) return undefined;
+					const rt = ctx.services.get("runtime") as { promptScope?: (i: unknown, c: Context) => Promise<{ space: Space; principal: Principal | null } | null> };
+					const scope = typeof rt.promptScope === "function" ? await rt.promptScope(input, context) : null;
+					if (!scope?.principal) return undefined; // revoked / unknown actor: nothing actor-dependent
+					const mk = market();
+					if (!(await mk.can(scope.principal, "skill.use"))) return undefined;
+					const act = await skills().active(scope.principal, scope.space);
+					return renderSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })));
+				} catch {
+					return undefined;
+				}
+			}),
+		],
+	});
 }

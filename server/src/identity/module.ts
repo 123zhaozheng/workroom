@@ -239,6 +239,21 @@ export class Identity implements IdentityService, AccessControl {
 		return r ? this.#spaceFromRow(r) : null;
 	}
 
+	departmentScopeIds(orgId: string, departmentIds: readonly string[]): string[] {
+		if (!departmentIds.length) return [];
+		const parent = new Map<string, string | null>();
+		for (const d of this.db.all<{ id: string; parent_id: string | null }>("SELECT id, parent_id FROM id_departments WHERE org_id = ? AND archived_at IS NULL", orgId)) parent.set(d.id, d.parent_id);
+		const out = new Set<string>();
+		for (const start of departmentIds) {
+			let cur: string | null | undefined = start;
+			while (cur && parent.has(cur) && !out.has(cur)) {
+				out.add(cur);
+				cur = parent.get(cur);
+			}
+		}
+		return [...out];
+	}
+
 	#principal(userId: string, orgId: string, sessionId?: string): Principal | null {
 		const u = this.db.get<any>("SELECT * FROM id_users WHERE id = ? AND disabled_at IS NULL", userId);
 		const m = this.db.get<any>("SELECT role FROM id_org_members WHERE org_id = ? AND user_id = ? AND removed_at IS NULL AND disabled_at IS NULL", orgId, userId);

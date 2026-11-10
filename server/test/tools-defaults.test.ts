@@ -40,8 +40,9 @@ test("default conversation offers sandbox/codemode/browser/jobs/files tools; the
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: member.token, json: { title: "默认工具" } })).conversation;
 		const detail = await t.json("GET", base(c), { token: member.token });
 		const offered: string[] = detail.agent.tools;
-		for (const name of ["sandbox_exec", "sandbox_publish", "codemode", "browse", "browser_open", "browser_act", "job_start", "job_status", "file_create", "file_read", "skill_load", "tool_search"]) assert.ok(offered.includes(name), `${name} not offered: ${offered.join(",")}`);
+		for (const name of ["sandbox_exec", "sandbox_publish", "codemode", "browse", "browser_open", "browser_act", "job_start", "job_status", "file_create", "file_read", "skill", "tool_search"]) assert.ok(offered.includes(name), `${name} not offered: ${offered.join(",")}`);
 		assert.ok(!offered.some((n) => n.startsWith("mcp__")), "connector tools stay deferred");
+		assert.ok(!offered.some((n) => /^skill_(list|load|read|run)$/.test(n)), "legacy skill_* tools are deferred, not offered");
 
 		await say(t, member.token, c, `[[call sandbox_exec {"language":"python","code":"print(6*7)"}]]`);
 		assert.match((await results(t, c, "sandbox_exec"))[0]!.text, /stdout:\n42/);

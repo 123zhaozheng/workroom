@@ -761,6 +761,7 @@ export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 			}
 			const candidates = [];
 			for (const t of agent.deferred) {
+				if (/^skill_(list|load|read|run)$/.test(t.name)) continue; // legacy skill tools: superseded by the `skill` tool, never offered
 				if (t.name.startsWith("mcp__")) {
 					const r = byPiName.get(t.name);
 					if (!r) continue; // another org's connector: never shown
@@ -779,14 +780,14 @@ export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 				.slice(0, max)
 				.map((x) => x.t);
 			const loaded = ranked.map((t) => t.name);
-			// Skills the user has active are discovered here too (they are loaded with skill_load, not as tools).
+			// Skills the user has active are discovered here too (they are used with the `skill` tool, not as tools).
 			let skillHint = "";
 			try {
 				const sk = ctx?.services?.has("skills") ? (ctx.services.get("skills") as any) : null;
 				if (sk) {
 					const active = (await sk.active(actor.principal, actor.space)) as { skill: { name: string }; version: { description: string } }[];
 					const hits = active.map((a) => ({ a, s: score(query, `${a.skill.name} ${a.version.description}`) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 5);
-					if (hits.length) skillHint = `\n\nMatching skills (load one with skill_load):\n${hits.map((h) => `- ${h.a.skill.name}: ${h.a.version.description.slice(0, 120)}`).join("\n")}`;
+					if (hits.length) skillHint = `\n\nMatching skills (use the skill tool: action=load with name=<slug>):\n${hits.map((h) => `- ${h.a.skill.name}: ${h.a.version.description.slice(0, 120)}`).join("\n")}`;
 				}
 			} catch {
 				/* skills are optional here */

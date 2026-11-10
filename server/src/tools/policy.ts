@@ -22,7 +22,7 @@ export const TOOL_GROUPS = {
 	browser: { label: "服务端浏览器", match: (n: string) => n === "browse" || n.startsWith("browser_") },
 	jobs: { label: "后台长任务", match: (n: string) => n.startsWith("job_") },
 	connectors: { label: "外部连接器（MCP）", match: (n: string) => n.startsWith("mcp__") || n === "tool_search" },
-	skills: { label: "技能", match: (n: string) => n.startsWith("skill_") },
+	skills: { label: "技能", match: (n: string) => n === "skill" || n.startsWith("skill_") },
 } as const;
 export type ToolGroup = keyof typeof TOOL_GROUPS;
 

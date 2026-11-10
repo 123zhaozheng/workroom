@@ -115,6 +115,8 @@ export interface MountContext {
 	principal: Principal;
 	space: Space;
 	conversationId?: number;
+	/** Providers may push human-readable notices (e.g. "N skills were not mounted"); a run appends them to its stderr so nothing is dropped silently. */
+	notes?: string[];
 }
 export type MountProvider = (c: MountContext) => readonly SandboxMount[] | Promise<readonly SandboxMount[]>;
 
@@ -311,7 +313,8 @@ export class Sandbox {
 		const wd = this.workdir(input.space, input.conversationId);
 		const used = ws.dirSize(this.root(input.space)).bytes;
 		if (used > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录已用 ${Math.round(used / 1048576)} MB，超过配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并清理`);
-		const mounts = await this.#collectMounts(input, input.mounts);
+		const mountNotes: string[] = [];
+		const mounts = await this.#collectMounts({ principal: input.principal, space: input.space, conversationId: input.conversationId, notes: mountNotes }, input.mounts);
 		await this.#reaped;
 		const id = newId("run");
 		const started = Date.now();
@@ -329,6 +332,7 @@ export class Sandbox {
 		} finally {
 			release();
 		}
+		if (mountNotes.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}${mountNotes.join("\n")}` };
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
 		return this.runDTO(id)!;
 	}
