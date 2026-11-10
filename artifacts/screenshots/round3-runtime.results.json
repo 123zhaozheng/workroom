@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T09:21:08.510Z",
+  "at": "2026-11-10T16:21:49.330Z",
   "results": [
     {
       "name": "M03-A: assistant stored with avatar, description, tools, knowledge, model and members (Settings)",
@@ -14,7 +14,7 @@
     {
       "name": "M03-B: subagent card shows source, owner, status, result/failure and simulated cost",
       "ok": true,
-      "detail": "检索员 内置子 Agent 达到轮数上限（超时） 检索资料里的报销规定 未完成：在允许的轮数内没有完成，已停止（turn_limit） 来源：对话 3 负责人：你（运行测试） 刚刚开始 用时 32 ms 测试模型 · 模拟用量，不计费 查看子任务对话"
+      "detail": "检索员 内置子 Agent 达到轮数上限（超时） 检索资料里的报销规定 未完成：在允许的轮数内没有完成，已停止（turn_limit） 来源：对话 3 负责人：你（运行测试） 刚刚开始 用时 45 ms 测试模型 · 模拟用量，不计费 查看子任务对话"
     },
     {
       "name": "M02-C: turn-limit (timeout class) shown as its own state, not as success or a plain failure",
@@ -24,7 +24,7 @@
     {
       "name": "M15-A: shown model and the recorded route (channel / upstream model / status) for this conversation",
       "ok": true,
-      "detail": "当前模型：测试模型（非真实 AI） 时间 平台模型 实际渠道 / 上游模型 结果 2026/11/10 09:19:27 workroom-fixture fixture / workroom-fixture测试模型 成功3 ms 2026/11/10 09:19:28 workroom-fixture fixture"
+      "detail": "当前模型：测试模型（非真实 AI） 时间 平台模型 实际渠道 / 上游模型 结果 2026/11/10 16:20:08 workroom-fixture fixture / workroom-fixture测试模型 成功3 ms 2026/11/10 16:20:09 workroom-fixture fixture"
     },
     {
       "name": "M02-A: losing the network is shown honestly (the task keeps running on the server)",

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T09:29:53.876Z",
+  "at": "2026-11-10T16:30:37.141Z",
   "results": [
     {
       "name": "seed: six members joined the owner's organisation",
@@ -29,7 +29,7 @@
     {
       "name": "org structure: drag 华东 onto 研发部 moves it (server state)",
       "ok": true,
-      "detail": "parent=dep_0mwahnpex578c31a977b50cb3"
+      "detail": "parent=dep_0mwawoqlf29f8e96bcf7aab63"
     },
     {
       "name": "org structure: 移动到 menu moves it back under 销售部",

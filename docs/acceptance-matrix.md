@@ -88,3 +88,8 @@
 - 测试阈值调整（如实记录）：`round4-chat.mjs` 点阵“动画增加主线程时间”预算 15→20 个百分点——同一容器上未改动的第 4 轮提交今天测得 +14.8/+15.0（设阈值时为 +13.1），属无头软件光栅环境漂移；单帧绘制（平均 0.36 ms）与 30 fps 限帧检查保持不变。
 - M11：本容器重启后 dockerd 需重新启动；真实 Docker 测试 5/5 通过；完整沙箱镜像（`workroom/sandbox:1`）因本环境代理的自签 CA 使镜像内 pip 校验失败而未构建（未关闭 TLS 校验），对应 1 项测试跳过。
 - M13-B 默认点阵开启与否仍待用户确认。
+
+## 第六轮变更备注（2026-11-10，集成者）
+
+- M05（技能/MCP）：新增按需发现（提示词元数据）、统一的 `skill` 工具、`skill_manage` 对话创建草稿（固定快照 → 用户批准 → 个人技能，幂等，重启后可恢复）；只挂载已加载的技能；部门范围覆盖子部门；补充跨组织测试。证据：`server/test/skills-ondemand.test.ts`、`skills-scopes.test.ts`、`skills-drafts.test.ts`、`web/e2e/round6-skills.mjs`、`artifacts/bench/*.json`。状态不变（verified）。
+- 统计页：修复快速连续修改筛选时的竞态（`round4-stats.mjs` 偶发失败的根因）。
