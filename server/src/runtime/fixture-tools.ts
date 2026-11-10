@@ -98,7 +98,7 @@ export function createFixtureTools(rt: Runtime, effects: Effects): Extension {
 		replay: "safe",
 		execute: async (args, api, context) => {
 			const decision = await effects.requestApproval(api, { title: args.title, summary: args.summary, risk: (["low", "medium", "high"].includes(args.risk ?? "") ? args.risk : "medium") as "low" | "medium" | "high" }, context);
-			return { output: text(`decision: ${decision.decision}${decision.note ? ` (${decision.note})` : ""} by ${decision.by}`), details: decision as any };
+			return { output: text(`decision: ${decision.decision}${decision.note ? ` (${decision.note})` : ""}`), details: decision as any };
 		},
 	});
 
