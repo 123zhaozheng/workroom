@@ -18,7 +18,7 @@
 	--border-strong: #d4d4cf;
 	--fg: #1c1d1f;
 	--fg-muted: #5d6066;
-	--fg-subtle: #8a8d93;
+	--fg-subtle: #6b6e74; /* AA 4.9:1 on --bg (was #8a8d93, 3.2:1) */
 	--accent: #1f2125;
 	--accent-fg: #ffffff;
 	--info: #2458c6;
@@ -61,7 +61,7 @@
 	--border-strong: #3d4045;
 	--fg: #ececeb;
 	--fg-muted: #a5a8ad;
-	--fg-subtle: #7c8086;
+	--fg-subtle: #8e9298; /* AA 5.3:1 on dark --surface */
 	--accent: #ececeb;
 	--accent-fg: #161719;
 	--info: #7aa2f7;
