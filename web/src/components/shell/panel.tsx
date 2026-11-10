@@ -1,5 +1,6 @@
 // One right-hand panel at a time: either a deliverable preview or the shared work panel
 // (terminal / browser / subagents). Wide screens show it as a column; narrow screens use a drawer.
+import type { WorkTabId } from "@shared/sandbox";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 export interface PreviewTarget {
@@ -8,7 +9,8 @@ export interface PreviewTarget {
 	name?: string;
 	mime?: string;
 }
-export type WorkTab = "tasks" | "terminal" | "browser";
+/** "tasks" | "terminal" | "files" | "browser" (shared/sandbox.ts is the single definition). */
+export type WorkTab = WorkTabId;
 export type PanelState =
 	| { kind: "preview"; target: PreviewTarget }
 	| { kind: "work"; tab: WorkTab; spaceId: string; conversationId: number }

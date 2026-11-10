@@ -1,7 +1,6 @@
 // One switchable, on-demand work panel: 子任务 / 终端 / 文件 / 浏览器. Never several panels at once.
 // Everything shown here comes from the same server ACL as the conversation itself.
 import { Bot, ExternalLink, FolderOpen, Globe, Plug, SquareTerminal, Users, X } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { EntriesPage, MemberType, SubagentDTO, TasksResponse } from "@shared/chat";
 import type { ConversationWorkDTO } from "@shared/files";
@@ -31,16 +30,8 @@ const SUB_STATUS: Record<SubagentDTO["status"], { label: string; tone: "info" | 
 
 export default function WorkPanel({ state, onClose }: { state: Extract<PanelState, { kind: "work" }>; onClose: () => void }) {
 	const { openWork } = usePanel();
-	// "files" is owned by this panel; the shared WorkTab type (components/shell/panel.tsx) may not list it yet, so it lives in local state
-	// and is reset whenever the shell opens another tab (or the same tab of another conversation).
-	const [local, setLocal] = useState<"files" | null>(null);
-	useEffect(() => setLocal(state.tab === ("files" as string) ? "files" : null), [state.tab, state.conversationId]);
-	const tab: string = local ?? state.tab;
-	const setTab = (t: string) => {
-		if (t === "files") return setLocal("files");
-		setLocal(null);
-		openWork(t as WorkTab, state.spaceId, state.conversationId);
-	};
+	const tab: WorkTab = state.tab;
+	const setTab = (t: string) => openWork(t as WorkTab, state.spaceId, state.conversationId);
 	return (
 		<div data-testid="work-panel" className="flex h-full min-h-0 flex-col">
 			<Tabs value={tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">

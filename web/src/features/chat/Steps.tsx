@@ -5,6 +5,7 @@ import { AnimatePresence, m } from "motion/react";
 import { cn, durationText } from "@/lib/utils";
 import { Markdown } from "@/features/markdown/Markdown";
 import type { WorkTab } from "@/components/shell/panel";
+import { workTabForTool } from "@shared/sandbox";
 import { toolLabel, type AssistantTurn, type Step } from "./model";
 
 type StepState = "pending" | "running" | "waiting" | "done" | "error" | "rejected";
@@ -27,10 +28,7 @@ function argSummary(args: unknown): string {
 }
 
 export function workTabFor(toolName: string): WorkTab | null {
-	if (toolName.startsWith("sandbox")) return "terminal";
-	if (toolName === "browse" || toolName.startsWith("browser")) return "browser";
-	if (toolName === "delegate" || toolName.startsWith("team")) return "tasks";
-	return null;
+	return workTabForTool(toolName);
 }
 
 export function StepChain({ turn, onOpenWork }: { turn: AssistantTurn; onOpenWork?: (tab: WorkTab) => void }) {
@@ -144,7 +142,7 @@ function StepRow({ step, onOpenWork }: { step: Step; onOpenWork?: (tab: WorkTab)
 					{tab && onOpenWork ? (
 						<button onClick={() => onOpenWork(tab)} className="inline-flex items-center gap-1 text-info hover:underline">
 							<PanelRight className="size-3.5" />
-							在工作面板中查看
+							{tab === "files" ? "在工作区中打开" : "在工作面板中查看"}
 						</button>
 					) : null}
 				</div>
