@@ -17,7 +17,7 @@ export default function TextViewer({ fileId, version, fallbackSrc }: { fileId: s
 	const body = version.previewKind === "markdown" ? res.data.text : lang ? `\`\`\`${lang}\n${res.data.text}\n\`\`\`` : null;
 	return (
 		<div data-testid="preview-text" className="wr-scroll h-full overflow-auto px-4 py-4 sm:px-6 sm:py-5">
-			{body !== null ? <Markdown text={body} /> : <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-fg">{res.data.text}</pre>}
+			{body !== null ? <Markdown text={body} document /> : <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-fg">{res.data.text}</pre>}
 			{res.data.truncated ? <p className="mt-4 text-xs text-fg-subtle">内容过长，仅显示前一部分；完整内容请下载。</p> : null}
 		</div>
 	);

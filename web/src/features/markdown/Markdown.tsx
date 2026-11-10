@@ -46,7 +46,8 @@ function usePlugins(text: string): PluginConfig | undefined {
 	return plugins;
 }
 
-export const Markdown = memo(function Markdown({ text, streaming, className }: { text: string; streaming?: boolean; className?: string }) {
+/** `document`: a deliverable preview — read like a document, without the per-table/code action toolbars used in chat. */
+export const Markdown = memo(function Markdown({ text, streaming, className, document }: { text: string; streaming?: boolean; className?: string; document?: boolean }) {
 	const plugins = usePlugins(text);
 	return (
 		<Streamdown
@@ -54,7 +55,7 @@ export const Markdown = memo(function Markdown({ text, streaming, className }: {
 			mode={streaming ? "streaming" : "static"}
 			isAnimating={!!streaming}
 			plugins={plugins}
-			controls={{ code: true, table: true }}
+			controls={document ? { code: true, table: false } : { code: true, table: true }}
 			linkSafety={{ enabled: false }}
 			lineNumbers={false}
 			translations={ZH}

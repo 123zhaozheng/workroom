@@ -37,7 +37,7 @@ export function AssistantsSection() {
 	return (
 		<section className="mb-8" data-testid="assistants">
 			<div className="mb-2 flex items-center">
-				<h2 className="flex-1 text-[13px] font-medium text-fg-muted">助手</h2>
+				<h2 className="flex-1 text-sm font-medium text-fg-muted">助手</h2>
 				<Button size="sm" onClick={() => setEditing("new")} disabled={res.unavailable} data-testid="assistant-new">
 					<Plus />
 					新建助手
