@@ -1,0 +1,539 @@
+// Skills created in conversation (round 6, B2): skill_manage submit_draft → frozen snapshot → durable approval → personal skill.
+//   node --disable-warning=ExperimentalWarning --test server/test/skills-drafts.test.ts
+// The extension is installed into the running runtime with reinstallExtension (until module.ts wires it, see docs/requests/round6-b2.md),
+// so these tests drive the REAL agent loop (fixture model directives), real approvals, real restarts.
+process.env.WORKROOM_FIXTURE_TOOLS = "1";
+process.env.WORKROOM_RT_RETRY_BASE_MS ??= "20";
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Hono } from "hono";
+import { startTestApp, type TestApp } from "./helpers/app.ts";
+import { orgMember } from "./fixtures/util.ts";
+import { waitFor } from "../src/runtime/testing.ts";
+import { createSkillManageExtension, SKILL_DRAFT_MIGRATIONS, registerSkillDraftRoutes, skillDraftsFor, snapshotDir } from "../src/tools/skill-drafts.ts";
+import { LIMITS, sha256Hex } from "../src/tools/skills-package.ts";
+import type { Market } from "../src/tools/market.ts";
+import type { Sandbox } from "../src/tools/sandbox.ts";
+import type { Skills } from "../src/tools/skills.ts";
+import type { AppEnv, ToolActor } from "../src/core/contracts.ts";
+import type { SkillDraftApprovalDetail } from "../../shared/skill-drafts.ts";
+
+const skillMd = (o: { name?: string; version?: string; body?: string; description?: string; extra?: string } = {}) =>
+	`---\nname: ${o.name ?? "weekly-report"}\ndescription: ${o.description ?? "把本周的工作整理成周报。当用户要求写周报、汇总本周进展时使用。"}\nversion: ${o.version ?? "1.0.0"}\n${o.extra ?? ""}---\n\n${o.body ?? "# 周报\n\n按「本周完成 / 下周计划 / 风险」三段写。"}\n`;
+
+/** Install the skill_manage extension into the running runtime (the integrator does this in module.ts). */
+function wire(t: TestApp): void {
+	// Same as module.ts will do (module "tools", offset 800); a no-op once the module itself applies it.
+	t.app.ctx.db.migrate("tools", SKILL_DRAFT_MIGRATIONS.map((m) => ({ ...m, version: m.version + 800 })));
+	(t.app.ctx.services.get("runtime") as any).reinstallExtension(createSkillManageExtension(t.app.ctx));
+}
+
+const state = (t: TestApp, token: string, sp: string, id: number) => t.json("GET", `/api/conversations/${sp}/${id}/state`, { token });
+const send = (t: TestApp, token: string, sp: string, id: number, text: string) => t.json("POST", `/api/conversations/${sp}/${id}/messages`, { token, json: { text, requestId: randomUUID() } });
+const idle = (t: TestApp, token: string, sp: string, id: number, what: string) =>
+	waitFor(async () => {
+		const s = await state(t, token, sp, id);
+		return !s.live.busy && s.queue.length === 0 ? s : undefined;
+	}, { timeoutMs: 30_000, what });
+const results = (s: any, name: string) => s.entries.filter((e: any) => e.kind === "tool_result" && e.toolName === name);
+const pendingApproval = (t: TestApp, token: string, sp: string, id: number) => waitFor(async () => (await state(t, token, sp, id)).approvals.find((a: any) => a.status === "pending"), { what: "pending approval" });
+const decide = (t: TestApp, token: string, sp: string, id: number, approvalId: string, decision: "approved" | "rejected") =>
+	t.json("POST", `/api/conversations/${sp}/${id}/approvals/${encodeURIComponent(approvalId)}`, { token, json: { decision } });
+
+async function newConv(t: TestApp, token: string) {
+	const { conversation } = await t.json("POST", "/api/conversations", { token, json: {} });
+	return { sp: conversation.spaceId as string, cid: conversation.conversationId as number };
+}
+const workdirOf = (t: TestApp, sp: string, cid: number) => (t.app.ctx.services.get("sandbox") as Sandbox).workdir(t.app.ctx.services.get("identity").space(sp)!, cid);
+function writeSkill(t: TestApp, sp: string, cid: number, dir: string, files: Record<string, string | Uint8Array>) {
+	const root = join(workdirOf(t, sp, cid), dir);
+	for (const [p, c] of Object.entries(files)) {
+		mkdirSync(join(root, p, ".."), { recursive: true });
+		writeFileSync(join(root, p), c);
+	}
+	return root;
+}
+const submit = (t: TestApp, token: string, sp: string, cid: number, dir: string) => send(t, token, sp, cid, `[[call skill_manage {"action":"submit_draft","dir":${JSON.stringify(dir)}}]]`);
+const count = (t: TestApp, table: string, where = "1=1", ...p: any[]) => t.app.ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`, ...p)!.n;
+const audits = (t: TestApp, action: string) => t.app.ctx.db.all<any>("SELECT * FROM id_audit WHERE action = ?", action);
+
+async function setup() {
+	const t = await startTestApp();
+	wire(t);
+	const alice = await t.user("alice-sd@example.com");
+	return { t, alice };
+}
+
+async function actorFor(t: TestApp, u: { me: any }, sp: string, cid: number, callId: string): Promise<ToolActor> {
+	const principal = (await t.app.ctx.services.get("identity").principalFor(u.me.userId, u.me.orgId))!;
+	return { principal, space: t.app.ctx.services.get("identity").space(sp)!, conversationId: cid, taskId: 1, callId };
+}
+
+test("happy path: agent writes the skill with sandbox_write_file → approval with the frozen detail → approve → personal skill, installed, usable; later workspace edits change nothing", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		await send(t, alice.token, sp, cid, `[[call sandbox_write_file ${JSON.stringify({ path: "weekly/SKILL.md", content: skillMd() })}]]`);
+		await idle(t, alice.token, sp, cid, "write SKILL.md");
+		await send(t, alice.token, sp, cid, `[[call sandbox_write_file ${JSON.stringify({ path: "weekly/references/format.md", content: "# 格式\n三段式。\n" })}]]`);
+		await idle(t, alice.token, sp, cid, "write reference");
+
+		await submit(t, alice.token, sp, cid, "/work/weekly");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		assert.equal(ap.toolName, "skill_manage");
+		assert.equal(ap.risk, "low", "prompt-only skill is low risk");
+		assert.equal(ap.title, "保存为个人技能：weekly-report");
+		assert.match(ap.summary, /保存为仅你可用的个人技能 v1\.0\.0；不会自动执行，也不会发布到商城/);
+		const detail = ap.detail as SkillDraftApprovalDetail;
+		assert.equal(detail.kind, "skill_draft");
+		assert.equal(detail.name, "weekly-report");
+		assert.equal(detail.version, "1.0.0");
+		assert.equal(detail.sourceDir, "weekly");
+		assert.deepEqual(detail.files.map((f) => f.path).sort(), ["SKILL.md", "references/format.md"]);
+		assert.equal(detail.packageSha256.length, 64);
+		assert.equal(count(t, "skill_skills"), 0, "nothing is saved before approval");
+		await decide(t, alice.token, sp, cid, ap.approvalId, "rejected");
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("approve saves exactly the snapshot, whatever happens to the workspace afterwards", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		const root = writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd(), "references/format.md": "# 格式\n三段式。\n" });
+		await submit(t, alice.token, sp, cid, "weekly");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		const detail = ap.detail as SkillDraftApprovalDetail;
+		const svc = skillDraftsFor(t.app.ctx);
+		assert.equal(svc.dto(svc.row(detail.draftId)!).state, "pending");
+
+		// The workspace changes AFTER submit: new body, new version, a new file. None of it may reach the saved skill.
+		writeFileSync(join(root, "SKILL.md"), skillMd({ version: "9.9.9", body: "# 被篡改的内容\n" }));
+		writeFileSync(join(root, "extra.md"), "after submit");
+
+		await decide(t, alice.token, sp, cid, ap.approvalId, "approved");
+		const s = await idle(t, alice.token, sp, cid, "approved run");
+		const res = results(s, "skill_manage")[0];
+		assert.ok(!res.isError, res.text);
+		assert.match(res.text, /已保存为用户的个人技能/);
+		assert.match(res.text, /没有被发布到商城/);
+
+		const row = svc.dto(svc.row(detail.draftId)!);
+		assert.equal(row.state, "saved");
+		assert.ok(row.skillId && row.versionNo === 1);
+		const skills = t.app.ctx.services.get("skills") as Skills;
+		const skill = skills.skill(row.skillId!)!;
+		assert.equal(skill.scope, "personal");
+		assert.equal(skill.owner_user_id, alice.me.userId);
+		const ver = skills.version(skill.id, 1)!;
+		assert.equal(ver.package_sha256, detail.packageSha256, "version identity = the approved snapshot hash");
+		assert.equal(ver.semver, "1.0.0");
+		assert.ok(!ver.instructions.includes("被篡改"));
+		assert.deepEqual((JSON.parse(ver.resources) as { path: string }[]).map((r) => r.path).sort(), ["SKILL.md", "references/format.md"]);
+		// installed and usable for the user
+		const active = await skills.active((await t.app.ctx.services.get("identity").principalFor(alice.me.userId, alice.me.orgId))!, t.app.ctx.services.get("identity").space(sp)!);
+		assert.ok(active.some((a) => a.skill.id === skill.id), "installed and usable");
+		const principal = (await t.app.ctx.services.get("identity").principalFor(alice.me.userId, alice.me.orgId))!;
+		const used = await skills.resolveForUse(principal, "weekly-report", t.app.ctx.services.get("identity").space(sp)!);
+		assert.equal(used.version.package_sha256, detail.packageSha256, "resolves for use at the approved version");
+		assert.match(used.version.instructions, /三段写/);
+		// not published, no submission
+		assert.equal(count(t, "market_submissions", "subject_id = ?", skill.id), 0);
+		assert.equal(skill.listed, 0);
+		// audited
+		assert.equal(audits(t, "skill.draft.submit").length, 1);
+		assert.equal(audits(t, "skill.draft.saved").length, 1);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("reject: nothing is saved, draft is rejected, agent is told", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd() });
+		await submit(t, alice.token, sp, cid, "weekly");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		await decide(t, alice.token, sp, cid, ap.approvalId, "rejected");
+		const s = await idle(t, alice.token, sp, cid, "rejected run");
+		assert.match(results(s, "skill_manage")[0].text, /用户拒绝/);
+		const svc = skillDraftsFor(t.app.ctx);
+		assert.equal(svc.row((ap.detail as SkillDraftApprovalDetail).draftId)!.state, "rejected");
+		assert.equal(count(t, "skill_skills"), 0);
+		assert.equal(count(t, "skill_versions"), 0);
+		assert.equal(audits(t, "skill.draft.rejected").length, 1);
+		assert.equal(audits(t, "skill.draft.saved").length, 0);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("error findings (secret in a file): draft fails, NO approval is opened, the agent gets the findings; invalid manifest likewise", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		writeSkill(t, sp, cid, "leaky", { "SKILL.md": skillMd({ name: "leaky" }), "scripts/run.py": "KEY = 'AKIAABCDEFGHIJKLMNOP'\nprint(KEY)\n" });
+		await submit(t, alice.token, sp, cid, "leaky");
+		let s = await idle(t, alice.token, sp, cid, "failed run");
+		assert.equal(s.approvals.length, 0, "no approval for a package with error findings");
+		const r = results(s, "skill_manage")[0];
+		assert.ok(r.isError);
+		assert.match(r.text, /AWS access key/);
+		assert.match(r.text, /重新调用 skill_manage/);
+		const rows = t.app.ctx.db.all<any>("SELECT * FROM skill_ws_drafts");
+		assert.equal(rows.length, 1);
+		assert.equal(rows[0].state, "failed");
+		assert.ok((JSON.parse(rows[0].detail) as SkillDraftApprovalDetail).findings.some((f) => f.code === "secret_in_package"));
+		assert.equal(count(t, "skill_skills"), 0);
+		assert.equal(audits(t, "skill.draft.failed").length, 1);
+
+		// Fix and resubmit (new call → new draft) → now it goes to approval.
+		writeSkill(t, sp, cid, "leaky", { "scripts/run.py": "print('ok')\n" });
+		await submit(t, alice.token, sp, cid, "leaky");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		assert.equal(ap.risk, "medium", "scripts → medium");
+		assert.ok((ap.detail as SkillDraftApprovalDetail).files.find((f) => f.path === "scripts/run.py")?.executable);
+
+		// manifest missing → failed, not an approval
+		writeSkill(t, sp, cid, "nomd", { "readme.txt": "x" });
+		await decide(t, alice.token, sp, cid, ap.approvalId, "rejected");
+		await idle(t, alice.token, sp, cid, "rejected");
+		await submit(t, alice.token, sp, cid, "nomd");
+		s = await idle(t, alice.token, sp, cid, "nomd run");
+		assert.match(results(s, "skill_manage").at(-1).text, /SKILL\.md/);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("high risk: network use in a script is flagged high in the approval", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		writeSkill(t, sp, cid, "net", { "SKILL.md": skillMd({ name: "net-skill" }), "scripts/get.py": "import requests\nrequests.get('http://example.com')\n" });
+		await submit(t, alice.token, sp, cid, "net");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		assert.equal(ap.risk, "high");
+		assert.ok((ap.detail as SkillDraftApprovalDetail).findings.some((f) => f.code === "network_use"));
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("snapshotDir refuses ../, absolute, drive letters, NUL, symlinked file / dir / parent, fifo, oversize file, too many files", () => {
+	const root = mkdtempSync(join(tmpdir(), "wr-sd-"));
+	const wd = join(root, "work");
+	const outside = join(root, "outside");
+	mkdirSync(wd);
+	mkdirSync(outside);
+	writeFileSync(join(outside, "SKILL.md"), "secret outside");
+	try {
+		mkdirSync(join(wd, "ok"));
+		writeFileSync(join(wd, "ok", "SKILL.md"), "hi");
+		assert.deepEqual(snapshotDir(wd, "ok").files.map((f) => f.path), ["SKILL.md"]);
+		assert.equal(snapshotDir(wd, "/work/ok").rel, "ok", "the /work mount prefix is accepted");
+
+		const code = (dir: unknown) => {
+			try {
+				snapshotDir(wd, dir);
+			} catch (e: any) {
+				return e.code as string;
+			}
+			return "NO_ERROR";
+		};
+		for (const d of ["../outside", "ok/../../outside", "/etc", "/etc/passwd", "C:/Windows", "c:\\x", "ok\\..\\..", "a\0b", "", ".", "/work", "/workX/ok", 42, undefined]) assert.equal(code(d), "bad_dir", `dir ${JSON.stringify(d)}`);
+		assert.equal(code("missing"), "dir_not_found");
+
+		// symlinked dir (pointing outside, and pointing inside), symlinked parent
+		symlinkSync(outside, join(wd, "linkdir"));
+		assert.equal(code("linkdir"), "symlink_refused");
+		symlinkSync(join(wd, "ok"), join(wd, "inside-link"));
+		assert.equal(code("inside-link"), "symlink_refused", "even a link that stays inside the workspace is refused");
+		mkdirSync(join(wd, "p"));
+		symlinkSync(outside, join(wd, "p", "sub"));
+		assert.equal(code("p/sub"), "symlink_refused");
+		symlinkSync(wd, join(wd, "up"));
+		assert.equal(code("up/ok"), "symlink_refused", "symlinked parent");
+
+		// symlinked file inside the package, dangling symlink, symlinked subdir
+		mkdirSync(join(wd, "sl"));
+		writeFileSync(join(wd, "sl", "SKILL.md"), "hi");
+		symlinkSync(join(outside, "SKILL.md"), join(wd, "sl", "notes.md"));
+		assert.equal(code("sl"), "symlink_refused");
+		rmSync(join(wd, "sl", "notes.md"));
+		symlinkSync(join(wd, "nope"), join(wd, "sl", "dangling.md"));
+		assert.equal(code("sl"), "symlink_refused");
+		rmSync(join(wd, "sl", "dangling.md"));
+		symlinkSync(outside, join(wd, "sl", "refs"));
+		assert.equal(code("sl"), "symlink_refused");
+		rmSync(join(wd, "sl", "refs"));
+		assert.equal(code("sl"), "NO_ERROR");
+
+		// fifo
+		mkdirSync(join(wd, "ff"));
+		writeFileSync(join(wd, "ff", "SKILL.md"), "hi");
+		execFileSync("mkfifo", [join(wd, "ff", "pipe")]);
+		assert.equal(code("ff"), "special_file");
+
+		// limits
+		mkdirSync(join(wd, "big"));
+		writeFileSync(join(wd, "big", "SKILL.md"), Buffer.alloc(LIMITS.fileBytes + 1, 97));
+		assert.equal(code("big"), "file_too_large");
+		mkdirSync(join(wd, "many"));
+		for (let i = 0; i <= LIMITS.files; i++) writeFileSync(join(wd, "many", `f${i}.md`), "x");
+		assert.equal(code("many"), "too_many_files");
+		mkdirSync(join(wd, "total"));
+		for (let i = 0; i < 6; i++) writeFileSync(join(wd, "total", `f${i}.bin`), Buffer.alloc(LIMITS.fileBytes, 97));
+		assert.equal(code("total"), "package_too_large");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("through the agent: a symlinked file and ../ become failed drafts with no approval and no skill", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		const root = writeSkill(t, sp, cid, "sneaky", { "SKILL.md": skillMd({ name: "sneaky" }) });
+		writeFileSync(join(t.dataDir, "host-secret.txt"), "TOP SECRET");
+		symlinkSync(join(t.dataDir, "host-secret.txt"), join(root, "leak.md"));
+		await submit(t, alice.token, sp, cid, "sneaky");
+		let s = await idle(t, alice.token, sp, cid, "symlink run");
+		assert.match(results(s, "skill_manage")[0].text, /符号链接/);
+		await submit(t, alice.token, sp, cid, "../c999/x");
+		s = await idle(t, alice.token, sp, cid, "dotdot run");
+		assert.match(results(s, "skill_manage").at(-1).text, /\.\./);
+		assert.equal(s.approvals.length, 0);
+		assert.equal(count(t, "skill_skills"), 0);
+		for (const r of t.app.ctx.db.all<any>("SELECT detail, files FROM skill_ws_drafts")) assert.ok(!r.detail.includes("TOP SECRET") && r.files === "[]");
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("another user's / conversation's workspace is unreachable; drafts are owner-only", async () => {
+	const { t, alice } = await setup();
+	try {
+		const bob = await orgMember(t, alice, "bob-sd@example.com");
+		const a = await newConv(t, alice.token);
+		const a2 = await newConv(t, alice.token);
+		const b = await newConv(t, bob.token);
+		writeSkill(t, a.sp, a.cid, "weekly", { "SKILL.md": skillMd() });
+		// bob names alice's directory / paths that climb into her space: not found in HIS workspace
+		await submit(t, bob.token, b.sp, b.cid, "weekly");
+		let s = await idle(t, bob.token, b.sp, b.cid, "bob run");
+		assert.match(results(s, "skill_manage")[0].text, /目录不存在/);
+		await submit(t, bob.token, b.sp, b.cid, `../../../${a.sp}/sandbox/c${a.cid}/weekly`);
+		s = await idle(t, bob.token, b.sp, b.cid, "bob run 2");
+		assert.ok(results(s, "skill_manage").at(-1).isError);
+		assert.equal(s.approvals.length, 0);
+		// alice's other conversation does not see it either
+		await submit(t, alice.token, a2.sp, a2.cid, "weekly");
+		s = await idle(t, alice.token, a2.sp, a2.cid, "other conv run");
+		assert.match(results(s, "skill_manage")[0].text, /目录不存在/);
+
+		// owner-only drafts
+		await submit(t, alice.token, a.sp, a.cid, "weekly");
+		const ap = await pendingApproval(t, alice.token, a.sp, a.cid);
+		const id = (ap.detail as SkillDraftApprovalDetail).draftId;
+		const svc = skillDraftsFor(t.app.ctx);
+		assert.equal(svc.forOwner((await t.app.ctx.services.get("identity").principalFor(alice.me.userId, alice.me.orgId))!, id).id, id);
+		assert.throws(() => svc.forOwner({ orgId: alice.me.orgId, userId: bob.me.userId } as any, id), /不存在/);
+		assert.throws(() => svc.forOwner({ orgId: "other-org", userId: alice.me.userId } as any, id), /不存在/);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("idempotency: same callId twice → one draft, frozen snapshot reused (workspace not re-read), one skill; save twice and save after a lost row update → one skill", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		const root = writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd() });
+		const svc = skillDraftsFor(t.app.ctx);
+		const actor = await actorFor(t, alice, sp, cid, "call-1");
+		const first = await svc.snapshot(actor, "weekly");
+		assert.ok(first.created);
+		writeFileSync(join(root, "SKILL.md"), skillMd({ body: "changed" }));
+		rmSync(root, { recursive: true });
+		const again = await svc.snapshot(actor, "weekly"); // dir is gone: a rerun must not touch the workspace
+		assert.equal(again.created, false);
+		assert.equal(again.row.id, first.row.id);
+		assert.equal(again.row.package_sha256, first.row.package_sha256);
+		assert.equal(count(t, "skill_ws_drafts"), 1);
+		assert.equal(audits(t, "skill.draft.submit").length, 1);
+		const approval = svc.approvalRequest(again.row, alice.me.orgId);
+		assert.equal(approval.risk, "low");
+
+		const p = actor.principal;
+		const s1 = await svc.save(p, first.row.id);
+		const s2 = await svc.save(p, first.row.id);
+		assert.equal(s1.state, "saved");
+		assert.equal(s2.skill_id, s1.skill_id);
+		assert.equal(count(t, "skill_skills"), 1);
+		assert.equal(count(t, "skill_versions"), 1);
+		assert.equal(audits(t, "skill.draft.saved").length, 1);
+
+		// Crash between Market.upload and the row update: the version exists but the draft is still pending → adopted, not duplicated.
+		const a2 = await actorFor(t, alice, sp, cid, "call-2");
+		writeSkill(t, sp, cid, "other", { "SKILL.md": skillMd({ name: "other-skill" }) });
+		const d2 = (await svc.snapshot(a2, "other")).row;
+		const market = t.app.ctx.services.get("market") as Market;
+		const files = JSON.parse(d2.files).map((f: any) => ({ path: f.path, content: Buffer.from(t.app.ctx.blobs.get(f.sha256)!).toString("base64"), encoding: "base64" as const }));
+		const up = await market.upload(p, { files });
+		const healed = await svc.save(p, d2.id);
+		assert.equal(healed.state, "saved");
+		assert.equal(healed.skill_id, up.skill.id);
+		assert.equal(count(t, "skill_skills", "slug = 'other-skill'"), 1);
+		assert.equal(count(t, "skill_versions", "skill_id = ?", up.skill.id), 1);
+
+		// A new version of an owned skill goes to the same skill (updatesSkill) and bumps the version number.
+		const a3 = await actorFor(t, alice, sp, cid, "call-3");
+		writeSkill(t, sp, cid, "weekly2", { "SKILL.md": skillMd({ version: "1.1.0", body: "# v2\n三段式，加一段「亮点」。" }) });
+		const d3 = (await svc.snapshot(a3, "weekly2")).row;
+		const det3 = JSON.parse(d3.detail) as SkillDraftApprovalDetail;
+		assert.equal(det3.updatesSkill?.id, s1.skill_id);
+		assert.equal(det3.updatesSkill?.fromVersion, "1.0.0");
+		assert.match(svc.approvalRequest(d3, alice.me.orgId).summary, /新增版本 v1\.1\.0/);
+		const s3 = await svc.save(p, d3.id);
+		assert.equal(s3.skill_id, s1.skill_id);
+		assert.equal(s3.version_no, 2);
+
+		// Same semver again → clean failure (the agent must bump the version), nothing duplicated.
+		const a4 = await actorFor(t, alice, sp, cid, "call-4");
+		writeSkill(t, sp, cid, "weekly3", { "SKILL.md": skillMd({ version: "1.1.0", body: "# 另一个内容" }) });
+		const s4 = await svc.save(p, (await svc.snapshot(a4, "weekly3")).row.id);
+		assert.equal(s4.state, "failed");
+		assert.match(s4.error!, /version_exists/);
+		assert.equal(count(t, "skill_versions", "skill_id = ?", s1.skill_id!), 2);
+		void sha256Hex;
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("restart while the approval is pending: still pending after restart, approve once → exactly one draft, one approval, one skill", async () => {
+	const dataDir = mkdtempSync(join(tmpdir(), "wr-sd-restart-"));
+	let t = await startTestApp({ dataDir });
+	try {
+		wire(t);
+		const alice = await t.user("alice-restart@example.com");
+		const { sp, cid } = await newConv(t, alice.token);
+		writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd() });
+		await submit(t, alice.token, sp, cid, "weekly");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		await t.stop();
+
+		t = await startTestApp({ dataDir });
+		wire(t);
+		const login = await t.json("POST", "/api/auth/login", { json: { email: "alice-restart@example.com", password: "password123" } });
+		const ap2 = await pendingApproval(t, login.token, sp, cid);
+		assert.equal(ap2.approvalId, ap.approvalId, "same durable approval");
+		assert.equal((ap2.detail as SkillDraftApprovalDetail).packageSha256, (ap.detail as SkillDraftApprovalDetail).packageSha256);
+		assert.equal(count(t, "skill_skills"), 0);
+		await decide(t, login.token, sp, cid, ap2.approvalId, "approved");
+		const s = await idle(t, login.token, sp, cid, "approved after restart");
+		assert.equal(s.approvals.length, 1, "one approval");
+		assert.equal(count(t, "skill_ws_drafts"), 1);
+		assert.equal(count(t, "skill_skills"), 1);
+		assert.equal(count(t, "skill_versions"), 1);
+		assert.equal(count(t, "skill_ws_drafts", "state = 'saved'"), 1);
+		assert.match(results(s, "skill_manage").at(-1).text, /已保存/);
+		assert.equal(audits(t, "skill.draft.saved").length, 1);
+	} finally {
+		await t.stop();
+		rmSync(dataDir, { recursive: true, force: true });
+	}
+});
+
+test("org policy: review → saved but pending review (not usable); disabled → refused before any draft or approval", async () => {
+	const { t, alice } = await setup();
+	try {
+		const bob = await orgMember(t, alice, "bob-pol@example.com");
+		const market = t.app.ctx.services.get("market") as Market;
+		await t.json("PUT", "/api/market/policy", { token: alice.token, json: { personalSkill: "review" } });
+		const { sp, cid } = await newConv(t, bob.token);
+		writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd() });
+		await submit(t, bob.token, sp, cid, "weekly");
+		const ap = await pendingApproval(t, bob.token, sp, cid);
+		assert.match(ap.summary, /组织策略要求审核/);
+		await decide(t, bob.token, sp, cid, ap.approvalId, "approved");
+		const s = await idle(t, bob.token, sp, cid, "review run");
+		assert.match(results(s, "skill_manage")[0].text, /通过审核之前它还不能使用/);
+		const skillId = skillDraftsFor(t.app.ctx).row((ap.detail as SkillDraftApprovalDetail).draftId)!.skill_id!;
+		assert.ok(skillId);
+		assert.equal(t.app.ctx.db.get<any>("SELECT state FROM market_submissions WHERE subject_id = ?", skillId)?.state, "pending_review");
+		const skills = t.app.ctx.services.get("skills") as Skills;
+		const active = await skills.active((await t.app.ctx.services.get("identity").principalFor(bob.me.userId, bob.me.orgId))!, t.app.ctx.services.get("identity").space(sp)!);
+		assert.ok(!active.some((a) => a.skill.id === skillId), "pending-review skill is not usable");
+
+		await t.json("PUT", "/api/market/policy", { token: alice.token, json: { personalSkill: "disabled" } });
+		assert.equal(market.policy(alice.me.orgId).personalSkill, "disabled");
+		const before = count(t, "skill_ws_drafts");
+		writeSkill(t, sp, cid, "second", { "SKILL.md": skillMd({ name: "second-skill" }) });
+		await submit(t, bob.token, sp, cid, "second");
+		const s2 = await idle(t, bob.token, sp, cid, "disabled run");
+		const r = results(s2, "skill_manage").at(-1);
+		assert.ok(r.isError);
+		assert.match(r.text, /不允许个人技能/);
+		assert.equal(count(t, "skill_ws_drafts"), before, "no draft row");
+		assert.equal(s2.approvals.filter((a: any) => a.status === "pending").length, 0);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("get_draft via the agent, and GET /skill-drafts/:id (owner only) returns the contract DTO", async () => {
+	const { t, alice } = await setup();
+	try {
+		const bob = await orgMember(t, alice, "bob-get@example.com");
+		const { sp, cid } = await newConv(t, alice.token);
+		writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd() });
+		await submit(t, alice.token, sp, cid, "weekly");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		const id = (ap.detail as SkillDraftApprovalDetail).draftId;
+		await decide(t, alice.token, sp, cid, ap.approvalId, "rejected");
+		await idle(t, alice.token, sp, cid, "rejected");
+		await send(t, alice.token, sp, cid, `[[call skill_manage {"action":"get_draft","draftId":"${id}"}]]`);
+		const s = await idle(t, alice.token, sp, cid, "get_draft run");
+		assert.match(results(s, "skill_manage").at(-1).text, /用户拒绝/);
+		// another user asks for the same id through the agent: not found
+		const b = await newConv(t, bob.token);
+		await send(t, bob.token, b.sp, b.cid, `[[call skill_manage {"action":"get_draft","draftId":"${id}"}]]`);
+		const sb = await idle(t, bob.token, b.sp, b.cid, "bob get_draft");
+		assert.ok(results(sb, "skill_manage")[0].isError);
+
+		// HTTP route, mounted on a stand-alone Hono app with the principal middleware (module.ts mounts it under /api).
+		const identity = t.app.ctx.services.get("identity");
+		const get = async (u: { me: any }, rid: string) => {
+			const h = new Hono<AppEnv>();
+			const principal = (await identity.principalFor(u.me.userId, u.me.orgId))!;
+			h.use("*", async (c, next) => {
+				c.set("principal", principal);
+				await next();
+			});
+			h.onError((e: any, c) => c.json({ error: { code: e.code } }, e.status ?? 500));
+			registerSkillDraftRoutes(h, t.app.ctx);
+			return h.request(`/skill-drafts/${rid}`);
+		};
+		const ok = await get(alice, id);
+		assert.equal(ok.status, 200);
+		const { draft } = (await ok.json()) as any;
+		assert.deepEqual(Object.keys(draft).sort(), ["conversationId", "createdAt", "decidedAt", "detail", "id", "spaceId", "state"]);
+		assert.equal(draft.state, "rejected");
+		assert.equal(draft.detail.kind, "skill_draft");
+		assert.equal((await get(bob, id)).status, 404, "other user, same org");
+		assert.equal((await get(alice, "skd_nope")).status, 404);
+	} finally {
+		await t.dispose();
+	}
+});
