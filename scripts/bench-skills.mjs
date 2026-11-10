@@ -15,6 +15,7 @@ const arg = (k, d) => {
 };
 const skillCounts = arg("skills", "0,5,32,40").split(",").map(Number);
 const runs = Math.max(10, Number(arg("runs", "12")));
+const loadedK = Number(arg("loaded", "0")) || 0;
 const root = resolve(arg("root", join(dirname(fileURLToPath(import.meta.url)), "..")));
 const out = arg("out", join(root, "artifacts/bench/skills-bench.json"));
 const imp = (p) => import(pathToFileURL(join(root, p)).href);
@@ -93,6 +94,14 @@ async function measureOne(N) {
 			res.notes.push(`driver mount probe failed: ${e.message}`);
 		}
 
+		// --loaded K (on-demand code): mark the first K installed skills as loaded in the measured conversation (1), as `skill load` would.
+		if (loadedK > 0) {
+			if (skillsSvc?.markLoaded) {
+				const act = (await skillsSvc.active(principal, space)).slice(0, loadedK);
+				for (const a of act) skillsSvc.markLoaded(space.id, 1, a.skill, a.version);
+				res.loadedInConversation = act.length;
+			} else res.notes.push("skills.markLoaded unavailable (pre on-demand code): --loaded ignored");
+		}
 		if (caps.state === "ready") {
 			const runOnce = async () => {
 				const t0 = performance.now();

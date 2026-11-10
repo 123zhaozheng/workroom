@@ -1,0 +1,137 @@
+{
+  "kind": "skills-bench",
+  "date": "2026-11-10T15:39:00.320Z",
+  "commit": "c8d6d7f",
+  "conditions": {
+    "node": "v22.23.4",
+    "cpus": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "platform": "linux 6.18.44-fc-v338",
+    "loadavg": [
+      1.23,
+      1.73,
+      1.09
+    ],
+    "uptime": "15:39:00 up 18 min,  0 user,  load average: 1.23, 1.73, 1.09",
+    "driver": {
+      "id": "namespaces",
+      "state": "ready",
+      "label": "Linux 命名空间",
+      "detail": "自动：此主机支持 Linux 命名空间",
+      "mounts": true
+    },
+    "runsPerPoint": 20
+  },
+  "note": "System-prompt/tool-list size not applicable to the baseline (skills are not in the prompt there); future code may add promptBytes.",
+  "results": [
+    {
+      "skills": 0,
+      "ok": true,
+      "notes": [],
+      "driver": {
+        "id": "namespaces",
+        "state": "ready",
+        "label": "Linux 命名空间",
+        "detail": "自动：此主机支持 Linux 命名空间",
+        "mounts": true
+      },
+      "activeSkills": 0,
+      "activeMs": 0.5,
+      "mountPlanColdMs": 0.2,
+      "mountPlanMounts": 0,
+      "mountPlanWarmMedianMs": 0.1,
+      "coldMs": 107.5,
+      "mountsPassedToDriver": 0,
+      "warm": {
+        "runs": 20,
+        "medianMs": 98.2,
+        "p95Ms": 114,
+        "minMs": 90.3,
+        "maxMs": 116.3
+      },
+      "mountDirsOnDisk": 0
+    },
+    {
+      "skills": 5,
+      "ok": true,
+      "notes": [],
+      "driver": {
+        "id": "namespaces",
+        "state": "ready",
+        "label": "Linux 命名空间",
+        "detail": "自动：此主机支持 Linux 命名空间",
+        "mounts": true
+      },
+      "activeSkills": 5,
+      "activeMs": 1.5,
+      "mountPlanColdMs": 2.8,
+      "mountPlanMounts": 5,
+      "mountPlanWarmMedianMs": 0.6,
+      "coldMs": 91.7,
+      "mountsPassedToDriver": 0,
+      "warm": {
+        "runs": 20,
+        "medianMs": 93.6,
+        "p95Ms": 101.8,
+        "minMs": 88.3,
+        "maxMs": 102.5
+      },
+      "mountDirsOnDisk": 0
+    },
+    {
+      "skills": 32,
+      "ok": true,
+      "notes": [],
+      "driver": {
+        "id": "namespaces",
+        "state": "ready",
+        "label": "Linux 命名空间",
+        "detail": "自动：此主机支持 Linux 命名空间",
+        "mounts": true
+      },
+      "activeSkills": 32,
+      "activeMs": 2.4,
+      "mountPlanColdMs": 8.1,
+      "mountPlanMounts": 32,
+      "mountPlanWarmMedianMs": 3.2,
+      "coldMs": 103.1,
+      "mountsPassedToDriver": 0,
+      "warm": {
+        "runs": 20,
+        "medianMs": 92,
+        "p95Ms": 101.5,
+        "minMs": 88.8,
+        "maxMs": 106.6
+      },
+      "mountDirsOnDisk": 0
+    },
+    {
+      "skills": 40,
+      "ok": true,
+      "notes": [],
+      "driver": {
+        "id": "namespaces",
+        "state": "ready",
+        "label": "Linux 命名空间",
+        "detail": "自动：此主机支持 Linux 命名空间",
+        "mounts": true
+      },
+      "activeSkills": 40,
+      "activeMs": 2.5,
+      "mountPlanColdMs": 9.9,
+      "mountPlanMounts": 32,
+      "mountPlanWarmMedianMs": 3.9,
+      "coldMs": 89.2,
+      "mountsPassedToDriver": 0,
+      "warm": {
+        "runs": 20,
+        "medianMs": 92.2,
+        "p95Ms": 103,
+        "minMs": 87.6,
+        "maxMs": 104.7
+      },
+      "mountDirsOnDisk": 0
+    }
+  ],
+  "notes": []
+}
