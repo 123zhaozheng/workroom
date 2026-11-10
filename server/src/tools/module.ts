@@ -12,6 +12,7 @@ import { createSandboxExtension } from "./sandbox-tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
 import { Market, MARKET_MIGRATIONS } from "./market.ts"; // marketplace group
+import { createSkillManageExtension, registerSkillDraftRoutes, SKILL_DRAFT_MIGRATIONS } from "./skill-drafts.ts"; // round 6: skills from conversation
 import { McpMarket, MCP_MARKET_MIGRATIONS } from "./mcp-market.ts"; // marketplace group
 import { registerMarketRoutes } from "./market-routes.ts"; // marketplace group
 import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
@@ -38,7 +39,7 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	};
 }
 
-const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
+const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill", "skill_manage", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
 /** Tool names a skill may require: the runtime registry when available, else D's own tools plus discovered MCP tools. */
 export function knownToolNames(ctx: AppContext): string[] {
 	const names = new Set(D_TOOLS);
@@ -64,6 +65,7 @@ export const toolsModule: WorkroomModule = {
 		...POLICY_MIGRATIONS.map((m) => ({ ...m, version: m.version + 500 })),
 		...MARKET_MIGRATIONS.map((m) => ({ ...m, version: m.version + 600 })), // marketplace group
 		...MCP_MARKET_MIGRATIONS.map((m) => ({ ...m, version: m.version + 700 })), // marketplace group
+		...SKILL_DRAFT_MIGRATIONS.map((m) => ({ ...m, version: m.version + 800 })), // skill drafts (round 6)
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -99,7 +101,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		(ctx.services.get("mcp") as McpManager).start();
@@ -272,6 +274,7 @@ export const toolsModule: WorkroomModule = {
 		const skills = ctx.services.get("skills") as Skills;
 		const market = ctx.services.get("market") as Market;
 		registerMarketRoutes(api, ctx); // marketplace group: /market/*, per-user connector credentials and tool settings
+		registerSkillDraftRoutes(api, ctx); // GET /api/skill-drafts/:id (owner only)
 		(ctx.services.get("identity") as any).registerResolver?.("skill", (p: Principal, action: string, res: { id: string }) => skills.decide(p, action, res.id));
 		const skillOr404 = async (c: any, action: "read" | "use" | "write") => {
 			const p = principalOf(c);
