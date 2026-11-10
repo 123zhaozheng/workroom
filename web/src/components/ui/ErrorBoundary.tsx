@@ -18,9 +18,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode; label?: stri
 		return (
 			<div role="alert" data-testid="render-error" className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
 				<AlertTriangle className="size-5 text-danger" />
-				<div className="text-[15px] font-medium">{this.props.label ?? "这部分界面"}出错了</div>
-				<div className="max-w-md break-words text-[13px] text-fg-muted">{this.state.error.message}</div>
-				<button className="mt-2 text-[13px] text-info hover:underline" onClick={() => this.setState({ error: null })}>
+				<div className="text-sm font-medium">{this.props.label ?? "这部分界面"}出错了</div>
+				<div className="max-w-md break-words text-sm text-fg-muted">{this.state.error.message}</div>
+				<button className="mt-2 text-sm text-info hover:underline" onClick={() => this.setState({ error: null })}>
 					重试
 				</button>
 			</div>

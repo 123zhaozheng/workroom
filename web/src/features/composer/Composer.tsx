@@ -15,9 +15,10 @@ import { Tip } from "@/components/ui/overlay";
 import { FileTile, RefTile } from "@/components/file/FileTile";
 import { FilePickerDialog, KbPickerDialog, SkillPickerDialog, useUsableSkills } from "@/features/chat/pickers";
 import { AttachMenu } from "./AttachMenu";
-import { ModelSwitcher } from "./ModelSwitcher";
+import { ModelChipNote, ModelSwitcher } from "./ModelSwitcher";
 import { readDefaultChoice, resolveChoice, supportsThinking, useModels, writeDefaultChoice, type ModelChoice, type ModelInfo } from "./models";
-import { useAttachments } from "./useAttachments";
+import { MAX_FILES, useAttachments } from "./useAttachments";
+import { MAX_UPLOAD_BYTES } from "./upload";
 
 export interface ComposerSubmit {
 	text: string;
@@ -67,10 +68,10 @@ interface Props {
 type KbChip = { ref: KnowledgeRef };
 
 const SLASH_ITEMS = [
-	{ id: "kb", label: "引用知识库", hint: "把知识库作为本条消息的资料", icon: BookOpen },
-	{ id: "file", label: "引用文件库中的文件", hint: "附加已有文件的某个版本", icon: Folders },
-	{ id: "upload", label: "上传文件", hint: "上传后作为附件", icon: Upload },
-	{ id: "skill", label: "使用技能", hint: "按已启用的技能完成任务", icon: Sparkles },
+	{ id: "kb", label: "引用知识库", icon: BookOpen },
+	{ id: "file", label: "从文件库选择", icon: Folders },
+	{ id: "upload", label: "上传文件", icon: Upload },
+	{ id: "skill", label: "使用技能", icon: Sparkles },
 ] as const;
 type SlashId = (typeof SLASH_ITEMS)[number]["id"];
 
@@ -84,6 +85,14 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 	const [err, setErr] = useState<string>();
 	const [steerMode, setSteerMode] = useState<"steer" | "followUp">("steer");
 	const [picker, setPicker] = useState<"kb" | "file" | "skill" | null>(null);
+	const closePicker = (o: boolean) => {
+		if (o) return;
+		setPicker(null);
+		// the menu item that opened the picker is gone: keyboard users land back in the message box
+		setTimeout(() => {
+			if (!document.activeElement || document.activeElement === document.body) ta.current?.focus();
+		}, 0);
+	};
 	const [slash, setSlash] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
 	const [dragging, setDragging] = useState(false);
 	const [dropEl, setDropEl] = useState<HTMLElement | null>(null);
@@ -91,11 +100,12 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 	const box = useRef<HTMLDivElement>(null);
 	const root = useRef<HTMLDivElement>(null);
 	const fileInput = useRef<HTMLInputElement>(null);
+	const row = useRef<HTMLDivElement>(null);
 	const composing = useRef(false);
 	const skills = useUsableSkills();
 
 	// ---- model state
-	const { models, groups, defaultModelId } = useModels();
+	const { models, groups, defaultModelId, loading: modelsLoading, unavailable: modelsUnavailable, error: modelsError } = useModels();
 	const [choice, setChoice] = useState<ModelChoice>(readDefaultChoice);
 	const bound = model?.actual ? models.find((m) => m.ref && m.ref.provider === model.actual!.provider && m.ref.modelId === model.actual!.modelId) : undefined;
 	const resolved = resolveChoice(models, choice, defaultModelId);
@@ -280,13 +290,26 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 		setTimeout(() => ta.current?.focus(), 0);
 	}, []);
 	const showRow = att.items.length > 0 || kbs.length > 0;
+	// the newest card (and any failure on it) stays in view when the list scrolls
+	useEffect(() => {
+		if (row.current) row.current.scrollTop = row.current.scrollHeight;
+	}, [att.items.length, att.items.map((i) => i.status).join(), kbs.length]);
 
 	const modelDisabled = !!modelLocked || disabled;
+	const menuSide = variant === "home" ? "bottom" : "top";
 	const switcher =
-		hideModel || (!models.length && !model?.label) ? null : modelLocked ? (
-			<span data-testid="model-locked" className="inline-flex h-8 max-w-[220px] items-center truncate px-2 text-[13px] text-fg-subtle" title={modelLocked}>
+		hideModel ? null : modelLocked ? (
+			<span data-testid="model-locked" className="inline-flex h-9 max-w-[200px] items-center truncate px-2.5 text-sm text-fg-muted sm:h-8 sm:max-w-[240px]" title={modelLocked}>
 				{modelLocked}
 			</span>
+		) : !models.length && !model?.label ? (
+			modelsLoading ? (
+				<span aria-label="正在加载模型" className="h-8 w-24 rounded-lg bg-surface-2 wr-pulse" />
+			) : modelsError || modelsUnavailable ? (
+				<ModelChipNote>模型列表加载失败</ModelChipNote>
+			) : (
+				<ModelChipNote>暂无可用模型</ModelChipNote>
+			)
 		) : (
 			<ModelSwitcher
 				groups={groups}
@@ -296,30 +319,43 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 				onSelect={pickModel}
 				onThinking={pickThinking}
 				disabled={modelDisabled}
+				side={menuSide}
 			/>
 		);
+
+	const stopShown = !!(busy && onStop);
+	// while a run works: no text → stop is the primary button; with text → send (steer) is primary and stop turns secondary
+	const stopPrimary = stopShown && !hasContent;
+	const sendTip = att.failed ? "有文件上传失败：请重试或移除" : att.uploading ? "文件上传完成后才能发送" : busy ? (steerMode === "steer" ? "插话" : "加入队列") : hasContent ? "发送" : "输入内容后发送";
+	const slashId = "composer-slash";
 
 	return (
 		<div ref={root} className="relative">
 			{slash.open ? (
-				<div role="listbox" aria-label="斜杠菜单" data-testid="slash-menu" className="absolute bottom-full left-0 z-20 mb-2 w-72 rounded-xl border border-border bg-surface p-1 shadow-pop wr-fade-in">
+				<div
+					role="listbox"
+					id={slashId}
+					aria-label="插入引用"
+					data-testid="slash-menu"
+					className={cn("absolute left-0 z-20 w-64 max-w-full rounded-xl border border-border bg-surface p-1 text-fg shadow-pop wr-fade-in", variant === "home" ? "top-full mt-2" : "bottom-full mb-2")}
+				>
 					<div className="px-2.5 pb-1 pt-1.5 text-xs text-fg-subtle">插入引用</div>
 					{slashItems.map((it, i) => (
 						<button
 							key={it.id}
+							id={`${slashId}-${it.id}`}
+							type="button"
+							tabIndex={-1}
 							role="option"
 							aria-selected={i === slash.index}
 							onMouseDown={(e) => {
 								e.preventDefault();
 								runSlash(it.id);
 							}}
-							className={cn("flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left", i === slash.index ? "bg-surface-2" : "hover:bg-surface-2")}
+							className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm", i === slash.index ? "bg-surface-2" : "hover:bg-surface-2")}
 						>
-							<it.icon className="mt-0.5 size-4 text-fg-muted" />
-							<span>
-								<span className="block text-sm">{it.label}</span>
-								<span className="block text-xs text-fg-subtle">{it.hint}</span>
-							</span>
+							<it.icon aria-hidden className="size-4 text-fg-muted" />
+							{it.label}
 						</button>
 					))}
 				</div>
@@ -328,11 +364,16 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 				ref={box}
 				data-testid="composer"
 				data-variant={variant}
+				data-disabled={disabled ? "true" : undefined}
 				data-dragging={dragging ? "true" : undefined}
-				className={cn("rounded-[20px] border bg-surface px-3 pb-2 pt-3 shadow-composer transition-colors focus-within:border-border-strong", dragging ? "border-border-strong" : "border-border")}
+				className={cn(
+					"rounded-2xl border px-3 pb-2.5 pt-3 shadow-composer transition-colors focus-within:border-border-strong",
+					disabled ? "bg-surface-2" : "bg-surface",
+					dragging ? "border-border-strong" : "border-border",
+				)}
 			>
 				{showRow ? (
-					<div data-testid="attachments" aria-label="已添加" className="wr-scroll mb-2.5 flex max-h-[150px] gap-2 overflow-x-auto pb-0.5 max-sm:flex-nowrap sm:flex-wrap sm:overflow-y-auto sm:overflow-x-hidden">
+					<div ref={row} data-testid="attachments" aria-label="已添加" role="group" className="wr-scroll mb-2.5 flex max-h-[184px] flex-wrap gap-2 overflow-y-auto overflow-x-hidden">
 						{att.items.map((a) => (
 							<FileTile
 								key={a.key}
@@ -346,11 +387,12 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 								error={a.error}
 								note={a.source === "library" ? "来自文件库" : undefined}
 								onRemove={() => att.remove(a.key)}
-								onRetry={a.status === "failed" && !(a.size && a.size > 100 * 1024 * 1024) ? () => att.retry(a.key) : undefined}
+								onRetry={a.status === "failed" && !(a.size && a.size > MAX_UPLOAD_BYTES) ? () => att.retry(a.key) : undefined}
+								className="max-sm:w-full"
 							/>
 						))}
 						{kbs.map((k) => (
-							<RefTile key={k.ref.kbId + (k.ref.docId ?? "")} testId="chip-kb" icon={<BookOpen />} label="知识库" name={k.ref.name} onRemove={() => setKbs((cs) => cs.filter((x) => x !== k))} />
+							<RefTile key={k.ref.kbId + (k.ref.docId ?? "")} testId="chip-kb" icon={<BookOpen />} label="知识库" name={k.ref.name} onRemove={() => setKbs((cs) => cs.filter((x) => x !== k))} className="max-sm:w-full" />
 						))}
 					</div>
 				) : null}
@@ -358,6 +400,8 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 					ref={ta}
 					data-testid="composer-input"
 					aria-label="输入消息"
+					aria-controls={slash.open ? slashId : undefined}
+					aria-activedescendant={slash.open && slashItems[slash.index] ? `${slashId}-${slashItems[slash.index]!.id}` : undefined}
 					autoFocus={autoFocus}
 					rows={2}
 					value={text}
@@ -368,10 +412,10 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 					onCompositionStart={() => (composing.current = true)}
 					onCompositionEnd={() => (composing.current = false)}
 					onBlur={() => setTimeout(() => setSlash({ open: false, index: 0 }), 120)}
-					placeholder={disabled ? disabledReason : (placeholder ?? (busy ? "补充说明或调整方向（插话），回车发送" : "说说要完成的事，输入 / 引用资料"))}
-					className="block max-h-[240px] min-h-[48px] w-full resize-none bg-transparent px-1 text-[15px] leading-6 text-fg outline-none placeholder:text-fg-subtle"
+					placeholder={disabled ? disabledReason : (placeholder ?? (busy ? "补充说明或调整方向，回车发送" : "说说要完成的事"))}
+					className="block max-h-[240px] min-h-[48px] w-full resize-none bg-transparent px-1 text-base leading-6 text-fg outline-none placeholder:text-fg-subtle disabled:cursor-not-allowed"
 				/>
-				<div className="mt-1.5 flex items-center gap-1">
+				<div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-2">
 					<input
 						ref={fileInput}
 						type="file"
@@ -385,18 +429,20 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 					/>
 					<AttachMenu
 						disabled={disabled}
+						side={menuSide}
 						actions={{ upload: () => fileInput.current?.click(), library: () => setPicker("file"), kb: () => setPicker("kb"), skill: skills.length ? () => setPicker("skill") : undefined }}
 					/>
 					{tools}
 					{busy ? (
-						<div className="ml-1 flex items-center rounded-lg bg-surface-2 p-0.5 text-[12px]" role="radiogroup" aria-label="运行中发送方式">
+						<div className="ml-1 flex items-center rounded-lg bg-surface-2 p-0.5 text-sm max-sm:order-last max-sm:basis-full" role="radiogroup" aria-label="运行中发送方式">
 							{(["steer", "followUp"] as const).map((m) => (
 								<button
 									key={m}
+									type="button"
 									role="radio"
 									aria-checked={steerMode === m}
 									onClick={() => setSteerMode(m)}
-									className={cn("h-6 rounded-md px-2", steerMode === m ? "bg-surface text-fg shadow-sm" : "text-fg-muted")}
+									className={cn("h-7 rounded-md px-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:flex-1", steerMode === m ? "bg-surface text-fg shadow-sm" : "text-fg-muted")}
 									title={m === "steer" ? "在当前任务的下一个步骤间隙加入" : "等当前任务结束后再处理"}
 								>
 									{m === "steer" ? "插话" : "稍后处理"}
@@ -404,44 +450,64 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 							))}
 						</div>
 					) : null}
-					<div className="flex min-w-0 flex-1 items-center justify-end">{switcher}</div>
-					{busy && onStop ? (
-						<Tip label="停止">
-							<button data-testid="stop" aria-label="停止" onClick={onStop} disabled={stopping} className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-fg hover:bg-surface-2">
-								{stopping ? <Loader2 className="size-4 wr-spin" /> : <Square className="size-3.5 fill-current" />}
-							</button>
+					<div className="ml-auto flex min-w-0 items-center gap-1">
+						<div className="flex min-w-0 items-center justify-end">{switcher}</div>
+						{stopShown ? (
+							<Tip label={stopping ? "正在停止" : "停止"}>
+								<button
+									type="button"
+									data-testid="stop"
+									aria-label="停止"
+									onClick={onStop}
+									disabled={stopping}
+									className={cn(
+										"flex size-10 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-9",
+										stopPrimary ? "bg-accent text-accent-fg hover:opacity-90" : "border border-border-strong text-fg hover:bg-surface-2",
+									)}
+								>
+									{stopping ? <Loader2 className="size-4 wr-spin" /> : <Square className="size-3.5 fill-current" />}
+								</button>
+							</Tip>
+						) : null}
+						<Tip label={sendTip}>
+							<span className="inline-flex">
+								<button
+									type="button"
+									data-testid="send"
+									aria-label={busy ? "插话" : "发送"}
+									onClick={() => void send()}
+									disabled={!canSend}
+									className={cn(
+										"flex size-10 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-9",
+										canSend ? "bg-accent text-accent-fg hover:opacity-90" : "bg-surface-3 text-fg-muted",
+									)}
+								>
+									{sending ? <Loader2 className="size-4 wr-spin" /> : <ArrowUp className="size-[18px]" />}
+								</button>
+							</span>
 						</Tip>
-					) : null}
-					<Tip label={att.failed ? "有文件上传失败：请重试或移除" : att.uploading ? "文件上传完成后才能发送" : busy ? (steerMode === "steer" ? "插话" : "加入队列") : "发送"}>
-						<button
-							data-testid="send"
-							aria-label={busy ? "插话" : "发送"}
-							onClick={() => void send()}
-							disabled={!canSend}
-							className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors", canSend ? "bg-accent text-accent-fg hover:opacity-90" : "bg-surface-3 text-fg-subtle")}
-						>
-							{sending ? <Loader2 className="size-4 wr-spin" /> : <ArrowUp className="size-[18px]" />}
-						</button>
-					</Tip>
+					</div>
 				</div>
 			</div>
 			{err || att.notice || att.failed ? (
-				<p role="alert" className="mt-1.5 px-1 text-[13px] text-danger">
+				<p role="alert" data-testid="composer-error" className="mt-2 px-1 text-sm text-danger">
 					{err ?? att.notice ?? "有文件上传失败：请重试或移除后再发送。"}
 				</p>
 			) : null}
-			<FilePickerDialog open={picker === "file"} onOpenChange={(o) => !o && setPicker(null)} spaceId={spaceId} projectId={projectId} onPick={(ref, meta) => att.addRef(ref, meta)} />
-			<KbPickerDialog open={picker === "kb"} onOpenChange={(o) => !o && setPicker(null)} onPick={addKb} />
-			<SkillPickerDialog open={picker === "skill"} onOpenChange={(o) => !o && setPicker(null)} skills={skills} onPick={(s) => insertSkill(s.name)} />
+			<FilePickerDialog open={picker === "file"} onOpenChange={closePicker} spaceId={spaceId} projectId={projectId} onPick={(ref, meta) => att.addRef(ref, meta)} />
+			<KbPickerDialog open={picker === "kb"} onOpenChange={closePicker} onPick={addKb} />
+			<SkillPickerDialog open={picker === "skill"} onOpenChange={closePicker} skills={skills} onPick={(s) => insertSkill(s.name)} />
 			{dragging && dropEl && dropEl.isConnected
 				? createPortal(
-						<div data-testid="drop-overlay" aria-hidden className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-border-strong bg-bg/80 backdrop-blur-[2px] wr-fade-in">
+						<div data-testid="drop-overlay" aria-hidden className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-border-strong bg-bg/90 wr-fade-in">
 							<div className="flex flex-col items-center gap-2 text-center">
 								<span className="flex size-12 items-center justify-center rounded-2xl bg-surface-2 text-fg-muted">
 									<UploadCloud className="size-6" />
 								</span>
-								<div className="text-[15px] font-medium">松开鼠标，添加文件</div>
-								<div className="text-[13px] text-fg-muted">{conversationId !== undefined ? "文件会上传到当前对话所在的空间，随下一条消息发送" : "文件会随你的第一条消息一起发送"}</div>
+								<div className="text-base font-medium">松开鼠标，添加文件</div>
+								<div className="text-sm text-fg-muted">
+									最多 {MAX_FILES} 个，每个不超过 {MAX_UPLOAD_BYTES / 1048576} MB
+								</div>
 							</div>
 						</div>,
 						dropEl,

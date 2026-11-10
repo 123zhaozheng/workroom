@@ -18,7 +18,7 @@ const TONES: Record<Tone, string> = {
 };
 export function Badge({ tone = "neutral", className, children, ...rest }: { tone?: Tone; className?: string; children: ReactNode; title?: string; [data: `data-${string}`]: string | undefined }) {
 	return (
-		<span {...rest} className={cn("inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[12px] font-medium [&_svg]:size-3", TONES[tone], className)}>
+		<span {...rest} className={cn("inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs font-medium [&_svg]:size-3", TONES[tone], className)}>
 			{children}
 		</span>
 	);
@@ -28,28 +28,32 @@ export function EmptyState({ icon, title, children, action }: { icon?: ReactNode
 	return (
 		<div className="flex flex-col items-center justify-center px-6 py-14 text-center">
 			{icon ? <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-surface-2 text-fg-muted [&_svg]:size-5">{icon}</div> : null}
-			<div className="text-[15px] font-medium">{title}</div>
-			{children ? <div className="mt-1.5 max-w-md text-[13px] text-fg-muted">{children}</div> : null}
+			<div className="text-sm font-medium">{title}</div>
+			{children ? <div className="mt-1.5 max-w-md text-sm text-fg-muted">{children}</div> : null}
 			{action ? <div className="mt-4">{action}</div> : null}
 		</div>
 	);
 }
 
-/** Honest "not connected" state for a capability whose server route is absent. */
+/** Honest "not available" state for a capability whose server route is absent. `need` (the missing route) stays out of the way: tooltip / folded details. */
 export function Unavailable({ what, need, compact }: { what: string; need?: string; compact?: boolean }) {
 	if (compact)
 		return (
-			<div data-testid="unavailable" className="flex items-center gap-2 rounded-lg border border-dashed border-border-strong px-3 py-2 text-[13px] text-fg-muted">
+			<div data-testid="unavailable" title={need ? `技术详情：${need}` : undefined} className="flex items-center gap-2 rounded-lg border border-dashed border-border-strong px-3 py-2 text-sm text-fg-muted">
 				<PlugZap className="size-4 shrink-0" />
-				<span>
-					{what}：未连接{need ? `（${need}）` : ""}
-				</span>
+				<span>{what}暂不可用</span>
 			</div>
 		);
 	return (
 		<div data-testid="unavailable">
-			<EmptyState icon={<PlugZap />} title={`${what}：未连接`}>
-				服务端尚未提供该功能的接口，因此这里不显示任何数据。{need ? <span className="mt-1 block text-fg-subtle">需要：{need}</span> : null}
+			<EmptyState icon={<PlugZap />} title={`${what}暂不可用`}>
+				这项功能还没有连接，所以这里没有数据。
+				{need ? (
+					<details className="mt-2 text-xs text-fg-subtle">
+						<summary className="cursor-pointer select-none rounded hover:text-fg-muted">技术详情</summary>
+						<span className="mt-1 block break-words">缺少：{need}</span>
+					</details>
+				) : null}
 			</EmptyState>
 		</div>
 	);
@@ -65,7 +69,7 @@ export function ErrorState({ error, onRetry, what }: { error: unknown; onRetry?:
 
 export function Blocked({ title, children }: { title: string; children?: ReactNode }) {
 	return (
-		<div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-fg-muted">
+		<div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
 			<CircleSlash className="mt-0.5 size-4 shrink-0" />
 			<div>
 				<div className="font-medium text-fg">{title}</div>
@@ -81,7 +85,7 @@ export function Loadable({ state, what, need, children }: { state: { loading: bo
 	if (state.error) return <ErrorState error={state.error} onRetry={state.reload} what={what} />;
 	if (state.loading)
 		return (
-			<div className="flex items-center gap-2 px-2 py-10 text-[13px] text-fg-subtle">
+			<div className="flex items-center gap-2 px-2 py-10 text-sm text-fg-subtle">
 				<Spinner /> 加载中…
 			</div>
 		);
@@ -93,7 +97,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
 		<div className="mb-6 flex flex-wrap items-end justify-between gap-3">
 			<div className="min-w-0">
 				<h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-				{description ? <p className="mt-1 text-[13px] text-fg-muted">{description}</p> : null}
+				{description ? <p className="mt-1 text-sm text-fg-muted">{description}</p> : null}
 			</div>
 			{actions ? <div className="flex items-center gap-2">{actions}</div> : null}
 		</div>

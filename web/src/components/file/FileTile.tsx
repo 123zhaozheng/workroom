@@ -9,7 +9,7 @@ import { fileKind, KIND_META, splitName, type FileKind } from "./kinds";
 export function MiddleEllipsis({ name, className }: { name: string; className?: string }) {
 	const { head, tail } = splitName(name);
 	return (
-		<span title={name} data-name={name} className={cn("flex min-w-0 max-w-full", className)}>
+		<span title={name} data-name={name} className={cn("flex min-w-0 max-w-full overflow-hidden", className)}>
 			<span className="truncate whitespace-pre">{head}</span>
 			{tail ? <span className="shrink-0 whitespace-pre">{tail}</span> : null}
 		</span>
@@ -63,17 +63,17 @@ export function FileTile({ name, size, mime, thumbUrl, state = "ready", progress
 		<>
 			<FileThumb name={name} mime={mime} thumbUrl={thumbUrl} />
 			<span className="min-w-0 flex-1 text-left">
-				<MiddleEllipsis name={name} className="text-[13px] font-medium leading-5 text-fg" />
-				<span className="mt-px flex items-center gap-1 text-[11.5px] leading-4 text-fg-subtle">
+				<MiddleEllipsis name={name} className="text-sm font-medium leading-5 text-fg" />
+				<span className="mt-px flex items-start gap-1 text-xs leading-4 text-fg-subtle">
 					{state === "uploading" ? (
 						<>
-							<Loader2 className="size-3 wr-spin" />
+							<Loader2 className="mt-0.5 size-3 shrink-0 wr-spin" />
 							<span data-testid="tile-state">上传中 {pct}%</span>
 						</>
 					) : state === "failed" ? (
 						<>
-							<AlertCircle className="size-3 shrink-0 text-danger" />
-							<span data-testid="tile-state" className="truncate text-danger" title={error}>
+							<AlertCircle className="mt-0.5 size-3 shrink-0 text-danger" />
+							<span data-testid="tile-state" className="line-clamp-2 break-words text-danger" title={error}>
 								上传失败{error ? `：${error}` : ""}
 							</span>
 						</>
@@ -96,19 +96,19 @@ export function FileTile({ name, size, mime, thumbUrl, state = "ready", progress
 			data-progress={state === "uploading" ? pct : undefined}
 			className={cn(
 				"group/tile relative flex w-[232px] max-w-full shrink-0 items-center gap-2.5 overflow-hidden rounded-xl border bg-surface p-1.5 pr-2.5 transition-colors",
-				state === "failed" ? "border-danger/40" : "border-border hover:border-border-strong",
+				state === "failed" ? "border-danger" : "border-border hover:border-border-strong",
 				className,
 			)}
 		>
 			{onOpen && state === "ready" ? (
-				<button type="button" onClick={onOpen} aria-label={`预览 ${name}`} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left">
+				<button type="button" onClick={onOpen} aria-label={`预览 ${name}`} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 					{body}
 				</button>
 			) : (
 				<div className="flex min-w-0 flex-1 items-center gap-2.5">{body}</div>
 			)}
 			{state === "failed" && onRetry ? (
-				<button type="button" onClick={onRetry} aria-label={`重试上传 ${name}`} data-testid="tile-retry" className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[12px] text-fg-muted hover:bg-surface-2 hover:text-fg">
+				<button type="button" onClick={onRetry} aria-label={`重试上传 ${name}`} data-testid="tile-retry" className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 					<RotateCw className="size-3.5" />
 					重试
 				</button>
@@ -119,13 +119,13 @@ export function FileTile({ name, size, mime, thumbUrl, state = "ready", progress
 					onClick={onRemove}
 					aria-label={`移除 ${name}`}
 					data-testid="tile-remove"
-					className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-2 hover:text-fg"
+					className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				>
 					<X className="size-3.5" />
 				</button>
 			) : null}
 			{state === "uploading" ? (
-				<span className="absolute inset-x-0 bottom-0 h-[3px] bg-surface-3">
+				<span role="progressbar" aria-label={`${name} 上传进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} data-testid="tile-progress" className="absolute inset-x-0 bottom-0 h-1 bg-surface-3">
 					<span className="block h-full bg-accent transition-[width] duration-150" style={{ width: `${pct}%` }} />
 				</span>
 			) : null}
@@ -141,11 +141,11 @@ export function RefTile({ icon, label, name, onRemove, testId, color = "var(--in
 				{icon}
 			</span>
 			<span className="min-w-0 flex-1 text-left">
-				<MiddleEllipsis name={name} className="text-[13px] font-medium leading-5 text-fg" />
-				<span className="mt-px block text-[11.5px] leading-4 text-fg-subtle">{label}</span>
+				<MiddleEllipsis name={name} className="text-sm font-medium leading-5 text-fg" />
+				<span className="mt-px block text-xs leading-4 text-fg-subtle">{label}</span>
 			</span>
 			{onRemove ? (
-				<button type="button" onClick={onRemove} aria-label={`移除 ${name}`} className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-2 hover:text-fg">
+				<button type="button" onClick={onRemove} aria-label={`移除 ${name}`} className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 					<X className="size-3.5" />
 				</button>
 			) : null}

@@ -11,7 +11,7 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TB.Tr
 	return (
 		<TB.Trigger
 			className={cn(
-				"inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] text-fg-muted transition-colors data-[state=active]:bg-surface data-[state=active]:text-fg data-[state=active]:shadow-sm [&_svg]:size-3.5",
+				"inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm text-fg-muted transition-colors data-[state=active]:bg-surface data-[state=active]:text-fg data-[state=active]:shadow-sm [&_svg]:size-3.5",
 				className,
 			)}
 			{...props}

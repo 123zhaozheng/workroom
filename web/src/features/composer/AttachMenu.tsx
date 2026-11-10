@@ -12,14 +12,15 @@ export interface AttachActions {
 	skill?: () => void;
 }
 
-export function AttachMenu({ actions, disabled }: { actions: AttachActions; disabled?: boolean }) {
+export function AttachMenu({ actions, disabled, side = "top" }: { actions: AttachActions; disabled?: boolean; side?: "top" | "bottom" }) {
 	const phone = useMedia("(max-width: 639px)");
 	const [open, setOpen] = useState(false);
-	const rows: { id: string; icon: ReactNode; label: string; hint: string; run: () => void }[] = [
-		{ id: "upload", icon: <Paperclip />, label: "上传文件", hint: "从这台设备选择，也可以直接拖进来或粘贴图片", run: actions.upload },
-		{ id: "library", icon: <Folders />, label: "从文件库选择", hint: "附加已有文件的最新版本", run: actions.library },
-		{ id: "kb", icon: <BookOpen />, label: "引用知识库", hint: "把知识库作为本条消息的资料", run: actions.kb },
-		...(actions.skill ? [{ id: "skill", icon: <Sparkles />, label: "使用技能", hint: "让助手按已启用的技能完成任务", run: actions.skill }] : []),
+	// one line each: the label says what it does; the only hint is the one people would not guess (drag / paste)
+	const rows: { id: string; icon: ReactNode; label: string; hint?: string; run: () => void }[] = [
+		{ id: "upload", icon: <Paperclip />, label: "上传文件", hint: "也可拖入文件或粘贴图片", run: actions.upload },
+		{ id: "library", icon: <Folders />, label: "从文件库选择", run: actions.library },
+		{ id: "kb", icon: <BookOpen />, label: "引用知识库", run: actions.kb },
+		...(actions.skill ? [{ id: "skill", icon: <Sparkles />, label: "使用技能", run: actions.skill }] : []),
 	];
 	const trigger = (
 		<button
@@ -28,9 +29,9 @@ export function AttachMenu({ actions, disabled }: { actions: AttachActions; disa
 			data-testid="attach-menu"
 			disabled={disabled}
 			onClick={phone ? () => setOpen(true) : undefined}
-			className="flex size-8 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-50"
+			className="flex size-10 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:size-9"
 		>
-			<Plus className="size-[19px]" />
+			<Plus aria-hidden className="size-5" />
 		</button>
 	);
 	if (phone)
@@ -48,12 +49,12 @@ export function AttachMenu({ actions, disabled }: { actions: AttachActions; disa
 								// let the sheet unmount before a picker dialog / file chooser opens
 								setTimeout(r.run, 60);
 							}}
-							className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left active:bg-surface-2 [&_svg]:size-5 [&_svg]:text-fg-muted"
+							className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left active:bg-surface-2 [&_svg]:size-5 [&_svg]:text-fg-muted"
 						>
 							{r.icon}
 							<span>
-								<span className="block text-[15px]">{r.label}</span>
-								<span className="block text-xs text-fg-subtle">{r.hint}</span>
+								<span className="block text-base">{r.label}</span>
+								{r.hint ? <span className="block text-xs text-fg-muted">{r.hint}</span> : null}
 							</span>
 						</button>
 					))}
@@ -62,15 +63,18 @@ export function AttachMenu({ actions, disabled }: { actions: AttachActions; disa
 		);
 	return (
 		<Menu open={open} onOpenChange={setOpen}>
-			<Tip label="添加文件或知识">
+			<Tip label="添加文件、知识库或技能">
 				<MenuTrigger asChild>{trigger}</MenuTrigger>
 			</Tip>
-			<MenuContent side="top" align="start" className="w-64">
+			<MenuContent side={side} align="start" className="w-64">
 				<MenuLabel>添加到本条消息</MenuLabel>
 				{rows.map((r) => (
-					<MenuItem key={r.id} data-testid={`attach-${r.id}`} onSelect={r.run}>
+					<MenuItem key={r.id} data-testid={`attach-${r.id}`} onSelect={r.run} className="py-2">
 						{r.icon}
-						{r.label}
+						<span className="min-w-0">
+							<span className="block">{r.label}</span>
+							{r.hint ? <span className="block text-xs text-fg-muted">{r.hint}</span> : null}
+						</span>
 					</MenuItem>
 				))}
 			</MenuContent>

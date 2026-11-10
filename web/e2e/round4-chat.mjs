@@ -523,7 +523,7 @@ try {
 	await mp.waitForSelector('[data-testid="model-option"]');
 	const groupNames = await mp.locator('[data-testid="model-group"]').evaluateAll((g) => g.map((x) => x.getAttribute("aria-label")));
 	const shapeTxt = await mp.locator('[role="menu"]').innerText();
-	check("models: richer /api/models shape (provider name, capability object, context window) is grouped and badged", groupNames.join(",") === "Acme AI,另一家" && shapeTxt.includes("1M 上下文") && (await mp.locator('[data-cap="image"]').count()) === 2 && shapeTxt.includes("个人密钥"), `${groupNames.join(",")} | ${shapeTxt.replace(/\n/g, " ").slice(0, 160)}`);
+	check("models: richer /api/models shape (provider name, capability object, context window) is grouped and badged", groupNames.join(",") === "Acme AI,另一家" && shapeTxt.includes("1M") && (await mp.locator('[data-cap="image"]').count()) === 2 && shapeTxt.includes("我的密钥"), `${groupNames.join(",")} | ${shapeTxt.replace(/\n/g, " ").slice(0, 160)}`);
 	await mctx.close();
 
 	// ================================================================= 8. phone 390 × 844

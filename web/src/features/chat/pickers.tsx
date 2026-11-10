@@ -9,6 +9,7 @@ import { formatBytes, relTime } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Input } from "@/components/ui/input";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
+import { FileThumb } from "@/components/file/FileTile";
 
 /** Tolerant list extraction: `{ kbs: [...] }`, `{ knowledgeBases: [...] }`, `{ items: [...] }` or a bare array. */
 export function listOf<T>(data: unknown, ...keys: string[]): T[] {
@@ -22,26 +23,27 @@ export function FilePickerDialog({ open, onOpenChange, onPick, spaceId, projectI
 	const files = useApi<FileListResponse>(open ? `/files${qs({ q, projectId, spaceId: projectId ? undefined : spaceId })}` : null);
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="从文件库选择" description="选择的文件以当前最新版本附加到本条消息。" className="max-w-lg">
+			<DialogContent title="从文件库选择" className="max-w-lg">
 				<div className="relative mb-3">
-					<Search className="absolute left-2.5 top-2.5 size-4 text-fg-subtle" />
-					<Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索文件名" className="pl-8" autoFocus />
+					<Search aria-hidden className="absolute left-2.5 top-2.5 size-4 text-fg-subtle" />
+					<Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索文件名" aria-label="搜索文件名" className="pl-8" autoFocus />
 				</div>
 				<div className="wr-scroll max-h-[50vh] overflow-y-auto">
-					<Loadable state={files} what="文件库" need="GET /api/files（D 组）">
+					<Loadable state={files} what="文件库" need="GET /api/files">
 						{(files.data?.files ?? []).length === 0 ? (
-							<EmptyState icon={<FileText />} title="没有文件" />
+							<EmptyState icon={<FileText />} title={q ? "没有匹配的文件" : "文件库里还没有文件"}>{q ? "换个关键词试试。" : "上传文件，或让助手生成成果后，会出现在这里。"}</EmptyState>
 						) : (
 							files.data!.files.map((f) => (
 								<button
 									key={f.id}
+									type="button"
 									onClick={() => {
 										onPick({ fileId: f.id, versionId: f.latestVersionId, name: f.name }, { size: f.size, mime: f.mime, versionNo: f.latestVersionNo });
 										onOpenChange(false);
 									}}
-									className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
+									className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								>
-									<FileText className="size-4 shrink-0 text-fg-muted" />
+									<FileThumb name={f.name} mime={f.mime} size={36} />
 									<span className="min-w-0 flex-1">
 										<span className="block truncate text-sm">{f.name}</span>
 										<span className="block text-xs text-fg-subtle">
@@ -63,11 +65,11 @@ export function KbPickerDialog({ open, onOpenChange, onPick }: { open: boolean; 
 	const list = listOf<KbSummary>(kbs.data, "kbs", "knowledgeBases");
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="引用知识库" description="只有状态为“可检索”的资料会参与回答。" className="max-w-lg">
+			<DialogContent title="引用知识库" description="只有“可检索”的资料会参与回答。" className="max-w-lg">
 				<div className="wr-scroll max-h-[50vh] overflow-y-auto">
-					<Loadable state={kbs} what="知识库" need="GET /api/kb（C 组）">
+					<Loadable state={kbs} what="知识库" need="GET /api/kb">
 						{list.length === 0 ? (
-							<EmptyState icon={<BookOpen />} title="还没有知识库" />
+							<EmptyState icon={<BookOpen />} title="还没有知识库">在“个人知识库”中添加资料后，就可以在这里引用。</EmptyState>
 						) : (
 							list.map((k) => (
 								<button
@@ -76,7 +78,7 @@ export function KbPickerDialog({ open, onOpenChange, onPick }: { open: boolean; 
 										onPick({ kbId: k.id, name: k.name });
 										onOpenChange(false);
 									}}
-									className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
+									className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								>
 									<BookOpen className="size-4 shrink-0 text-fg-muted" />
 									<span className="min-w-0 flex-1">
@@ -111,8 +113,9 @@ export function useUsableSkills(): SkillOption[] {
 export function SkillPickerDialog({ open, onOpenChange, skills, onPick }: { open: boolean; onOpenChange: (o: boolean) => void; skills: SkillOption[]; onPick: (s: SkillOption) => void }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="使用技能" description="选择后会在消息开头写上技能名，助手会先加载该技能再按它的步骤做。" className="max-w-md">
+			<DialogContent title="使用技能" className="max-w-md">
 				<div className="wr-scroll max-h-[50vh] overflow-y-auto">
+					{skills.length === 0 ? <EmptyState icon={<Sparkles />} title="没有可用的技能">在“能力”页启用技能后，就可以在这里选择。</EmptyState> : null}
 					{skills.map((s) => (
 						<button
 							key={s.id}
@@ -121,7 +124,7 @@ export function SkillPickerDialog({ open, onOpenChange, skills, onPick }: { open
 								onPick(s);
 								onOpenChange(false);
 							}}
-							className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
+							className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
 							<Sparkles className="size-4 shrink-0 text-fg-muted" />
 							<span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>

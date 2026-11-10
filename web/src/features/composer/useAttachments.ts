@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AttachmentRef } from "@shared/chat";
 import { errorText, uuid } from "@/lib/api";
-import { formatBytes } from "@/lib/utils";
 import { fileKind } from "@/components/file/kinds";
 import { MAX_UPLOAD_BYTES, uploadFile } from "./upload";
 import { rememberFile } from "./fileMeta";
@@ -82,7 +81,7 @@ export function useAttachments(scope: { spaceId?: string; projectId?: string; co
 					thumbs.current.add(thumb);
 				}
 				if (!tooBig) queue.current.push(key);
-				return { key, name: f.name, size: f.size, mime: f.type || undefined, thumb, status: tooBig ? "failed" : "uploading", progress: 0, error: tooBig ? `超过 ${formatBytes(MAX_UPLOAD_BYTES)} 上限` : undefined, source: "upload" as const };
+				return { key, name: f.name, size: f.size, mime: f.type || undefined, thumb, status: tooBig ? "failed" : "uploading", progress: 0, error: tooBig ? `超过 ${MAX_UPLOAD_BYTES / 1048576} MB 上限` : undefined, source: "upload" as const };
 			});
 			if (!next.length) return;
 			setItems((xs) => [...xs, ...next]);
