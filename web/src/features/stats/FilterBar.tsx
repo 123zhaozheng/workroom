@@ -73,10 +73,10 @@ export function buildQuery(f: Filters): string {
 	return new URLSearchParams({ scope: f.scope, from: r.from.toISOString(), to: r.to.toISOString(), granularity: g, tz: String(tzOffsetMinutes()) }).toString();
 }
 
-export function FilterBar({ value, onChange, scopes, adjusted }: { value: Filters; onChange: (f: Filters) => void; scopes: StatsScopesDTO | undefined; adjusted?: string | null }) {
+export function FilterBar({ value, onChange, scopes, adjusted }: { value: Filters; /** Receives only the changed fields: the page merges them into the latest URL state, so quick successive edits are not lost. */ onChange: (patch: Partial<Filters>) => void; scopes: StatsScopesDTO | undefined; adjusted?: string | null }) {
 	const range = useMemo(() => resolveRange(value), [value]);
 	const gran = value.gran ?? defaultGran(value.preset, range.days);
-	const set = (p: Partial<Filters>) => onChange({ ...value, ...p });
+	const set = (p: Partial<Filters>) => onChange(p);
 	const today = isoLocalDate(new Date());
 	return (
 		<div data-testid="filter-bar" className="sticky top-0 z-10 -mx-4 mb-4 border-b border-border bg-bg/90 px-4 py-2.5 backdrop-blur sm:-mx-8 sm:px-8">

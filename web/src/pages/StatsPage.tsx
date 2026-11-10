@@ -1,7 +1,7 @@
 // 统计 — analytics dashboard (separate page, never the home). Chart approach and bundle notes: docs/ui.md §统计页.
 // Everything (including Recharts, a lazy chunk of its own) is only loaded on /stats.
 import { Info } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import type { StatsOverviewDTO, StatsScopesDTO } from "@shared/ops";
 import { useApi } from "@/lib/useApi";
@@ -15,19 +15,31 @@ import "@/features/stats/stats.css";
 
 const PRESET_VALUES: Preset[] = ["7d", "30d", "90d", "mtd", "365d", "custom"];
 
+function filtersOf(sp: URLSearchParams): Filters {
+	const p = sp.get("range") as Preset | null;
+	const g = sp.get("gran");
+	return { scope: sp.get("scope") ?? "personal", preset: p && PRESET_VALUES.includes(p) ? p : "30d", from: sp.get("from") ?? "", to: sp.get("to") ?? "", gran: g === "hour" || g === "day" || g === "week" ? g : null };
+}
+
 export default function StatsPage() {
 	const [sp, setSp] = useSearchParams();
-	const filters: Filters = useMemo(() => {
-		const p = sp.get("range") as Preset | null;
-		const g = sp.get("gran");
-		return { scope: sp.get("scope") ?? "personal", preset: p && PRESET_VALUES.includes(p) ? p : "30d", from: sp.get("from") ?? "", to: sp.get("to") ?? "", gran: g === "hour" || g === "day" || g === "week" ? g : null };
-	}, [sp]);
-	const setFilters = (f: Filters) => {
+	const filters: Filters = useMemo(() => filtersOf(sp), [sp]);
+	// Merge each patch into the *latest* params, not the ones captured at render: two quick edits (e.g. both dates) must not overwrite
+	// each other. React Router's functional setter also reads the render-time params, so keep our own ref, synced when the URL changes.
+	const latest = useRef(sp);
+	const seen = useRef(sp.toString());
+	if (sp.toString() !== seen.current) {
+		seen.current = sp.toString();
+		latest.current = sp;
+	}
+	const setFilters = (patch: Partial<Filters>) => {
+		const f = { ...filtersOf(latest.current), ...patch };
 		const n = new URLSearchParams();
 		n.set("scope", f.scope);
 		n.set("range", f.preset);
 		if (f.preset === "custom") (n.set("from", f.from), n.set("to", f.to));
 		if (f.gran) n.set("gran", f.gran);
+		latest.current = n;
 		setSp(n, { replace: true });
 	};
 	const scopes = useApi<StatsScopesDTO>("/stats/scopes");

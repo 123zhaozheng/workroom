@@ -290,7 +290,8 @@ try {
 	check("custom range shows two date inputs", (await page.locator('[data-testid="custom-range"] input[type="date"]').count()) === 2);
 	await page.locator('[data-testid="custom-range"] input[type="date"]').first().fill("2026-01-01");
 	await page.locator('[data-testid="custom-range"] input[type="date"]').last().fill("2026-03-31");
-	await page.waitForTimeout(900);
+	// Wait for the applied range to reach the URL (was a fixed 900 ms sleep that raced under load); the check below still fails if it never does.
+	await page.waitForFunction(() => location.search.includes("from=2026-01-01") && location.search.includes("to=2026-03-31"), null, { timeout: 10000 }).catch(() => {});
 	await page.waitForSelector('[data-testid="stats-dashboard"]');
 	check("custom range 2026-01-01…2026-03-31 applies (URL + adjusted granularity hint absent for week default)", page.url().includes("from=2026-01-01") && page.url().includes("to=2026-03-31"));
 	await page.locator('[data-testid="scope-select"]').selectOption({ index: 0 });
