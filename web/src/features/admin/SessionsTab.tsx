@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { useAct, Table, Row } from "@/features/admin/common";
 
+const AUTH: Record<string, string> = { password: "密码登录", oidc: "企业登录", invite: "邀请加入" };
+
 export function Sessions() {
 	const res = useApi<{ sessions: SessionDTO[] }>("/admin/sessions");
 	const { busy, run, note } = useAct(res.reload);
 	return (
-		<Loadable state={res} what="会话" need="E 组：GET /api/admin/sessions">
+		<Loadable state={res} what="登录会话">
 			{note}
 			<Table testId="admin-sessions">
 				{(res.data?.sessions ?? []).map((s) => (
@@ -21,16 +23,16 @@ export function Sessions() {
 								<span className="block font-medium">
 									{s.userName ?? s.userId} {s.current ? <Badge tone="info">当前会话</Badge> : null}
 								</span>
-								<span className="block truncate text-xs text-fg-subtle">
-									{s.authMethod} · 创建 {fullTime(s.createdAt)}
+								<span className="block truncate text-xs text-fg-muted">
+									{AUTH[s.authMethod] ?? s.authMethod} · 创建 {fullTime(s.createdAt)}
 									{s.lastSeenAt ? ` · 最近 ${relTime(s.lastSeenAt)}` : ""} · {s.userAgent ?? ""}
 								</span>
 							</span>
 							{s.revokedAt ? (
-								<Badge>已撤销{s.revokedReason ? `：${s.revokedReason}` : ""}</Badge>
+								<Badge>已退出</Badge>
 							) : !s.current ? (
-								<Button size="sm" disabled={busy} onClick={() => run(() => del(`/admin/sessions/${s.id}`), "会话已撤销，持有该令牌的请求将被拒绝")}>
-									撤销
+								<Button size="sm" disabled={busy} onClick={() => run(() => del(`/admin/sessions/${s.id}`), "已退出该设备，它的登录立即失效")}>
+									退出
 								</Button>
 							) : null}
 						</Row>

@@ -8,9 +8,10 @@ import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
-import { Row, Table, useAct } from "@/features/admin/common";
+import { Help, Row, Table, useAct } from "@/features/admin/common";
+import { useConfirm } from "@/features/admin/confirm";
 import { GroupsPanel } from "@/features/admin/GroupsPanel";
-import { ROLE_SHORT, ScopePicker, deptTreeOptions, scopeText, useDepartments, useViewerPerms } from "@/features/admin/rbac-ui";
+import { ROLE_SHORT, ScopePicker, deptTreeOptions, roleGrantConfirm, rolePurpose, scopeText, useDepartments, useViewerPerms } from "@/features/admin/rbac-ui";
 
 type SubjectKind = "user" | "department" | "group";
 const SUBJECT_LABEL: Record<SubjectKind, string> = { user: "成员", department: "部门（含子部门成员）", group: "用户组" };
@@ -26,6 +27,7 @@ export function Authorizations() {
 		list.reload();
 		roles.reload();
 	});
+	const { ask, dialog } = useConfirm();
 	const [kind, setKind] = useState<SubjectKind>("user");
 	const [subject, setSubject] = useState("");
 	const [roleId, setRoleId] = useState("builtin:skill_reviewer");
@@ -42,26 +44,31 @@ export function Authorizations() {
 		<div data-testid="authz-tab">
 			{perms.anywhere.has("role.assign") ? (
 				<form
-					className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-surface p-3"
+					className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-surface p-4"
 					data-testid="authz-form"
 					onSubmit={(e) => {
 						e.preventDefault();
 						const sid = subject || subjects[0]?.id;
 						if (!sid || !role) return;
-						void run(() => post("/admin/role-assignments", { subject: { kind, id: sid }, roleId: role.id, scope: scope.kind === "org" ? { kind: "org" } : scope }), "已授权");
+						void (async () => {
+							const who = subjects.find((x) => x.id === sid)?.name.replace(/（.*$/, "").trim() ?? "对方";
+							const c = roleGrantConfirm(kind === "user" ? who : `「${who}」的成员`, role, scopeText(scope.kind === "org" ? { kind: "org" } : scope));
+							if (c && !(await ask(c))) return;
+							await run(() => post("/admin/role-assignments", { subject: { kind, id: sid }, roleId: role.id, scope: scope.kind === "org" ? { kind: "org" } : scope }), "已授权");
+						})();
 					}}
 				>
 					<label className="text-xs text-fg-muted">
 						授予谁
 						<span className="mt-1 flex gap-1.5">
-							<Select aria-label="主体类型" value={kind} className="h-8 text-[13px]" onChange={(e) => (setKind(e.target.value as SubjectKind), setSubject(""))}>
+							<Select aria-label="主体类型" value={kind} className="h-8 text-sm" onChange={(e) => (setKind(e.target.value as SubjectKind), setSubject(""))}>
 								{(Object.keys(SUBJECT_LABEL) as SubjectKind[]).map((k) => (
 									<option key={k} value={k}>
 										{SUBJECT_LABEL[k]}
 									</option>
 								))}
 							</Select>
-							<Select aria-label="主体" data-testid="authz-subject" value={subject || subjects[0]?.id || ""} className="h-8 max-w-[220px] text-[13px]" onChange={(e) => setSubject(e.target.value)}>
+							<Select aria-label="主体" data-testid="authz-subject" value={subject || subjects[0]?.id || ""} className="h-8 max-w-[220px] text-sm" onChange={(e) => setSubject(e.target.value)}>
 								{subjects.length === 0 ? <option value="">（没有可选项）</option> : null}
 								{subjects.map((s) => (
 									<option key={s.id} value={s.id}>
@@ -80,7 +87,7 @@ export function Authorizations() {
 					<label className="text-xs text-fg-muted">
 						角色
 						<span className="mt-1 block">
-							<Select aria-label="角色" data-testid="authz-role" value={role?.id ?? ""} className="h-8 text-[13px]" onChange={(e) => setRoleId(e.target.value)}>
+							<Select aria-label="角色" data-testid="authz-role" value={role?.id ?? ""} className="h-8 text-sm" onChange={(e) => setRoleId(e.target.value)}>
 								{usable.map((r) => (
 									<option key={r.id} value={r.id}>
 										{r.name}
@@ -96,16 +103,17 @@ export function Authorizations() {
 					</Button>
 				</form>
 			) : null}
+			{role ? <p className="-mt-3 mb-4 text-xs text-fg-muted">{rolePurpose(role)}</p> : null}
 			{note}
-			<p className="mb-3 text-xs text-fg-subtle">
-				角色可以授予个人、整个部门（含子部门成员）或用户组，范围可以是整个组织、某个部门（含子部门）或某个项目。成员的「基础角色」（所有者 / 管理员 / 普通成员 / 访客）在成员详情里修改。你只能授予你自己拥有的权限。
-				{scope.kind === "project" ? "项目范围目前只能从你所在的项目里选择。" : ""}
-			</p>
-			<div className="mb-2 flex items-center gap-2">
-				<Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选：姓名 / 角色 / 范围" className="h-8 max-w-xs text-[13px]" aria-label="筛选授权" />
-				<span className="text-xs text-fg-subtle">{rows.length} 条</span>
+			<div className="mb-3 flex flex-wrap items-center gap-3">
+				<Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选：姓名 / 角色 / 范围" className="h-8 max-w-xs text-sm" aria-label="筛选授权" />
+				<span className="text-xs text-fg-muted">{rows.length} 条</span>
+				<span className="flex-1" />
+				<span className="relative">
+					<Help label="授权说明">角色可以授予个人、整个部门（含子部门成员）或用户组；范围可以是整个组织、某个部门或某个项目。基础角色（所有者 / 管理员 / 普通成员 / 访客）在成员详情里修改。你只能授予自己拥有的权限。</Help>
+				</span>
 			</div>
-			<Loadable state={list} what="授权" need="RBAC：GET /api/admin/role-assignments">
+			<Loadable state={list} what="授权">
 				{rows.length === 0 ? (
 					<EmptyState icon={<Users />} title="还没有额外授权">
 						除基础角色外，被授予其他角色（如部门管理员、技能审核员、自定义角色）的人会出现在这里。
@@ -136,6 +144,7 @@ export function Authorizations() {
 				)}
 			</Loadable>
 			<GroupsPanel onChanged={groups.reload} />
+			{dialog}
 		</div>
 	);
 }

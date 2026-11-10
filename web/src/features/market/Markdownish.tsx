@@ -14,7 +14,7 @@ export function Markdownish({ text }: { text: string }) {
 			while (i < lines.length && !lines[i]!.startsWith("```")) code.push(lines[i++]!);
 			i++;
 			out.push(
-				<pre key={key++} className="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[12.5px]">
+				<pre key={key++} className="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-xs">
 					{code.join("\n")}
 				</pre>,
 			);
@@ -44,7 +44,7 @@ export function Markdownish({ text }: { text: string }) {
 		}
 	}
 	return (
-		<div className="space-y-2 text-[13.5px] leading-relaxed" data-testid="readme">
+		<div className="space-y-2 text-sm leading-relaxed" data-testid="readme">
 			{out}
 		</div>
 	);

@@ -89,7 +89,7 @@ try {
 	const txt = (n) => a.locator('[data-testid="skill"]', { hasText: n }).innerText();
 	const [tp, tc, te] = [await txt("周报模板"), await txt("报销须知"), await txt("表格汇总脚本")];
 	check("M05-A: prompt preset, context-only and executable skills are labelled distinctly", tp.includes("提示词预设") && tc.includes("上下文技能") && te.includes("可执行技能"));
-	check("M05-A: the executable skill lists its entry, sandbox/file permissions and a grant prompt; text skills need none", te.includes("入口 summarize.sh") && te.includes("在沙箱中执行") && te.includes("写入文件库") && te.includes("缺少") && tp.includes("无需额外权限") && tc.includes("无需额外权限"), te.replace(/\s+/g, " ").slice(0, 200));
+	check("M05-A: the executable skill lists its entry, sandbox/file permissions and a grant prompt; text skills need none", te.includes("入口 summarize.sh") && te.includes("运行代码") && te.includes("写入文件") && te.includes("缺少") && tp.includes("无需额外权限") && tc.includes("无需额外权限"), te.replace(/\s+/g, " ").slice(0, 200));
 	await a.locator('[data-testid="skill"]', { hasText: "表格汇总脚本" }).getByRole("button", { name: /授予 v1 所需权限/ }).click();
 	await a.waitForFunction(() => document.querySelector('[data-testid="skill-grants"]')?.textContent?.includes("已全部授予"), null, { timeout: 10000 });
 	check("M05-A: per-version grant recorded for the executable skill", true);
@@ -165,13 +165,16 @@ try {
 	await a.waitForFunction(() => document.querySelectorAll('[data-testid="my-session"]').length >= 2, null, { timeout: 10000 });
 	await shot(a, "1440-my-sessions");
 	await a.click('[data-testid="revoke-others"]');
+	await a.click('[data-testid="confirm-ok"]');
 	await a.waitForFunction(() => document.querySelectorAll('[data-testid="my-session"]').length === 1, null, { timeout: 10000 });
 	await op.reload();
 	await op.waitForURL(/\/login/, { timeout: 10000 });
 	check("M16-A: a revoked session is sent back to login on the other device", true);
 	await other.close();
 	await a.goto(`${base}/admin?tab=members`);
-	await a.locator('[data-testid="admin-member"]', { hasText: "成员丙" }).locator('[data-testid="member-disable"]').click();
+	await a.locator('[data-testid="admin-member"]', { hasText: "成员丙" }).locator('[data-testid="member-more"]').click();
+	await a.click('[data-testid="member-disable"]');
+	await a.click('[data-testid="confirm-ok"]');
 	await a.waitForSelector('[data-testid="admin-member"][data-status="disabled"]');
 	await member.p.reload();
 	await member.p.waitForURL(/\/login/, { timeout: 10000 });
@@ -184,8 +187,9 @@ try {
 	await shot(member.p, "1440-login-disabled");
 	const removed = await newUser(a, "成员丁");
 	await a.goto(`${base}/admin?tab=members`);
-	a.once("dialog", (d) => d.accept());
-	await a.locator('[data-testid="admin-member"]', { hasText: "成员丁" }).getByRole("button", { name: "移出" }).click();
+	await a.locator('[data-testid="admin-member"]', { hasText: "成员丁" }).locator('[data-testid="member-more"]').click();
+	await a.click('[data-testid="member-remove"]');
+	await a.click('[data-testid="confirm-ok"]');
 	await a.waitForFunction(() => ![...document.querySelectorAll('[data-testid="admin-member"]')].some((e) => e.textContent?.includes("成员丁")), null, { timeout: 10000 });
 	await removed.p.reload();
 	await removed.p.waitForURL(/\/login/, { timeout: 10000 });

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { ROLE, useAct, Table, Row } from "@/features/admin/common";
+import { useConfirm } from "@/features/admin/confirm";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 import type { RoleDTO } from "@shared/permissions";
 
@@ -25,27 +26,31 @@ export function Invites() {
 	const [dept, setDept] = useState("");
 	const [ttl, setTtl] = useState(72);
 	const [created, setCreated] = useState<string>();
+	const { ask, dialog } = useConfirm();
 	return (
 		<div>
 			<form
-				className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-surface p-3"
+				className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-surface p-4"
 				onSubmit={(e) => {
 					e.preventDefault();
-					void run(async () => {
+					void (async () => {
+						if (role === "admin" && !(await ask({ title: "生成管理员邀请？", consequence: "拿到这个邀请码的人加入后会直接成为组织管理员，拥有除「变更组织所有者」以外的全部权限。", items: ["请只发给你信任的人，并设置较短的有效期", "邀请码可随时撤销"], confirmLabel: "生成邀请码", danger: true }))) return;
+						await run(async () => {
 						const r = await post<{ invite: InviteDTO }>("/admin/invites", { ...(email ? { email } : {}), role, ...(extraRole ? { roleId: extraRole } : {}), ...(dept ? { departmentId: dept } : {}), ttlHours: ttl });
 						setCreated(r.invite.code);
 						setEmail("");
-					});
+						});
+					})();
 				}}
 			>
-				<Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="限定邮箱（可选）" type="email" className="h-8 w-56 text-[13px]" />
-				<Select value={role} onChange={(e) => setRole(e.target.value as OrgRole | "guest")} className="h-8 text-[13px]" aria-label="基础角色">
+				<Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="限定邮箱（可选）" type="email" className="h-8 w-56 text-sm" />
+				<Select value={role} onChange={(e) => setRole(e.target.value as OrgRole | "guest")} className="h-8 text-sm" aria-label="基础角色">
 					<option value="member">成员</option>
 					<option value="guest">访客</option>
 					{perms.org.has("role.assign") ? <option value="admin">管理员</option> : null}
 				</Select>
 				{roleList.data ? (
-					<Select value={extraRole} onChange={(e) => setExtraRole(e.target.value)} className="h-8 max-w-[180px] text-[13px]" aria-label="附加角色">
+					<Select value={extraRole} onChange={(e) => setExtraRole(e.target.value)} className="h-8 max-w-[180px] text-sm" aria-label="附加角色">
 						<option value="">无附加角色</option>
 						{roleList.data.roles
 							.filter((r) => !/^builtin:(owner|admin|member|guest)$/.test(r.id) && r.scopes.includes(dept ? "department" : "org"))
@@ -56,7 +61,7 @@ export function Invites() {
 							))}
 					</Select>
 				) : null}
-				<Select value={dept} onChange={(e) => setDept(e.target.value)} className="h-8 text-[13px]" aria-label="部门">
+				<Select value={dept} onChange={(e) => setDept(e.target.value)} className="h-8 text-sm" aria-label="部门">
 					{orgWide ? <option value="">不加入部门</option> : <option value="">请选择部门</option>}
 					{(deps.data?.departments ?? []).map((d) => (
 						<option key={d.id} value={d.id}>
@@ -66,7 +71,7 @@ export function Invites() {
 				</Select>
 				<label className="flex items-center gap-1 text-xs text-fg-muted">
 					有效
-					<Input type="number" min={1} value={ttl} onChange={(e) => setTtl(Math.max(1, Number(e.target.value) || 1))} className="h-8 w-20 text-[13px]" />
+					<Input type="number" min={1} value={ttl} onChange={(e) => setTtl(Math.max(1, Number(e.target.value) || 1))} className="h-8 w-20 text-sm" />
 					小时
 				</label>
 				<Button size="sm" variant="primary" type="submit" disabled={busy || (!orgWide && !dept)} data-testid="invite-create">
@@ -74,15 +79,16 @@ export function Invites() {
 					生成邀请码
 				</Button>
 			</form>
+			{dialog}
 			{created ? (
-				<p className="mb-3 rounded-lg bg-info-soft px-3 py-2 text-[13px] text-info" data-testid="invite-link">
+				<p className="mb-3 rounded-lg bg-info-soft px-3 py-2 text-sm text-info" data-testid="invite-link">
 					邀请链接：<code className="break-all">{`${location.origin}/register?invite=${created}`}</code>
 				</p>
 			) : null}
 			{note}
-			<Loadable state={res} what="邀请" need="E 组：GET /api/admin/invites">
+			<Loadable state={res} what="邀请">
 				{(res.data?.invites ?? []).length === 0 ? (
-					<p className="text-[13px] text-fg-subtle">没有邀请。</p>
+					<p className="text-sm text-fg-muted">还没有邀请。</p>
 				) : (
 					<Table testId="admin-invites">
 						{res.data!.invites.map((i) => (

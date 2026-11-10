@@ -1,0 +1,520 @@
+{
+  "at": "2026-11-10T03:38:32.780Z",
+  "results": [
+    {
+      "name": "seed: owner, departments, members, roles, two model services and a pending skill submission exist",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin: navigation is grouped 成员与组织 / 角色与权限 / 模型 / 技能与连接 / 用量与预算 / 审计",
+      "ok": true,
+      "detail": "成员与组织,角色与权限,模型,技能与连接,用量与预算,审计"
+    },
+    {
+      "name": "admin: the page title is short and has no paragraph subtitle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: ArrowDown moves focus to the next navigation entry",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Enter opens the focused page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: End jumps to the last entry",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Home jumps back to the first entry",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Tab leaves the navigation into the page content",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Enter on 详情 opens the member drawer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the member drawer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "member drawer: identity → roles → departments → effective permissions → sessions → account actions",
+      "ok": true,
+      "detail": "身份 > 角色 > 部门 > 有效权限 > 登录会话 > 账号操作"
+    },
+    {
+      "name": "keyboard: Esc closes the member drawer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 成员 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 邀请 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 组织架构 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 登录会话 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 角色 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 授权 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 模型服务 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 预算 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 审计日志 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the 问题排查 page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on an opened model service",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "models: a service row says its kind in plain words, a status and the model count",
+      "ok": true,
+      "detail": "公司模型网关 OpenAI 兼容 · 3 个模型，2 个已开放 就绪 测试连接 获取模型 启用 编辑 删除 模型 只看已开放 手动添加 mock-chat mock-chat · 上下文 128K · 价格 未设置 · 开放给全员 文本 用"
+    },
+    {
+      "name": "models: the technical-details block is collapsed by default",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "models: keys are never shown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "models: 技术详情 holds the address and key source for admins",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on step 1 of the service dialog",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wizard: step 1 offers OpenAI 兼容 / Claude 兼容 / 内置服务 with common presets",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wizard: 高级设置 and 技术详情 are collapsed in step 2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on step 2 of the service dialog",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wizard: step 3 shows the connection test result in plain words",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wizard: fetched models are listed, none opened by default",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on step 3 of the service dialog",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wizard: only the chosen model is opened to members (server state)",
+      "ok": true,
+      "detail": "wizard-chat:true,wizard-vision:false,text-embedding-wizard:false"
+    },
+    {
+      "name": "confirm: deleting a model service names the consequence",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: cancel keeps the service",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: allowing members' own keys asks first, cancel leaves the policy off",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: disabling a member states the consequence and defaults the focus to 取消",
+      "ok": true,
+      "detail": "停用 李四？ 停用 李四？ 李四 会立即退出所有登录设备，无法再登录；账号和数据保留，随时可以恢复。 取消 停用"
+    },
+    {
+      "name": "confirm: Esc cancels and the member stays active",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: removing a member lists what is lost and cancel changes nothing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: making someone an owner warns about full permissions",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: cancelling the ownership change keeps the base role (select and server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: a direct high-risk grant says it is high-risk and what it allows",
+      "ok": true,
+      "detail": "直接授予「管理模型服务与密钥」？ 直接授予「管理模型服务与密钥」？ 王五 将获得这项高危权限，不依赖任何角色：新增模型服务、保存和更换密钥、测试连通 这条授权会写入审计日志 可以随时在下方移除 取消 确认授予"
+    },
+    {
+      "name": "confirm: cancel leaves the member without the grant (server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: confirming applies the grant",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: a role containing a high-risk permission lists it before granting",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: cancel does not assign the role (server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "member drawer: effective permissions are collapsed until asked for",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "member drawer: 为什么 explains the source",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: the default view is the role list with a one-line purpose per role",
+      "ok": true,
+      "detail": "10 roles"
+    },
+    {
+      "name": "roles: the list is grouped into 基础角色 / 附加角色 / 自定义角色",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: each permission group shows its n/m count and a 高危 marker where it applies",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roles: a group can be collapsed and expanded",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on a role's permission matrix",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: saving a role that gains a high-risk permission asks and names it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: cancel keeps the saved role unchanged (server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: 授权 with a high-risk role asks first; cancel assigns nothing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: naming a department admin asks first; cancel changes nothing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: deleting a department says sub-departments move up and grants go away",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: cancel keeps the department",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the review screen",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: the automated-check verdict comes before the content diff",
+      "ok": true,
+      "detail": "自动检查 > 它要做什么 > 内容变化 > 审核决定"
+    },
+    {
+      "name": "review: permissions are in plain words (需要的权限：运行代码、写入文件)",
+      "ok": true,
+      "detail": "weekly-report：把本周的工作整理成周报。当用户要求写周报、汇总本周进展时使用。 需要的权限： 写入文件（新增） 运行代码（新增） 写入文件：把结果保存到文件库（这一版新增） 运行代码：在工作区里执行技能自带的脚本（这一版新增）"
+    },
+    {
+      "name": "review: each decision states its consequence next to the button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "review: reject / request changes stay disabled without a comment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: rejecting states that it will not be published",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: cancel leaves the submission pending (server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "confirm: approving names the target scope and the new permissions",
+      "ok": true,
+      "detail": "批准并发布 「weekly-report」 v1.1.0？ 批准并发布 「weekly-report」 v1.1.0？ 「weekly-report」 v1.1.0 会发布到「组织」，范围内的成员可以安装使用。 它会要求新的权限：写入文件、运行代码 发布后如有问题，可以在市场里下"
+    },
+    {
+      "name": "review: the submitter sees why they cannot review their own work, and approve stays disabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the skill market",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "market: no paragraph subtitle under the title",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "market: the connection tab is called 连接市场, not MCP",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on the connection market",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wording: no internal vocabulary on settings",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "settings: 我的权限 keeps the full list collapsed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark mode: members page is dark and its text keeps >= 4.5:1 contrast",
+      "ok": true,
+      "detail": "56 texts, min 5.45 "
+    },
+    {
+      "name": "dark mode: roles page is dark and its text keeps >= 4.5:1 contrast",
+      "ok": true,
+      "detail": "50 texts, min 5.74 "
+    },
+    {
+      "name": "dark mode: models page is dark and its text keeps >= 4.5:1 contrast",
+      "ok": true,
+      "detail": "35 texts, min 5.74 "
+    },
+    {
+      "name": "dark mode: authz page is dark and its text keeps >= 4.5:1 contrast",
+      "ok": true,
+      "detail": "40 texts, min 5.33 "
+    },
+    {
+      "name": "dark mode: the confirmation dialog is fully opaque",
+      "ok": true,
+      "detail": "{\"bg\":\"rgb(29, 30, 33)\",\"a\":1,\"o\":1}"
+    },
+    {
+      "name": "dark mode: the dialog text keeps >= 4.5:1 contrast",
+      "ok": true,
+      "detail": "min 5.45 "
+    },
+    {
+      "name": "dark mode: the service dialog is opaque",
+      "ok": true,
+      "detail": "rgb(29, 30, 33)"
+    },
+    {
+      "name": "390: members has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: invites has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: departments has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: sessions has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: roles has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: authz has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: models has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: budgets has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: audit has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: trace has no horizontal scroll",
+      "ok": true,
+      "detail": "390/390"
+    },
+    {
+      "name": "390: an opened role with every permission group expanded fits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the member drawer with the permission list open fits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: an opened model service fits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the service dialog (step 1) fits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the service dialog (step 2, advanced open) fits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: /settings has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: /capabilities?tab=market has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: /capabilities?tab=mine has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: /capabilities?tab=connectors has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: the review screen fits",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

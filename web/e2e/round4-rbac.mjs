@@ -106,6 +106,7 @@ try {
 	await owner.locator(`[data-testid="dept-node"][data-dept="${D["销售部"]}"] [data-testid="dept-select"]`).click();
 	await owner.selectOption('[data-testid="dept-admin-pick"]', { label: "张三" });
 	await owner.click('[data-testid="dept-admin-add"]');
+	await owner.click('[data-testid="confirm-ok"]');
 	await owner.waitForFunction(() => document.querySelector('[data-testid="dept-admins"]')?.textContent.includes("张三"));
 	check("org structure: 张三 is 销售部's department admin", true);
 	await owner.selectOption('[data-testid="dept-member-pick"]', { label: "张三" });
@@ -129,20 +130,25 @@ try {
 	check("roles: permission matrix has grouped checkboxes with descriptions", (await owner.locator('[data-testid^="perm-group-"]').count()) >= 15 && (await owner.locator('[data-testid="perm-audit.view"]').isChecked()));
 	await shot(owner, "1440-rbac-roles-builtin");
 	// create custom role via UI
+	await owner.click('[data-testid="role-back"]');
 	await owner.click('[data-testid="role-new"]');
 	await owner.fill('[data-testid="role-name"]', "内部审计");
+	await owner.click('[data-testid="matrix-toggle-all"]');
 	await owner.click('[data-testid="perm-audit.view"]');
 	await owner.click('[data-testid="perm-stats.org.view"]');
 	await owner.click('[data-testid="role-save"]');
+	await owner.waitForSelector('[data-testid="role-editor"]:not([data-role="new"])');
+	await owner.click('[data-testid="role-back"]');
 	await owner.waitForSelector('[data-testid="role-item"]:has-text("内部审计")');
 	check("roles: custom role created from the matrix", true);
 	// clone built-in role
 	await owner.locator('[data-testid="role-item"][data-role="builtin:billing"]').click();
 	await owner.click('[data-testid="role-clone"]');
-	await owner.waitForSelector('[data-testid="role-item"]:has-text("计费管理员 副本")');
+	await owner.waitForFunction(() => document.querySelector('[data-testid="role-name"]')?.value === "计费管理员 副本");
 	check("roles: clone of a built-in role is an editable custom role", (await owner.locator('[data-testid="role-save"]').count()) === 1);
 	await shot(owner, "1440-rbac-roles-custom");
 	await owner.click('[data-testid="role-delete"]');
+	await owner.click('[data-testid="confirm-ok"]');
 	await owner.waitForSelector('[data-testid="role-item"]:has-text("计费管理员 副本")', { state: "detached" });
 	check("roles: deleting a custom role removes it", true);
 	// ------------------------------------------------------------------ 授权
@@ -163,6 +169,7 @@ try {
 	const rowText = await owner.locator('[data-testid="authz-row"]:has-text("王五")').innerText();
 	check("authz: department-scoped assignment shows its scope", rowText.includes("华西") && rowText.includes("技能审核员"), rowText.replace(/\s+/g, " "));
 	// user group (optional): create, add 李四, grant 计费管理员 to the group
+	await owner.click('[data-testid="groups-panel"] summary');
 	await owner.fill('input[aria-label="新用户组名称"]', "报表组");
 	await owner.click('[data-testid="group-create"]');
 	await owner.waitForSelector('[data-testid="group-list"]:has-text("报表组")');
@@ -190,6 +197,7 @@ try {
 	check("members: base role + extra role chips visible", (await owner.locator('[data-testid="admin-member"]', { hasText: "赵六" }).innerText()).includes("内部审计"));
 	await owner.locator('[data-testid="admin-member"]', { hasText: "赵六" }).locator('[data-testid="member-detail-open"]').click();
 	await owner.waitForSelector('[data-testid="member-detail"] [data-testid="detail-effective"]');
+	await owner.click('[data-testid="detail-effective"] [data-testid="effective-toggle"]');
 	await owner.waitForSelector('[data-testid="detail-effective"] [data-perm="audit.view"][data-allow="1"]');
 	check("member detail: effective permissions list the role's grants", true);
 	await owner.locator('[data-testid="detail-effective"] [data-perm="audit.view"] [data-testid="why-btn"]').click();
@@ -197,6 +205,7 @@ try {
 	check("member detail: 为什么 names the role and scope", why.includes("内部审计") && why.includes("整个组织"), why.replace(/\s+/g, " "));
 	await shot(owner, "1440-rbac-member-detail");
 	// add a direct deny
+	await owner.click('[data-testid="detail-grants-fold"] summary');
 	await owner.selectOption('[data-testid="grant-effect"]', "deny");
 	await owner.selectOption('[data-testid="grant-perm"]', { label: "查看审计日志" });
 	await owner.fill('input[aria-label="原因"]', "离岗审查");
@@ -215,7 +224,9 @@ try {
 	await owner.goto(`${base}/admin?tab=audit`);
 	await owner.waitForSelector('[data-testid="admin-audit"]');
 	await owner.selectOption('select[aria-label="类别"]', "grant");
-	await owner.waitForFunction(() => ["grant.role_assign", "grant.user_deny", "department.member.set"].every((a) => document.querySelector('[data-testid="admin-audit"]')?.textContent.includes(a)), null, { timeout: 8000 });
+	await owner.waitForFunction(() => ["授予角色", "单独禁止权限", "调整部门成员"].every((a) => document.querySelector('[data-testid="admin-audit"]')?.textContent.includes(a)), null, { timeout: 8000 });
+	await owner.check('[data-testid="audit-tech"]');
+	check("audit: technical ids appear only after 显示技术详情", (await owner.locator('[data-testid="audit-tech-line"]').first().innerText()).includes("grant."));
 	const auditAll = await (await oapi.get(`${base}/api/admin/audit?limit=500`)).json();
 	const acts = new Set(auditAll.items.map((a) => a.action));
 	check("audit: role/department/grant changes are recorded and visible in the audit tab", ["role.create", "role.clone", "grant.role_assign", "grant.user_deny", "department.create", "department.move", "department.member.set"].every((a) => acts.has(a)), [...acts].filter((a) => /role|grant|department/.test(a)).join(","));
@@ -257,7 +268,7 @@ try {
 	check("auditor: members list has no disable / remove buttons", (await qp.locator('[data-testid="member-disable"]').count()) === 0);
 	await qp.goto(`${base}/admin?tab=audit`);
 	await qp.waitForSelector('[data-testid="admin-audit"]');
-	check("auditor: audit log readable", (await qp.locator('[data-testid="admin-audit"]').innerText()).includes("grant"));
+	check("auditor: audit log readable", (await qp.locator('[data-testid="admin-audit"]').innerText()).includes("授予角色"));
 	const qOrg = await qian.api.patch(`${base}/api/org`, { data: { name: "hacked" } });
 	check("auditor: changing org settings → 403", qOrg.status() === 403);
 
@@ -269,6 +280,7 @@ try {
 	await sp.goto(`${base}/settings`);
 	await sp.waitForSelector('[data-testid="my-permissions"] [data-testid="my-roles"]');
 	check("我的权限: shows the guest role", (await sp.locator('[data-testid="my-roles"]').innerText()).includes("访客"));
+	await sp.locator('[data-testid="my-effective"] [data-testid="effective-toggle"]').click();
 	await sp.locator('[data-testid="my-effective"] input[type="checkbox"]').uncheck();
 	const sandbox = sp.locator('[data-testid="my-effective"] [data-perm="sandbox.use"]');
 	check("我的权限: sandbox is not granted to a guest", (await sandbox.getAttribute("data-allow")) === "0");
@@ -298,7 +310,7 @@ try {
 		await noOverflow("组织架构");
 		await shot(p, `${label}-rbac-org-structure`);
 		await p.goto(`${base}/admin?tab=roles`);
-		await p.waitForSelector('[data-testid="role-editor"]');
+		await p.waitForSelector('[data-testid="role-item"]');
 		await noOverflow("角色与权限");
 		await shot(p, `${label}-rbac-roles`);
 		await p.goto(`${base}/admin?tab=authz`);

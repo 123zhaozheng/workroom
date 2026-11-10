@@ -26,9 +26,9 @@ export function McpMarket() {
 			<div className="mb-4 flex flex-wrap items-center gap-2">
 				<div className="relative min-w-[200px] flex-1">
 					<Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
-					<Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索 MCP 服务器" className="pl-9" aria-label="搜索 MCP" />
+					<Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索连接" className="pl-9" aria-label="搜索连接" />
 				</div>
-				<div className="inline-flex rounded-lg bg-surface-2 p-0.5 text-[13px]">
+				<div className="inline-flex rounded-lg bg-surface-2 p-0.5 text-sm">
 					<button className={cn("h-8 rounded-md px-3", !mine ? "bg-surface shadow-sm" : "text-fg-muted")} onClick={() => setMine(false)}>
 						市场
 					</button>
@@ -38,18 +38,18 @@ export function McpMarket() {
 				</div>
 				<Button variant="primary" onClick={() => setImp(true)} data-testid="mcp-import">
 					<FileJson />
-					导入 server.json
+					导入连接
 				</Button>
 			</div>
 			{me.data && me.data.me.sandbox.state !== "ready" ? (
 				<div className="mb-4">
-					<Blocked title="沙箱不可用：stdio 类服务器暂时无法安装">{me.data.me.sandbox.detail ?? "stdio MCP 服务器只能在沙箱里运行；远程（HTTP）服务器不受影响。"}</Blocked>
+					<Blocked title="工作区暂不可用：需要在工作区里运行的连接暂时无法安装">{me.data.me.sandbox.detail ?? "只连接远程服务的不受影响。"}</Blocked>
 				</div>
 			) : null}
-			<Loadable state={list} what="MCP 市场" need="GET /api/market/mcp">
+			<Loadable state={list} what="连接市场">
 				{(list.data?.entries ?? []).length === 0 ? (
-					<EmptyState icon={<Boxes />} title={mine ? "你还没有导入过条目" : "MCP 市场里还没有已发布的服务器"} action={<Button onClick={() => setImp(true)}>导入 server.json</Button>}>
-						条目使用官方 MCP Registry 的 server.json 格式。导入后是你的个人草稿，提交审核并发布后全组织可安装。
+					<EmptyState icon={<Boxes />} title={mine ? "你还没有导入过连接" : "连接市场里还没有已发布的连接"} action={<Button onClick={() => setImp(true)}>导入连接</Button>}>
+						导入后是你的个人草稿；提交审核并发布后，全组织都可以安装。
 					</EmptyState>
 				) : (
 					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -58,11 +58,11 @@ export function McpMarket() {
 								<div className="flex items-start gap-2">
 									<div className="min-w-0 flex-1">
 										<div className="truncate font-medium">{e.title}</div>
-										<div className="truncate font-mono text-[11.5px] text-fg-subtle">{e.name}</div>
+										<div className="truncate font-mono text-xs text-fg-subtle">{e.name}</div>
 									</div>
 									<Badge tone={STATUS[e.status].t}>{STATUS[e.status].l}</Badge>
 								</div>
-								<p className="mt-2 line-clamp-2 min-h-[2.6em] text-[13px] text-fg-muted">{e.description}</p>
+								<p className="mt-2 line-clamp-2 min-h-[2.6em] text-sm text-fg-muted">{e.description}</p>
 								<div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
 									{e.version ? <Badge tone="info">v{e.version}</Badge> : null}
 									{e.transports.includes("http") ? (
@@ -83,7 +83,7 @@ export function McpMarket() {
 					</div>
 				)}
 			</Loadable>
-			<Sheet open={!!open} onOpenChange={(o) => !o && setOpen(undefined)} title="MCP 条目" className="sm:max-w-[640px]">
+			<Sheet open={!!open} onOpenChange={(o) => !o && setOpen(undefined)} title="连接详情" className="sm:max-w-[640px]">
 				{open ? <EntryDetail id={open} onChanged={list.reload} onClose={() => setOpen(undefined)} /> : null}
 			</Sheet>
 			<ImportDialog open={imp} onOpenChange={setImp} onDone={(id) => (list.reload(), setMine(true), setOpen(id))} />
@@ -116,15 +116,15 @@ function ImportDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCha
 		try {
 			json = JSON.parse(text);
 		} catch {
-			setErr({ text: "不是有效的 JSON" });
+			setErr({ text: "内容格式不对，请粘贴完整的配置文件内容。" });
 			return;
 		}
 		void go({ serverJson: json });
 	};
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="导入 MCP 服务器" description="粘贴官方 MCP Registry 格式的 server.json，或上传离线包（.zip：server.json + 代码，registryType 为 bundle）。导入后是个人草稿。" className="max-w-xl">
-				<div className="space-y-3 text-[13px]">
+			<DialogContent title="导入连接" description="粘贴连接的配置文件内容，或上传配置文件、离线包。导入后是你的个人草稿。" className="max-w-xl">
+				<div className="space-y-3 text-sm">
 					<Textarea rows={9} value={text} onChange={(e) => setText(e.target.value)} placeholder={'{\n  "name": "io.github.you/notes",\n  "description": "…",\n  "version": "1.0.0",\n  "remotes": [{ "type": "streamable-http", "url": "https://…" }]\n}'} className="font-mono text-[12px]" aria-label="server.json" data-testid="mcp-json" />
 					{err ? (
 						<div className="rounded-lg border border-danger/40 bg-danger-soft/40 p-3 text-danger" data-testid="import-error">
@@ -140,7 +140,7 @@ function ImportDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCha
 					) : null}
 					<div className="flex flex-wrap items-center justify-between gap-2">
 						<Button onClick={() => fileRef.current?.click()} disabled={busy}>
-							选择 .json / .zip 文件
+							选择文件
 						</Button>
 						<input
 							ref={fileRef}
@@ -175,7 +175,7 @@ function EntryDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 	const [submit, setSubmit] = useState(false);
 	return (
 		<div className="flex min-h-0 flex-1 flex-col" data-testid="mcp-detail">
-			<Loadable state={d} what="MCP 条目">
+			<Loadable state={d} what="连接详情">
 				{e ? (
 					<>
 						<header className="border-b border-border px-5 pb-3 pt-5">
@@ -188,7 +188,7 @@ function EntryDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 									关闭
 								</Button>
 							</div>
-							<p className="mt-2 text-[13px] text-fg-muted">{e.description}</p>
+							<p className="mt-2 text-sm text-fg-muted">{e.description}</p>
 							<div className="mt-2 flex flex-wrap gap-2">
 								<Badge tone={STATUS[e.status].t}>{STATUS[e.status].l}</Badge>
 								{e.version ? <Badge tone="info">v{e.version}</Badge> : null}
@@ -198,7 +198,7 @@ function EntryDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 							<Section title="安装方式">
 								<ul className="space-y-2" data-testid="mcp-options">
 									{e.options.map((o) => (
-										<li key={o.index} className="rounded-lg border border-border p-3 text-[13px]" data-blocked={!!o.blocked}>
+										<li key={o.index} className="rounded-lg border border-border p-3 text-sm" data-blocked={!!o.blocked}>
 											<div className="flex flex-wrap items-center gap-2">
 												<span className="font-medium">{o.label}</span>
 												<Badge>{o.transport === "http" ? "远程 HTTP" : "沙箱 stdio"}</Badge>
@@ -218,7 +218,7 @@ function EntryDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 								<pre className="max-h-72 overflow-auto rounded-lg bg-surface-2 p-3 font-mono text-[12px]">{JSON.stringify(e.serverJson, null, 2)}</pre>
 							</Section>
 							<Section title="版本">
-								<ul className="space-y-1 text-[13px]">
+								<ul className="space-y-1 text-sm">
 									{e.versions.map((v) => (
 										<li key={v.versionNo}>
 											v{v.semver} · {fullTime(v.createdAt)} · {v.approved ? <span className="text-success">已发布</span> : <span className="text-fg-muted">未发布</span>}
@@ -252,7 +252,7 @@ function SubmitDialog({ open, onOpenChange, entry, onDone }: { open: boolean; on
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent title="提交审核" description={`提交最新版本 v${entry.latestVersionNo}。审核员会看到地址/命令、密钥名称与（离线包的）代码。`}>
-				<div className="space-y-3 text-[13px]">
+				<div className="space-y-3 text-sm">
 					<div>
 						<Label htmlFor="ms">发布到</Label>
 						<Select id="ms" className="w-full" value={scope} onChange={(e) => (setScope(e.target.value as MarketScope), setRef(""))}>
@@ -300,7 +300,7 @@ function InstallWizard({ entry, option, onClose, onDone }: { entry: McpCatalogDe
 		<Dialog open onOpenChange={(o) => !o && onClose()}>
 			<DialogContent title={`安装「${entry.title}」`} description={option.label} className="max-w-lg">
 				{result ? (
-					<div className="space-y-3 text-[13px]" data-testid="install-result">
+					<div className="space-y-3 text-sm" data-testid="install-result">
 						<p>
 							已创建连接：<b>{result.approval === "pending" ? "等待审核（批准前不会连接）" : result.status === "ready" ? "已连接，可用" : `状态 ${result.status}`}</b>
 						</p>
@@ -310,7 +310,7 @@ function InstallWizard({ entry, option, onClose, onDone }: { entry: McpCatalogDe
 						</div>
 					</div>
 				) : (
-					<div className="space-y-3 text-[13px]">
+					<div className="space-y-3 text-sm">
 						<div className="grid grid-cols-2 gap-2">
 							<label className={cn("cursor-pointer rounded-lg border px-3 py-2", target === "me" ? "border-accent bg-surface-2" : "border-border")}>
 								<input type="radio" className="mr-2" checked={target === "me"} onChange={() => setTarget("me")} />

@@ -1,13 +1,13 @@
-// 模型与渠道 tab (MODELS group, round 4): pi-ai native 模型服务商. Providers (OpenAI-compatible Chat Completions, OpenAI Responses,
-// Claude-compatible Messages, pi-ai built-ins) → test connection → 获取模型列表 → enable models / set visibility.
-// The admin shell mounts <ModelsAdmin /> only.
-import { FlaskConical, Info } from "lucide-react";
+// 模型服务 page: org default model and the "members may bring their own key" policy, then the service list. Technical facts (the
+// read-only config file, key encryption) sit in the collapsed 技术详情. The admin shell mounts <ModelsAdmin /> only.
+import { FlaskConical } from "lucide-react";
 import type { ModelProvidersResponse, PlatformModelDTO } from "@shared/ops";
 import { put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { Select } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { useAct } from "@/features/admin/common";
+import { Fold, useAct } from "@/features/admin/common";
+import { useConfirm } from "@/features/admin/confirm";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 import { ProviderPanel } from "./ProviderPanel";
 
@@ -23,26 +23,27 @@ export function ModelsAdmin() {
 		res.reload();
 		models.reload();
 	});
+	const { ask, dialog } = useConfirm();
 	const settings = res.data?.settings;
 	const choices = (models.data?.models ?? []).filter((m) => !m.fixture && !m.personal && !(m as { legacy?: boolean }).legacy && m.status === "ready");
 	return (
-		<div className="space-y-6" data-testid="models-admin">
+		<div className="space-y-8" data-testid="models-admin">
 			{note}
-			<section className="rounded-xl border border-border bg-surface p-3 text-[13px]" data-testid="model-settings">
-				<div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-					<label className="flex items-center gap-2">
-						<span className="text-fg-muted">组织默认模型</span>
+			<section data-testid="model-settings" aria-label="模型设置">
+				<div className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-xl border border-border bg-surface p-4 text-sm">
+					<label className="flex flex-wrap items-center gap-2">
+						<span className="text-fg-muted">默认模型</span>
 						<Select
 							value={settings?.defaultModel && choices.some((m) => m.ref.provider === settings.defaultModel!.provider && m.ref.modelId === settings.defaultModel!.modelId) ? `${settings.defaultModel.provider}/${settings.defaultModel.modelId}` : ""}
 							disabled={busy || !canModels}
-							className="h-8 max-w-64 text-[13px]"
+							className="max-w-64"
 							data-testid="default-model"
 							onChange={(e) => {
 								const m = choices.find((x) => x.id === e.target.value);
 								void run(() => put("/admin/model-settings", { defaultModel: m ? { provider: m.ref.provider, modelId: m.ref.modelId } : null }));
 							}}
 						>
-							<option value="">自动（第一个可用模型）</option>
+							<option value="">自动（第一个可用的模型）</option>
 							{choices.map((m) => (
 								<option key={m.id} value={m.id}>
 									{m.label}
@@ -50,27 +51,28 @@ export function ModelsAdmin() {
 							))}
 						</Select>
 					</label>
-					<label className="flex items-center gap-1.5">
-						<input type="checkbox" checked={!!settings?.personalProviders} disabled={busy || !canProviders} onChange={(e) => run(() => put("/admin/model-settings", { personalProviders: e.target.checked }))} data-testid="personal-providers-toggle" />
-						允许成员自带密钥（个人服务商，仅本人可见可用）
+					<label className="flex cursor-pointer items-center gap-2">
+						<input
+							type="checkbox"
+							className="size-4 accent-[var(--accent)]"
+							checked={!!settings?.personalProviders}
+							disabled={busy || !canProviders}
+							data-testid="personal-providers-toggle"
+							onChange={async (e) => {
+								const on = e.target.checked;
+								if (on && !(await ask({ title: "允许成员使用自己的密钥？", consequence: "成员可以在设置里添加自己的模型服务和密钥。他们发送的内容会直接发给所选服务，不经过你配置的服务，也不受这里的模型开放范围限制。", items: ["密钥只保存给本人，管理员看不到", "随时可以再关闭"], confirmLabel: "允许", danger: true }))) return;
+								await run(() => put("/admin/model-settings", { personalProviders: on }));
+							}}
+						/>
+						允许成员自带密钥
 					</label>
 				</div>
-				{settings && !settings.secretKeyConfigured ? <p className="mt-2 text-xs text-warning">服务端未配置 WORKROOM_SECRET_KEY：无法直接保存密钥。可改用“引用环境变量名”的方式（WORKROOM_ 开头）。</p> : null}
-				{settings?.config.path ? (
-					<p className="mt-2 flex items-start gap-1 text-xs text-fg-subtle">
-						<Info className="mt-0.5 size-3.5 shrink-0" />
-						<span>
-							配置文件 <code>{settings.config.path}</code>：已加载 {settings.config.providers.length} 个服务商（只读）。
-							{settings.config.errors.length ? <span className="text-danger"> 问题：{settings.config.errors.join("；")}</span> : null}
-						</span>
-					</p>
-				) : null}
+				{settings && !settings.secretKeyConfigured ? <p className="mt-2 text-xs text-warning">服务端还没有开启密钥加密，暂时不能直接保存密钥。</p> : null}
 			</section>
 
 			{/* data-testid kept from the old channels list so existing e2e checks ("keys never shown") still apply */}
-			<section data-testid="admin-channels">
-				<h3 className="mb-2 text-[13px] font-medium text-fg-muted">模型服务商（每个都是一个 pi-ai provider；密钥只在服务端，从不返回浏览器）</h3>
-				<Loadable state={res} what="模型服务商" need="GET /api/admin/model-providers">
+			<section data-testid="admin-channels" aria-label="模型服务">
+				<Loadable state={res} what="模型服务">
 					<ProviderPanel
 						base="/admin/model-providers"
 						canProviders={canProviders}
@@ -84,15 +86,41 @@ export function ModelsAdmin() {
 						}}
 					/>
 					{res.data?.fixture ? (
-						<p className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2 text-xs text-fg-muted" data-testid="fixture-note">
-							<FlaskConical className="size-4 shrink-0" />
+						<p className="mt-3 flex items-start gap-2 rounded-xl border border-dashed border-border px-3 py-2 text-xs text-fg-muted" data-testid="fixture-note">
+							<FlaskConical aria-hidden className="mt-0.5 size-4 shrink-0" />
 							<span>
-								<Badge tone="warning">测试模型，非真实 AI</Badge> {res.data.fixture.detail}
+								<Badge tone="warning">测试模型</Badge> 固定脚本回复，不是真实的 AI，费用为 0。
 							</span>
 						</p>
 					) : null}
+					{settings?.config.path || settings ? (
+						<div className="mt-4">
+							<Fold title="技术详情" testId="models-tech">
+								<dl className="grid grid-cols-[96px_1fr] gap-x-3 gap-y-1 text-xs text-fg-muted">
+									<dt>密钥加密</dt>
+									<dd>{settings?.secretKeyConfigured ? "已开启" : "未开启（服务端缺少 WORKROOM_SECRET_KEY）"}</dd>
+									{settings?.config.path ? (
+										<>
+											<dt>配置文件</dt>
+											<dd className="break-all">
+												{settings.config.path}：已加载 {settings.config.providers.length} 个服务（只读）
+												{settings.config.errors.length ? <span className="text-danger"> 问题：{settings.config.errors.join("；")}</span> : null}
+											</dd>
+										</>
+									) : null}
+									{res.data?.fixture ? (
+										<>
+											<dt>测试模型</dt>
+											<dd>{res.data.fixture.detail}</dd>
+										</>
+									) : null}
+								</dl>
+							</Fold>
+						</div>
+					) : null}
 				</Loadable>
 			</section>
+			{dialog}
 		</div>
 	);
 }

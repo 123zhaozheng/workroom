@@ -1,8 +1,10 @@
 // Add a model by hand / edit one: id, display name, context window, max output tokens, input modalities, reasoning + thinking
-// levels, price per million tokens, tools, pi-ai `compat` flags, org visibility (departments / members), fallbacks, default thinking.
+// levels, price per million tokens, tools, compatibility flags, org visibility (departments / members), fallbacks, default thinking.
+// Everyday fields first; thinking levels, compatibility flags, fallbacks and per-model limits live in the collapsed 高级设置.
 import { useState } from "react";
 import type { AdminModelDTO, ModelProviderDTO, PlatformModelDTO, ThinkingLevel, UpdateAdminModelRequest } from "@shared/ops";
 import { errorText, patch, post } from "@/lib/api";
+import { Fold } from "@/features/admin/common";
 import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
@@ -90,11 +92,11 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={editing ? `编辑模型：${model!.name}` : `添加模型到「${provider.name}」`} description={editing && !model!.manual ? "这是从目录获取的模型：此处修改会作为覆盖项保存（可随时恢复目录原值）。" : "字段对应 pi-ai 的 Model 定义；未知值请按厂商文档填写。"} className="max-h-[90vh] max-w-2xl overflow-y-auto" data-testid="model-dialog">
-				<div className="space-y-3.5 text-[13px]">
+			<DialogContent title={editing ? `编辑模型：${model!.name}` : `添加模型到「${provider.name}」`} description={editing && !model!.manual ? "这是从服务商获取的模型：这里的修改会覆盖原有参数，可随时恢复。" : "不确定的参数请参考厂商文档。"} className="max-h-[90vh] max-w-2xl overflow-y-auto" data-testid="model-dialog">
+				<div className="space-y-3.5 text-sm">
 					<div className="grid gap-3 sm:grid-cols-2">
 						<div>
-							<Label>模型 ID（发给厂商的 model 参数）</Label>
+							<Label>模型 ID（厂商文档里的名称）</Label>
 							<Input value={id} disabled={editing} onChange={(e) => setId(e.target.value)} placeholder="deepseek-chat" data-testid="model-id" />
 						</div>
 						<div>
@@ -102,11 +104,11 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 							<Input value={name} onChange={(e) => setName(e.target.value)} placeholder="DeepSeek V3" data-testid="model-name" />
 						</div>
 						<div>
-							<Label>上下文窗口（tokens）</Label>
+							<Label>上下文长度（Token）</Label>
 							<Input value={ctx} onChange={(e) => setCtx(e.target.value.replace(/\D/g, ""))} />
 						</div>
 						<div>
-							<Label>最大输出（tokens）</Label>
+							<Label>最大输出（Token）</Label>
 							<Input value={maxTokens} onChange={(e) => setMaxTokens(e.target.value.replace(/\D/g, ""))} />
 						</div>
 					</div>
@@ -129,9 +131,53 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 							推理 / 思考模型
 						</label>
 					</div>
+					<div>
+						<Label>价格（美元 / 百万 Token，用于费用统计；0 表示未设置）</Label>
+						<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+							{(["input", "output", "cacheRead", "cacheWrite"] as const).map((k) => (
+								<label key={k} className="text-xs text-fg-muted">
+									{k === "input" ? "输入" : k === "output" ? "输出" : k === "cacheRead" ? "缓存读" : "缓存写"}
+									<Input value={cost[k]} onChange={(e) => setCost({ ...cost, [k]: e.target.value.replace(/[^\d.]/g, "") })} className="mt-0.5 h-8" />
+								</label>
+							))}
+						</div>
+					</div>
+
+					{!personal ? (
+						<>
+							<div>
+								<Label>对哪些成员开放（都不选 = 全体成员）</Label>
+								<div className="grid gap-2 sm:grid-cols-2">
+									<div className="max-h-28 overflow-y-auto rounded-lg border border-border p-2">
+										<div className="mb-1 text-xs text-fg-muted">部门</div>
+										{(deps.data?.departments ?? []).map((d) => (
+											<label key={d.id} className="flex items-center gap-1.5 py-0.5">
+												<input type="checkbox" checked={vis.departmentIds.has(d.id)} onChange={() => setVis({ ...vis, departmentIds: toggle(vis.departmentIds, d.id) })} />
+												{d.name}
+											</label>
+										))}
+										{(deps.data?.departments ?? []).length === 0 ? <span className="text-xs text-fg-muted">没有部门</span> : null}
+									</div>
+									<div className="max-h-28 overflow-y-auto rounded-lg border border-border p-2">
+										<div className="mb-1 text-xs text-fg-muted">指定成员</div>
+										{(members.data?.members ?? []).map((m) => (
+											<label key={m.userId} className="flex items-center gap-1.5 py-0.5">
+												<input type="checkbox" checked={vis.userIds.has(m.userId)} onChange={() => setVis({ ...vis, userIds: toggle(vis.userIds, m.userId) })} />
+												{m.name}
+											</label>
+										))}
+									</div>
+								</div>
+								<p className="mt-1 text-xs text-fg-muted">管理员始终能看到全部模型。不在范围内的人无法继续使用该模型，已有的对话下次发送时会提示换模型。</p>
+							</div>
+						</>
+					) : null}
+
+					<Fold title="高级设置" hint="思考强度、兼容性、备用模型、限流" testId="model-advanced">
+						<div className="space-y-3.5">
 					{reasoning ? (
 						<div className="rounded-lg border border-border px-3 py-2">
-							<Label>可用的思考档位</Label>
+							<Label>可用的思考强度</Label>
 							<div className="flex flex-wrap gap-x-4 gap-y-1">
 								{THINKING_LEVELS.map((l) => (
 									<label key={l} className="flex items-center gap-1.5">
@@ -140,9 +186,9 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 									</label>
 								))}
 							</div>
-							<p className="mt-1 text-xs text-fg-subtle">未勾选的档位会标记为“不支持”。xhigh 仅在勾选时可用；具体发往厂商的参数由 compat.thinkingFormat 决定。</p>
+							<p className="mt-1 text-xs text-fg-muted">未勾选的强度会标为“不支持”。具体如何发给厂商由下面的兼容性设置决定。</p>
 							<div className="mt-2">
-								<Label>默认思考档位</Label>
+								<Label>默认思考强度</Label>
 								<Select value={defaultThinking} onChange={(e) => setDefaultThinking(e.target.value)}>
 									<option value="">不指定</option>
 									<option value="off">off</option>
@@ -157,52 +203,15 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 					) : null}
 
 					<div>
-						<Label>价格（美元 / 百万 Token；用于用量费用统计，0 = 未设置）</Label>
-						<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-							{(["input", "output", "cacheRead", "cacheWrite"] as const).map((k) => (
-								<label key={k} className="text-xs text-fg-subtle">
-									{k === "input" ? "输入" : k === "output" ? "输出" : k === "cacheRead" ? "缓存读" : "缓存写"}
-									<Input value={cost[k]} onChange={(e) => setCost({ ...cost, [k]: e.target.value.replace(/[^\d.]/g, "") })} className="mt-0.5 h-8" />
-								</label>
-							))}
-						</div>
-					</div>
-
-					<div>
-						<Label>compat（pi-ai 兼容选项，JSON，可留空）</Label>
+						<Label>兼容性设置（键值对，可留空）</Label>
 						<Textarea value={compat} onChange={(e) => setCompat(e.target.value)} rows={3} placeholder={COMPAT_HELP} className="font-mono text-xs" data-testid="model-compat" />
-						<p className="mt-1 text-xs text-fg-subtle">服务端用 pi-ai 自己的 schema 校验：未知键或类型错误会被拒绝。常见：本地 Ollama/vLLM 设 supportsDeveloperRole=false、supportsReasoningEffort=false。</p>
+						<p className="mt-1 text-xs text-fg-muted">保存时会校验，未知的键或错误的类型会被拒绝。本地部署的模型通常需要关闭 supportsDeveloperRole 和 supportsReasoningEffort。</p>
 					</div>
 
-					{!personal ? (
-						<>
+							{!personal ? (
+								<>
 							<div>
-								<Label>可见范围（不选 = 组织内所有成员）</Label>
-								<div className="grid gap-2 sm:grid-cols-2">
-									<div className="max-h-28 overflow-y-auto rounded-lg border border-border p-2">
-										<div className="mb-1 text-xs text-fg-subtle">部门</div>
-										{(deps.data?.departments ?? []).map((d) => (
-											<label key={d.id} className="flex items-center gap-1.5 py-0.5">
-												<input type="checkbox" checked={vis.departmentIds.has(d.id)} onChange={() => setVis({ ...vis, departmentIds: toggle(vis.departmentIds, d.id) })} />
-												{d.name}
-											</label>
-										))}
-										{(deps.data?.departments ?? []).length === 0 ? <span className="text-xs text-fg-subtle">没有部门</span> : null}
-									</div>
-									<div className="max-h-28 overflow-y-auto rounded-lg border border-border p-2">
-										<div className="mb-1 text-xs text-fg-subtle">指定成员</div>
-										{(members.data?.members ?? []).map((m) => (
-											<label key={m.userId} className="flex items-center gap-1.5 py-0.5">
-												<input type="checkbox" checked={vis.userIds.has(m.userId)} onChange={() => setVis({ ...vis, userIds: toggle(vis.userIds, m.userId) })} />
-												{m.name}
-											</label>
-										))}
-									</div>
-								</div>
-								<p className="mt-1 text-xs text-fg-subtle">管理员始终可见全部模型。已有会话里的该模型对不在范围内的人会在下一次请求时被拒绝。</p>
-							</div>
-							<div>
-								<Label>备用模型（主模型在输出前遇到 429/5xx/超时/网络错误时依次尝试）</Label>
+								<Label>备用模型（主模型出错、超时或被限流时，按顺序改用）</Label>
 								{fallbacks.map((f, i) => (
 									<div key={i} className="mb-1 flex gap-1.5">
 										<Select value={f} onChange={(e) => setFallbacks(fallbacks.map((x, j) => (j === i ? e.target.value : x)))} className="flex-1">
@@ -223,19 +232,20 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 									</Button>
 								) : null}
 							</div>
-						</>
-					) : null}
-
+								</>
+							) : null}
 					<div className="grid grid-cols-2 gap-2">
-						<label className="text-xs text-fg-subtle">
-							本模型每分钟请求上限（叠加在服务商限制上，可空）
+						<label className="text-xs text-fg-muted">
+							每分钟请求上限（可空）
 							<Input value={mrpm} onChange={(e) => setMrpm(e.target.value.replace(/\D/g, ""))} className="mt-0.5 h-8" />
 						</label>
-						<label className="text-xs text-fg-subtle">
-							本模型并发上限（可空）
+						<label className="text-xs text-fg-muted">
+							同时进行的请求上限（可空）
 							<Input value={mconc} onChange={(e) => setMconc(e.target.value.replace(/\D/g, ""))} className="mt-0.5 h-8" />
 						</label>
 					</div>
+						</div>
+					</Fold>
 					<div>
 						<Label>说明（可选）</Label>
 						<Input value={description} onChange={(e) => setDescription(e.target.value)} />

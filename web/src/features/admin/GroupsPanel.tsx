@@ -1,5 +1,5 @@
 // 用户组 (optional): named sets of members that can be given roles like a department can. Managed with group.manage.
-import { Plus, Trash2, Users } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { MemberDTO } from "@shared/ops";
 import { del, post, put } from "@/lib/api";
@@ -7,7 +7,8 @@ import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { useAct } from "@/features/admin/common";
+import { Fold, useAct } from "@/features/admin/common";
+import { useConfirm } from "@/features/admin/confirm";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 
 interface Group {
@@ -22,16 +23,14 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 	const members = useApi<{ members: MemberDTO[] }>("/admin/members");
 	const perms = useViewerPerms();
 	const { busy, run, note } = useAct(() => (res.reload(), onChanged?.()));
+	const { ask, dialog } = useConfirm();
 	const [name, setName] = useState("");
 	const [open, setOpen] = useState<string>();
 	const can = perms.org.has("group.manage");
 	return (
 		<section className="mt-8" data-testid="groups-panel">
-			<h3 className="mb-1 flex items-center gap-1.5 text-[13px] font-medium text-fg-muted">
-				<Users className="size-3.5" />
-				用户组（可选）
-			</h3>
-			<p className="mb-2 text-xs text-fg-subtle">把不在同一部门的人编成一组，再在上面的表单里把角色授予「用户组」。</p>
+			<Fold title="用户组（可选）" hint="把不在同一部门的人编成一组，再把角色授予整个组">
+			{dialog}
 			{can ? (
 				<form
 					className="mb-2 flex gap-2"
@@ -40,7 +39,7 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 						void run(() => post("/admin/groups", { name }).then(() => setName("")), "用户组已创建");
 					}}
 				>
-					<Input value={name} onChange={(e) => setName(e.target.value)} placeholder="新用户组名称" className="h-8 max-w-xs text-[13px]" aria-label="新用户组名称" />
+					<Input value={name} onChange={(e) => setName(e.target.value)} placeholder="新用户组名称" className="h-8 max-w-xs text-sm" aria-label="新用户组名称" />
 					<Button size="sm" type="submit" disabled={busy || !name.trim()} data-testid="group-create">
 						<Plus />
 						新建
@@ -50,17 +49,17 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 			{note}
 			<Loadable state={res} what="用户组">
 				{(res.data?.groups ?? []).length === 0 ? (
-					<p className="text-xs text-fg-subtle">还没有用户组。</p>
+					<p className="text-xs text-fg-muted">还没有用户组。</p>
 				) : (
 					<ul className="divide-y divide-border rounded-xl border border-border bg-surface" data-testid="group-list">
 						{res.data!.groups.map((g) => (
 							<li key={g.id}>
-								<div className="flex flex-wrap items-center gap-2 px-3 py-2 text-[13px]">
+								<div className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
 									<button type="button" className="min-w-0 flex-1 truncate text-left font-medium" onClick={() => setOpen(open === g.id ? undefined : g.id)}>
 										{g.name} <span className="text-xs font-normal text-fg-subtle">· {g.memberCount} 人</span>
 									</button>
 									{can ? (
-										<Button size="sm" variant="ghost" disabled={busy} onClick={() => confirm(`删除用户组「${g.name}」？授予它的角色会一并移除。`) && run(() => del(`/admin/groups/${g.id}`), "用户组已删除")}>
+										<Button size="icon-sm" variant="ghost" aria-label={`删除用户组 ${g.name}`} disabled={busy} onClick={async () => (await ask({ title: `删除用户组「${g.name}」？`, consequence: "授予这个组的角色会一并移除，组里的成员会立即失去这些权限（成员本人不受影响）。", confirmLabel: "删除用户组", danger: true })) && run(() => del(`/admin/groups/${g.id}`), "用户组已删除")}>
 											<Trash2 />
 										</Button>
 									) : null}
@@ -71,6 +70,7 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 					</ul>
 				)}
 			</Loadable>
+			</Fold>
 		</section>
 	);
 }
@@ -81,7 +81,7 @@ function GroupMembers({ group, all, can, onChanged }: { group: Group; all: Membe
 	const [pick, setPick] = useState("");
 	const list = res.data?.members ?? [];
 	return (
-		<div className="border-t border-border bg-surface-2/50 px-3 py-2 text-[13px]">
+		<div className="border-t border-border bg-surface-2/50 px-3 py-2 text-sm">
 			{note}
 			<div className="mb-2 flex flex-wrap gap-1.5">
 				{list.length === 0 ? <span className="text-xs text-fg-subtle">还没有成员。</span> : null}

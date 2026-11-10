@@ -1,4 +1,4 @@
-// 能力: 技能市场 / 我的技能 / 待审核（仅审核员）/ MCP 市场 / 我的连接. Skills and MCP servers share one lifecycle:
+// 能力: 技能市场 / 我的技能 / 待审核（仅审核员）/ 连接市场 / 我的连接. Skills and MCP servers share one lifecycle:
 // upload or import → automated checks → scoped review → publish → install (me / project / department / org).
 // Design: docs/skills-mcp-marketplace.md. All permissions are decided by the server; the page only reflects them.
 import { Boxes, ClipboardCheck, Plug, Sparkles, Store } from "lucide-react";
@@ -7,6 +7,7 @@ import { useSearchParams } from "react-router";
 import { TopBar } from "@/components/shell/AppShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Page, PageHeader } from "@/components/ui/misc";
+import { Help } from "@/features/admin/common";
 import { Connectors } from "@/features/market/Connectors";
 import { McpMarket } from "@/features/market/McpMarket";
 import { MySkills } from "@/features/market/MySkills";
@@ -36,7 +37,7 @@ export default function CapabilitiesPage() {
 			<TopBar />
 			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
 				<Page wide>
-					<PageHeader title="能力" description="技能与外部连接（MCP）的市场、审核与安装。加载技能只提供说明，不授予执行或联网权限；可执行技能需按版本单独授权；stdio 服务器只在沙箱里运行。" />
+					<PageHeader title="能力" actions={<Help label="说明">技能让智能体学会做某类事，连接让它能使用外部服务。上架前都要经过审核；技能只提供做法，需要运行代码或联网时会单独授权。</Help>} />
 					<Tabs value={canReview || tab !== "review" ? tab : "mine"} onValueChange={go}>
 						<div className="mb-5 overflow-x-auto">
 							<TabsList className="min-w-max">
@@ -52,12 +53,12 @@ export default function CapabilitiesPage() {
 									<TabsTrigger value="review" data-testid="tab-review">
 										<ClipboardCheck />
 										待审核
-										{count ? <span className="ml-1 rounded-full bg-warning-soft px-1.5 text-[11px] text-warning" data-testid="review-count">{count}</span> : null}
+										{count ? <span className="ml-1 rounded-full bg-warning-soft px-1.5 text-xs text-warning" data-testid="review-count">{count}</span> : null}
 									</TabsTrigger>
 								) : null}
 								<TabsTrigger value="mcp" data-testid="tab-mcp">
 									<Boxes />
-									MCP 市场
+									连接市场
 								</TabsTrigger>
 								<TabsTrigger value="connectors" data-testid="tab-connectors">
 									<Plug />

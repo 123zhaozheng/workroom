@@ -35,7 +35,7 @@ export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onD
 					新建技能
 				</Button>
 			</div>
-			<Loadable state={skills} what="技能" need="D 组：GET /api/skills">
+			<Loadable state={skills} what="技能">
 				{(skills.data?.skills ?? []).length === 0 ? (
 					<EmptyState icon={<Sparkles />} title="还没有技能">
 						上传技能包，从技能市场安装，或在一次成功的对话里选择“整理为技能”。
@@ -53,7 +53,7 @@ export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onD
 					<h2 className="mb-2 text-[15px] font-semibold">我的提交</h2>
 					<ul className="divide-y divide-border rounded-xl border border-border bg-surface">
 						{subs.data!.submissions.map((x) => (
-							<li key={x.id} className="flex flex-wrap items-center gap-2 px-3.5 py-2.5 text-[13px]" data-testid="my-submission" data-state={x.state}>
+							<li key={x.id} className="flex flex-wrap items-center gap-2 px-3.5 py-2.5 text-sm" data-testid="my-submission" data-state={x.state}>
 								<span className="font-medium">{x.subjectName}</span>
 								<span className="text-fg-muted">v{x.semver ?? x.versionNo}</span>
 								<Badge>→ {SCOPE[x.targetScope]}</Badge>
@@ -148,7 +148,7 @@ function UploadPanel({ onUploaded, skillId }: { onUploaded: () => void; skillId?
 					<Upload className="size-5" />
 				</div>
 				<div className="text-[14px] font-medium">把技能包（.zip）拖到这里上传</div>
-				<p className="max-w-lg text-[12.5px] text-fg-muted">
+				<p className="max-w-lg text-xs text-fg-muted">
 					包里需要 SKILL.md（含 name、description 的 frontmatter），可带 scripts/、references/、assets/。上传后自动检查；个人使用无需审核，要分享给项目、部门或组织需提交审核。
 					{lim ? ` 上限：${Math.round(lim.uploadBytes / 1048576)} MB、${lim.files} 个文件。` : ""}
 				</p>
@@ -180,7 +180,7 @@ function UploadPanel({ onUploaded, skillId }: { onUploaded: () => void; skillId?
 				{busy ? <p className="text-xs text-fg-muted">正在上传并检查…</p> : null}
 			</div>
 			{err ? (
-				<div className="mt-3 rounded-xl border border-danger/40 bg-danger-soft/40 p-3.5 text-[13px]" data-testid="upload-error">
+				<div className="mt-3 rounded-xl border border-danger/40 bg-danger-soft/40 p-3.5 text-sm" data-testid="upload-error">
 					<div className="mb-1.5 flex items-center gap-1.5 font-medium text-danger">
 						<CircleX className="size-4" />
 						上传被拒绝：{err.text}
@@ -189,7 +189,7 @@ function UploadPanel({ onUploaded, skillId }: { onUploaded: () => void; skillId?
 				</div>
 			) : null}
 			{result ? (
-				<div className="mt-3 rounded-xl border border-border bg-surface p-3.5 text-[13px]" data-testid="upload-result">
+				<div className="mt-3 rounded-xl border border-border bg-surface p-3.5 text-sm" data-testid="upload-result">
 					<div className="mb-2 flex flex-wrap items-center gap-2">
 						<CheckCircle2 className="size-4 text-success" />
 						<span className="font-medium">已上传「{result.name}」v{result.versionNo}</span>
@@ -220,13 +220,13 @@ function VersionSubmit({ skill, onChanged }: { skill: SkillDTO; onChanged: () =>
 	return (
 		<div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-2" data-testid="version-submit">
 			<Send className="size-4 text-fg-muted" />
-			<span className="text-[13px]">要让项目、部门或整个组织使用？提交一个版本给审核员。</span>
+			<span className="text-sm">要让项目、部门或整个组织使用？提交一个版本给审核员。</span>
 			<Button size="sm" onClick={() => (setVersionNo(skill.latestVersionNo), setOpen(true))} data-testid="submit-review">
 				提交审核…
 			</Button>
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogContent title="提交审核" description="审核通过并发布后，才会出现在技能市场；审核员看到的是你提交的这个不可变版本。">
-					<div className="space-y-3 text-[13px]">
+					<div className="space-y-3 text-sm">
 						<div className="grid grid-cols-2 gap-3">
 							<div>
 								<Label htmlFor="sv">版本</Label>
@@ -320,9 +320,9 @@ function SkillCard({ s, onChanged }: { s: SkillDTO; onChanged: () => void }) {
 					</Button>
 				)}
 			</div>
-			{err ? <p className="px-3 pb-2 text-[13px] text-danger">{err}</p> : null}
+			{err ? <p className="px-3 pb-2 text-sm text-danger">{err}</p> : null}
 			{open ? (
-				<div className="space-y-3 border-t border-border p-3 text-[13px]">
+				<div className="space-y-3 border-t border-border p-3 text-sm">
 					{eff ? (
 						<div>
 							<p className="text-fg-muted">{eff.description}</p>
@@ -354,7 +354,7 @@ function SkillCard({ s, onChanged }: { s: SkillDTO; onChanged: () => void }) {
 								value={inst.pinnedVersionNo === null ? "latest" : String(inst.pinnedVersionNo)}
 								disabled={busy}
 								onChange={(e) => run(() => patch(`/skills/${s.id}/install`, { pinnedVersionNo: e.target.value === "latest" ? null : Number(e.target.value) }))}
-								className="h-8 text-[13px]"
+								className="h-8 text-sm"
 							>
 								<option value="latest">跟随最新（v{full.latestVersionNo}）</option>
 								{versions.map((v) => (
@@ -451,7 +451,7 @@ function CreateSkillDialog({ open, onOpenChange, onCreated }: { open: boolean; o
 						<Label htmlFor="si">指令 / SKILL.md</Label>
 						<Textarea id="si" rows={6} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
 					</div>
-					{err ? <p className="text-[13px] text-danger">{err}</p> : null}
+					{err ? <p className="text-sm text-danger">{err}</p> : null}
 					<div className="flex justify-end">
 						<Button variant="primary" disabled={busy || !name.trim() || !instructions.trim()} onClick={() => run(() => post("/skills", { name, kind, description, instructions }))} data-testid="skill-create">
 							创建并安装
@@ -473,9 +473,9 @@ function DraftPanel({ id, onDone }: { id: string; onDone: () => void }) {
 	const dirty = Object.keys(edit).length > 0;
 	return (
 		<section data-testid="skill-draft" className="mb-6 rounded-xl border border-info/40 bg-info-soft/30 p-4">
-			<Loadable state={res} what="技能草稿" need="D 组：GET /api/skills/drafts/:id">
+			<Loadable state={res} what="技能草稿">
 				{d ? (
-					<div className="space-y-3 text-[13px]">
+					<div className="space-y-3 text-sm">
 						<div className="flex flex-wrap items-center gap-2">
 							<h2 className="text-[15px] font-semibold">从任务整理的技能草稿</h2>
 							<Badge>{KIND[v.kind].label}</Badge>
@@ -498,7 +498,7 @@ function DraftPanel({ id, onDone }: { id: string; onDone: () => void }) {
 						</div>
 						<div>
 							<Label htmlFor="di">指令（SKILL.md）</Label>
-							<Textarea id="di" rows={7} value={v.instructions} onChange={(e) => setEdit((x) => ({ ...x, instructions: e.target.value }))} className="font-mono text-[12.5px]" />
+							<Textarea id="di" rows={7} value={v.instructions} onChange={(e) => setEdit((x) => ({ ...x, instructions: e.target.value }))} className="font-mono text-xs" />
 						</div>
 						<div className="text-xs text-fg-muted">
 							资源：{d.resources.length ? d.resources.map((r) => `${r.path}（${r.size} B）`).join("、") : "无"}

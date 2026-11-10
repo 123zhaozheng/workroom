@@ -2,14 +2,13 @@
 import type { AdminModelDTO, ModelProviderDTO, ModelProviderType } from "@shared/ops";
 import { Badge } from "@/components/ui/misc";
 
-export const TYPE_LABEL: Record<ModelProviderType, string> = {
-	"openai-completions": "OpenAI 兼容 · Chat Completions",
-	"openai-responses": "OpenAI Responses",
-	"anthropic-messages": "Claude 兼容 · Anthropic Messages",
-	builtin: "pi-ai 内置",
-};
-export const TYPE_SHORT: Record<ModelProviderType, string> = { "openai-completions": "Chat Completions", "openai-responses": "Responses", "anthropic-messages": "Messages", builtin: "内置" };
-export const SCOPE_LABEL = { instance: "实例（配置文件/环境变量）", org: "组织", user: "个人" } as const;
+/** Provider kinds in plain words. */
+export const TYPE_LABEL: Record<ModelProviderType, string> = { "openai-completions": "OpenAI 兼容", "openai-responses": "OpenAI 兼容", "anthropic-messages": "Claude 兼容", builtin: "内置" };
+export const TYPE_SHORT = TYPE_LABEL;
+export const SCOPE_LABEL = { instance: "系统预置", org: "组织", user: "个人" } as const;
+
+/** Preset names without the protocol / vendor-internal parentheses ("OpenAI 官方 (Responses)" → "OpenAI 官方"). */
+export const presetName = (label: string): string => label.replace(/\s*[（(][^）)]*[）)]/g, "").trim();
 
 /** What the SDKs append to the base URL — shown under the field so the operator can check the final address. */
 export function endpointExample(type: ModelProviderType, baseUrl: string): { chat: string; list: string; note?: string } {
@@ -34,17 +33,30 @@ export function CapabilityBadges({ m }: { m: Pick<AdminModelDTO, "input" | "reas
 	return (
 		<span className="flex flex-wrap gap-1" data-testid="capability-badges">
 			<Badge>文本</Badge>
-			{m.input.includes("image") ? <Badge tone="info">图片</Badge> : null}
-			{m.tools ? <Badge tone="info">工具</Badge> : <Badge tone="warning" title="该模型不接收工具定义：Agent 的工具将不可用">无工具</Badge>}
-			{m.reasoning ? <Badge tone="info" title={`思考档位：${m.thinkingLevels.join(" / ")}`}>推理 · {m.thinkingLevels.filter((l) => l !== "off").join("/") || "—"}</Badge> : null}
+			{m.input.includes("image") ? <Badge tone="info">看图</Badge> : null}
+			{m.tools ? <Badge tone="info">用工具</Badge> : <Badge tone="warning" title="该模型不支持调用工具：智能体的工具将不可用">不能用工具</Badge>}
+			{m.reasoning ? <Badge tone="info" title={`思考强度：${m.thinkingLevels.join(" / ")}`}>会思考</Badge> : null}
 		</span>
 	);
 }
 
-export function HealthBadge({ p }: { p: Pick<ModelProviderDTO, "health" | "healthDetail" | "lastCheck"> }) {
-	if (p.health === "ready") return <Badge tone={p.lastCheck && !p.lastCheck.ok ? "warning" : "success"} title={p.lastCheck ? `上次测试 ${new Date(p.lastCheck.at).toLocaleString()}：${p.lastCheck.ok ? "通过" : (p.lastCheck.detail ?? "失败")}` : undefined}>{p.lastCheck && !p.lastCheck.ok ? "测试失败" : "就绪"}</Badge>;
-	if (p.health === "disabled") return <Badge>已停用</Badge>;
-	return <Badge tone="danger" title={p.healthDetail}>不可用</Badge>;
+/** Status dot + word (never colour alone). */
+export function statusOf(p: Pick<ModelProviderDTO, "health" | "healthDetail" | "lastCheck" | "circuit">): { tone: "good" | "warn" | "bad" | "off"; label: string; detail?: string } {
+	if (p.health === "disabled") return { tone: "off", label: "已停用" };
+	if (p.health !== "ready") return { tone: "bad", label: "不可用", detail: p.healthDetail };
+	if (p.circuit?.open) return { tone: "warn", label: "暂停调用", detail: `连续失败 ${p.circuit.fails} 次，系统暂时不再调用，稍后自动重试` };
+	if (p.lastCheck && !p.lastCheck.ok) return { tone: "warn", label: "测试失败", detail: p.lastCheck.detail };
+	return { tone: "good", label: "就绪", detail: p.lastCheck ? `上次测试 ${new Date(p.lastCheck.at).toLocaleString()} 通过` : undefined };
+}
+const DOT: Record<string, string> = { good: "bg-success", warn: "bg-warning", bad: "bg-danger", off: "bg-fg-subtle" };
+export function StatusDot({ p, testId }: { p: Parameters<typeof statusOf>[0]; testId?: string }) {
+	const s = statusOf(p);
+	return (
+		<span className="inline-flex items-center gap-1.5 text-xs text-fg-muted" title={s.detail} data-testid={testId} data-tone={s.tone}>
+			<span aria-hidden className={`size-2 rounded-full ${DOT[s.tone]}`} />
+			{s.label}
+		</span>
+	);
 }
 
 export function visibilityText(v: AdminModelDTO["visibility"]): string {

@@ -119,7 +119,9 @@ try {
 	await page.goto(`${base}/admin?tab=members`);
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="admin-member"]').length === 2);
 	await shot(page, "1440-admin-members");
-	await page.locator('[data-testid="admin-member"]', { hasText: "成员乙" }).locator('[data-testid="member-disable"]').click();
+	await page.locator('[data-testid="admin-member"]', { hasText: "成员乙" }).locator('[data-testid="member-more"]').click();
+	await page.click('[data-testid="member-disable"]');
+	await page.click('[data-testid="confirm-ok"]');
 	await page.waitForSelector('[data-testid="admin-member"][data-status="disabled"]', { timeout: 10000 });
 	await p2.reload();
 	await p2.waitForURL(/\/login/, { timeout: 10000 });
@@ -148,7 +150,7 @@ try {
 	await page.goto(`${base}/admin?tab=audit`);
 	await page.waitForSelector('[data-testid="admin-audit"]');
 	const auditText = await page.locator('[data-testid="admin-audit"]').innerText();
-	check("admin: audit lists the changes made above", /member|invite|budget|department/.test(auditText));
+	check("admin: audit lists the changes made above", /成员|邀请|预算|部门/.test(auditText));
 	await shot(page, "1440-admin-audit");
 	const csv = await page.request.get(`${base}/api/admin/audit.csv`);
 	check("admin: audit CSV export downloads", csv.ok() && (await csv.text()).split("\n").length > 2, `status=${csv.status()}`);

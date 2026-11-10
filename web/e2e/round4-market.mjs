@@ -79,7 +79,7 @@ try {
 	// ---------------------------------------------------------------- tabs: members do not see 待审核
 	await member.p.goto(`${base}/capabilities`);
 	await member.p.waitForSelector('[data-testid="tab-mine"]');
-	check("tabs: an ordinary member has 技能市场 / 我的技能 / MCP 市场 / 我的连接 but no 待审核", (await member.p.locator('[data-testid="tab-market"]').count()) === 1 && (await member.p.locator('[data-testid="tab-mcp"]').count()) === 1 && (await member.p.locator('[data-testid="tab-connectors"]').count()) === 1 && (await member.p.locator('[data-testid="tab-review"]').count()) === 0);
+	check("tabs: an ordinary member has 技能市场 / 我的技能 / 连接市场 / 我的连接 but no 待审核", (await member.p.locator('[data-testid="tab-market"]').count()) === 1 && (await member.p.locator('[data-testid="tab-mcp"]').count()) === 1 && (await member.p.locator('[data-testid="tab-connectors"]').count()) === 1 && (await member.p.locator('[data-testid="tab-review"]').count()) === 0);
 
 	// ---------------------------------------------------------------- upload by drag-drop (zip) + automated checks
 	await a.goto(`${base}/capabilities`);
@@ -123,7 +123,7 @@ try {
 	await r.click('[data-testid="review-item"]');
 	await r.waitForSelector('[data-testid="review-screen"] [data-testid="manifest"]');
 	const mtext = await r.locator('[data-testid="manifest"]').innerText();
-	check("review: shows manifest, and automated checks", mtext.includes("weekly-report") && (await r.getByText("自动检查").count()) >= 1);
+	check("review: shows what it is, and the automated-check verdict first", mtext.includes("weekly-report") && (await r.getByText("自动检查").count()) >= 1 && (await r.locator('[data-testid="check-verdict"]').count()) === 1);
 	check("review: diff tab lists the new files (first version → all added)", (await r.locator('[data-testid="diff"] [data-status="added"]').count()) === 2);
 	await r.click('[data-testid="review-tab-files"]');
 	await r.click('[data-path="SKILL.md"]');
@@ -135,6 +135,7 @@ try {
 	check("review: reject needs a comment (disabled while empty)", !(await r.locator('[data-testid="reject"]').isEnabled()));
 	await r.fill('[data-testid="decision-comment"]', "格式清晰，可以发布");
 	await r.click('[data-testid="approve"]');
+	await r.click('[data-testid="confirm-ok"]');
 	await r.waitForSelector('[data-testid="review-screen"]', { state: "detached", timeout: 15000 });
 	check("review: approved item leaves the queue", true);
 
@@ -181,6 +182,7 @@ try {
 	await shots(r, "market-review-v2-diff");
 	await r.fill('[data-testid="decision-comment"]', "新增脚本已检查，可以发布");
 	await r.click('[data-testid="approve"]');
+	await r.click('[data-testid="confirm-ok"]');
 	await r.waitForSelector('[data-testid="review-screen"]', { state: "detached", timeout: 15000 });
 	await m.goto(`${base}/capabilities?tab=market`);
 	await m.waitForSelector('[data-testid="market-skill"]');
@@ -204,6 +206,7 @@ try {
 	await shots(r, "market-review-mcp");
 	await r.fill('[data-testid="decision-comment"]', "内部笔记服务");
 	await r.click('[data-testid="approve"]');
+	await r.click('[data-testid="confirm-ok"]');
 	await r.waitForSelector('[data-testid="review-screen"]', { state: "detached", timeout: 15000 });
 	await m.goto(`${base}/capabilities?tab=mcp`);
 	await m.waitForSelector('[data-testid="mcp-entry"]');
@@ -244,6 +247,7 @@ try {
 	await r.waitForSelector('[data-testid="mcp-info"]');
 	await r.fill('[data-testid="decision-comment"]', "内部服务，同意");
 	await r.click('[data-testid="approve"]');
+	await r.click('[data-testid="confirm-ok"]');
 	await r.waitForSelector('[data-testid="review-screen"]', { state: "detached", timeout: 15000 });
 	await m.reload();
 	await m.waitForFunction(() => [...document.querySelectorAll('[data-testid="connector"]')].some((e) => e.textContent.includes("我的外部服务") && e.textContent.includes("可用")), null, { timeout: 20000 });

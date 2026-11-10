@@ -7,9 +7,12 @@ import { useApi } from "@/lib/useApi";
 import { cn, formatBytes } from "@/lib/utils";
 import { Badge, Spinner } from "@/components/ui/misc";
 
-export const PERM: Record<string, string> = { "sandbox.exec": "在沙箱中执行脚本", network: "联网（沙箱默认无网络）", "file.write": "写入文件库" };
-export const permText = (p: string): string => PERM[p] ?? (p.startsWith("tool:") ? `使用工具 ${p.slice(5)}` : p);
-export const permShort = (p: string): string => (p === "sandbox.exec" ? "执行" : p === "network" ? "联网" : p === "file.write" ? "写文件" : p.startsWith("tool:") ? p.slice(5) : p);
+export const PERM: Record<string, string> = { "sandbox.exec": "运行代码", network: "联网", "file.write": "写入文件" };
+export const PERM_EXPLAIN: Record<string, string> = { "sandbox.exec": "运行代码：在工作区里执行技能自带的脚本", network: "联网：访问互联网（默认不允许，需管理员另外开启）", "file.write": "写入文件：把结果保存到文件库" };
+export const permText = (p: string): string => PERM[p] ?? (p.startsWith("tool:") ? `工具「${p.slice(5)}」` : p);
+/** Name plus what it means, for places that have room (review screen, skill detail). */
+export const permExplain = (p: string): string => PERM_EXPLAIN[p] ?? permText(p);
+export const permShort = (p: string): string => (p === "sandbox.exec" ? "运行代码" : p === "network" ? "联网" : p === "file.write" ? "写入文件" : p.startsWith("tool:") ? `工具 ${p.slice(5)}` : p);
 
 export const SCOPE: Record<MarketScope, string> = { personal: "个人", project: "项目", department: "部门", org: "组织" };
 export const STATE: Record<SubmissionState, { label: string; tone: "success" | "warning" | "danger" | "neutral" | "info" }> = {
@@ -72,7 +75,7 @@ export function StarInput({ value, onChange, disabled }: { value: number; onChan
 }
 
 export function PermChips({ perms, added }: { perms: readonly string[]; added?: readonly string[] }) {
-	if (!perms.length) return <span className="text-xs text-fg-subtle">无需额外权限</span>;
+	if (!perms.length) return <span className="text-xs text-fg-muted">无需额外权限</span>;
 	return (
 		<span className="inline-flex flex-wrap gap-1">
 			{perms.map((p) => (
@@ -88,13 +91,13 @@ export function PermChips({ perms, added }: { perms: readonly string[]; added?: 
 const SEV = {
 	error: { icon: CircleX, cls: "text-danger", label: "必须修复" },
 	warn: { icon: AlertTriangle, cls: "text-warning", label: "需关注" },
-	info: { icon: Info, cls: "text-fg-subtle", label: "提示" },
+	info: { icon: Info, cls: "text-fg-muted", label: "提示" },
 } as const;
 
 export function FindingList({ findings, empty = "没有发现问题。" }: { findings: readonly PackageFindingDTO[]; empty?: string }) {
 	if (!findings.length)
 		return (
-			<p className="flex items-center gap-1.5 text-[13px] text-success">
+			<p className="flex items-center gap-1.5 text-sm text-success">
 				<CheckCircle2 className="size-4" />
 				{empty}
 			</p>
@@ -105,12 +108,12 @@ export function FindingList({ findings, empty = "没有发现问题。" }: { fin
 			{[...findings].sort((a, b) => order[a.severity] - order[b.severity]).map((f, i) => {
 				const S = SEV[f.severity];
 				return (
-					<li key={i} className="flex items-start gap-2 text-[13px]" data-severity={f.severity}>
+					<li key={i} className="flex items-start gap-2 text-sm" data-severity={f.severity}>
 						<S.icon className={cn("mt-0.5 size-4 shrink-0", S.cls)} aria-label={S.label} />
 						<span className="min-w-0">
 							<span className="break-words">{f.message}</span>
 							{f.path ? (
-								<span className="ml-1.5 font-mono text-[11.5px] text-fg-subtle">
+								<span className="ml-1.5 font-mono text-xs text-fg-subtle">
 									{f.path}
 									{f.line ? `:${f.line}` : ""}
 								</span>
@@ -156,7 +159,7 @@ function buildTree(files: readonly PackageFileDTO[]): Node {
 export function FileTree({ files, selected, onSelect, marks }: { files: readonly PackageFileDTO[]; selected?: string; onSelect: (path: string) => void; marks?: Record<string, "added" | "removed" | "modified" | undefined> }) {
 	const tree = useMemo(() => buildTree(files), [files]);
 	return (
-		<ul className="text-[13px]" data-testid="file-tree" role="tree">
+		<ul className="text-sm" data-testid="file-tree" role="tree">
 			{tree.children.map((n) => (
 				<TreeNode key={n.path} n={n} depth={0} selected={selected} onSelect={onSelect} marks={marks} />
 			))}
@@ -172,7 +175,7 @@ function TreeNode({ n, depth, selected, onSelect, marks }: { n: Node; depth: num
 				<button type="button" onClick={() => onSelect(n.path)} style={pad} className={cn("flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left hover:bg-surface-2", selected === n.path && "bg-surface-2 font-medium")} data-path={n.path}>
 					<FileText className="size-3.5 shrink-0 text-fg-subtle" />
 					<span className="min-w-0 flex-1 truncate">{n.name}</span>
-					{marks?.[n.path] ? <span className={cn("text-[11px]", marks[n.path] === "added" ? "text-success" : marks[n.path] === "removed" ? "text-danger" : "text-warning")}>{marks[n.path] === "added" ? "新增" : marks[n.path] === "removed" ? "删除" : "修改"}</span> : <span className="text-[11px] text-fg-subtle">{formatBytes(n.file.size)}</span>}
+					{marks?.[n.path] ? <span className={cn("text-xs", marks[n.path] === "added" ? "text-success" : marks[n.path] === "removed" ? "text-danger" : "text-warning")}>{marks[n.path] === "added" ? "新增" : marks[n.path] === "removed" ? "删除" : "修改"}</span> : <span className="text-xs text-fg-subtle">{formatBytes(n.file.size)}</span>}
 				</button>
 			</li>
 		);
@@ -197,20 +200,20 @@ function TreeNode({ n, depth, selected, onSelect, marks }: { n: Node; depth: num
 /** Text viewer for one file of a version (reads the file through the API, so access rules apply). */
 export function FileViewer({ url }: { url: string | null }) {
 	const f = useApi<{ file: { path: string; size: number; text: string | null; binary: boolean; truncated: boolean } }>(url);
-	if (!url) return <p className="p-4 text-[13px] text-fg-subtle">选择左侧文件查看内容。</p>;
+	if (!url) return <p className="p-4 text-sm text-fg-subtle">选择左侧文件查看内容。</p>;
 	if (f.loading)
 		return (
-			<div className="flex items-center gap-2 p-4 text-[13px] text-fg-muted">
+			<div className="flex items-center gap-2 p-4 text-sm text-fg-muted">
 				<Spinner /> 读取中…
 			</div>
 		);
-	if (f.error) return <p className="p-4 text-[13px] text-danger">{errorText(f.error)}</p>;
+	if (f.error) return <p className="p-4 text-sm text-danger">{errorText(f.error)}</p>;
 	const file = f.data?.file;
 	if (!file) return null;
-	if (file.binary) return <p className="p-4 text-[13px] text-fg-muted">二进制文件（{formatBytes(file.size)}），不预览。</p>;
+	if (file.binary) return <p className="p-4 text-sm text-fg-muted">二进制文件（{formatBytes(file.size)}），不预览。</p>;
 	return (
 		<div data-testid="file-viewer">
-			<pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[12.5px] leading-relaxed">{file.text}</pre>
+			<pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed">{file.text}</pre>
 			{file.truncated ? <p className="border-t border-border px-3 py-1.5 text-xs text-fg-subtle">内容较长，仅显示前 200 KB。</p> : null}
 		</div>
 	);
@@ -220,7 +223,7 @@ export function FileViewer({ url }: { url: string | null }) {
 type Diff = SubmissionDetailDTO["diff"][number];
 export function DiffView({ diff, previousVersionNo }: { diff: readonly Diff[]; previousVersionNo?: number }) {
 	const changed = diff.filter((d) => d.status !== "unchanged");
-	if (!changed.length) return <p className="text-[13px] text-fg-muted">与{previousVersionNo ? ` v${previousVersionNo} ` : "上一版本"}完全相同。</p>;
+	if (!changed.length) return <p className="text-sm text-fg-muted">与{previousVersionNo ? ` v${previousVersionNo} ` : "上一版本"}完全相同。</p>;
 	return (
 		<div className="space-y-3" data-testid="diff">
 			<p className="text-xs text-fg-muted">{previousVersionNo ? `相对已批准/上一版本 v${previousVersionNo}：` : "首个版本，全部为新增："} {changed.length} 个文件有变化，{diff.length - changed.length} 个未变。</p>
@@ -235,9 +238,9 @@ function FileDiffBlock({ d }: { d: Diff }) {
 	const label = d.status === "added" ? "新增" : d.status === "removed" ? "删除" : "修改";
 	return (
 		<div className="overflow-hidden rounded-lg border border-border" data-path={d.path} data-status={d.status}>
-			<button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 bg-surface-2 px-3 py-1.5 text-left text-[13px]" aria-expanded={open}>
+			<button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 bg-surface-2 px-3 py-1.5 text-left text-sm" aria-expanded={open}>
 				<ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-				<span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{d.path}</span>
+				<span className="min-w-0 flex-1 truncate font-mono text-xs">{d.path}</span>
 				<Badge tone={d.status === "added" ? "success" : d.status === "removed" ? "danger" : "warning"}>{label}</Badge>
 				{d.added !== undefined || d.removed !== undefined ? (
 					<span className="text-xs text-fg-subtle">
@@ -250,7 +253,7 @@ function FileDiffBlock({ d }: { d: Diff }) {
 					<div className="overflow-x-auto font-mono text-[12px] leading-[1.5]">
 						{d.hunks.map((h, i) => (
 							<div key={i} className="border-t border-border first:border-t-0">
-								<div className="bg-surface-2/60 px-3 py-0.5 text-[11px] text-fg-subtle">
+								<div className="bg-surface-2/60 px-3 py-0.5 text-xs text-fg-subtle">
 									@@ -{h.oldStart} +{h.newStart} @@
 								</div>
 								{h.lines.map((l, j) => (
@@ -270,12 +273,22 @@ function FileDiffBlock({ d }: { d: Diff }) {
 	);
 }
 
-export const Section = ({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) => (
-	<section className="rounded-xl border border-border bg-surface">
-		<div className="flex items-center justify-between gap-2 border-b border-border px-3.5 py-2">
-			<h3 className="text-[13px] font-semibold">{title}</h3>
+export const Section = ({ title, children, right, testId }: { title: string; children: React.ReactNode; right?: React.ReactNode; testId?: string }) => (
+	<section className="rounded-xl border border-border bg-surface" data-testid={testId}>
+		<div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+			<h3 className="text-sm font-medium">{title}</h3>
 			{right}
 		</div>
-		<div className="p-3.5">{children}</div>
+		<div className="p-4">{children}</div>
 	</section>
 );
+
+/** One-sentence verdict of the automated checks (what a reviewer reads first). */
+export function checkVerdict(checks: { ok: boolean; findings: readonly { severity: string }[] } | undefined): { tone: "success" | "warning" | "danger" | "neutral"; text: string } {
+	if (!checks) return { tone: "neutral", text: "没有自动检查结果" };
+	const err = checks.findings.filter((f) => f.severity === "error").length;
+	const warn = checks.findings.filter((f) => f.severity === "warn").length;
+	if (err) return { tone: "danger", text: `自动检查未通过：有 ${err} 项必须修复${warn ? `、${warn} 项需关注` : ""}` };
+	if (warn) return { tone: "warning", text: `自动检查通过，但有 ${warn} 项需要关注` };
+	return { tone: "success", text: "自动检查通过，没有发现问题" };
+}

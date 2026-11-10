@@ -23,11 +23,11 @@ const CSTATUS: Record<ConnectorStatus, { label: string; tone: "success" | "warni
 export function Connectors() {
 	const conns = useApi<ConnectorListResponse>("/connectors");
 	return (
-		<Loadable state={conns} what="连接" need="D 组：GET /api/connectors">
+		<Loadable state={conns} what="连接">
 			{conns.data ? (
 				<div className="space-y-2" data-testid="connectors">
 					{conns.data.secretStorage === "unavailable" ? <Blocked title="凭据存储不可用">服务端未配置加密密钥（WORKROOM_SECRET_KEY），需要密钥的连接无法保存。</Blocked> : null}
-					{conns.data.connectors.length === 0 ? <EmptyState icon={<Plug />} title="还没有可用的连接">在「MCP 市场」安装服务器，或由管理员添加组织连接。</EmptyState> : null}
+					{conns.data.connectors.length === 0 ? <EmptyState icon={<Plug />} title="还没有可用的连接">在「连接市场」安装，或由管理员添加组织连接。</EmptyState> : null}
 					{conns.data.connectors.map((c) => (
 						<ConnectorCard key={c.id} c={c} onChanged={conns.reload} />
 					))}
@@ -128,7 +128,7 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 								<>
 									<select
 										aria-label={`我对 ${t.tool} 的设置`}
-										className="h-6 rounded-md border border-border bg-surface px-1 text-[11.5px]"
+										className="h-6 rounded-md border border-border bg-surface px-1 text-xs"
 										value={t.userOverride ?? "default"}
 										disabled={busy}
 										onChange={(e) => run(() => put(`/connectors/${c.id}/my-tools`, { overrides: { [t.tool]: e.target.value === "default" ? null : e.target.value } }))}
@@ -140,7 +140,7 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 									{c.canManage ? (
 										<select
 											aria-label={`管理员对 ${t.tool} 的策略`}
-											className="h-6 rounded-md border border-border bg-surface px-1 text-[11.5px]"
+											className="h-6 rounded-md border border-border bg-surface px-1 text-xs"
 											value={t.disabled && !t.userOverride ? "disabled" : t.policy}
 											disabled={busy}
 											onChange={(e) => run(() => patch(`/connectors/${c.id}`, { toolPolicies: { ...Object.fromEntries(c.tools.filter((x) => x.disabled && !x.userOverride).map((x) => [x.tool, "disabled"])), [t.tool]: e.target.value } }))}
