@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T23:23:25.251Z",
+  "at": "2026-11-10T00:24:59.182Z",
   "results": [
     {
       "name": "seed-demo.mjs runs against a live server",
@@ -14,12 +14,12 @@
     {
       "name": "home + chat load neither the StatsPage chunk nor Recharts",
       "ok": true,
-      "detail": "62 asset requests, 88 before send"
+      "detail": "67 asset requests, 93 before send"
     },
     {
       "name": "lazy chunks load on /stats (page + Recharts)",
       "ok": true,
-      "detail": "StatsPage-BTN95a0X.js, StatsPage-DMDFVS2t.css, RechartsPanels-gsmFav9h.js"
+      "detail": "StatsPage-_g_kqO-Z.js, StatsPage-DMDFVS2t.css, RechartsPanels-naV6fEj_.js"
     },
     {
       "name": "real org: no demo banner",
@@ -109,7 +109,7 @@
     {
       "name": "punch card: 7 x 24 dots, size varies with volume",
       "ok": true,
-      "detail": "168 dots, 141 with data, 68 sizes"
+      "detail": "168 dots, 141 with data, 69 sizes"
     },
     {
       "name": "waffle: 100 dots, legend counts add up to the API total",
