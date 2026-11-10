@@ -289,6 +289,8 @@ export interface SandboxRunDTO {
 	readonly finishedAt?: string;
 	readonly limits: SandboxLimitsDTO;
 	readonly isolation: string;
+	/** Driver that ran it (round 4; absent on rows from before drivers existed = namespaces). */
+	readonly driver?: import("./sandbox.ts").SandboxDriverId;
 }
 export interface SandboxLimitsDTO {
 	readonly timeoutMs: number;
@@ -298,16 +300,8 @@ export interface SandboxLimitsDTO {
 	readonly maxProcesses: number;
 	readonly network: boolean;
 }
-export interface SandboxInfoDTO {
-	readonly spaceId: string;
-	readonly isolation: "namespaces" | "unavailable";
-	readonly isolationDetail: string;
-	readonly limits: SandboxLimitsDTO;
-	/** Workspace lifetime rule: files idle longer than this are deleted; publish with file_create/sandbox_publish before. */
-	readonly retentionHours: number;
-	readonly usedBytes: number;
-	readonly quotaBytes: number;
-}
+// One source of truth: the sandbox group's DTOs (shared/sandbox.ts) supersede the round-3 ones; re-exported under the old names.
+export type { SandboxInfoDTO } from "./sandbox.ts";
 export interface SandboxEntryDTO {
 	readonly path: string;
 	readonly kind: "file" | "directory";
@@ -315,10 +309,8 @@ export interface SandboxEntryDTO {
 	readonly mtime: string;
 	readonly expiresAt: string;
 }
-/** GET /sandbox/:spaceId → info; GET /sandbox/:spaceId/files?conversationId= ; GET /sandbox/:spaceId/runs?conversationId= ; GET /sandbox/:spaceId/runs/:runId ; GET /sandbox/:spaceId/file?path=&conversationId= (download) */
-export interface SandboxFilesResponse {
-	readonly entries: SandboxEntryDTO[];
-}
+/** GET /sandbox/:spaceId → info; GET /sandbox/:spaceId/files?conversationId= (now the workspace listing); GET /sandbox/:spaceId/runs?conversationId= ; GET /sandbox/:spaceId/runs/:runId ; GET /sandbox/:spaceId/file?path=&conversationId= (download) */
+export type { WorkspaceFilesResponse as SandboxFilesResponse } from "./sandbox.ts";
 export interface SandboxRunsResponse {
 	readonly runs: SandboxRunDTO[];
 }

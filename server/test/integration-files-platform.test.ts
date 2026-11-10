@@ -117,3 +117,25 @@ test("backup manifest paths are portable and the sandbox directory is excluded o
 	assert.equal(hasPathSegment("orgs\\org_1\\spaces\\spc_a\\sandbox\\7\\f.txt", "sandbox"), true);
 	assert.equal(hasPathSegment("orgs/org_1/spaces/spc_a/files/sandbox.txt", "sandbox"), false, "only whole path segments");
 });
+
+// ---- shared types: one source of truth (compile-time; tsc fails if the old and new shapes drift apart) ----
+import type { SandboxFilesResponse as OldFiles, SandboxInfoDTO as FilesInfo, SandboxRunDTO } from "../../shared/files.ts";
+import type { SandboxInfoDTO as SandboxInfo, WorkspaceFilesResponse, SandboxDriverId, WorkTabId } from "../../shared/sandbox.ts";
+import { workTabForTool, WORKSPACE_FILE_TOOLS } from "../../shared/sandbox.ts";
+const _info1 = (a: FilesInfo): SandboxInfo => a;
+const _info2 = (a: SandboxInfo): FilesInfo => a;
+const _files1 = (a: OldFiles): WorkspaceFilesResponse => a;
+const _driver = (r: SandboxRunDTO): SandboxDriverId | undefined => r.driver;
+void [_info1, _info2, _files1, _driver];
+
+test("work panel: which tab a tool call opens (文件 for workspace file tools; 在工作区中打开)", () => {
+	for (const t of WORKSPACE_FILE_TOOLS) assert.equal(workTabForTool(t), "files", t);
+	assert.equal(workTabForTool("sandbox_exec"), "terminal");
+	assert.equal(workTabForTool("sandbox_service_start"), "terminal");
+	assert.equal(workTabForTool("browse"), "browser");
+	assert.equal(workTabForTool("browser_open"), "browser");
+	assert.equal(workTabForTool("delegate"), "tasks");
+	assert.equal(workTabForTool("file_create"), null);
+	const all: WorkTabId[] = ["tasks", "terminal", "files", "browser"];
+	assert.ok(all.includes(workTabForTool("sandbox_list")!));
+});

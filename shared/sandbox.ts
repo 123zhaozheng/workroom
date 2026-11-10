@@ -120,3 +120,16 @@ export interface WorkspacePreviewDTO {
 	/** Language hint for text files (md, json, csv, py, …). */
 	readonly language?: string;
 }
+
+// ---------------- work panel ----------------
+export type WorkTabId = "tasks" | "terminal" | "files" | "browser";
+/** Sandbox tools that read or write the workspace files: their result opens the 文件 tab. */
+export const WORKSPACE_FILE_TOOLS: readonly string[] = ["sandbox_list", "sandbox_write_file", "sandbox_read_file", "sandbox_import", "sandbox_publish"];
+/** Which work-panel tab shows the result of a tool call (null = none). */
+export function workTabForTool(toolName: string): WorkTabId | null {
+	if (WORKSPACE_FILE_TOOLS.includes(toolName)) return "files";
+	if (toolName.startsWith("sandbox")) return "terminal";
+	if (toolName === "browse" || toolName.startsWith("browser")) return "browser";
+	if (toolName === "delegate" || toolName.startsWith("team")) return "tasks";
+	return null;
+}
