@@ -81,7 +81,7 @@ function Delta({ k, def }: { k: StatsKpiDTO; def: Def }) {
 	const up = k.delta > 0;
 	const good = def.better === "neutral" ? null : (def.better === "up") === up;
 	const tone = good === null ? "text-fg-muted" : good ? "text-[var(--good-text)]" : "text-[var(--bad-text)]";
-	const text = k.key === "successRate" ? `${Math.abs(k.delta * 100).toLocaleString("zh-CN", { maximumFractionDigits: 1 })} pt` : k.deltaPct != null ? (Math.abs(k.deltaPct) > 9.99 ? "> 999%" : fmtPct(Math.abs(k.deltaPct), 0)) : "新增";
+	const text = k.key === "successRate" ? `${Math.abs(k.delta * 100).toLocaleString("zh-CN", { maximumFractionDigits: 1 })} pt` : k.deltaPct != null ? (Math.abs(k.deltaPct) > 9.99 ? `上期仅 ${Number(k.previous).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}` : fmtPct(Math.abs(k.deltaPct), 0)) : "新增";
 	return (
 		<span className={cn("inline-flex items-center gap-0.5 text-[11px] font-medium", tone)} data-testid="delta">
 			{up ? <ArrowUpRight className="size-3" aria-hidden /> : <ArrowDownRight className="size-3" aria-hidden />}

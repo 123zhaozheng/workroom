@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-09T12:41:47.543Z",
+  "at": "2026-11-10T00:10:53.168Z",
   "results": [
     {
       "name": "setup: knowledge base created through C's API",
@@ -14,7 +14,7 @@
     {
       "name": "chat: sent message carries attachment and knowledge references",
       "ok": true,
-      "detail": "会议纪要.txt\n制度库\n根据附件和制度库整理要点 [[reply 已阅读附件与知识库引用。]]\n周岚"
+      "detail": "会议纪要.txt\n文本 · 52 B\n制度库\n知识库\n根据附件和制度库整理要点 [[reply 已阅读附件与知识库引用。]]\n周岚"
     },
     {
       "name": "markdown: code block, table and formula rendered",

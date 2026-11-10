@@ -69,3 +69,14 @@
 | X-LOOP | 可用闭环：目标→上传资料/知识引用→工具→确认/补充→生成文件入库→预览下载→继续修改 v2→刷新与服务端重启可继续 | verified（集成者独立验收，HTTP 公开接口；预览由 B 的 e2e 覆盖） | `server/test/acceptance-loop.test.ts` 步骤 1–6、9；`web/e2e/core-loop.mjs` |
 | X-ISO | 两用户隔离/撤权；同名跨项目隔离 | verified | `server/test/acceptance-loop.test.ts` 步骤 7–8（非成员 403/检索 0 命中 → viewer 只读不可写 → 移除后会话/分支/下载/检索全部拒绝）；`server/test/proof.test.ts` X-ISO；`server/test/identity-crosstenant.test.ts`（E）|
 | X-UI | 1366×768、1440、390 截图；重型预览懒加载；中文字体离线；reduced-motion | verified | `web/e2e/core-loop.mjs`（36 项）+ `states.mjs`（24 项）+ `pages.mjs`（31 项）+ `round2.mjs`（19 项）+ `round3-runtime.mjs`（11）+ `round3-knowledge.mjs`（16）+ `round3-org.mjs`（18），共 155/155，结果 `artifacts/screenshots/core-loop.results.json`、`states.results.json`、`pages.results.json`、`round2.results.json`；截图 `artifacts/screenshots/{1440,1366,390}-*.png`；"session: no external requests at all (fonts work offline)"、"fonts served from same origin /assets"；`docs/ui.md` |
+
+
+## 第四轮变更备注（2026-11-10，集成者）
+
+- M13-B：用户明确要求聊天页/首页动态点阵背景，与原文“日常界面无需持续运行动画背景”存在张力。实现：默认开启；标签页隐藏/离屏 0 帧；`prefers-reduced-motion` 与应用内减少动画为静态；设置页可关闭（`web/e2e/round4-chat.mjs`）。状态保持 verified，但默认开启与否需用户确认。
+- M11-A/B/C：新增 Docker 驱动（Windows/macOS 依赖 Docker Desktop），在本机真实 dockerd 上验证（`server/test/tools-sandbox-docker.test.ts`，无守护进程时跳过并说明原因）；Windows/macOS 真机未验证。
+- M15-A/B/C：模型改为 pi-ai 原生 provider；M15-C 证据改为 `server/test/models-limits.test.ts`（限流/并发/熔断/故障切换/计费）。真实第三方模型仍 blocked（无凭据）。
+- M16-B：细粒度权限（`server/test/identity-rbac*.test.ts`、`integration-rbac.test.ts`、`web/e2e/round4-rbac.mjs`）。
+- M05：技能/MCP 市场与审核（`server/test/tools-market*.test.ts`、`web/e2e/round4-market.mjs`，设计 `docs/skills-mcp-marketplace.md`）。
+- M17：统计看板（`server/test/ops-stats.test.ts`、`web/e2e/round4-stats.mjs`）。
+- 复验：2026-11-10 合并树 `npm test` 210/211（1 可选跳过）、acceptance 4/4、浏览器 402/402。

@@ -1,15 +1,15 @@
 {
-  "at": "2026-11-09T23:29:34.125Z",
+  "at": "2026-11-10T00:22:43.016Z",
   "results": [
     {
       "name": "terminal: runs are listed oldest first with the command, stdout and an exit line",
       "ok": true,
-      "detail": "$ python3 main.py 成功 刚刚 已写入 4 个文件 ['blob.bin', 'notes.md', 'out'] [exit 0 · 295 ms · namespaces]"
+      "detail": "$ python3 main.py 成功 刚刚 已写入 4 个文件 ['blob.bin', 'notes.md', 'out'] [exit 0 · 116 ms · namespaces]"
     },
     {
       "name": "terminal: a failing run shows stdout, stderr and a non-zero exit code",
       "ok": true,
-      "detail": "$ python3 main.py 出错 刚刚 import sys print('处理到一半') sys.stderr.write('Traceback: boom\\n') sys.exit(3) 处理到一半 Traceback: boom [exit 3 · 436 ms · namespaces]"
+      "detail": "$ python3 main.py 出错 刚刚 import sys print('处理到一半') sys.stderr.write('Traceback: boom\\n') sys.exit(3) 处理到一半 Traceback: boom [exit 3 · 104 ms · namespaces]"
     },
     {
       "name": "terminal: the log scrolls (bounded height, overflow auto) and is monospace",
@@ -44,7 +44,7 @@
     {
       "name": "files: preview shows size, modified time and when the file expires",
       "ok": true,
-      "detail": "40 B 修改于 2026/11/9 23:29:21 闲置到期 3天后 # 分析笔记 - 收入同比增长 25% "
+      "detail": "40 B 修改于 2026/11/10 00:22:35 闲置到期 3天后 # 分析笔记 - 收入同比增长 25% "
     },
     {
       "name": "files: image preview renders inline (120×60 PNG written by the sandbox)",
