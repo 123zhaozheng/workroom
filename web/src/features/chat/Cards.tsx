@@ -8,6 +8,7 @@ import { errorText, post } from "@/lib/api";
 import { cn, formatBytes, relTime } from "@/lib/utils";
 import { useSession } from "@/lib/session";
 import { describeTool } from "./toolDescribe";
+import { hasBlockingFinding, SkillDraftBody, skillDraftOf, skillDraftTech } from "./SkillDraftCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/misc";
 import { Textarea } from "@/components/ui/input";
@@ -127,6 +128,10 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 	const showAction = view && view.kind !== "approval" && view.kind !== "other";
 	const forMe = !approval.requestedFor || approval.requestedFor === me?.userId;
 	const RiskIcon = risk.Icon;
+	const draft = skillDraftOf(approval.detail);
+	const blocked = draft ? hasBlockingFinding(draft) : false;
+	const yes = draft ? "保存" : "允许";
+	const no = draft ? "不保存" : "拒绝";
 	return (
 		<m.div
 			initial={{ opacity: 0, y: 6 }}
@@ -150,24 +155,38 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 							{risk.label}
 						</Badge>
 					</div>
-					<h3 id={`${uid}-t`} className="mt-1 text-[15px] font-medium">
-						{approval.title}
-					</h3>
-					<p id={`${uid}-s`} data-testid="approval-summary" className="mt-1 whitespace-pre-wrap break-words text-sm">
-						{approval.summary}
-					</p>
+					{draft ? (
+						<>
+							<span id={`${uid}-t`} className="sr-only">保存为个人技能</span>
+							<span id={`${uid}-s`} className="sr-only">{draft.title || draft.name}</span>
+							<SkillDraftBody d={draft} />
+						</>
+					) : (
+						<>
+							<h3 id={`${uid}-t`} className="mt-1 text-[15px] font-medium">
+								{approval.title}
+							</h3>
+							<p id={`${uid}-s`} data-testid="approval-summary" className="mt-1 whitespace-pre-wrap break-words text-sm">
+								{approval.summary}
+							</p>
+						</>
+					)}
 					<dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
-						{showAction ? (
+						{showAction && !draft ? (
 							<>
 								<dt className="text-fg-muted">操作</dt>
 								<dd>{view.title}</dd>
 							</>
 						) : null}
-						{scope.map((r) => (
+						{(draft ? [] : scope).map((r) => (
 							<Row key={r.label} label={r.label} value={r.value} />
 						))}
-						<dt className="text-fg-muted">风险</dt>
-						<dd data-testid="approval-risk-note">{risk.note}</dd>
+						{draft ? null : (
+							<>
+								<dt className="text-fg-muted">风险</dt>
+								<dd data-testid="approval-risk-note">{risk.note}</dd>
+							</>
+						)}
 						<dt className="text-fg-muted">请求人</dt>
 						<dd>
 							助手{forMe ? "（代你执行）" : "（代另一位成员执行）"}
@@ -183,7 +202,7 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 					{approval.detail !== undefined ? (
 						<details data-testid="tech-details" className="mt-2 text-[12.5px]">
 							<summary className="cursor-pointer text-fg-subtle hover:text-fg">技术详情</summary>
-							<pre className="wr-scroll mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface px-2.5 py-2 font-mono text-[12px] text-fg-muted">{JSON.stringify(approval.detail, null, 2)}</pre>
+							<pre className="wr-scroll mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface px-2.5 py-2 font-mono text-[12px] text-fg-muted">{draft ? skillDraftTech(draft) : JSON.stringify(approval.detail, null, 2)}</pre>
 						</details>
 					) : null}
 					{err ? (
@@ -195,18 +214,18 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 						<p className="mt-3 text-[12.5px] text-fg-muted">需要有权限的成员确认。</p>
 					) : sent ? (
 						<p role="status" className="mt-3 text-[13px] text-fg-muted">
-							{sent === "approved" ? "已允许，正在继续…" : "已拒绝，正在通知助手…"}
+							{sent === "approved" ? (draft ? "已提交保存，正在继续…" : "已允许，正在继续…") : draft ? "已选择不保存，正在通知助手…" : "已拒绝，正在通知助手…"}
 						</p>
 					) : confirming ? (
 						<div data-testid="approval-confirm" role="alertdialog" aria-label="再次确认" className="mt-3 rounded-lg border border-danger/40 bg-surface p-3">
-							<p className="text-[13px] font-medium text-danger">这是高风险操作，确认允许吗？</p>
-							<p className="mt-0.5 text-[12.5px] text-fg-muted">{approval.title}</p>
+							<p className="text-[13px] font-medium text-danger">这是高风险操作，确认{yes}吗？</p>
+							<p className="mt-0.5 text-[12.5px] text-fg-muted">{draft ? "保存为个人技能" : approval.title}</p>
 							<div className="mt-2.5 flex flex-wrap gap-2">
 								<Button ref={backRef} size="sm" disabled={!!busy} onClick={() => (setConfirming(false), setTimeout(() => allowRef.current?.focus(), 0))} data-testid="approve-back" onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}>
 									返回
 								</Button>
 								<Button size="sm" variant="danger" disabled={!!busy} onClick={() => decide("approved")} data-testid="approve-confirm">
-									{busy === "approved" ? "正在提交…" : "确认允许"}
+									{busy === "approved" ? "正在提交…" : `确认${yes}`}
 								</Button>
 							</div>
 						</div>
@@ -222,10 +241,10 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 							) : null}
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<Button size="sm" disabled={!!busy} onClick={() => decide("rejected")} data-testid="reject">
-									{busy === "rejected" ? "正在提交…" : "拒绝"}
+									{busy === "rejected" ? "正在提交…" : no}
 								</Button>
-								<Button ref={allowRef} size="sm" variant={high ? "secondary" : "primary"} disabled={!!busy} onClick={() => (high ? setConfirming(true) : decide("approved"))} data-testid="approve" className={cn(high && "border-danger/50 text-danger")}>
-									{busy === "approved" ? "正在提交…" : high ? "允许…" : "允许"}
+								<Button ref={allowRef} size="sm" variant={high ? "secondary" : "primary"} disabled={!!busy || blocked} title={blocked ? "检查有必须修复的问题，暂时不能保存" : undefined} onClick={() => (high ? setConfirming(true) : decide("approved"))} data-testid="approve" className={cn(high && "border-danger/50 text-danger")}>
+									{busy === "approved" ? "正在提交…" : high ? `${yes}…` : yes}
 								</Button>
 								{!showNote ? (
 									<button type="button" className="inline-flex h-8 items-center rounded-md px-2 text-xs text-fg-muted underline-offset-2 hover:bg-surface-2 hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info" onClick={() => setShowNote(true)}>

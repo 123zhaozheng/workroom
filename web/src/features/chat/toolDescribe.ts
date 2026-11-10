@@ -91,6 +91,21 @@ export function describeTool(call: Pick<ToolCallDTO, "name" | "arguments">, extr
 			return { kind: "connector", title: `查找可用工具${quote(str(a.query))}`, running: "正在查找可用工具" };
 		case "memory_save":
 			return { kind: "memory", title: "保存到记忆", running: "正在保存记忆" };
+		case "skill": {
+			const act = str(a.action);
+			const nm = str(a.name);
+			if (act === "search") return { kind: "skill", title: `查找技能${quote(str(a.q) || str(a.query))}`, running: "正在查找技能" };
+			if (act === "load") return { kind: "skill", title: `加载技能${quote(nm)}`, running: "正在加载技能" };
+			if (act === "read") return { kind: "skill", title: `读取技能文件${str(a.path) ? ` ${clip(str(a.path), 40)}` : ""}`, running: "正在读取技能文件" };
+			if (act === "run") return { kind: "skill", title: `运行技能${quote(nm)}`, running: "正在运行技能" };
+			return { kind: "skill", title: "查看可用技能", running: "正在查看可用技能" };
+		}
+		case "skill_manage": {
+			const act = str(a.action);
+			if (act === "submit_draft") return { kind: "skill", title: `提交技能草稿${quote(str(a.dir))}`, running: "正在提交技能草稿" };
+			if (act === "get_draft") return { kind: "skill", title: "查看技能草稿", running: "正在查看技能草稿" };
+			return { kind: "skill", title: "管理技能草稿", running: "正在处理技能草稿" };
+		}
 		case "skill_load":
 			return { kind: "skill", title: `加载技能${quote(str(a.name))}`, running: "正在加载技能" };
 		case "skill_run":

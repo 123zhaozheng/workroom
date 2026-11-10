@@ -17,6 +17,7 @@ import { DotMatrix } from "@/components/DotMatrix";
 import { modelName, type ModelInfo } from "@/features/composer/models";
 import { Composer, type ComposerSubmit } from "@/features/chat/Composer";
 import { ApprovalCard, CitationStatusContext, ReconcileCard } from "@/features/chat/Cards";
+import { SkillDraftResult, skillDraftOf } from "@/features/chat/SkillDraftCard";
 import type { ConversationCitationStatus } from "@shared/knowledge";
 import { AssistantMessage, BranchPointSwitcher, UserMessage } from "@/features/chat/Messages";
 import { buildTurns, type Turn } from "@/features/chat/model";
@@ -218,6 +219,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	}
 
 	const pendingApprovals = (state?.approvals ?? []).filter((a) => a.status === "pending");
+	// A decided skill draft stays visible as a one-line result (已保存 / 未保存).
+	const decidedDrafts = (state?.approvals ?? []).filter((a) => a.status !== "pending" && skillDraftOf(a.detail));
 	const reconcile = (state?.effects ?? []).filter((e) => e.status === "needs_reconciliation");
 	const avatar = runStatus === "running" ? "working" : runStatus === "waiting_approval" ? "waiting" : runStatus === "failed" || runStatus === "interrupted" ? "failed" : "idle";
 	const lastAssistantIdx = turns.map((t) => t.kind).lastIndexOf("assistant");
@@ -389,8 +392,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						</div>
 					) : null}
 
-					{pendingApprovals.length || reconcile.length ? (
+					{pendingApprovals.length || reconcile.length || decidedDrafts.length ? (
 						<div className="mt-5 flex flex-col gap-3 sm:pl-[38px]">
+							{decidedDrafts.map((a) => (
+								<SkillDraftResult key={a.approvalId} approval={a} d={skillDraftOf(a.detail)!} />
+							))}
 							{pendingApprovals.map((a) => (
 								<ApprovalCard key={a.approvalId} approval={a} base={base} canDecide={!readOnly} />
 							))}

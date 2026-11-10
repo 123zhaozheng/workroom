@@ -209,12 +209,15 @@ function UploadPanel({ onUploaded, skillId }: { onUploaded: () => void; skillId?
 function VersionSubmit({ skill, onChanged }: { skill: SkillDTO; onChanged: () => void }) {
 	const [open, setOpen] = useState(false);
 	const [versionNo, setVersionNo] = useState(skill.latestVersionNo);
-	const [scope, setScope] = useState<MarketScope>("org");
+	const [picked, setScope] = useState<MarketScope | null>(null);
 	const [ref, setRef] = useState("");
 	const [note, setNote] = useState("");
+	const me = useMarketMe();
+	// Default to the first target this person may actually choose; org needs skill.publish (the server enforces it too).
+	const canOrg = !!me.data?.me.canPublishOrg;
+	const scope: MarketScope = picked && (picked !== "org" || canOrg) ? picked : canOrg ? "org" : "project";
 	const projects = useApi<{ projects: { id: string; name: string }[] }>(open && scope === "project" ? "/projects" : null);
 	const depts = useApi<{ departments: { id: string; name: string }[] }>(open && scope === "department" ? "/departments" : null);
-	const me = useMarketMe();
 	const { busy, err, run } = useAct(() => (setOpen(false), onChanged()));
 	const eligible = (skill.versions ?? []).filter((v) => v.source === "package" || true);
 	return (
@@ -242,13 +245,20 @@ function VersionSubmit({ skill, onChanged }: { skill: SkillDTO; onChanged: () =>
 							<div>
 								<Label htmlFor="ss">发布到</Label>
 								<Select id="ss" className="w-full" value={scope} onChange={(e) => (setScope(e.target.value as MarketScope), setRef(""))} data-testid="submit-scope">
-									<option value="org">整个组织</option>
+									<option value="org" disabled={me.data ? !canOrg : false}>
+										整个组织{me.data && !canOrg ? "（无权限）" : ""}
+									</option>
 									<option value="department">某个部门</option>
 									<option value="project">某个项目</option>
 									{me.data?.me.policy.personalSkill === "review" ? <option value="personal">仅自己（策略要求审核）</option> : null}
 								</Select>
 							</div>
 						</div>
+						{me.data && !canOrg ? (
+							<p className="text-xs text-fg-muted" data-testid="submit-scope-note">
+								你没有向整个组织发布的权限；可以提交到你有权限的部门或你可编辑的项目。
+							</p>
+						) : null}
 						{scope === "department" || scope === "project" ? (
 							<div>
 								<Label htmlFor="sr">{scope === "department" ? "部门" : "项目"}</Label>

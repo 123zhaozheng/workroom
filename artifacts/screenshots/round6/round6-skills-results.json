@@ -1,0 +1,80 @@
+{
+  "at": "2026-11-10T15:30:48.279Z",
+  "results": [
+    {
+      "name": "A card: title 保存为个人技能, name/title and 版本",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card: 用途 shows the description",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card: files listed as path · size, the script marked 可执行脚本",
+      "ok": true,
+      "detail": "SKILL.md\n· 412 B | scripts/run.py\n· 1.3 KB\n可执行脚本"
+    },
+    {
+      "name": "A card: permissions in plain words (运行代码、联网), not codes",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card: risk line shows the warning in Chinese without the code",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card: the fixed sentence about 仅你可用 / 不会自动运行 / 不会发布",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card: package hash and codes only inside 技术详情",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card: buttons are 不保存 / 保存 (+ 添加说明), nothing focused on open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A keyboard: Tab reaches 不保存 and then 保存 (after 技术详情), all reachable",
+      "ok": true,
+      "detail": "SUMMARY,reject,approve,BUTTON,composer-input"
+    },
+    {
+      "name": "A narrow: no horizontal page scroll at 390px",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A decide: 保存 posts approved through the existing approval API",
+      "ok": true,
+      "detail": "{\"decision\":\"approved\"}"
+    },
+    {
+      "name": "A result: 已保存 with a link to 能力 › 我的技能 even when the draft route is 404",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A result: 不保存 → 未保存 and no link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A blocked: an error finding disables 保存 and says why; 不保存 still works",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A high risk: 保存… needs a second confirm (确认保存)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
