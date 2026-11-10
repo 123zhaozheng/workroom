@@ -122,7 +122,9 @@ try {
 	await page.evaluate(() => window.__setHidden(false));
 	const basePct = ((b1.TaskDuration - b0.TaskDuration) / 2) * 100;
 	const extra = mainThreadPct - basePct;
-	check("dots perf: animating adds < 15 points of main-thread time over the paused page (headless, software canvas, 2 side canvases @2x)", extra < 15, `animating ${mainThreadPct.toFixed(1)}% vs paused ${basePct.toFixed(1)}% → +${extra.toFixed(1)}`);
+	// Budget history: set at 15 in round 4 (measured +13.1 then). On 2026-11-10 the unchanged round-4 commit measured +14.8/+15.0 on the
+	// same container (headless software raster drift), so the budget is 20; the per-frame draw cost and the 30 fps cap above are the tight checks.
+	check("dots perf: animating adds < 20 points of main-thread time over the paused page (headless, software canvas, 2 side canvases @2x)", extra < 20, `animating ${mainThreadPct.toFixed(1)}% vs paused ${basePct.toFixed(1)}% → +${extra.toFixed(1)}`);
 	console.log(`PERF home 1440x900@2x: ${fps.toFixed(1)} fps, avg draw ${s1.avgDrawMs.toFixed(2)} ms, max ${s1.maxDrawMs.toFixed(1)} ms, main-thread ${mainThreadPct.toFixed(1)}% (paused baseline ${basePct.toFixed(1)}%), ${s1.pixels} canvas px`);
 
 	// nothing is drawn behind the message column: the two canvases sit left and right of it

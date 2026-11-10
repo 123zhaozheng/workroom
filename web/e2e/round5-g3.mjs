@@ -217,8 +217,10 @@ try {
 	await p.click('[data-testid="confirm-cancel"]');
 	check("confirm: cancel keeps the service", (await J(await api.get(`${base}/api/admin/model-providers`))).providers.some((x) => x.name === "向导测试服务"));
 	// personal keys policy asks first
-	await p.locator('[data-testid="personal-providers-toggle"]').check({ force: true });
-	check("confirm: allowing members' own keys asks first, cancel leaves the policy off", (await confirmVisible(p)) && ((await p.click('[data-testid="confirm-cancel"]')), !(await J(await api.get(`${base}/api/model-settings`))).personalProviders));
+	// The switch is controlled: a click only opens the confirmation, so use click() (check() would demand an immediate state change).
+	await p.locator('[data-testid="personal-providers-toggle"]').click({ force: true });
+	await p.locator('[data-testid="confirm-dialog"]').waitFor({ timeout: 5000 }).catch(() => {}); // the check below fails if it never appears
+	check("confirm: allowing members' own keys asks first, cancel leaves the policy off", (await confirmVisible(p)) && ((await p.click('[data-testid="confirm-cancel"]')), !(await J(await api.get(`${base}/api/model-settings`))).personalProviders) && !(await p.locator('[data-testid="personal-providers-toggle"]').isChecked()));
 
 	// ------------------------------------------------------------------ high-risk and sensitive operations
 	await p.goto(`${base}/admin?tab=members`);
