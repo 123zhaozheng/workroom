@@ -16,6 +16,7 @@ const server = await startServer({ port: PORT, env: { WORKROOM_RT_RETRY_MAX: "0"
 const base = server.base;
 const browser = await chromium.launch();
 const idle = (page, t = 60000) => page.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: t });
+const nth = (page, n, t = 90000) => page.waitForFunction((k) => document.querySelectorAll('[data-testid="assistant-message"]').length >= k && !document.querySelector('[data-testid="stop"]'), n, { timeout: t });
 const lastAssistant = (page) => page.locator('[data-testid="assistant-message"]').last();
 const convOf = (page) => /\/c\/([^/]+)\/(\d+)/.exec(page.url());
 const stateOf = async (page) => {
@@ -32,8 +33,8 @@ const start = async (page, text) => {
 	await page.waitForURL(/\/c\//);
 };
 const wf = (path, content) => `[[call sandbox_write_file ${JSON.stringify({ path, content })}]]`;
-const skillMd = (name, desc) => `---\nname: ${name}\ndescription: ${desc}\nversion: 1.0.0\n---\n# ${name}\n\n运行 scripts/run.py，输出一行问候。\n`;
-const SCRIPT = 'import sys\nprint("hello from skill", " ".join(sys.argv[1:]))\n';
+const skillMd = (name, desc) => `---\nname: ${name}\ndescription: ${desc}\nversion: 1.0.0\nentry: scripts/run.py\n---\n# ${name}\n\n运行 scripts/run.py，输出一行问候。\n`;
+const SCRIPT = 'import sys\nprint("hello from skill", sys.stdin.read().strip(), " ".join(sys.argv[1:]))\n';
 const writeSkill = (dir, name, desc) => `${wf(`${dir}/SKILL.md`, skillMd(name, desc))} ${wf(`${dir}/scripts/run.py`, SCRIPT)}`;
 
 const DETAIL = {
@@ -214,6 +215,11 @@ try {
 	await idle(page);
 	check("B result: 保存 → 已保存", (await page.locator('[data-testid="skill-draft-result"]').innerText()).includes("已保存"));
 	await shot(page, "round6/draft-saved-real-1440-light");
+	await page.setViewportSize({ width: 390, height: 844 });
+	await sleep(300);
+	await shot(page, "round6/draft-saved-real-390-light");
+	check("B narrow: the saved result fits at 390px", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+	await page.setViewportSize({ width: 1440, height: 900 });
 	skills = await (await page.request.get(`${base}/api/skills`)).json();
 	check("B save: the skill exists in my skills (API)", skills.skills.some((s) => s.name === "second-skill"));
 	await page.locator('[data-testid="skill-draft-open"]').click();
@@ -221,14 +227,26 @@ try {
 	await page.waitForSelector('[data-testid="skill"]', { timeout: 15000 });
 	check("B save: it appears in 能力 › 我的技能", (await page.locator('[data-testid="skill"]').filter({ hasText: "second-skill" }).count()) === 1);
 	await shot(page, "round6/my-skills-1440-light");
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.emulateMedia({ colorScheme: "dark" });
+	await sleep(400);
+	await shot(page, "round6/my-skills-390-dark");
+	check("B narrow: 我的技能 fits at 390px (dark)", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+	await page.emulateMedia({ colorScheme: "light" });
+	await page.setViewportSize({ width: 1440, height: 900 });
+	// an executable skill needs the person's grant for that version before it runs (加载技能文本不等于授权)
+	const card2 = page.locator('[data-testid="skill"]').filter({ hasText: "second-skill" });
+	await card2.locator("button[aria-expanded]").click();
+	await card2.getByRole("button", { name: /授予 v1 所需权限/ }).click();
+	await card2.getByText("已全部授予").waitFor({ timeout: 15000 });
+	check("B use: the person grants the skill's permission in 我的技能 (执行需要授权)", true);
 
 	// use it: load + run
 	await start(page, '用它 [[call skill {"action":"load","name":"second-skill"}]]');
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 60000 });
 	await idle(page);
-	await sendMessage(page, '运行 [[call skill {"action":"run","name":"second-skill","script":"scripts/run.py","args":["林夏"]}]]');
-	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 90000 });
-	await idle(page, 90000);
+	await sendMessage(page, '运行 [[call skill {"action":"run","name":"second-skill","input":"林夏"}]]');
+	await nth(page, 2);
 	const answer = await lastAssistant(page).innerText();
 	check("B use: the run result (hello from skill) is shown", answer.includes("hello from skill"), answer.slice(0, 200));
 	await page.locator('[data-testid="step-chain"] > button').last().click();
@@ -245,8 +263,7 @@ try {
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 60000 });
 	await idle(page);
 	await sendMessage(page, '提交 [[call skill_manage {"action":"submit_draft","dir":"evil"}]]');
-	await page.waitForSelector('[data-testid="assistant-message"]:nth-of-type(2) .wr-prose, [data-testid="skill-draft"]', { timeout: 60000 });
-	await idle(page);
+	await nth(page, 2, 60000);
 	check("B malicious: a directory with a symlink gives the agent an error and no card", (await page.locator('[data-testid="skill-draft"]').count()) === 0 && (await lastAssistant(page).innerText()).includes("失败"));
 	const st = await stateOf(page);
 	check("B malicious: no skill_draft approval exists on the conversation", !(st.approvals ?? []).some((a) => a.detail?.kind === "skill_draft"));
@@ -267,7 +284,7 @@ try {
 	check("C setup: the invited member cannot publish to the org", meFlags.me?.canPublishOrg === false, String(meFlags.me?.canPublishOrg));
 	await mp.goto(`${base}/capabilities`);
 	await mp.waitForSelector('[data-testid="dropzone"]');
-	const zip = Buffer.from(zipSync({ "SKILL.md": strToU8(skillMd("member-skill", "成员自己的小技能")) })).toString("base64");
+	const zip = Buffer.from(zipSync({ "SKILL.md": strToU8("---\nname: member-skill\ndescription: 成员自己的小技能\nversion: 1.0.0\n---\n# 小技能\n") })).toString("base64");
 	await mp.evaluate(async (b64) => {
 		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 		const dt = new DataTransfer();

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T15:30:48.279Z",
+  "at": "2026-11-10T15:37:06.492Z",
   "results": [
     {
       "name": "A card: title 保存为个人技能, name/title and 版本",
@@ -73,6 +73,131 @@
     },
     {
       "name": "A high risk: 保存… needs a second confirm (确认保存)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B setup: the skills API answers",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B card: shows name, 用途, files and 可执行脚本",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B card: a risk/检查结果 line is present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B display: test directives and file contents are not shown as user text",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B display: the approval mentions no raw tool names",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B result: 不保存 → 未保存",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B reject: no skill was created",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B reject: 能力 › 我的技能 does not list it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B result: 保存 → 已保存",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B narrow: the saved result fits at 390px",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B save: the skill exists in my skills (API)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B save: it appears in 能力 › 我的技能",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B narrow: 我的技能 fits at 390px (dark)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B use: the person grants the skill's permission in 我的技能 (执行需要授权)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B use: the run result (hello from skill) is shown",
+      "ok": true,
+      "detail": "测试模型（非真实 AI）\n已完成 1 步\n\n【测试模型·非真实AI】 工具执行完成，结果如下：\n\nskill: 技能「second-skill」v1：ok（exit 0） stdout: hello from skill 林夏\n测试模型 · 模拟用量，不计费"
+    },
+    {
+      "name": "B use: steps are in human words (运行技能「second-skill」), no tool names",
+      "ok": true,
+      "detail": "运行技能「second-skill」"
+    },
+    {
+      "name": "B malicious: ../x gives the agent an error and no card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B malicious: a directory with a symlink gives the agent an error and no card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B malicious: no skill_draft approval exists on the conversation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B malicious: no evil-skill was saved",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C setup: the invited member cannot publish to the org",
+      "ok": true,
+      "detail": "false"
+    },
+    {
+      "name": "C member: the target defaults to something other than 整个组织",
+      "ok": true,
+      "detail": "project"
+    },
+    {
+      "name": "C member: 整个组织 is disabled and a one-line reason is shown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C owner: an org publisher still defaults to 整个组织",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "page: no uncaught errors",
       "ok": true,
       "detail": ""
     }
