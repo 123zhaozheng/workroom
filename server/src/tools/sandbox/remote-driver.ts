@@ -655,6 +655,12 @@ export class RemoteDriver implements SandboxDriver {
 		const started = Date.now();
 		if (spec.signal?.aborted) return { status: "killed", exitCode: null, stdout: "", stderr: "[sandbox] 运行在开始前已被取消", durationMs: 0 };
 		for (const m of spec.mounts) if (!m.readOnly) throw new UnsupportedError(this.label, `可写挂载 ${m.target}（远端沙箱只支持只读挂载与 /work；已拒绝）`);
+		// The admin policy says "no network" but this provider's network isolation is not verified: refuse instead of running anyway.
+		if (!spec.network && this.provider.capabilities.networkOff !== "supported")
+			throw new UnsupportedError(
+				this.label,
+				"在“无网络”策略下运行：该提供方的断网能力尚未验证（例如 OpenSandbox 的出口过滤仍可能经 DNS 外传数据）。如果可以接受沙箱联网，请管理员把沙箱网络策略设为“允许联网”；否则请改用本机 Docker 沙箱",
+			);
 		return this.#locked(this.#key(t), () => this.#run(spec, started)).catch((e) => {
 			// cancelled while the sandbox was being created/connected: that is a cancelled run, not a provider failure
 			if (spec.signal?.aborted && !(e instanceof UnsupportedError)) return { status: "killed" as const, exitCode: null, stdout: "", stderr: "[sandbox] 运行已被取消（沙箱创建/连接期间）", durationMs: Date.now() - started };

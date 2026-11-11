@@ -150,7 +150,9 @@ function ctxFor(t: Target, label: string): Ctx {
 				limits: { ...DEFAULT_LIMITS, timeoutMs: 60_000 },
 				mounts: [],
 				env: {},
-				network: false,
+				// Remote providers whose network-off is not verified refuse "no network" runs (see the refusal case below), so ordinary
+				// contract runs use network:true there; local drivers keep the strict default.
+				network: !!t.remote && t.remote.provider.capabilities.networkOff !== "supported",
 				...rest,
 			};
 		},
@@ -412,6 +414,11 @@ contract("replay idempotency: the same run twice does not corrupt the manifest o
 	const m2 = JSON.parse(t.remote!.db.get<{ manifest: string }>("SELECT manifest FROM tool_sandbox_instances WHERE space_id = ? AND state = 'ready'", sp.tenant!.spaceId)!.manifest);
 	assert.deepEqual(Object.keys(m2).sort(), Object.keys(JSON.parse(m1)).sort());
 	assert.equal(read(join(c.wd, "once.txt")), "once");
+}, "remote");
+
+contract("policy 'no network' is refused (501 UNSUPPORTED) when the provider's network-off is not verified — never run anyway", async (t, c) => {
+	if (t.remote!.provider.capabilities.networkOff === "supported") return;
+	await assert.rejects(t.driver!.run(c.spec("echo should-not-run", { network: false })), (e: any) => e instanceof UnsupportedError && e.status === 501);
 }, "remote");
 
 contract("services and pty are refused with UnsupportedError (501), never run on the host", async (t, c) => {

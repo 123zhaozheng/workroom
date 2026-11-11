@@ -2,6 +2,7 @@
 // Replay: sandbox_exec is "unsafe" — a script may have non-idempotent effects on its workspace, so a crash mid-run gives the
 // model an `interrupted` error result instead of running it again. The file helpers are "safe" (idempotent overwrite/read),
 // and sandbox_publish is "safe" because its library write uses idempotencyKey = tool call key.
+import { workspaceKeyOf, workspacePersistenceFor } from "./sandbox/persist.ts";
 import type { Context } from "@earendil-works/chord/context";
 import { defineExtension, defineTool, hook, ToolTask, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { int, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
@@ -24,7 +25,13 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 		return log().around({ tool, actor, args }, async () => {
 			await requirePermission(ctx, actor.principal, "sandbox.use");
 			if (write) await acl().require(actor.principal, "write", { kind: "space", id: actor.space.id });
-			return fn(actor);
+			// Round 7b save points: before a deliverable is published, and after workspace file writes. Failures land in the workspace status.
+			const persist = workspacePersistenceFor(ctx);
+			const key = workspaceKeyOf(actor.conversationId);
+			if (tool === "sandbox_publish") await persist.commit(actor.principal, actor.space, key, "before_publish").catch((e) => console.error("[sandbox] commit failed", e));
+			const out = await fn(actor);
+			if (tool === "sandbox_write_file" || tool === "sandbox_import") await persist.commit(actor.principal, actor.space, key, "file_write").catch((e) => console.error("[sandbox] commit failed", e));
+			return out;
 		}, summarize);
 	}
 

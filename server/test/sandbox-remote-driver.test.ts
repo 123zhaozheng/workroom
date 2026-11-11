@@ -11,7 +11,7 @@ import { DEFAULT_LIMITS, SANDBOX_MIGRATIONS } from "../src/tools/sandbox.ts";
 import { RemoteDriver, instancesFor, normalizeRemotePath, treeHash } from "../src/tools/sandbox/remote-driver.ts";
 import { UnsupportedError } from "../src/tools/sandbox/provider.ts";
 import type { DriverRunSpec, SandboxMount } from "../src/tools/sandbox/driver.ts";
-import { FakeRemoteProvider } from "./helpers/fake-remote-provider.ts";
+import { FAKE_CAPS, FakeRemoteProvider } from "./helpers/fake-remote-provider.ts";
 
 function setup(opts: { lifecycle?: { createTimeoutSec: number; idleTimeoutSec: number; lifetimeSec: number }; provider?: FakeRemoteProvider; db?: AppDb } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "wr-remote-"));
@@ -37,6 +37,16 @@ function setup(opts: { lifecycle?: { createTimeoutSec: number; idleTimeoutSec: n
 	return { root, db, provider, driver, wd, spec, box: () => [...provider.boxes.values()].at(-1)! };
 }
 const read = (p: string) => readFileSync(p, "utf8");
+
+test("policy 'no network' with a provider whose network-off is unverified → 501 UNSUPPORTED, nothing created or run", async () => {
+	const provider = new FakeRemoteProvider();
+	provider.capabilities = { ...FAKE_CAPS, networkOff: "unverified" };
+	const { driver, spec } = setup({ provider });
+	await assert.rejects(driver.run(spec("echo no")), (e: any) => e.status === 501 && e.code === "UNSUPPORTED");
+	assert.equal(provider.created, 0);
+	const ok = await driver.run({ ...spec("echo yes"), network: true });
+	assert.equal(ok.exitCode, 0);
+});
 
 test("run: exit code, stdout/stderr, file roundtrip host → remote → host, manifest persisted, one instance row", async () => {
 	const t = setup();

@@ -392,8 +392,14 @@ test("instances list: empty without the adapter table; org-filtered when present
 		db.run("CREATE TABLE IF NOT EXISTS tool_sandbox_instances (id TEXT PRIMARY KEY, provider TEXT, space_id TEXT, workspace_key TEXT, remote_id TEXT, state TEXT, created_at TEXT, last_used_at TEXT, expires_at TEXT, last_error TEXT)");
 		const mine = h.t.app.ctx.services.get("identity").personalSpace(h.owner.me.userId, h.owner.me.orgId) as Space;
 		const theirs = h.t.app.ctx.services.get("identity").personalSpace(h.other.me.userId, h.other.me.orgId) as Space;
-		db.run("INSERT INTO tool_sandbox_instances VALUES ('i1','e2b',?, 'c1','r1','ready','t','t',NULL,NULL)", mine.id);
-		db.run("INSERT INTO tool_sandbox_instances VALUES ('i2','e2b',?, 'c2','r2','ready','t','t',NULL,NULL)", theirs.id);
+		// Named columns: the real table (sandbox.ts migration v3) has more columns than this test's fallback CREATE.
+		const hasOrg = db.all<{ name: string }>("PRAGMA table_info(tool_sandbox_instances)").some((c) => c.name === "org_id");
+		const ins = (id: string, space: Space, key: string, remote: string) =>
+			hasOrg
+				? db.run("INSERT INTO tool_sandbox_instances (id, provider, space_id, workspace_key, remote_id, state, created_at, last_used_at, org_id) VALUES (?, 'e2b', ?, ?, ?, 'ready', 't', 't', ?)", id, space.id, key, remote, space.orgId)
+				: db.run("INSERT INTO tool_sandbox_instances (id, provider, space_id, workspace_key, remote_id, state, created_at, last_used_at) VALUES (?, 'e2b', ?, ?, ?, 'ready', 't', 't')", id, space.id, key, remote);
+		ins("i1", mine, "c1", "r1");
+		ins("i2", theirs, "c2", "r2");
 		const r = (await h.call(h.owner, "GET", "/api/sandbox/instances")).body.instances;
 		assert.deepEqual(r.map((x: any) => x.id), ["i1"]);
 	} finally {

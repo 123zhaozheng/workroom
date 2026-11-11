@@ -18,6 +18,7 @@ const STATUS: Record<SandboxRunDTO["status"], { label: string; tone: "success" |
 	error: { label: "出错", tone: "danger" },
 	timeout: { label: "超时", tone: "warning" },
 	killed: { label: "已终止", tone: "danger" },
+	unknown: { label: "结果未知（服务重启时仍在运行，未自动重跑）", tone: "warning" },
 };
 const PROMPT: Record<string, string> = { python: "python3 main.py", node: "node main.mjs", shell: "sh main.sh", js: "node main.mjs" };
 

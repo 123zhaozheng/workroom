@@ -3,7 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, utimesSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, utimesSync, writeFileSync, mkdirSync } from "node:fs";
+import { workspacePersistenceFor } from "../src/tools/sandbox/persist.ts";
 import { join } from "node:path";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
@@ -96,15 +97,32 @@ test("sandbox: confined filesystem, no network, timeout kills the process tree, 
 		assert.deepEqual(caps.deliverables.formats, ["md", "html", "csv", "docx", "xlsx", "pptx", "pdf"]);
 		assert.match(caps.deliverables.pdfCjkFont, /^available/);
 
-		// Lifecycle: files idle past retention are reaped; fresh files stay.
+		// Lifecycle (round 7b): an idle working copy with UNSAVED changes is never reaped (it may be the only copy); once saved and idle
+		// past retention it is removed, and the next run restores it from the saved version (hash-verified).
 		const wd = sb.workdir(space, conv);
 		mkdirSync(join(wd, "old"), { recursive: true });
 		writeFileSync(join(wd, "old", "stale.txt"), "x");
 		const past = new Date(Date.now() - 1000 * 3600 * 24 * 30);
-		utimesSync(join(wd, "old", "stale.txt"), past, past);
-		assert.equal(sb.reap(), 1);
-		assert.equal(existsSync(join(wd, "old")), false);
-		assert.equal(existsSync(join(wd, "result.csv")), true);
+		const age = (dir: string) => {
+			for (const e of readdirSync(dir, { withFileTypes: true })) {
+				const f = join(dir, e.name);
+				if (e.isDirectory()) age(f);
+				utimesSync(f, past, past);
+			}
+			utimesSync(dir, past, past);
+		};
+		age(wd);
+		assert.equal(await sb.reap(), 0, "unsaved working copy is kept");
+		assert.equal(existsSync(join(wd, "old", "stale.txt")), true);
+		const persist = workspacePersistenceFor(ctx);
+		const saved = await persist.commit(principal, space, `c${conv}`, "manual");
+		assert.equal(saved.ok, true);
+		age(wd);
+		assert.equal(await sb.reap(), 1, "saved + idle working copy is removed");
+		assert.equal(existsSync(join(wd, "result.csv")), false);
+		const back = await sb.run({ principal, space, conversationId: conv, language: "shell", code: "cat old/stale.txt && ls result.csv" });
+		assert.equal(back.exitCode, 0, back.stderr);
+		assert.equal((await persist.status(principal, space, `c${conv}`)).restore?.verified, true);
 	} finally {
 		await t.dispose();
 	}

@@ -13,7 +13,10 @@ import type { SandboxInfoDTO, WorkspaceFilesResponse, WorkspacePreviewDTO, Works
 import { normalizeTarget, type DriverId, type LocalDriverId, type DriverStatus, type Language, type ProcessRef, type RunResult, type SandboxDriver, type SandboxMount, type ServiceRuntime } from "./sandbox/driver.ts";
 import { killStaleNamespaces, NAMESPACES_NOTES, probeNamespaces } from "./sandbox/namespaces.ts";
 import { SandboxDrivers } from "./sandbox/registry.ts";
-import { RemoteDrivers, remoteNotes } from "./sandbox/remote-driver.ts";
+import { RemoteDriver, RemoteDrivers, remoteNotes } from "./sandbox/remote-driver.ts";
+import { workspaceKeyOf, workspacePersistenceFor } from "./sandbox/persist.ts";
+import { mergeSandboxEnv, sandboxEnvFor } from "./sandbox/env-vars.ts";
+import { credentialsFor } from "./credentials/store.ts";
 import { UnsupportedError } from "./sandbox/provider.ts";
 import { SandboxService, type SandboxServiceInfo } from "./sandbox/services.ts";
 import * as ws from "./sandbox/workspace.ts";
@@ -364,12 +367,27 @@ export class Sandbox {
 		const timeoutMs = Math.min(Math.max(input.timeoutMs ?? DEFAULT_LIMITS.timeoutMs, 1000), input.maxTimeoutMs ?? MAX_TIMEOUT_MS);
 		const cpuSeconds = Math.max(1, Math.min(input.cpuSeconds ?? Math.ceil(timeoutMs / 1000), Math.ceil(timeoutMs / 1000)));
 		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, timeoutMs, cpuSeconds, network };
+		// Round 7b: the working copy is restored from its last saved version when it is missing (sandbox/host copy expired); never overwrites.
+		const persist = workspacePersistenceFor(this.#ctx);
+		const wsKey = workspaceKeyOf(input.conversationId);
+		const ready = await persist.ensureReady(input.principal, input.space, wsKey);
+		if ((ready.state === "failed" || ready.state === "conflict") && !existsSync(join(this.root(input.space), input.conversationId === undefined ? "shared" : `c${input.conversationId}`)))
+			throw new HttpError(409, "workspace_not_restored", `工作区未能恢复，已停止运行以免在空目录上工作：${ready.failure ?? ready.state}`);
 		const wd = this.workdir(input.space, input.conversationId);
 		const used = ws.dirSize(this.root(input.space)).bytes;
 		if (used > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录已用 ${Math.round(used / 1048576)} MB，超过配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并清理`);
 		const mountNotes: string[] = [];
 		const mounts = await this.#collectMounts({ principal: input.principal, space: input.space, conversationId: input.conversationId, notes: mountNotes }, input.mounts);
 		await this.#reaped;
+		// Environment: ordinary variables (org < project < user < conversation, locked org vars win) under the platform/caller variables;
+		// credentials consented for env use in THIS conversation are added for this run only and never recorded.
+		const { env: userEnv } = sandboxEnvFor(this.#ctx).resolve(input.principal, input.space, input.conversationId);
+		const cred = input.conversationId === undefined ? { env: {} as Record<string, string>, names: [] as string[], cleanup: () => {} } : await credentialsFor(this.#ctx).envFor(input.principal, input.space, input.conversationId);
+		if (cred.names.length && driver instanceof RemoteDriver) {
+			cred.cleanup();
+			throw new UnsupportedError(driver.label, `把凭据注入远端沙箱进程环境（${cred.names.join("、")}）；该提供方未验证不会持久化进程环境，已拒绝。请改用“经服务器代为调用”的方式使用凭据`);
+		}
+		const env = { ...mergeSandboxEnv(userEnv, input.env ?? {}), ...cred.env };
 		const id = newId("run");
 		const started = Date.now();
 		this.#ctx.db.run(
@@ -379,13 +397,17 @@ export class Sandbox {
 		let r: RunResult;
 		const release = await this.#slots.acquire();
 		try {
-			r = await driver.run({ runId: id, tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: input.conversationId === undefined ? "shared" : `c${input.conversationId}` }, scratchBase: this.root(input.space), workdir: wd, exec: { language: input.language, code: input.code }, limits, mounts, env: input.env ?? {}, network, signal: input.signal, onSpawn: (ref: ProcessRef) => ref.pid && input.onSpawn?.(ref.pid) });
+			r = await driver.run({ runId: id, tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: wsKey }, scratchBase: this.root(input.space), workdir: wd, exec: { language: input.language, code: input.code }, limits, mounts, env, network, signal: input.signal, onSpawn: (ref: ProcessRef) => ref.pid && input.onSpawn?.(ref.pid) });
 		} catch (e: any) {
 			this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = 'error', stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", String(e?.message ?? e).slice(0, 4000), Date.now() - started, nowIso(), id);
 			throw e;
 		} finally {
 			release();
+			cred.cleanup();
+			// Save point: after every run (also failed/timed-out ones), after the remote sync-back. Failures are recorded in the workspace status, never thrown.
+			await persist.commit(input.principal, input.space, wsKey, "run_end").catch((e) => console.error("[sandbox] workspace commit failed", e));
 		}
+		if (cred.names.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}[凭据] 本次运行注入了环境变量：${cred.names.join("、")}（进程及其子进程可读取）` };
 		if (mountNotes.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}${mountNotes.join("\n")}` };
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
 		return this.runDTO(id)!;
@@ -433,6 +455,8 @@ export class Sandbox {
 		const maxLifetimeMs = Math.max(1000, input.maxLifetimeMs ?? 3600_000);
 		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, cpuSeconds: 4 * 3600, timeoutMs: maxLifetimeMs, ...input.limits, network };
 		const wd = this.workdir(input.space, input.conversationId);
+		// Ordinary sandbox env vars apply when a service starts (running services keep theirs); the service's own env (connector config) wins.
+		input = { ...input, env: mergeSandboxEnv(sandboxEnvFor(this.#ctx).resolve(input.principal, input.space, input.conversationId).env, input.env ?? {}) };
 		const proc = await driver.startService({ serviceId: id, scratchBase: this.root(input.space), workdir: wd, argv: input.argv, runtime: input.runtime, cwd: input.cwd, limits, mounts, env: input.env ?? {}, network });
 		const key = input.key ?? id;
 		const svc = new SandboxService({ key, id, spaceId: input.space.id, conversationId: input.conversationId, runtime: input.runtime, driver: driver.id, proc, idleTimeoutMs, maxLifetimeMs, onGone: (s) => this.#services.get(`${s.spaceId}:${s.key}`) === s && this.#services.delete(`${s.spaceId}:${s.key}`) });
@@ -549,36 +573,15 @@ export class Sandbox {
 
 	// ---------- lifecycle ----------
 	/** Lifecycle: delete workspace files idle longer than the retention period (published files live on in the library). */
-	reap(now = Date.now()): number {
-		let removed = 0;
-		const orgs = join(this.#ctx.config.dataDir, "orgs");
-		if (!existsSync(orgs)) return 0;
-		const cutoff = now - RETENTION_HOURS * 3600_000;
-		const sweep = (d: string): boolean => {
-			let empty = true;
-			for (const e of readdirSync(d, { withFileTypes: true })) {
-				const f = join(d, e.name);
-				if (e.isDirectory()) {
-					if (sweep(f)) {
-						rmSync(f, { recursive: true, force: true });
-					} else empty = false;
-				} else if (lstatSync(f).mtimeMs < cutoff) {
-					rmSync(f, { force: true });
-					removed++;
-				} else empty = false;
-			}
-			return empty;
-		};
-		for (const org of readdirSync(orgs)) {
-			const spaces = join(orgs, org, "spaces");
-			if (!existsSync(spaces)) continue;
-			for (const s of readdirSync(spaces)) {
-				const sb = join(spaces, s, "sandbox");
-				if (existsSync(sb)) for (const c of readdirSync(sb)) if (c !== ".runs") sweep(join(sb, c));
-			}
-		}
-		return removed;
+	/**
+	 * Lifecycle (round 7b): remove whole working copies idle past the org's retention, ONLY when they are saved (working copy == head
+	 * version). Dirty / failed / conflicting / never-saved copies are kept — the old per-file sweep could delete the only copy.
+	 * Returns how many working copies were removed.
+	 */
+	async reap(now = Date.now()): Promise<number> {
+		return (await workspacePersistenceFor(this.#ctx).reapWorkingCopies(now)).removed.length;
 	}
+
 
 	/** Kill what a previous process left behind (job recovery): namespace process group by pid, docker container by name. */
 	async killStale(ref: ProcessRef): Promise<boolean> {
@@ -589,11 +592,7 @@ export class Sandbox {
 	start(): void {
 		this.#stopped = false;
 		this.#timer = setInterval(() => {
-			try {
-				this.reap();
-			} catch (e) {
-				console.error("[sandbox] reap failed", e);
-			}
+			void this.reap().catch((e) => console.error("[sandbox] reap failed", e));
 		}, 3600_000);
 		this.#timer.unref();
 		this.remote.start();

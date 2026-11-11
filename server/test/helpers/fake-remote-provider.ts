@@ -43,7 +43,7 @@ export class FakeBox {
 }
 
 export const FAKE_CAPS: ProviderCapabilities = {
-	exec: "unverified", streamOutput: "unverified", cancel: "unverified", commandTimeout: "unverified", files: "unverified", networkOff: "unverified", networkOn: "unverified",
+	exec: "unverified", streamOutput: "unverified", cancel: "unverified", commandTimeout: "unverified", files: "unverified", networkOff: "supported", networkOn: "unverified", // networkOff "supported" here = the double honours it; the refusal path for unverified providers has its own test
 	resourceLimits: "unverified", reconnect: "unverified", services: "unsupported", pty: "unsupported", preview: "unsupported", snapshot: "unsupported", pauseResume: "unsupported",
 	skills: "upload_readonly", isolation: "in-memory test double", location: "self_hosted",
 };

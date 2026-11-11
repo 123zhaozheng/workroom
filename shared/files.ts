@@ -280,7 +280,8 @@ export interface SandboxRunDTO {
 	readonly userId: string;
 	readonly language: "shell" | "python" | "node" | "js";
 	readonly code: string;
-	readonly status: "running" | "ok" | "error" | "timeout" | "killed";
+	/** "unknown": the server stopped while it ran (reconciled at startup); its outcome is unknown and it is never re-run automatically. */
+	readonly status: "running" | "ok" | "error" | "timeout" | "killed" | "unknown";
 	readonly exitCode?: number;
 	readonly stdout: string;
 	readonly stderr: string;
