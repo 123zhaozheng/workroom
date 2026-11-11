@@ -1,0 +1,537 @@
+/* First-login onboarding: dialog entrance, step transition and the calm CSS-only previews in the left column.
+ *
+ * Reduced motion: every animation here is decoration on top of a complete resting state (all elements visible, nothing
+ * mid-fade), so switching animations off — the system setting or the in-app "减少动画" toggle — leaves a finished picture.
+ * Colours come from the app tokens (var(--…)); the two theme swatches are the only fixed colours: they show what each theme
+ * looks like regardless of the theme currently applied. */
+
+.ob-dialog-in {
+	animation: ob-dialog-in 0.2s ease-out both;
+}
+@keyframes ob-dialog-in {
+	/* the dialog is centred with the individual `translate` property (Tailwind v4), so only scale/opacity animate here */
+	from {
+		opacity: 0;
+		transform: scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+.ob-step-in {
+	animation: ob-step-in 0.2s ease-out both;
+}
+.ob-step-in[data-dir="back"] {
+	animation-name: ob-step-in-back;
+}
+@keyframes ob-step-in {
+	from {
+		opacity: 0;
+		transform: translateX(10px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+@keyframes ob-step-in-back {
+	from {
+		opacity: 0;
+		transform: translateX(-10px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+/* ---------- scene frame ---------- */
+.ob-scene {
+	position: relative;
+	display: flex;
+	height: 100%;
+	width: 100%;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	background: var(--surface-2);
+}
+.ob-card {
+	border: 1px solid var(--border);
+	background: var(--surface);
+	border-radius: 12px;
+	box-shadow: var(--shadow-pop);
+}
+.ob-bar {
+	display: block;
+	height: 6px;
+	border-radius: 3px;
+	background: var(--surface-3);
+}
+.ob-bar-strong {
+	background: var(--border-strong);
+}
+
+/* ---------- welcome: a task becomes a file ---------- */
+.ob-w {
+	display: flex;
+	width: 232px;
+	flex-direction: column;
+	gap: 10px;
+}
+.ob-w-ask {
+	align-self: flex-end;
+	width: 150px;
+	padding: 10px 12px;
+	background: var(--accent);
+	border-radius: 12px 12px 4px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.ob-w-ask .ob-bar {
+	background: color-mix(in srgb, var(--accent-fg) 70%, transparent);
+}
+.ob-w-steps {
+	padding: 10px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+}
+.ob-w-step {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.ob-w-tick {
+	display: inline-flex;
+	height: 14px;
+	width: 14px;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	border-radius: 999px;
+	background: var(--success-soft);
+	color: var(--success);
+}
+.ob-w-tick svg {
+	height: 9px;
+	width: 9px;
+}
+.ob-w-file {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 12px;
+}
+.ob-w-file-icon {
+	display: inline-flex;
+	height: 30px;
+	width: 26px;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	background: var(--info-soft);
+	color: var(--info);
+}
+.ob-w-file-icon svg {
+	height: 15px;
+	width: 15px;
+}
+.ob-r1,
+.ob-r2,
+.ob-r3,
+.ob-r4 {
+	animation-duration: 9s;
+	animation-timing-function: ease-out;
+	animation-iteration-count: infinite;
+}
+.ob-r1 {
+	animation-name: ob-r1;
+}
+.ob-r2 {
+	animation-name: ob-r2;
+}
+.ob-r3 {
+	animation-name: ob-r3;
+}
+.ob-r4 {
+	animation-name: ob-r4;
+}
+@keyframes ob-r1 {
+	0% {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	6%,
+	90% {
+		opacity: 1;
+		transform: none;
+	}
+	97%,
+	100% {
+		opacity: 0;
+	}
+}
+@keyframes ob-r2 {
+	0%,
+	16% {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	22%,
+	90% {
+		opacity: 1;
+		transform: none;
+	}
+	97%,
+	100% {
+		opacity: 0;
+	}
+}
+@keyframes ob-r3 {
+	0%,
+	32% {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	38%,
+	90% {
+		opacity: 1;
+		transform: none;
+	}
+	97%,
+	100% {
+		opacity: 0;
+	}
+}
+@keyframes ob-r4 {
+	0%,
+	50% {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	58%,
+	90% {
+		opacity: 1;
+		transform: none;
+	}
+	97%,
+	100% {
+		opacity: 0;
+	}
+}
+
+/* ---------- appearance: a miniature app that follows the theme chosen on the right ---------- */
+.ob-dots {
+	position: absolute;
+	inset: 0;
+	background-image: radial-gradient(circle, rgb(var(--dot-rgb) / var(--dot-alpha)) 1.2px, transparent 1.6px);
+	background-size: 16px 16px;
+	animation: ob-dots-drift 14s linear infinite;
+	-webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 78%);
+	mask-image: radial-gradient(ellipse at center, #000 30%, transparent 78%);
+}
+@keyframes ob-dots-drift {
+	to {
+		background-position: 16px 16px;
+	}
+}
+.ob-win {
+	position: relative;
+	display: flex;
+	height: 148px;
+	width: 224px;
+	overflow: hidden;
+}
+.ob-win-side {
+	display: flex;
+	width: 54px;
+	flex: none;
+	flex-direction: column;
+	gap: 8px;
+	border-right: 1px solid var(--border);
+	background: var(--surface-2);
+	padding: 12px 9px;
+}
+.ob-win-main {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	justify-content: space-between;
+	padding: 12px;
+}
+.ob-win-composer {
+	height: 26px;
+	border: 1px solid var(--border-strong);
+	border-radius: 9px;
+	background: var(--surface);
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	padding: 0 5px;
+}
+.ob-win-send {
+	height: 16px;
+	width: 16px;
+	border-radius: 999px;
+	background: var(--accent);
+}
+.ob-swatch {
+	display: block;
+	height: 36px;
+	width: 100%;
+	overflow: hidden;
+	border-radius: 7px;
+	border: 1px solid var(--border-strong);
+}
+/* fixed sample colours: the light and dark theme backgrounds */
+.ob-swatch-light {
+	background: linear-gradient(#ffffff 0 38%, #fafaf9 38%);
+}
+.ob-swatch-dark {
+	background: linear-gradient(#1d1e21 0 38%, #161719 38%);
+}
+.ob-swatch-system {
+	background: linear-gradient(105deg, #fafaf9 0 50%, #161719 50%);
+}
+
+/* ---------- security: a code that refreshes ---------- */
+.ob-s {
+	display: flex;
+	width: 214px;
+	flex-direction: column;
+	align-items: center;
+	gap: 14px;
+}
+.ob-s-shield {
+	display: inline-flex;
+	height: 56px;
+	width: 56px;
+	align-items: center;
+	justify-content: center;
+	border-radius: 18px;
+	color: var(--success);
+	background: var(--success-soft);
+	animation: ob-breathe 5s ease-in-out infinite;
+}
+.ob-s-shield svg {
+	height: 28px;
+	width: 28px;
+}
+@keyframes ob-breathe {
+	0%,
+	100% {
+		transform: none;
+	}
+	50% {
+		transform: translateY(-3px);
+	}
+}
+.ob-s-code {
+	position: relative;
+	width: 100%;
+	padding: 12px 14px 14px;
+	text-align: center;
+}
+.ob-s-digits {
+	display: block;
+	font-family: var(--font-mono);
+	font-size: 22px;
+	font-weight: 600;
+	letter-spacing: 0.22em;
+	color: var(--fg);
+}
+.ob-s-digits + .ob-s-digits {
+	position: absolute;
+	inset: 12px 14px auto;
+	opacity: 0;
+	animation: ob-code-b 8s ease-in-out infinite;
+}
+.ob-s-digits:first-of-type {
+	animation: ob-code-a 8s ease-in-out infinite;
+}
+@keyframes ob-code-a {
+	0%,
+	42% {
+		opacity: 1;
+	}
+	50%,
+	92% {
+		opacity: 0;
+	}
+	100% {
+		opacity: 1;
+	}
+}
+@keyframes ob-code-b {
+	0%,
+	42% {
+		opacity: 0;
+	}
+	50%,
+	92% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+.ob-s-timer {
+	display: block;
+	margin-top: 12px;
+	height: 3px;
+	overflow: hidden;
+	border-radius: 2px;
+	background: var(--surface-3);
+}
+.ob-s-timer > span {
+	display: block;
+	height: 100%;
+	width: 100%;
+	transform-origin: left;
+	background: var(--info);
+	animation: ob-timer 4s linear infinite;
+}
+@keyframes ob-timer {
+	from {
+		transform: scaleX(1);
+	}
+	to {
+		transform: scaleX(0);
+	}
+}
+
+/* ---------- done ---------- */
+.ob-d {
+	display: flex;
+	width: 214px;
+	flex-direction: column;
+	align-items: center;
+	gap: 14px;
+}
+.ob-d-check {
+	height: 64px;
+	width: 64px;
+	color: var(--success);
+}
+.ob-d-check circle,
+.ob-d-check path {
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2.4;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+.ob-d-check circle {
+	stroke-dasharray: 151;
+	stroke-dashoffset: 0;
+	animation: ob-draw 0.7s ease-out both;
+}
+.ob-d-check path {
+	stroke-dasharray: 30;
+	stroke-dashoffset: 0;
+	animation: ob-draw-tick 0.45s 0.45s ease-out both;
+}
+@keyframes ob-draw {
+	from {
+		stroke-dashoffset: 151;
+	}
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+@keyframes ob-draw-tick {
+	from {
+		stroke-dashoffset: 30;
+	}
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+.ob-d-chips {
+	display: flex;
+	width: 100%;
+	flex-direction: column;
+	gap: 8px;
+}
+.ob-d-chip {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 12px;
+	font-size: 13px;
+	color: var(--fg-muted);
+	animation: ob-chip 0.4s ease-out both;
+}
+.ob-d-chip:nth-child(1) {
+	animation-delay: 0.7s;
+}
+.ob-d-chip:nth-child(2) {
+	animation-delay: 0.85s;
+}
+.ob-d-chip:nth-child(3) {
+	animation-delay: 1s;
+}
+.ob-d-chip svg {
+	height: 16px;
+	width: 16px;
+	flex: none;
+	color: var(--fg-subtle);
+}
+@keyframes ob-chip {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+/* ---------- reduced motion: system setting or the in-app toggle → the resting picture, no movement ---------- */
+@media (prefers-reduced-motion: reduce) {
+	.ob-dialog-in,
+	.ob-step-in,
+	.ob-r1,
+	.ob-r2,
+	.ob-r3,
+	.ob-r4,
+	.ob-dots,
+	.ob-s-shield,
+	.ob-s-digits,
+	.ob-s-timer > span,
+	.ob-d-check circle,
+	.ob-d-check path,
+	.ob-d-chip {
+		animation: none !important;
+	}
+}
+html[data-reduce-motion="true"] .ob-dialog-in,
+html[data-reduce-motion="true"] .ob-step-in,
+html[data-reduce-motion="true"] .ob-r1,
+html[data-reduce-motion="true"] .ob-r2,
+html[data-reduce-motion="true"] .ob-r3,
+html[data-reduce-motion="true"] .ob-r4,
+html[data-reduce-motion="true"] .ob-dots,
+html[data-reduce-motion="true"] .ob-s-shield,
+html[data-reduce-motion="true"] .ob-s-digits,
+html[data-reduce-motion="true"] .ob-s-timer > span,
+html[data-reduce-motion="true"] .ob-d-check circle,
+html[data-reduce-motion="true"] .ob-d-check path,
+html[data-reduce-motion="true"] .ob-d-chip {
+	animation: none !important;
+}
+/* the second code is only shown by its animation */
+@media (prefers-reduced-motion: reduce) {
+	.ob-s-digits + .ob-s-digits {
+		display: none;
+	}
+}
+html[data-reduce-motion="true"] .ob-s-digits + .ob-s-digits {
+	display: none;
+}

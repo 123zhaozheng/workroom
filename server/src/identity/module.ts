@@ -10,6 +10,7 @@ import type { AppDb } from "../core/db.ts";
 import { SecretBox, sha256Hex } from "./secrets.ts";
 import { registerIdentityRoutes } from "./routes.ts";
 import { registerOnboarding } from "./onboarding.ts";
+import { registerOnboarding } from "./onboarding.ts";
 import { Authz } from "./authz.ts";
 
 const MIGRATIONS: { version: number; name: string; sql: string }[] = [
@@ -571,6 +572,7 @@ export const identityModule: WorkroomModule = {
 		});
 	},
 	routes(api, ctx) {
+		registerOnboarding(api, ctx); // round 9: first-login onboarding flag (identity/onboarding.ts)
 		registerOnboarding(api, ctx); // round 9: first-login onboarding flag (identity/onboarding.ts)
 		registerIdentityRoutes(api, ctx, ctx.services.get("identity") as Identity);
 	},

@@ -1,0 +1,385 @@
+{
+  "at": "2026-11-11T06:23:09.595Z",
+  "results": [
+    {
+      "name": "test helper: the RFC 6238 vector at T=59s gives 287082",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "test helper: and 081804 at T=1111111109s",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: a brand-new user is shown the onboarding dialog after the first sign-in",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: it is a modal dialog with an accessible name",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: four progress dots, exactly one is the current step (aria-current=step)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the first step is 欢迎 with the product sentence and the person's name",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the left column shows a preview on desktop",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the step heading has focus (screen readers announce the step; Tab continues from it)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 跳过引导 and 稍后 are both visible on the first step",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: no back button on the first step",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: next → 外观; the second dot is current, the first is marked done",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the preview changes with the step",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: choosing 深色 applies at once (html[data-theme=dark], the dialog re-themes)",
+      "ok": true,
+      "detail": "rgb(255, 255, 255) → rgb(29, 30, 33)"
+    },
+    {
+      "name": "A: the chosen theme card is aria-checked",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: and 浅色 switches back",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 动态点阵背景 switch turns the dots off (stored as the client preference)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 减少动画 switch sets html[data-reduce-motion=true]",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: and turns it back off",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 上一步 returns to 欢迎",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the theme choice survived going back and forth",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 账号安全 can be skipped: the primary action reads 暂时跳过 until 2FA is on",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: nothing is started by merely arriving (no secret yet)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the real secret from POST /me/2fa/setup is shown (base32, grouped for reading)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 复制密钥 puts the secret on the clipboard",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 复制配置链接 copies the otpauth URI for this account",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the authenticator link is offered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: no invented recovery codes: the page says there are none",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the verify button waits for six digits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: a wrong code is refused with the server's reason and 2FA stays off",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: a correct code (computed in the test with RFC 6238) enables 2FA; Enter submits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the primary action is 下一步 again and the dialog is still up (this session was not signed out)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: last step: 开始使用, no 跳过引导, no 上一步 clutter",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: the done step does not nag about 2FA (it is on)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: 开始使用 closes the dialog and the server now says onboarded:true",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: focus is back in the page (not lost on <body> of a removed dialog)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: reload → no dialog again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: a second browser signed in with password + code does not see the dialog either (flag is per user, server-side)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: and its /me says onboarded:true",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A: no page errors during the tour",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B: 跳过引导 on the first step finishes the onboarding (server flag set)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B: signing out and in again → no dialog",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B: skipping the onboarding left 2FA off",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B: another user who has not finished still gets the dialog (per user)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D: Escape closes the dialog but does NOT finish the onboarding",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D: a reload in the same session keeps it closed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D: the next login shows it again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D: the 稍后 button does the same as Escape",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D: another browser also shows it (nothing was finished)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E: 14 Tab presses never leave the dialog (focus trap)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E: Tab reaches 下一步",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E: Enter on 下一步 advances; the new heading takes focus",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E: Tab from the heading lands on the checked theme (roving tabindex)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E: arrow keys move through the themes and select (→ 深色)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E: Space toggles the 减少动画 switch",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E: Escape = 稍后 (closed, not finished)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F: prefers-reduced-motion: the welcome preview does not animate and every part is visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F: the security preview is still too (shield, code, timer)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F: only one of the two sample codes is shown when still",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F: without the setting the welcome preview does animate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F: the in-app 减少动画 toggle stops the preview too",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G 390: single column — the preview is hidden",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G 390: the dialog fits the screen and the page has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G 390: the footer buttons are on screen and big enough to tap",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G 390: appearance step works by touch and still fits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G 390: the secret and the code field are reachable by scrolling inside the dialog; no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G 390: finishing by touch completes the onboarding",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: 设置 has a 安全 tab (seven entries now)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: 2FA shows 未启用 with an 启用 button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: enable starts the real enrol flow (secret from the server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: a wrong code is refused",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: the right code enables it: status 已启用, a notice, the secret is gone from the page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: after a reload it is still 已启用 (this session stays signed in)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: disabling with a wrong code is refused and 2FA stays on",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H: a fresh valid code turns 2FA off (status 未启用, server agrees)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H 390: the 安全 tab has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "H 390: the enrol flow fits the phone too",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

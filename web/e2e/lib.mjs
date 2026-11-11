@@ -35,7 +35,8 @@ export async function startServer({ port = 8802, fresh = true, env = {} } = {}) 
 	const log = join(ROOT, "data/dev-B", `server-${port}.log`);
 	const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", "server/src/main.ts"], {
 		cwd: ROOT,
-		env: { ...process.env, WORKROOM_DATA_DIR: dataDir, PORT: String(port), WORKROOM_FIXTURE_TOOLS: "1", ...env },
+		// WORKROOM_ONBOARDING=off: the first-login onboarding dialog (round 9) would cover the page of every script that registers a user through the UI; round9-onboarding.mjs turns it on.
+		env: { ...process.env, WORKROOM_DATA_DIR: dataDir, PORT: String(port), WORKROOM_FIXTURE_TOOLS: "1", WORKROOM_ONBOARDING: "off", ...env },
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	let out = "";

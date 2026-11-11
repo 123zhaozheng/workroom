@@ -1,4 +1,4 @@
-import { ArrowLeft, BookPlus, Download, Link2, Upload } from "lucide-react";
+import { ArrowLeft, BookPlus, Download, Link2, Upload, X } from "lucide-react";
 import { lazy, Suspense, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import type { FileDetailResponse, FileUploadResponse, FileVersionDTO } from "@shared/files";
@@ -16,17 +16,27 @@ import { LoadState } from "@/features/work/states";
 import type { ConversationDetailResponse } from "@shared/chat";
 import { fileIcon } from "@/features/chat/Cards";
 import { listOf } from "@/features/chat/pickers";
-import { ORIGIN } from "./FilesPage";
+import { ORIGIN } from "@/features/files/origin";
 import { ShareDialog } from "@/features/share/Share";
 import { AVAILABILITY } from "./KnowledgePage";
 
 const PreviewViewer = lazy(() => import("@/features/preview/PreviewPanel").then((m) => ({ default: m.Viewer })));
 
+/** `/files/:fileId` as its own page (phones). Wide screens show FileDetailView inside 文件库 instead. */
 export default function FileDetailPage() {
 	const { fileId } = useParams();
+	return <FileDetailView key={fileId} fileId={fileId!} />;
+}
+
+/**
+ * One file: preview, versions, provenance, knowledge status, share / download / new version. `embedded` = the detail column of the
+ * two-column 文件库 (no top bar of its own, one column, a close button); otherwise a full page with a way back to the list.
+ * `onChanged` tells the list that this file changed (a new version).
+ */
+export function FileDetailView({ fileId, embedded, onClose, onChanged }: { fileId: string; embedded?: boolean; onClose?: () => void; onChanged?: () => void }) {
 	const [sp, setSp] = useSearchParams();
-	const res = useApi<FileDetailResponse>(`/files/${encodeURIComponent(fileId!)}`);
-	const kstatus = useApi<FileKnowledgeStatus>(`/kb/files/${encodeURIComponent(fileId!)}/status`, { pollMs: 4000 });
+	const res = useApi<FileDetailResponse>(`/files/${encodeURIComponent(fileId)}`);
+	const kstatus = useApi<FileKnowledgeStatus>(`/kb/files/${encodeURIComponent(fileId)}/status`, { pollMs: 4000 });
 	const [newVersion, setNewVersion] = useState(false);
 	const [addKb, setAddKb] = useState(false);
 	const [share, setShare] = useState(false);
@@ -34,17 +44,15 @@ export default function FileDetailPage() {
 	const versions = res.data?.versions ?? [];
 	const sel = versions.find((v) => v.versionId === sp.get("v")) ?? versions[0];
 	const Icon = fileIcon(file?.name ?? "", file?.mime);
+	// keep the other query parameters (the library's space filter) when switching versions
+	const pickVersion = (versionId: string) =>
+		setSp((p) => {
+			const n = new URLSearchParams(p);
+			n.set("v", versionId);
+			return n;
+		});
 
-	return (
-		<div className="flex min-h-0 flex-1 flex-col">
-			<TopBar>
-				<Link to="/files" className="inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg">
-					<ArrowLeft className="size-4" />
-					文件库
-				</Link>
-			</TopBar>
-			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
-				<Page wide>
+	const content = (
 					<LoadState state={res} what="文件">
 						{file && sel ? (
 							<>
@@ -99,8 +107,8 @@ export default function FileDetailPage() {
 									</div>
 								</div>
 
-								<div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-									<div className="h-[60vh] min-h-[320px] overflow-hidden rounded-xl border border-border bg-surface lg:h-[70vh]" data-testid="file-preview">
+								<div className={cn("grid gap-5", !embedded && "lg:grid-cols-[minmax(0,1fr)_320px]")}>
+									<div className={cn("h-[60vh] min-h-[320px] overflow-hidden rounded-xl border border-border bg-surface", embedded ? "lg:h-[56vh]" : "lg:h-[70vh]")} data-testid="file-preview">
 										<Suspense
 											fallback={
 												<div className="flex h-full items-center justify-center">
@@ -115,7 +123,7 @@ export default function FileDetailPage() {
 										<h2 className="mb-3 text-sm font-medium">版本</h2>
 										<ol className="space-y-3" data-testid="version-list">
 											{versions.map((v) => (
-												<VersionItem key={v.versionId} v={v} selected={v.versionId === sel.versionId} latest={v.versionNo === file.latestVersionNo} onSelect={() => setSp({ v: v.versionId })} />
+												<VersionItem key={v.versionId} v={v} selected={v.versionId === sel.versionId} latest={v.versionNo === file.latestVersionNo} onSelect={() => pickVersion(v.versionId)} />
 											))}
 										</ol>
 									</aside>
@@ -126,7 +134,8 @@ export default function FileDetailPage() {
 									fileId={file.id}
 									onDone={(v) => {
 										res.reload();
-										setSp({ v: v.versionId });
+										onChanged?.(); // the library list shows the latest version number and time
+										pickVersion(v.versionId);
 									}}
 								/>
 								<ShareDialog open={share} onOpenChange={setShare} kind="file" id={file.id} title={file.name} />
@@ -134,7 +143,31 @@ export default function FileDetailPage() {
 							</>
 						) : null}
 					</LoadState>
-				</Page>
+	);
+
+	if (embedded)
+		return (
+			<div data-testid="file-detail" data-embedded="true" className="px-5 pb-12 pt-4 lg:px-6">
+				{onClose ? (
+					<div className="mb-2 flex justify-end">
+						<button type="button" onClick={onClose} aria-label="关闭详情" data-testid="file-detail-close" className="inline-flex size-8 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+							<X className="size-4" />
+						</button>
+					</div>
+				) : null}
+				{content}
+			</div>
+		);
+	return (
+		<div className="flex min-h-0 flex-1 flex-col">
+			<TopBar>
+				<Link to="/files" className="inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg">
+					<ArrowLeft className="size-4" />
+					文件库
+				</Link>
+			</TopBar>
+			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
+				<Page wide>{content}</Page>
 			</div>
 		</div>
 	);

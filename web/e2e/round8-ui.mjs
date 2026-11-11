@@ -179,6 +179,7 @@ try {
 	check("help: Escape closes it and focus returns to the button", await help.evaluate((el) => el === document.activeElement));
 	await page.keyboard.press("Space");
 	await page.locator('[data-testid="help-content"]').waitFor();
+	await sleep(150); // Radix arms its outside-click listener on the next tick; clicking in the same tick (busy machine) is ignored
 	await page.mouse.click(700, 500);
 	await page.locator('[data-testid="help-content"]').waitFor({ state: "detached" });
 	check("help: Space opens, a click outside closes", true);
@@ -195,7 +196,7 @@ try {
 	await page.goto(`${base}/settings`);
 	const rowBox = await page.locator('[data-testid="reduce-motion-toggle"]').boundingBox();
 	const contentW = await page.locator('[data-testid="settings-content"]').evaluate((el) => el.getBoundingClientRect().width);
-	check("settings: left navigation with six entries and a content column ≤ 720px", (await page.locator('[data-testid^="settings-tab-"]').count()) === 6 && contentW <= 721, `w=${contentW}`);
+	check("settings: left navigation with seven entries (round 9 added 安全) and a content column ≤ 720px", (await page.locator('[data-testid^="settings-tab-"]').count()) === 7 && contentW <= 721, `w=${contentW}`);
 	check("settings: control is right-aligned in its row", rowBox.x > 700);
 	check("settings: no console errors on the pages exercised", errors.length === 0, errors.slice(0, 2).join(" | "));
 

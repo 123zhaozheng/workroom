@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/misc";
 import { AppShell } from "@/components/shell/AppShell";
 import { AuthPage } from "@/pages/AuthPage";
 import { HomePage } from "@/pages/HomePage";
+import { OnboardingGuard } from "@/features/onboarding/OnboardingGuard";
 
 // Secondary pages are separate chunks so the home / chat path stays light.
 const ChatPage = lazy(() => import("@/pages/ChatPage").then((m) => ({ default: m.ChatPage })));
@@ -15,7 +16,6 @@ const SharedPage = lazy(() => import("@/features/share/Share").then((m) => ({ de
 const SearchPage = lazy(() => import("@/pages/SearchPage"));
 const KnowledgePage = lazy(() => import("@/pages/KnowledgePage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
-const FileDetailPage = lazy(() => import("@/pages/FileDetailPage"));
 const ProjectPage = lazy(() => import("@/pages/ProjectPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const AutomationsPage = lazy(() => import("@/pages/AutomationsPage"));
@@ -67,6 +67,7 @@ export function App() {
 				<TooltipProvider>
 					<Motion>
 						<BrowserRouter>
+							<OnboardingGuard />
 							<Routes>
 								<Route path="/login" element={<AuthPage mode="login" />} />
 								<Route path="/register" element={<AuthPage mode="register" />} />
@@ -84,7 +85,7 @@ export function App() {
 									<Route path="/knowledge" element={<Lazy><KnowledgePage /></Lazy>} />
 									<Route path="/knowledge/:kbId" element={<Lazy><KnowledgePage /></Lazy>} />
 									<Route path="/files" element={<Lazy><FilesPage /></Lazy>} />
-									<Route path="/files/:fileId" element={<Lazy><FileDetailPage /></Lazy>} />
+									<Route path="/files/:fileId" element={<Lazy><FilesPage /></Lazy>} />
 									<Route path="/projects/:projectId" element={<Lazy><ProjectPage /></Lazy>} />
 									<Route path="/settings" element={<Lazy><SettingsPage /></Lazy>} />
 									<Route path="/automations" element={<Lazy><AutomationsPage /></Lazy>} />

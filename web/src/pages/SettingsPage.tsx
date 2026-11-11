@@ -1,5 +1,5 @@
 // 设置: ChatGPT-style layout — grouped left navigation, one content column (≤720px) with label-left / control-right rows.
-// 常规 · 助手 · 模型 · 凭据与变量 · 权限 · 登录设备. URLs stay `/settings?tab=<id>`.
+// 常规 · 助手 · 模型 · 凭据与变量 · 权限 · 安全 · 登录设备. URLs stay `/settings?tab=<id>`.
 import { lazy, Suspense, useState } from "react";
 import { useSearchParams } from "react-router";
 import { FIXTURE_LABEL } from "@shared/chat";
@@ -23,6 +23,7 @@ import { Help } from "@/components/ui/help";
 import { useConfirm } from "@/features/admin/confirm";
 import { CredentialsSection } from "@/features/settings/Credentials";
 import { EnvVarsEditor } from "@/features/settings/EnvVars";
+import { TwoFactorSettings } from "@/features/settings/TwoFactor";
 
 // models group's component; lazy so the admin model code is not part of the settings chunk until needed
 const PersonalProviders = lazy(() => import("@/features/admin/models/ModelsAdmin").then((m) => ({ default: m.PersonalProviders })));
@@ -34,6 +35,7 @@ const TABS = [
 	{ value: "models", label: "模型" },
 	{ value: "credentials", label: "凭据与变量" },
 	{ value: "permissions", label: "权限" },
+	{ value: "security", label: "安全" },
 	{ value: "devices", label: "登录设备" },
 ] as const;
 
@@ -55,6 +57,7 @@ export default function SettingsPage() {
 							{tab === "models" ? <ModelsTab /> : null}
 							{tab === "credentials" ? <CredentialsTab /> : null}
 							{tab === "permissions" ? <MyPermissionsSection /> : null}
+							{tab === "security" ? <TwoFactorSettings /> : null}
 							{tab === "devices" ? <SessionsGroup /> : null}
 						</SettingsContent>
 					</div>

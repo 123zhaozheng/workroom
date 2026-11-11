@@ -12,8 +12,8 @@ import { useSession } from "@/lib/session";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 import { useApi } from "@/lib/useApi";
 import { cn, formatBytes, relTime } from "@/lib/utils";
-import { TopBar } from "@/components/shell/AppShell";
-import { usePanel } from "@/components/shell/panel";
+import { TopBar, useShell } from "@/components/shell/AppShell";
+import { usePanel, type PreviewTarget } from "@/components/shell/panel";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -21,6 +21,10 @@ import { Help } from "@/components/ui/help";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { FilePickerDialog, listOf } from "@/features/chat/pickers";
+import { SplitLayout } from "@/features/files/SplitLayout";
+import { PreviewDialog } from "@/features/files/PreviewDialog";
+import { KbListColumn, KbStats, SCOPE_LABEL } from "@/features/knowledge/KbRows";
+import { Notice } from "@/features/work/states";
 
 export const AVAILABILITY: Record<KbDocDTO["availability"], { label: string; tone: "success" | "info" | "danger" }> = {
 	ready: { label: "可检索", tone: "success" },
@@ -30,14 +34,57 @@ export const AVAILABILITY: Record<KbDocDTO["availability"], { label: string; ton
 const PROC: Record<KbProcessingStatus, string> = { queued: "排队中", parsing: "解析中", indexing: "建立索引中", ready: "可检索", failed: "失败" };
 const FAILURE: Record<RetrievalFailure, string> = { no_evidence: "没有找到相关证据", index_not_ready: "索引尚未就绪", forbidden: "没有权限", error: "检索出错" };
 
+/**
+ * 知识库. Wide screens: app sidebar · knowledge base list · the selected base's documents (`/knowledge/:kbId` is the same screen with
+ * that base open). Phones and tablets: a list page, then a page per base.
+ */
 export default function KnowledgePage() {
 	const { kbId } = useParams();
-	return kbId ? <KbDetail kbId={kbId} /> : <KbList />;
+	const { wide } = useShell();
+	return wide ? <KnowledgeWorkspace kbId={kbId} /> : kbId ? <KbDetail kbId={kbId} /> : <KbList />;
+}
+
+function useKbList(pollMs?: number) {
+	const res = useApi<unknown>("/kb", { pollMs });
+	return { res, list: listOf<KbSummary>(res.data, "kbs", "knowledgeBases") };
+}
+
+function KnowledgeWorkspace({ kbId }: { kbId?: string }) {
+	// the counts next to each base follow what happens in the open one (uploads, indexing finishing)
+	const { res, list } = useKbList(6000);
+	const [create, setCreate] = useState(false);
+	const [q, setQ] = useState("");
+	const navigate = useNavigate();
+	return (
+		<div className="flex min-h-0 flex-1 flex-col">
+			<TopBar />
+			<SplitLayout
+				label="知识库列表"
+				list={
+					<KbListColumn list={list} selectedId={kbId} q={q} onQ={setQ} onCreate={() => setCreate(true)} createDisabled={res.unavailable}>
+						{res.unavailable || res.error || res.loading ? (
+							<Loadable state={res} what="知识库" need="C 组：GET /api/kb">
+								{null}
+							</Loadable>
+						) : undefined}
+					</KbListColumn>
+				}
+				detail={kbId ? <KbDetail key={kbId} kbId={kbId} embedded /> : list.length ? <Notice icon={<BookOpen />} title="选择一个知识库查看资料" testid="kb-no-selection" /> : null}
+			/>
+			<CreateKbDialog
+				open={create}
+				onOpenChange={setCreate}
+				onCreated={(k) => {
+					res.reload(); // the new base is in the list when its panel opens
+					navigate(`/knowledge/${k.id}`);
+				}}
+			/>
+		</div>
+	);
 }
 
 function KbList() {
-	const res = useApi<unknown>("/kb");
-	const list = listOf<KbSummary>(res.data, "kbs", "knowledgeBases");
+	const { res, list } = useKbList();
 	const [create, setCreate] = useState(false);
 	const navigate = useNavigate();
 	return (
@@ -59,7 +106,18 @@ function KbList() {
 					/>
 					<Loadable state={res} what="知识库" need="C 组：GET /api/kb">
 						{list.length === 0 ? (
-							<EmptyState icon={<BookOpen />} title="还没有知识库" action={<Button onClick={() => setCreate(true)}>新建知识库</Button>} />
+							<div data-testid="kb-empty">
+								<EmptyState
+									icon={<BookOpen />}
+									title="还没有知识库"
+									action={
+										<Button variant="primary" onClick={() => setCreate(true)}>
+											<Plus />
+											新建知识库
+										</Button>
+									}
+								/>
+							</div>
 						) : (
 							<div className="grid gap-3 sm:grid-cols-2">
 								{list.map((k) => (
@@ -68,13 +126,11 @@ function KbList() {
 											<BookOpen className="size-4 text-fg-muted" />
 											<span className="truncate font-medium">{k.name}</span>
 											<span className="flex-1" />
-											<Badge>{k.scope === "personal" ? "个人" : k.scope === "project" ? "项目" : k.scope === "department" ? "部门" : "企业"}</Badge>
+											<Badge>{SCOPE_LABEL[k.scope]}</Badge>
 										</div>
 										{k.description ? <p className="mt-1 line-clamp-2 text-[13px] text-fg-muted">{k.description}</p> : null}
-										<div className="mt-3 flex flex-wrap gap-1.5">
-											<Badge tone="success">{k.stats.ready} 可检索</Badge>
-											{k.stats.processing ? <Badge tone="info">{k.stats.processing} 处理中</Badge> : null}
-											{k.stats.failed ? <Badge tone="danger">{k.stats.failed} 失败</Badge> : null}
+										<div className="mt-3">
+											<KbStats k={k} />
 										</div>
 									</Link>
 								))}
@@ -182,7 +238,7 @@ function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
 	);
 }
 
-function KbDetail({ kbId }: { kbId: string }) {
+function KbDetail({ kbId, embedded }: { kbId: string; embedded?: boolean }) {
 	const { personalSpaceId } = useSession();
 	const kbs = useApi<unknown>("/kb");
 	const kb = listOf<KbSummary>(kbs.data, "kbs", "knowledgeBases").find((k) => k.id === kbId);
@@ -196,6 +252,9 @@ function KbDetail({ kbId }: { kbId: string }) {
 	const [msg, setMsg] = useState<{ tone: "info" | "danger"; text: string }>();
 	const [busy, setBusy] = useState(false);
 	const { openPreview } = usePanel();
+	// wide screens already have a list and a detail column: documents preview in a dialog instead of squeezing a third column in
+	const [dialogTarget, setDialogTarget] = useState<PreviewTarget | null>(null);
+	const previewDoc = (t: PreviewTarget) => (embedded ? setDialogTarget(t) : openPreview(t));
 	useEffect(() => {
 		if (!docs.data) return;
 		setPoll(anyProcessing);
@@ -231,65 +290,75 @@ function KbDetail({ kbId }: { kbId: string }) {
 		}
 	};
 
-	return (
-		<div className="flex min-h-0 flex-1 flex-col">
-			<TopBar>
-				<Link to="/knowledge" className="inline-flex items-center gap-1 text-[13px] text-fg-muted hover:text-fg">
-					<ArrowLeft className="size-4" />
-					个人知识库
-				</Link>
-			</TopBar>
-			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
-				<Page>
-					<PageHeader
-						title={kb?.name ?? "知识库"}
-						description={kb?.description || undefined}
-						actions={
-							<>
-								<Help label="状态说明">处理中＝尚不可检索；可检索＝已建立索引，可被引用；失败＝可查看原因并重试。</Help>
-								{canWrite ? (
-								<>
-									<input ref={input} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} data-testid="kb-upload-input" />
-									<Button onClick={() => setPicker(true)}>
-										<FolderPlus />
-										从文件库加入
-									</Button>
+	const header = (
+		<PageHeader
+			title={kb?.name ?? "知识库"}
+			description={kb?.description || undefined}
+			actions={
+				<>
+					<Help label="状态说明">处理中＝尚不可检索；可检索＝已建立索引，可被引用；失败＝可查看原因并重试。</Help>
+					{canWrite ? (
+						<>
+							<input ref={input} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} data-testid="kb-upload-input" />
+							<Button onClick={() => setPicker(true)}>
+								<FolderPlus />
+								从文件库加入
+							</Button>
+							<Button variant="primary" onClick={() => input.current?.click()} disabled={busy}>
+								<Upload />
+								{busy ? "上传中…" : "上传资料"}
+							</Button>
+						</>
+					) : null}
+				</>
+			}
+		/>
+	);
+	const content = (
+		<>
+			{header}
+			{msg ? <p className={cn("mb-3 rounded-lg px-3 py-2 text-[13px]", msg.tone === "danger" ? "bg-danger-soft text-danger" : "bg-info-soft text-info")}>{msg.text}</p> : null}
+			<Loadable state={docs} what="知识库文档" need="C 组：GET /api/kb/:id/docs">
+				{list.length === 0 ? (
+					<div data-testid="kb-docs-empty" className="rounded-xl border border-border bg-surface">
+						<EmptyState
+							icon={<BookOpen />}
+							title="这个知识库还没有资料"
+							action={
+								canWrite ? (
 									<Button variant="primary" onClick={() => input.current?.click()} disabled={busy}>
 										<Upload />
-										{busy ? "上传中…" : "上传资料"}
+										上传资料
 									</Button>
-								</>
-								) : null}
-							</>
-						}
-					/>
-					{msg ? <p className={cn("mb-3 rounded-lg px-3 py-2 text-[13px]", msg.tone === "danger" ? "bg-danger-soft text-danger" : "bg-info-soft text-info")}>{msg.text}</p> : null}
-					<Loadable state={docs} what="知识库文档" need="C 组：GET /api/kb/:id/docs">
-						{list.length === 0 ? (
-							<EmptyState icon={<BookOpen />} title="这个知识库还没有资料" />
-						) : (
-							<div className="overflow-hidden rounded-xl border border-border bg-surface">
-								{list.map((d, i) => (
-									<DocRow
-										key={d.id}
-										d={d}
-										first={i === 0}
-										siblings={list}
-										canWrite={canWrite}
-										kbId={kbId}
-										onChanged={() => {
-											setPoll(true);
-											docs.reload();
-										}}
-										onPreview={() => openPreview({ fileId: d.fileId, versionId: (d.serving ?? d.latest).versionId, name: d.fileName })}
-									/>
-								))}
-							</div>
-						)}
-					</Loadable>
-					<SearchDebug kbId={kbId} />
-				</Page>
-			</div>
+								) : undefined
+							}
+						/>
+					</div>
+				) : (
+					<div className="overflow-hidden rounded-xl border border-border bg-surface">
+						{list.map((d, i) => (
+							<DocRow
+								key={d.id}
+								d={d}
+								first={i === 0}
+								siblings={list}
+								canWrite={canWrite}
+								kbId={kbId}
+								onChanged={() => {
+									setPoll(true);
+									docs.reload();
+								}}
+								onPreview={() => previewDoc({ fileId: d.fileId, versionId: (d.serving ?? d.latest).versionId, name: d.fileName })}
+							/>
+						))}
+					</div>
+				)}
+			</Loadable>
+			<SearchDebug kbId={kbId} />
+		</>
+	);
+	const dialogs = (
+		<>
 			<FilePickerDialog
 				open={picker}
 				onOpenChange={setPicker}
@@ -306,6 +375,29 @@ function KbDetail({ kbId }: { kbId: string }) {
 					}
 				}}
 			/>
+			<PreviewDialog target={dialogTarget} onClose={() => setDialogTarget(null)} />
+		</>
+	);
+
+	if (embedded)
+		return (
+			<div data-testid="kb-detail" className="px-5 pb-12 pt-5 lg:px-6">
+				{content}
+				{dialogs}
+			</div>
+		);
+	return (
+		<div className="flex min-h-0 flex-1 flex-col">
+			<TopBar>
+				<Link to="/knowledge" className="inline-flex items-center gap-1 text-[13px] text-fg-muted hover:text-fg">
+					<ArrowLeft className="size-4" />
+					个人知识库
+				</Link>
+			</TopBar>
+			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
+				<Page>{content}</Page>
+			</div>
+			{dialogs}
 		</div>
 	);
 }
