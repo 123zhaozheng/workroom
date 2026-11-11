@@ -1,0 +1,405 @@
+{
+  "at": "2026-11-11T02:01:18.896Z",
+  "results": [
+    {
+      "name": "A [fixture model] credential_request → the card appears in the conversation while the agent waits",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card shows the service, the purpose, the target hosts (prominent) and the methods",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A hosts are visually prominent (>= 14px, medium weight, own chip)",
+      "ok": true,
+      "detail": "{\"fs\":14,\"fw\":500}"
+    },
+    {
+      "name": "A proxy usage wording: 经服务器代为调用，密钥不会进入对话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A validity line and the plain warning line 不要在聊天里粘贴密钥；请只在此处填写",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A the field is a password input, autocomplete=new-password, empty, not remembered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A choices: 仅本次使用 (default) / 保存供以后使用; scope select only when saving, default 仅自己; 提交 and 拒绝 both present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A choosing 保存供以后使用 reveals the scope select with 仅自己 selected; a member is offered no project/org scope",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A request id / header name stay inside 技术详情 (collapsed)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A the run line says it is waiting for the person, in plain words",
+      "ok": true,
+      "detail": "正在等待你提供凭据…"
+    },
+    {
+      "name": "A 390px: the card fits (no horizontal page scroll)",
+      "ok": true,
+      "detail": "overflow 0"
+    },
+    {
+      "name": "A submit 仅本次使用 → the card shows 已提供 and the form is gone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A when the agent continues, the turn keeps a one-line outcome 已提供 (and the form card is replaced by it)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A leak search: the fake secret is not in the page HTML / DOM text",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A leak search: not in any input value",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A leak search: not in any of the 127 responses the browser received (json/text/html/js/css)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A leak search: not in localStorage / sessionStorage / IndexedDB",
+      "ok": true,
+      "detail": "{\"wr.prefs.v1\":\"{\\\"theme\\\":\\\"system\\\",\\\"reduceMotion\\\":false,\\\"sidebarCollapsed\\"
+    },
+    {
+      "name": "A leak search: not in cookies / document.cookie",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A leak search: not in the SSE stream text (3493 bytes read, snapshot included)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A leak search: not in the conversation entries API or the state API",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A leak search: not in any URL the page requested or navigated to",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A the secret travelled in exactly one request: the POST to …/fulfill",
+      "ok": true,
+      "detail": "http://127.0.0.1:8908/api/credential-requests/crq_0mwbh2euj3927be3d8abf1072/fulfill"
+    },
+    {
+      "name": "A the tool result the model got is status only (fulfilled, a credentialId, no value)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A decline (拒绝) → 已拒绝, no form left",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A decline: the agent was told declined, with no credential",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A cancel API → 200",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A cancel → the turn shows 已取消 and no form remains",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A stale nonce → a plain 表单已失效 message (no code), the secret field was cleared, the card stays pending",
+      "ok": true,
+      "detail": "表单已失效，已为你刷新，请再点一次提交。"
+    },
+    {
+      "name": "A after the automatic refetch the second submit succeeds (已提供)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A replaying the used nonce is answered as the same result (idempotent) and creates nothing new",
+      "ok": true,
+      "detail": "{\"request\":{\"id\":\"crq_0mwbh2nsh756dbec1c0828fff\",\"service\":\"Replay Svc\",\"purpose\":\"读取 Replay Svc 的项目列表\",\"targetHosts\":[\""
+    },
+    {
+      "name": "A a forged / unknown nonce after fulfilment is refused (409), no second credential",
+      "ok": true,
+      "detail": "409 creds=1"
+    },
+    {
+      "name": "A leak search #2 (saved credential): the fake secret is nowhere in DOM, responses, SSE, entries, credentials API, storage",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A usage env shows the server's honest warning (the command and ALL its child processes can read it, print it, send it over the network) with the variable name",
+      "ok": true,
+      "detail": "注入到进程环境（变量 CLI_TOKEN）。环境变量方式会把凭据明文交给本次沙箱命令及其所有子进程：它们可以读取、打印、写入文件或通过网络发出去。只在你信任这段代码、且网络策略已限制外发时同意。凭据不会写入工作区、镜像、快照或运行记录。"
+    },
+    {
+      "name": "A usage env: 提交 is disabled until the separate consent box is ticked",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A usage env: ticking consent enables 提交",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A the typed value was cleared when the form was left (field gone, nothing in DOM)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted store flag] store unavailable → 服务器未配置密钥存储，暂不能提供凭据 and only 拒绝 (no field, no 提交)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B settings → 我的凭据 lists the saved credential: name, hosts, scope, usage, created/expiry/last used, status",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B the one-time credential (仅本次使用) is not listed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B no way to show a secret anywhere: buttons are only 更换密钥 / 撤销 / 删除 (no show / copy), no text input, no value on the page",
+      "ok": true,
+      "detail": "更换密钥|撤销|删除"
+    },
+    {
+      "name": "B 390px: credentials list fits without horizontal page scroll",
+      "ok": true,
+      "detail": "overflow 0"
+    },
+    {
+      "name": "B rotate form: an EMPTY write-only password field",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B rotate → form closes, nothing of the new value is on the page or in any response",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B revoke (confirmed) → the row shows 已撤销 and 更换密钥 / 撤销 are disabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B delete (confirmed) → the credential disappears; the empty state explains where credentials come from",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C member sets a personal variable → it appears in the table with who/when",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C the timing note is shown: 修改只对之后启动的命令生效，正在运行的进程不受影响",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C denied name LD_PRELOAD: the server's reason is shown plainly (no row created)",
+      "ok": true,
+      "detail": "动态链接器变量（LD_*）可注入任意代码，不允许设置"
+    },
+    {
+      "name": "C denied name PATH: the server's reason is shown plainly (no row created)",
+      "ok": true,
+      "detail": "PATH 由平台控制（路径与身份），不允许设置"
+    },
+    {
+      "name": "C denied name HTTPS_PROXY: the server's reason is shown plainly (no row created)",
+      "ok": true,
+      "detail": "HTTPS_PROXY 是代理变量：沙箱出口由组织网络策略统一管理，不允许设置"
+    },
+    {
+      "name": "C a secret-looking value is refused, and the message points to 凭据",
+      "ok": true,
+      "detail": "请使用凭据功能保存密钥 密钥请不要放在环境变量里：助手需要时会在对话中请你通过「凭据」提供。"
+    },
+    {
+      "name": "C 390px: env table + form fit without horizontal page scroll",
+      "ok": true,
+      "detail": "overflow 0"
+    },
+    {
+      "name": "C admin console: an org variable can be locked (已锁定 badge); the unlocked one has none",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C a plain member cannot read/write the org scope (server refuses)",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "name": "C project owner (manager) can add a project variable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C project member (editor, not manager) sees the variable READ-ONLY: no form, no edit/delete, a plain explanation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C … and the server refuses a project write by that member (403)",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "name": "C effective view: the conversation value wins over user, project and org, and says what it overrode",
+      "ok": true,
+      "detail": "BUILD_MODE = conversation-mode 来自本对话 覆盖了：组织、项目、个人"
+    },
+    {
+      "name": "C effective view: an org-LOCKED variable keeps the org value, a lower value cannot override it (and the ignored one is reported)",
+      "ok": true,
+      "detail": "ORG_LOCKED = org-wins 来自组织"
+    },
+    {
+      "name": "C effective view: a personal-only variable shows 来自个人",
+      "ok": true,
+      "detail": "TEAM_REGION = cn-east 来自个人"
+    },
+    {
+      "name": "D after a command that wrote a file the workspace is 已保存 with a version (saved at the end of the command)",
+      "ok": true,
+      "detail": "{\"state\":\"saved\",\"head\":1}"
+    },
+    {
+      "name": "D the plain rule sentence is shown (运行环境可能随时到期；…每次命令结束、写入文件后和发布成果前保存。) with the driver's loss-window sentence",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D last-saved time is shown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D the versions list shows time, reason in words, file count, size and the current marker",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D no wording that mixes the layers (no 'pi', 'durable', 'checkpoint', 'sha256', 'manifest')",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D 390px: the save status fits without horizontal page scroll",
+      "ok": true,
+      "detail": "overflow 0"
+    },
+    {
+      "name": "D (setup) upload extra.txt through the workspace API",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D a file changed outside a command → 有未保存的更改, with a count",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D the unsynced paths are collapsed until asked, then listed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D 立即保存 → a new version and 已保存",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D the manual save is described as 手动保存 in the versions list",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D (setup) upload dirty.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D restore while dirty is refused, explained in plain words, and offers 先保存当前内容再恢复",
+      "ok": true,
+      "detail": "工作区里有尚未保存的更改，直接恢复会覆盖它们，所以没有恢复。例如：dirty.txt。 先保存当前内容再恢复 取消"
+    },
+    {
+      "name": "D the sticky state after a refused restore is worded as a refusal (nothing touched), not as a failed verification",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D keep-both restore → restored and verified, the previous content kept as its own version",
+      "ok": true,
+      "detail": "已恢复到版本 1，并核对无误；恢复前的内容已另存为版本 3"
+    },
+    {
+      "name": "D status after restore: state 已恢复 with a verified restore record (no conflicts)",
+      "ok": true,
+      "detail": "{\"s\":\"restored\",\"r\":{\"fromVersion\":1,\"at\":\"2026-11-11T02:01:14.805Z\",\"verified\":true,\"conflicts\":[]}}"
+    },
+    {
+      "name": "D the working files really are those of version 1: notes.txt present, later uploads gone",
+      "ok": true,
+      "detail": "notes.txt"
+    },
+    {
+      "name": "E server without a secret key: the card says 服务器未配置密钥存储，暂不能提供凭据 (nothing to fill in)",
+      "ok": true,
+      "detail": "凭据请求：NoStore 服务器未配置密钥存储，暂不能提供凭据。助手没有得到任何凭据。"
+    },
+    {
+      "name": "E settings → 我的凭据 also says the store is not configured",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "final: none of the fake secrets appears in any response body this browser received during the whole run",
+      "ok": true,
+      "detail": "784 responses"
+    }
+  ]
+}

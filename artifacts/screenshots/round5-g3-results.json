@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-10T16:34:11.605Z",
+  "at": "2026-11-11T01:53:59.886Z",
   "results": [
     {
       "name": "seed: owner, departments, members, roles, two model services and a pending skill submission exist",
@@ -7,9 +7,9 @@
       "detail": ""
     },
     {
-      "name": "admin: navigation is grouped 成员与组织 / 角色与权限 / 模型 / 技能与连接 / 用量与预算 / 审计",
+      "name": "admin: navigation is grouped 成员与组织 / 角色与权限 / 模型 / 工作区运行 / 技能与连接 / 用量与预算 / 审计",
       "ok": true,
-      "detail": "成员与组织,角色与权限,模型,技能与连接,用量与预算,审计"
+      "detail": "成员与组织,角色与权限,模型,工作区运行,技能与连接,用量与预算,审计"
     },
     {
       "name": "admin: the page title is short and has no paragraph subtitle",
@@ -384,22 +384,22 @@
     {
       "name": "dark mode: members page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "56 texts, min 5.45 "
+      "detail": "59 texts, min 5.45 "
     },
     {
       "name": "dark mode: roles page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "50 texts, min 5.74 "
+      "detail": "53 texts, min 5.74 "
     },
     {
       "name": "dark mode: models page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "35 texts, min 5.74 "
+      "detail": "38 texts, min 5.74 "
     },
     {
       "name": "dark mode: authz page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "40 texts, min 5.33 "
+      "detail": "43 texts, min 5.33 "
     },
     {
       "name": "dark mode: the confirmation dialog is fully opaque",
