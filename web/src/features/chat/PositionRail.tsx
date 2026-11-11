@@ -21,7 +21,7 @@ export interface RailItem {
 export const MIN_TURNS = 4;
 export const MAX_TICKS = 120;
 const PITCH = 8; // px per tick (fine pointer)
-const PITCH_TOUCH = 14;
+const PITCH_TOUCH = 24; // WCAG 2.5.8: touch targets at least 24 px; long chats bucket ticks to fit
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
