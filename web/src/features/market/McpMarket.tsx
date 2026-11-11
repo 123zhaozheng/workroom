@@ -246,7 +246,7 @@ function SubmitDialog({ open, onOpenChange, entry, onDone }: { open: boolean; on
 	const [ref, setRef] = useState("");
 	const [note, setNote] = useState("");
 	const depts = useApi<{ departments: { id: string; name: string }[] }>(open && scope === "department" ? "/departments" : null);
-	const projects = useApi<{ projects: { id: string; name: string }[] }>(open && scope === "project" ? "/projects" : null);
+	const projects = useApi<{ projects: { id: string; name: string }[] }>(open && scope === "project" ? "/projects?kind=space" : null);
 	const { busy, err, run } = useAct(() => (onOpenChange(false), onDone()));
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>

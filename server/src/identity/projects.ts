@@ -118,15 +118,21 @@ export function registerProjectRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Id
 	api.get("/projects", async (c) => {
 		const p = principalOf(c);
 		const out: ProjectDTO[] = [];
-		for (const r of db.all<any>("SELECT id FROM id_projects WHERE org_id = ? AND kind = 'container' AND created_by = ? AND archived_at IS NULL ORDER BY created_at DESC", p.orgId, p.userId)) {
+		// ?kind=space → only legacy projects with their own space (pickers for project budgets/roles/installs/automations/files/KB need a space);
+		// ?kind=container → only lightweight projects. Default: both.
+		const kind = c.req.query("kind");
+		const wantContainer = kind !== "space";
+		const wantSpace = kind !== "container";
+		if (wantContainer) for (const r of db.all<any>("SELECT id FROM id_projects WHERE org_id = ? AND kind = 'container' AND created_by = ? AND archived_at IS NULL ORDER BY created_at DESC", p.orgId, p.userId)) {
 			const pr = id.containerProject(r.id);
 			if (pr) out.push(containerDto(db, pr, p.userId));
 		}
-		for (const pid of id.sharedProjectIds(p.userId, p.orgId)) {
-			const pr = id.containerProject(pid);
-			if (pr) out.push(containerDto(db, pr, p.userId));
-		}
-		const legacy = db.all<any>(
+		if (wantContainer)
+			for (const pid of id.sharedProjectIds(p.userId, p.orgId)) {
+				const pr = id.containerProject(pid);
+				if (pr) out.push(containerDto(db, pr, p.userId));
+			}
+		const legacy = !wantSpace ? [] : db.all<any>(
 			"SELECT pr.*, pm.role, s.id AS space_id FROM id_projects pr JOIN id_project_members pm ON pm.project_id = pr.id AND pm.user_id = ? AND pm.removed_at IS NULL JOIN id_spaces s ON s.project_id = pr.id WHERE pr.org_id = ? AND pr.kind = 'space' AND pr.archived_at IS NULL ORDER BY pr.created_at DESC",
 			p.userId,
 			p.orgId,

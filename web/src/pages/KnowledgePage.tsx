@@ -152,7 +152,7 @@ function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
 	const [departmentId, setDepartmentId] = useState("");
 	const [err, setErr] = useState<string>();
 	const [busy, setBusy] = useState(false);
-	const projects = useApi<{ projects: Project[] }>(open ? "/projects" : null);
+	const projects = useApi<{ projects: Project[] }>(open ? "/projects?kind=space" : null);
 	const depts = useApi<{ departments: DepartmentDTO[] }>(open ? "/departments" : null);
 	// Hide scopes the viewer cannot create (the server enforces anyway): org-scope vs anywhere (department-scoped roles count for 部门).
 	const perms = useViewerPerms();

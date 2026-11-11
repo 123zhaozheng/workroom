@@ -221,7 +221,7 @@ function toLocalInput(iso?: string): string {
 }
 
 function AutomationEditor({ initial, onClose, onSaved }: { initial?: AutomationDTO; onClose: () => void; onSaved: (a: AutomationDTO) => void }) {
-	const projects = useApi<{ projects: Project[] }>("/projects");
+	const projects = useApi<{ projects: Project[] }>("/projects?kind=space");
 	const channels = useApi<unknown>("/notify-channels");
 	const channelList = listOf<NotifyChannelDTO>(channels.data, "channels");
 	const [name, setName] = useState(initial?.name ?? "");

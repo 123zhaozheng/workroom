@@ -16,7 +16,7 @@ import { useViewerPerms } from "@/features/admin/rbac-ui";
 export function Budgets() {
 	const perms = useViewerPerms();
 	const res = useApi<{ budgets: BudgetDTO[] }>("/budgets");
-	const projects = useApi<{ projects: Project[] }>("/projects");
+	const projects = useApi<{ projects: Project[] }>("/projects?kind=space");
 	const { busy, run, note } = useAct(res.reload);
 	const [scope, setScope] = useState("org");
 	const [period, setPeriod] = useState<"day" | "month" | "total">("month");

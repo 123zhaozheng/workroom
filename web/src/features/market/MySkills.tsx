@@ -220,7 +220,7 @@ function VersionSubmit({ skill, onChanged }: { skill: SkillDTO; onChanged: () =>
 	// Default to the first target this person may actually choose; org needs skill.publish (the server enforces it too).
 	const canOrg = !!me.data?.me.canPublishOrg;
 	const scope: MarketScope = picked && (picked !== "org" || canOrg) ? picked : canOrg ? "org" : "project";
-	const projects = useApi<{ projects: { id: string; name: string }[] }>(open && scope === "project" ? "/projects" : null);
+	const projects = useApi<{ projects: { id: string; name: string }[] }>(open && scope === "project" ? "/projects?kind=space" : null);
 	const depts = useApi<{ departments: { id: string; name: string }[] }>(open && scope === "department" ? "/departments" : null);
 	const { busy, err, run } = useAct(() => (setOpen(false), onChanged()));
 	const eligible = (skill.versions ?? []).filter((v) => v.source === "package" || true);

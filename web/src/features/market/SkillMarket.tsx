@@ -281,7 +281,7 @@ function SkillDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 function InstallDialog({ open, onOpenChange, s, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; s: MarketSkillDetailDTO; onDone: () => void }) {
 	const [target, setTarget] = useState<"me" | "project" | "department" | "org">("me");
 	const [ref, setRef] = useState("");
-	const projects = useApi<{ projects: { id: string; name: string }[] }>(open ? "/projects" : null);
+	const projects = useApi<{ projects: { id: string; name: string }[] }>(open ? "/projects?kind=space" : null);
 	const depts = useApi<{ departments: { id: string; name: string }[] }>(open ? "/departments" : null);
 	const { busy, err, run } = useAct(() => (onOpenChange(false), onDone()));
 	const needRef = target === "project" || target === "department";

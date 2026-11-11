@@ -72,7 +72,7 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 	const [switchError, setSwitchError] = useState<string>();
 	const [switching, setSwitching] = useState(false);
 	// project id only when it is needed (to switch): the project list maps space → project
-	const projects = useApi<{ projects: { id: string; spaceId: string }[] }>(open && env?.canChoose ? "/projects" : null);
+	const projects = useApi<{ projects: { id: string; spaceId: string }[] }>(open && env?.canChoose ? "/projects?kind=space" : null);
 	if (!spaceId || unavailable || (error && !env)) return null;
 
 	const remote = env?.kind === "remote";

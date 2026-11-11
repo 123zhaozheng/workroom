@@ -25,7 +25,7 @@ export function useFileLibrary() {
 	const [q, setQ] = useState("");
 	const [origin, setOrigin] = useState<"" | FileOrigin>("");
 	const files = useApi<FileListResponse>(`/files${qs({ q, origin, projectId })}`);
-	const projects = useApi<{ projects: Project[] }>("/projects");
+	const projects = useApi<{ projects: Project[] }>("/projects?kind=space");
 	const input = useRef<HTMLInputElement>(null);
 	const [upErr, setUpErr] = useState<string>();
 	const [uploading, setUploading] = useState(false);

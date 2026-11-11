@@ -616,3 +616,20 @@ test("an open event stream ends when its conversation is deleted (and new reques
 		await t.dispose();
 	}
 });
+
+test("GET /projects?kind=space|container filters (pickers that need a project space get legacy projects only)", async () => {
+	const t = await startTestApp();
+	try {
+		const { owner } = await setup(t);
+		await newProject(t, owner.token, "轻量项目");
+		await t.json("POST", "/api/projects", { token: owner.token, json: { kind: "space", name: "旧版项目" } });
+		const all = (await t.json("GET", "/api/projects", { token: owner.token })).projects;
+		const sp = (await t.json("GET", "/api/projects?kind=space", { token: owner.token })).projects;
+		const ct = (await t.json("GET", "/api/projects?kind=container", { token: owner.token })).projects;
+		assert.equal(all.length, 2);
+		assert.deepEqual(sp.map((x: any) => [x.name, x.kind]), [["旧版项目", "space"]]);
+		assert.deepEqual(ct.map((x: any) => [x.name, x.kind]), [["轻量项目", "container"]]);
+	} finally {
+		await t.dispose();
+	}
+});

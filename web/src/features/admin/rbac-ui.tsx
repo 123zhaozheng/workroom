@@ -71,7 +71,7 @@ export function useDepartments() {
 	return useApi<{ departments: DepartmentDTO[] }>("/departments");
 }
 export function useMyProjects() {
-	return useApi<{ projects: Project[] }>("/projects");
+	return useApi<{ projects: Project[] }>("/projects?kind=space");
 }
 
 /** Departments ordered as a tree (parents before children) with their depth. */
