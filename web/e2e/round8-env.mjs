@@ -1,8 +1,8 @@
-// Round 8 (Q2) · the cloud button (执行环境) and the inline "正在准备工作环境…" status.
+// Round 8 (Q2) · the cloud button (执行环境); round 11: its single status dot replaced the inline "正在准备工作环境…" line (kept: the failure line while a turn runs).
 //  A. REAL server, local driver:   button on home + conversation (1440 / 390), popover content, keyboard open/close/focus return, no instance by opening it or by a plain chat.
 //  B. REAL server, remote provider pointing at an UNREACHABLE endpoint (config is real, the provider is not): GET never connects; 现在准备 really fails; failure line + 重试 + status
 //     (this is the real failure path; nothing is mocked).
-//  C. INTERCEPTED [intercepted]: GET/POST of the environment are route-mocked to a scripted sequence none → preparing → ready, and failed → 重试 → ready (UI behaviour only).
+//  C. INTERCEPTED [intercepted]: GET/POST of the environment are route-mocked to a scripted sequence none → preparing → ready (dot only, no line), and failed → 重试 → ready (UI behaviour only).
 //  D. LIVE (WORKROOM_TEST_OPENSANDBOX_URL / _KEY set): a real OpenSandbox; plain chat + opening the popover create nothing; a sandbox tool call shows preparing → ready for real.
 //     Skipped with a reason otherwise — never faked.
 // Run: npm run build:web && node web/e2e/round8-env.mjs        (port 8912; Q2_WEB_DIST=<dir> to serve another build)
@@ -71,8 +71,8 @@ await register(page, base, { email: "owner-r8q2@example.com", name: "管理员" 
 	check("A popover is fully opaque after its animation (opacity 1, solid background)", op.o === 1 && op.alpha === 1, JSON.stringify(op));
 	check("A popover [round 10]: the technical isolation note, location/network badges and option list are gone", (await page.locator('[data-testid="env-isolation"], [data-testid="env-isolation-full"], [data-testid="env-location"], [data-testid="env-network"], [data-testid="env-options"]').count()) === 0);
 	const t = await page.locator('[data-testid="env-popover"]').innerText();
-	check("A popover [round 11]: exactly two options — 云端沙箱 is the active one (the backend 平台内置沙箱 is only in the button's aria-label), no backend label", t.includes("云端沙箱") && (await page.locator('[data-testid="env-cloud"]').count()) === 1 && (await page.locator('[data-testid="env-label"]').count()) === 0 && /平台内置沙箱/.test((await page.locator('[data-testid="env-button"]').getAttribute("aria-label")) ?? ""), t.replace(/\s+/g, " ").slice(0, 200));
-	check("A popover [round 11]: 本地环境 is disabled (aria-disabled), just those four characters — no 即将推出, no explanation; no switch buttons, no chooser hint", (await page.locator('[data-testid="env-local"]').getAttribute("aria-disabled")) === "true" && (await page.locator('[data-testid="env-local"]').innerText()).trim() === "本地环境" && !t.includes("即将推出") && (await page.locator('[data-testid^="env-switch-"], [data-testid="env-choose-hint"]').count()) === 0);
+	check("A popover [round 11]: exactly two options — 本地环境 (chosen by default) and 云端沙箱 (the backend 平台内置沙箱 is only in the button's aria-label), no backend label", t.includes("云端沙箱") && (await page.locator('[data-testid="env-cloud"]').count()) === 1 && (await page.locator('[data-testid="env-label"]').count()) === 0 && /平台内置沙箱/.test((await page.locator('[data-testid="env-button"]').getAttribute("aria-label")) ?? ""), t.replace(/\s+/g, " ").slice(0, 200));
+	check("A popover [round 11]: 本地环境 is a real, enabled radio (the org switch is on by default) and the chosen one (data-env-pref=local) — just those four characters, no 即将推出, no explanation; no switch buttons, no chooser hint", (await page.locator('[data-testid="env-local"]').getAttribute("role")) === "radio" && (await page.locator('[data-testid="env-local"]').getAttribute("aria-checked")) === "true" && (await page.locator('[data-testid="env-local"]').getAttribute("aria-disabled")) === null && (await page.locator('[data-testid="env-local"]').innerText()).trim() === "本地环境" && (await page.locator('[data-testid="env-button"]').getAttribute("data-env-pref")) === "local" && !t.includes("即将推出") && (await page.locator('[data-testid^="env-switch-"], [data-testid="env-choose-hint"]').count()) === 0);
 	check("A popover: no 现在准备 / 重试 for a local environment (nothing to prepare)", (await page.locator('[data-testid="env-prepare"]').count()) === 0);
 	check("A popover [round 11]: no admin link, no working directory (nothing but the two options)", (await page.locator('[data-testid="env-admin-link"], [data-testid="env-workdir"]').count()) === 0 && !/管理后台|工作目录/.test(t));
 	await shotR(page, "popover-local-1440");
@@ -136,11 +136,12 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	const btn = page.locator('[data-testid="env-button"]');
 	await btn.waitFor();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-kind") === "remote");
-	check("B remote: cloud icon variant, aria-label names the provider", (await btn.getAttribute("data-env-kind")) === "remote" && /^执行环境：云端沙箱（OpenSandbox/.test((await btn.getAttribute("aria-label")) ?? ""));
-	check("B remote: just opening the conversation did not connect or create anything (state none, no status line, no POST)", (await btn.getAttribute("data-env-state")) === "none" && (await page.locator('[data-testid="env-status"]').count()) === 0 && !reqLog.some((l) => l.startsWith("POST")) && (await instances(page)).length === 0);
+	check("B remote: cloud icon variant, aria-label names the provider", (await btn.getAttribute("data-env-kind")) === "remote" && /^执行环境：(本地环境|云端沙箱)（OpenSandbox/.test((await btn.getAttribute("aria-label")) ?? ""));
+	check("B remote: just opening the conversation did not connect or create anything (state none, no status line, no dot, no POST)", (await btn.getAttribute("data-env-state")) === "none" && (await page.locator('[data-testid="env-status"], [data-testid="env-dot"]').count()) === 0 && !reqLog.some((l) => l.startsWith("POST")) && (await instances(page)).length === 0);
 	await btn.click();
 	await page.waitForSelector('[data-testid="env-popover"]');
-	check("B popover [round 11]: still just the two options — no backend label, no state line, no 现在准备 (nothing has failed yet)", (await page.locator('[data-testid="env-label"], [data-testid="env-state"], [data-testid="env-prepare"]').count()) === 0 && /^云端沙箱\s*(（当前：OpenSandbox）)?\s*本地环境$/.test((await page.locator('[data-testid="env-popover"]').innerText()).replace(/\s+/g, " ").trim().replace(/（当前：[^）]*）/, "")));
+	const bText = (await page.locator('[data-testid="env-popover"]').innerText()).replace(/\s+/g, " ").trim();
+	check("B popover [round 11]: still just the two options 本地环境 / 云端沙箱 — no backend label, no state line, no 重试 (nothing has failed yet)", (await page.locator('[data-testid="env-label"], [data-testid="env-state"], [data-testid="env-prepare"]').count()) === 0 && /^本地环境\s*云端沙箱$/.test(bText.replace(/\s*（[^）]*）/, "")), bText);
 	await shotR(page, "popover-remote-none-1440");
 	// the only way to a failure is a real attempt (what the first sandbox tool call does): prepare the unreachable sandbox through the API, then look again
 	await page.keyboard.press("Escape");
@@ -156,10 +157,15 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	check("B failed: a dot marks the button", (await page.locator('[data-testid="env-dot"]').count()) === 1 && (await btn.getAttribute("data-env-state")) === "failed");
 	await shotR(page, "popover-remote-failed-1440");
 	await page.keyboard.press("Escape");
+	// round 11 (R1): the failure line is only for a turn that is waiting for the sandbox; an idle conversation shows the red dot and the popover's 重试 only
+	await sleep(1500);
+	check("B [round 11] idle conversation with a failed environment: no inline line (only the red dot + the popover's 重试)", (await page.locator('[data-testid="env-status"]').count()) === 0 && (await page.locator('[data-testid="env-dot"][data-dot="failed"]').count()) === 1);
+	await sendMessage(page, `[[slow 25000]] 先聊一句`);
+	await page.waitForSelector('[data-testid="stop"]', { timeout: 20000 });
 	const st = page.locator('[data-testid="env-status"]');
-	await st.waitFor();
+	await st.waitFor({ timeout: 15000 });
 	const stText = await st.innerText();
-	check("B conversation shows the failure line with 重试 (not hidden, not blocking the composer)", stText.includes("工作环境没有准备好") && (await page.locator('[data-testid="env-retry"]').count()) === 1 && (await page.locator('[data-testid="composer-input"]').isEnabled()), stText.replace(/\s+/g, " ").slice(0, 160));
+	check("B while a turn runs the failure line shows with 重试 (not hidden, not blocking the composer)", stText.includes("工作环境没有准备好") && (await page.locator('[data-testid="env-retry"]').count()) === 1 && (await page.locator('[data-testid="composer-input"]').isEnabled()), stText.replace(/\s+/g, " ").slice(0, 160));
 	await shotR(page, "status-failed-1440");
 	// retry really retries (and fails again: still unreachable)
 	reqLog.length = 0;
@@ -167,7 +173,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-status"]')?.getAttribute("data-state") === "failed" || !document.querySelector('[data-testid="env-status"]'), null, { timeout: 60000 });
 	await sleep(500);
 	check("B 重试 sends exactly one explicit prepare request", reqLog.filter((l) => l.startsWith("POST") && l.endsWith("/prepare")).length === 1, reqLog.join(" | "));
-	// phone: failure line
+	// phone: failure line (the turn is still running)
 	const pc = await newCtx(390, 844);
 	const pp = await pc.newPage();
 	await pp.goto(`${base}/login`);
@@ -176,12 +182,15 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	await pp.click('button[type="submit"]');
 	await pp.waitForSelector('[data-testid="home-greeting"]');
 	await pp.goto(chatUrl);
-	await pp.waitForSelector('[data-testid="env-status"]');
+	await pp.waitForSelector('[data-testid="env-status"]', { timeout: 15000 });
 	check("B phone 390: failure line fits (no horizontal scroll)", await pp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 	await shotR(pp, "status-failed-390");
 	await pc.close();
+	await idle(page);
+	await sleep(1000);
+	check("B [round 11] the turn ended: the line is gone again, the dot stays", (await page.locator('[data-testid="env-status"]').count()) === 0 && (await page.locator('[data-testid="env-dot"][data-dot="failed"]').count()) === 1);
 	// a plain chat still works and still creates nothing while the environment is broken
-	await sendMessage(page, "再聊一句，不需要运行代码");
+	await sendMessage(page, "再聊一句，别的不用做");
 	await page.waitForSelector('[data-testid="assistant-message"]:nth-of-type(2), [data-testid="assistant-message"]');
 	await idle(page);
 	check("B plain chat while the environment is failed: sends fine, creates no sandbox instance", (await instances(page)).filter((i) => i.state === "creating" || i.state === "ready").length === 0);
@@ -225,15 +234,16 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	await p.waitForSelector('[data-testid="stop"]', { timeout: 20000 });
 	await sleep(3200);
 	phase = "preparing";
-	await p.waitForSelector('[data-testid="env-status"][data-state="preparing"]', { timeout: 15000 });
-	check("C1 [intercepted] while the turn runs and the state turns preparing: '正在准备工作环境…' appears, button marked", (await p.locator('[data-testid="env-status"]').innerText()).includes("正在准备工作环境…") && (await p.locator('[data-testid="env-button"]').getAttribute("data-env-state")) === "preparing");
+	await p.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-state") === "preparing", null, { timeout: 15000 });
+	await sleep(500);
+	check("C1 [intercepted, round 11 R1] while the turn runs and the state turns preparing: ONE pulsing dot on the button (data-dot=preparing) and NO inline line / '正在准备工作环境…' anywhere", (await p.locator('[data-testid="env-dot"][data-dot="preparing"]').count()) === 1 && (await p.locator('[data-testid="env-status"]').count()) === 0 && !(await p.locator("body").innerText()).includes("正在准备工作环境"));
 	await shotR(p, "status-preparing-1440");
 	await p.locator('[data-testid="env-button"]').click();
 	check("C1 [intercepted] popover during preparing [round 11]: just a spinner on 云端沙箱 (aria-label 准备中) — no state line, no 重试 button", (await p.locator('[data-testid="env-cloud"] [aria-label="准备中"]').count()) === 1 && (await p.locator('[data-testid="env-state"], [data-testid="env-prepare"]').count()) === 0);
 	await p.keyboard.press("Escape");
 	phase = "ready";
-	await p.waitForSelector('[data-testid="env-status"]', { state: "detached", timeout: 15000 });
-	check("C1 [intercepted] ready: the line hides by itself", (await p.locator('[data-testid="env-button"]').getAttribute("data-env-state")) === "ready");
+	await p.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-state") === "ready", null, { timeout: 15000 });
+	check("C1 [intercepted] ready: the dot turns ready (data-dot=ready), still no inline line", (await p.locator('[data-testid="env-dot"][data-dot="ready"]').count()) === 1 && (await p.locator('[data-testid="env-status"]').count()) === 0);
 	await idle(p, 60000).catch(() => {});
 	const g1 = gets;
 	await sleep(6000);
@@ -254,21 +264,29 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 		return r.fulfill({ json: failedPhase ? dto({ state: "failed", error: "沙箱提供方 OpenSandbox 创建沙箱失败：创建超时（60 秒）（不会回退到本机执行）。这是一段比较长的说明：提供方返回了很多细节，包括请求编号、排队位置和超时阈值，所以需要“详情”按钮才能看到全部内容，用来检查“详情”按钮。" }) : dto({ state: "ready" }) });
 	});
 	await p.goto(chatUrl);
+	await p.waitForSelector('[data-testid="env-button"]');
+	await sleep(1500);
+	check("C2 [intercepted, round 11] failed environment, idle conversation: no inline line (red dot only)", (await p.locator('[data-testid="env-status"]').count()) === 0 && (await p.locator('[data-testid="env-dot"][data-dot="failed"]').count()) === 1);
+	await sendMessage(p, "[[slow 12000]] 继续聊一句");
+	await p.waitForSelector('[data-testid="stop"]', { timeout: 20000 });
 	const st = p.locator('[data-testid="env-status"]');
-	await st.waitFor();
-	check("C2 [intercepted] failure line: message, 重试, 详情 for a long error", (await st.innerText()).includes("创建超时") && (await p.locator('[data-testid="env-retry"]').count()) === 1 && (await p.locator('[data-testid="env-detail"]').count()) === 1);
+	await st.waitFor({ timeout: 15000 });
+	check("C2 [intercepted] failure line (while a turn runs): message, 重试, 详情 for a long error", (await st.innerText()).includes("创建超时") && (await p.locator('[data-testid="env-retry"]').count()) === 1 && (await p.locator('[data-testid="env-detail"]').count()) === 1);
 	await p.locator('[data-testid="env-detail"]').click();
 	check("C2 [intercepted] 详情 expands the full error", (await st.innerText()).includes("所以需要“详情”按钮才能看到全部内容"));
 	check("C2 [intercepted] no automatic prepare before 重试", posts2.length === 0);
 	await p.locator('[data-testid="env-retry"]').click();
 	await p.waitForSelector('[data-testid="env-status"]', { state: "detached", timeout: 10000 });
+	await idle(p, 60000);
 	check("C2 [intercepted] 重试 → exactly one prepare → line gone, state ready", posts2.length === 1 && (await p.locator('[data-testid="env-button"]').getAttribute("data-env-state")) === "ready");
 
 	// C3: not retryable (misconfigured for this user): message + 联系管理员, never a retry button
 	await p.unroute(envUrl);
 	await p.route(envUrl, (r) => r.fulfill({ json: dto({ state: "failed", error: "执行环境未配置：请联系管理员", canPrepare: false }) }));
 	await p.goto(chatUrl);
-	await p.waitForSelector('[data-testid="env-status"]');
+	await p.waitForSelector('[data-testid="env-button"]');
+	await sendMessage(p, "[[slow 6000]] 继续聊一句");
+	await p.waitForSelector('[data-testid="env-status"]', { timeout: 20000 });
 	check("C3 [intercepted] misconfiguration: plain message, 请联系管理员, no 重试", (await p.locator('[data-testid="env-status"]').innerText()).includes("执行环境未配置：请联系管理员") && (await p.locator('[data-testid="env-retry"]').count()) === 0);
 
 	// C4 [round 10]: vendor cloud: backend name E2B, working directory shown only when the API provides it, nothing to switch
@@ -314,8 +332,10 @@ else {
 			const s = await page.locator('[data-testid="env-button"]').getAttribute("data-env-state", { timeout: 300 }).catch(() => null);
 			// short timeouts: the line disappears once the sandbox is ready (a default 30 s wait on a vanished element made the sampler miss "ready")
 			const line = (await page.locator('[data-testid="env-status"]').count()) ? ((await page.locator('[data-testid="env-status"]').innerText({ timeout: 300 }).catch(() => "")) || "") : "";
+			const dot = await page.locator('[data-testid="env-dot"]').getAttribute("data-dot", { timeout: 300 }).catch(() => null);
 			if (s) samples.add(s);
-			if (line.includes("正在准备工作环境…")) samples.add("line:preparing");
+			if (dot) samples.add(`dot:${dot}`);
+			if (line) samples.add("line:any"); // round 11 (R1): no inline line while preparing — any line at all is a failure of this check
 			await sleep(150);
 		}
 	})();
@@ -338,8 +358,9 @@ else {
 	const seen = [...samples].join(",");
 	const seq = apiStates.map((x) => x.s);
 	check("D [live] the server reported none → preparing → ready while the real sandbox was created for the tool call (sampled directly from the API)", seq.includes("preparing") && seq.at(-1) === "ready" && seq.indexOf("preparing") < seq.lastIndexOf("ready"), JSON.stringify(apiStates));
-	check("D [live] the UI followed: button reached ready, and (if the window was long enough for its 1 s poll) showed preparing + the inline line", samples.has("ready") && (samples.has("preparing") ? samples.has("line:preparing") : true), `UI observed: ${seen}`);
-	check("D [live] exactly one live instance now, and the run output arrived", (await instances(page)).filter((i) => i.state === "ready").length === 1 && (await page.locator('[data-testid="assistant-message"]').last().isVisible()));
+	check("D [live] the UI followed: button reached ready with the ready dot; if the window was long enough for its 1 s poll it showed the preparing dot — and never an inline line (round 11 R1)", samples.has("ready") && samples.has("dot:ready") && !samples.has("line:any") && (samples.has("preparing") ? samples.has("dot:preparing") : true), `UI observed: ${seen}`);
+	const liveNow = await instances(page);
+	check("D [live] exactly one live instance now, and the run output arrived", liveNow.filter((i) => i.state === "ready").length === 1 && (await page.locator('[data-testid="assistant-message"]').last().isVisible()), JSON.stringify(liveNow.map((i) => ({ s: i.state, ws: i.workspaceKey ?? i.workspace, c: i.conversationId, rid: String(i.remoteId ?? "").slice(0, 8) }))));
 	await shotR(page, "live-ready-1440");
 	// clean up the real sandbox
 	try {

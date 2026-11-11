@@ -23,11 +23,13 @@ type State = ConversationEnvironmentDTO["state"];
 
 interface Row {
 	id: string;
-	state: "creating" | "ready" | "stopping" | "destroyed" | "lost" | "error";
+	state: "creating" | "ready" | "pausing" | "paused" | "resuming" | "archived" | "stopping" | "destroyed" | "lost" | "error";
 	created_at: string;
 	last_used_at: string;
 	expires_at: string | null;
 	last_error: string | null;
+	state_at: string | null;
+	resume_mode: "provider" | "recreate" | null;
 }
 
 /** A "preparing" marker older than this is treated as stuck (it is cleared by the driver in every path; this is a safety net). */
@@ -74,7 +76,7 @@ export class ConversationEnvironments {
 
 	#rowFor(space: Space, workspaceKey: string, provider: ProviderId): Row | undefined {
 		return this.#ctx.db.get<Row>(
-			"SELECT id, state, created_at, last_used_at, expires_at, last_error FROM tool_sandbox_instances WHERE org_id = ? AND space_id = ? AND workspace_key = ? AND provider = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+			"SELECT id, state, created_at, last_used_at, expires_at, last_error, state_at, resume_mode FROM tool_sandbox_instances WHERE org_id = ? AND space_id = ? AND workspace_key = ? AND provider = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
 			space.orgId,
 			space.id,
 			workspaceKey,
@@ -83,10 +85,14 @@ export class ConversationEnvironments {
 	}
 
 	/** State of the remote sandbox of one workspace from DB + in-process markers. Reads only. */
-	#remoteState(space: Space, workspaceKey: string, provider: ProviderId, createTimeoutSec: number, now = Date.now()): { state: State; error?: string; updatedAt?: string } {
+	#remoteState(space: Space, workspaceKey: string, provider: ProviderId, createTimeoutSec: number, now = Date.now()): { state: State; error?: string; updatedAt?: string; resumeMode?: "fast" | "archived" | "recreate" } {
 		const key = activityKey(space.orgId, space.id, workspaceKey, provider);
 		const since = remoteActivity.preparing.get(key);
-		if (since !== undefined && now - since < STALE_PREPARING_MS) return { state: "preparing", updatedAt: new Date(since).toISOString() };
+		// A phase that brings a paused / archived sandbox back is "resuming"; a first-time create or a recreate after a loss stays "preparing".
+		if (since !== undefined && now - since < STALE_PREPARING_MS) {
+			const mode = remoteActivity.resuming.get(key);
+			return mode ? { state: "resuming", resumeMode: mode, updatedAt: new Date(since).toISOString() } : { state: "preparing", updatedAt: new Date(since).toISOString() };
+		}
 		const fail = remoteActivity.failures.get(key);
 		const row = this.#rowFor(space, workspaceKey, provider);
 		if (fail && (!row || Date.parse(row.created_at) <= fail.at)) return { state: "failed", error: fail.error, updatedAt: new Date(fail.at).toISOString() };
@@ -98,6 +104,18 @@ export class ConversationEnvironments {
 			case "ready":
 				if (row.expires_at && Date.parse(row.expires_at) <= now) return { state: "lost", updatedAt: row.expires_at };
 				return { state: "ready", updatedAt: row.last_used_at };
+			case "pausing": // the pause takes seconds and a run simply waits for it: still usable as far as the user is concerned
+				return { state: "ready", updatedAt: row.last_used_at };
+			case "paused":
+			case "archived": {
+				const mode = row.state === "archived" ? "archived" : row.resume_mode === "recreate" ? "recreate" : "fast";
+				return { state: "paused", resumeMode: mode, updatedAt: row.state_at ?? row.last_used_at };
+			}
+			case "resuming": {
+				// Another process is resuming it (this one has no marker), or a resume was interrupted by a restart: after the window it is simply paused.
+				const at = row.state_at ?? row.last_used_at;
+				return now - Date.parse(at) < (createTimeoutSec + 120) * 1000 ? { state: "resuming", resumeMode: "fast", updatedAt: at } : { state: "paused", resumeMode: "fast", updatedAt: at };
+			}
 			case "error":
 				// A failed DESTROY leaves an error row too; that is a sandbox that is gone (or going), not a failed prepare.
 				if (row.last_error?.startsWith("销毁失败")) return { state: "lost", updatedAt: row.last_used_at };
@@ -144,6 +162,7 @@ export class ConversationEnvironments {
 		let state: ConversationEnvironmentDTO["state"];
 		let error: string | undefined;
 		let updatedAt: string | undefined;
+		let resumeMode: "fast" | "archived" | "recreate" | undefined;
 		if (why) {
 			// Misconfigured (disabled / unconfigured / no key): say so plainly; the long text stays for admins in the run error.
 			state = "failed";
@@ -153,6 +172,7 @@ export class ConversationEnvironments {
 			state = r.state;
 			error = r.error ? tidy(r.error) : undefined;
 			updatedAt = r.updatedAt;
+			resumeMode = r.resumeMode;
 		}
 		return {
 			kind: "remote",
@@ -165,6 +185,7 @@ export class ConversationEnvironments {
 			state,
 			...(error ? { error } : {}),
 			...(updatedAt ? { updatedAt } : {}),
+			...(resumeMode && (state === "paused" || state === "resuming") ? { resumeMode } : {}),
 			canPrepare: writable && !why,
 			workDir: cfgs.effectiveWorkDir(space.orgId, provider),
 			skillsDir: skillsRootFor(cfgs.effectiveWorkDir(space.orgId, provider)),
@@ -175,7 +196,7 @@ export class ConversationEnvironments {
 	 * Explicit prepare / retry. Remote only; idempotent (an existing live sandbox is reconnected and re-verified, never duplicated; a concurrent run or
 	 * prepare for the same workspace is serialised by the driver's lock). Failures do not throw: they become `state: "failed"` with a plain message.
 	 */
-	async prepare(p: Principal, space: Space, conversationId: number, signal?: AbortSignal): Promise<ConversationEnvironmentDTO> {
+	async prepare(p: Principal, space: Space, conversationId: number, signal?: AbortSignal, opts?: { trigger?: "explicit" | "prewarm" }): Promise<ConversationEnvironmentDTO> {
 		const before = await this.get(p, space, conversationId);
 		if (before.kind !== "remote") return before; // local drivers need no preparation (and a misconfiguration stays reported as is)
 		if (!before.canPrepare) throw new HttpError(403, "forbidden", "没有权限：准备执行环境需要对该空间有写入权限，且执行环境已配置");
@@ -183,7 +204,7 @@ export class ConversationEnvironments {
 		const provider = before.id as ProviderId;
 		const key = activityKey(space.orgId, space.id, workspaceKeyOf(conversationId), provider);
 		try {
-			await this.#sandbox.prepare({ principal: p, space, conversationId, signal });
+			await this.#sandbox.prepare({ principal: p, space, conversationId, signal, trigger: opts?.trigger ?? "explicit" });
 		} catch (e: any) {
 			// The driver already left a marker for failures while creating/syncing; failures before it (provider unusable, workspace restore) get one here.
 			if (!signal?.aborted) remoteActivity.fail(key, tidy(e instanceof Error ? e.message : String(e)));

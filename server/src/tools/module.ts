@@ -13,6 +13,12 @@ import { registerSandboxEnvRoutes } from "./sandbox/env-routes.ts";
 import { PERSIST_MIGRATIONS, workspacePersistenceFor } from "./sandbox/persist.ts"; // round 7b: persistent workspace versions
 import { registerPersistRoutes } from "./sandbox/persist-routes.ts";
 import { registerEnvironmentRoutes } from "./sandbox/environment-routes.ts"; // round 8: /conversations/:s/:c/environment
+import { PREWARM_MIGRATIONS, prewarmFor } from "./sandbox/prewarm.ts"; // round 11 (R2b): intent-based prewarm + its log
+import { registerPrewarmRoutes } from "./sandbox/prewarm-routes.ts";
+import { registerSandboxStatsRoutes } from "./sandbox/lifecycle-stats-routes.ts"; // round 11 (R6): /stats/sandbox, /conversations/:s/:c/sandbox-stats, /sandbox/prices
+import { LocalExec } from "./localexec/service.ts"; // round 11 (R4): local (browser) execution
+import { registerLocalExecRoutes } from "./localexec/routes.ts";
+import { createLocalExecExtension } from "./localexec/extension.ts";
 import { CREDENTIAL_MIGRATIONS } from "./credentials/store.ts"; // round 7b: credentials
 import { createCredentialExtension, CREDENTIAL_TOOL_NAMES } from "./credentials/extension.ts";
 import { registerCredentialRoutes } from "./credentials/routes.ts";
@@ -50,7 +56,7 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	};
 }
 
-const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill", "skill_manage", "credential_request", "credential_http", "credential_list", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
+const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "code_run", "browse", "skill", "skill_manage", "credential_request", "credential_http", "credential_list", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
 /** Tool names a skill may require: the runtime registry when available, else D's own tools plus discovered MCP tools. */
 export function knownToolNames(ctx: AppContext): string[] {
 	const names = new Set(D_TOOLS);
@@ -81,16 +87,19 @@ export const toolsModule: WorkroomModule = {
 		...ENV_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1100 })), // sandbox env vars (round 7b)
 		...PERSIST_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1000 })), // workspace versions (round 7b)
 		...CREDENTIAL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1200 })), // credentials (round 7b)
+		...PREWARM_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1500 })), // sandbox prewarm log (round 11, R2b)
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
 		ctx.services.provide("mcp", new McpManager(ctx));
 		ctx.services.provide("sandbox", new Sandbox(ctx));
+		ctx.services.provide("localExec", new LocalExec(ctx));
 		ctx.services.provide("browser", new BrowserService(ctx));
 		ctx.services.provide("skills", new Skills(ctx));
 		ctx.services.provide("market", new Market(ctx)); // marketplace group
 		ctx.services.provide("mcpMarket", new McpMarket(ctx)); // marketplace group
 		ctx.services.provide("jobs", new Jobs(ctx));
+		ctx.services.provide("sandboxPrewarm", prewarmFor(ctx)); // round 11 (R2b): the runtime calls it after a user message is accepted
 		ctx.services.provide("toolPolicy", new ToolPolicy(ctx));
 		const sessions = new BrowserSessions(ctx);
 		ctx.services.provide("browserSessions", sessions);
@@ -116,7 +125,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createLocalExecExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).
@@ -133,6 +142,7 @@ export const toolsModule: WorkroomModule = {
 		(ctx.services.get("market") as Market).stop(); // marketplace group
 		await (ctx.services.get("mcp") as McpManager).stop();
 		await (ctx.services.get("sandbox") as Sandbox).stop();
+		(ctx.services.get("localExec") as LocalExec).broker.shutdown();
 		await (ctx.services.get("browserSessions") as BrowserSessions).stop();
 		await (ctx.services.get("browser") as BrowserService).stop();
 		await codemodeSandboxes.get(ctx)?.close().catch(() => {});
@@ -159,6 +169,9 @@ export const toolsModule: WorkroomModule = {
 
 		// ---- sandbox: driver status/settings, workspace file API, runs, publish (server/src/tools/sandbox-routes.ts) ----
 		registerEnvironmentRoutes(api, ctx); // round 8 (Q2)
+		registerPrewarmRoutes(api, ctx); // round 11 (R2b): /sandbox/prewarm
+		registerSandboxStatsRoutes(api, ctx); // round 11 (R6): before /sandbox/:spaceId so /sandbox/prices is not captured
+		registerLocalExecRoutes(api, ctx); // round 11 (R4)
 		registerSandboxEnvRoutes(api, ctx); // round 7b: /sandbox-env/*
 		registerPersistRoutes(api, ctx); // round 7b: /workspaces/*, /workspace-policy
 		registerCredentialRoutes(api, ctx); // round 7b: /credential-requests/*, /credentials/*

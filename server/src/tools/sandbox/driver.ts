@@ -5,6 +5,7 @@
 import type { Readable, Writable } from "node:stream";
 import type { SandboxLimitsDTO } from "../../../../shared/files.ts";
 import type { ProviderId } from "./provider.ts";
+import type { StoreMount } from "./stores.ts";
 
 /** Local drivers, or a remote provider id (round 7: "opensandbox" | "e2b" | "daytona", implemented by RemoteDriver). */
 export type DriverId = LocalDriverId | ProviderId;
@@ -54,8 +55,13 @@ export interface DriverTenant {
 	readonly workspaceKey: string;
 }
 
+/** Why a sandbox was created / resumed (R6 lifecycle events). "exec" = a sandbox tool call; "prewarm" = intent-based background start; "explicit" = the user pressed prepare. */
+export type SandboxTrigger = "exec" | "prewarm" | "explicit";
+
 export interface DriverRunSpec {
 	readonly runId: string;
+	/** Lifecycle event trigger (default "exec"; Sandbox.prepare sets explicit / prewarm). Ignored by the local drivers. */
+	readonly trigger?: SandboxTrigger;
 	/** Round 7 (optional, additive): required by RemoteDriver, ignored by the local drivers. */
 	readonly tenant?: DriverTenant;
 	/** Host directory the driver may use for per-run scratch (`<scratchBase>/.runs/<runId>`); removed by the driver when the run ends. */
@@ -65,6 +71,12 @@ export interface DriverRunSpec {
 	readonly exec: { readonly language: Language; readonly code: string } | { readonly argv: readonly string[]; readonly runtime?: ServiceRuntime };
 	readonly limits: SandboxLimitsDTO;
 	readonly mounts: readonly SandboxMount[];
+	/**
+	 * Round 11 (R5): persistent stores shown INSIDE the working directory as `<workdir>/memories` and `<workdir>/project` (single tree for the
+	 * model). Local drivers bind-mount them (read-only when `readOnly`); remote drivers upload them and sync changes back into the stores
+	 * themselves (never into the conversation directory). Absent = none.
+	 */
+	readonly stores?: readonly StoreMount[];
 	readonly env: Readonly<Record<string, string>>;
 	/**
 	 * Round 9: no Workroom policy any more. `true` = the driver's own network applies (docker: WORKROOM_DOCKER_NETWORK, default bridge; remote:
@@ -149,6 +161,11 @@ export interface SandboxDriver {
 	reapStale(): Promise<number>;
 	/** Kill one specific leftover (job recovery). */
 	killStale(ref: ProcessRef): Promise<boolean>;
+}
+
+/** Local drivers: the stores as bind mounts below /work (these targets are internal, they bypass the reserved-target check of user mounts). */
+export function storeMounts(stores: readonly StoreMount[] | undefined): SandboxMount[] {
+	return (stores ?? []).map((s) => ({ hostPath: s.hostPath, target: `/work/${s.name}`, readOnly: s.readOnly }));
 }
 
 export const RESERVED_TARGETS = ["/", "/work", "/tmp", "/code", "/proc", "/dev", "/sys", "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/runtime", "/run", "/var"];

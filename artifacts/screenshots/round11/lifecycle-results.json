@@ -1,0 +1,380 @@
+{
+  "at": "2026-11-11T15:37:33.557Z",
+  "results": [
+    {
+      "name": "A [intercepted] state none: no dot, aria-label just names the channel",
+      "ok": true,
+      "detail": "dots=0 aria=执行环境：本地环境（OpenSandbox）"
+    },
+    {
+      "name": "A [intercepted] state none: no inline line in the conversation (round 11 R1: the dot is the only mark; nothing is running)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state none: popover is just 本地环境 / 云端沙箱",
+      "ok": true,
+      "detail": "本地环境 云端沙箱 （OpenSandbox）"
+    },
+    {
+      "name": "A [intercepted] state lost: no dot, aria-label just names the channel",
+      "ok": true,
+      "detail": "dots=0 aria=执行环境：本地环境（OpenSandbox）"
+    },
+    {
+      "name": "A [intercepted] state lost: no inline line in the conversation (round 11 R1: the dot is the only mark; nothing is running)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state lost: popover is just 本地环境 / 云端沙箱",
+      "ok": true,
+      "detail": "本地环境 云端沙箱 （OpenSandbox）"
+    },
+    {
+      "name": "A [intercepted] state preparing: exactly one dot, data-dot=preparing, pulsing; aria-label mentions 「准备中」",
+      "ok": true,
+      "detail": "执行环境：本地环境（OpenSandbox，准备中）"
+    },
+    {
+      "name": "A [intercepted] state preparing: no inline line in the conversation (round 11 R1: the dot is the only mark; nothing is running)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state preparing: popover is just 本地环境 / 云端沙箱",
+      "ok": true,
+      "detail": "本地环境 云端沙箱 （OpenSandbox，准备中）"
+    },
+    {
+      "name": "A [intercepted] state preparing: 云端沙箱 carries the spinner (aria-label 准备中), no 重试",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state resuming: exactly one dot, data-dot=resuming, pulsing; aria-label mentions 「恢复中」",
+      "ok": true,
+      "detail": "执行环境：本地环境（OpenSandbox，恢复中）"
+    },
+    {
+      "name": "A [intercepted] state resuming: no inline line in the conversation (round 11 R1: the dot is the only mark; nothing is running)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state resuming: popover is just 本地环境 / 云端沙箱",
+      "ok": true,
+      "detail": "本地环境 云端沙箱 （OpenSandbox，恢复中）"
+    },
+    {
+      "name": "A [intercepted] state resuming: 云端沙箱 carries the spinner (aria-label 准备中), no 重试",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state ready: exactly one dot, data-dot=ready, class bg-success; aria-label mentions 「就绪」",
+      "ok": true,
+      "detail": "执行环境：本地环境（OpenSandbox，就绪）"
+    },
+    {
+      "name": "A [intercepted] state ready: no inline line in the conversation (round 11 R1: the dot is the only mark; nothing is running)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state ready: popover is just 本地环境 / 云端沙箱",
+      "ok": true,
+      "detail": "本地环境 云端沙箱 （OpenSandbox，就绪）"
+    },
+    {
+      "name": "A [intercepted] state paused: exactly one dot, data-dot=paused, class bg-fg-subtle; aria-label mentions 「已暂停」",
+      "ok": true,
+      "detail": "执行环境：本地环境（OpenSandbox，已暂停）"
+    },
+    {
+      "name": "A [intercepted] state paused: no inline line in the conversation (round 11 R1: the dot is the only mark; nothing is running)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state paused: popover is just 本地环境 / 云端沙箱",
+      "ok": true,
+      "detail": "本地环境 云端沙箱 （OpenSandbox，已暂停）"
+    },
+    {
+      "name": "A [intercepted] state failed: exactly one dot, data-dot=failed, class bg-danger; aria-label mentions 「准备失败」",
+      "ok": true,
+      "detail": "执行环境：本地环境（OpenSandbox，准备失败）"
+    },
+    {
+      "name": "A [intercepted] state failed: no inline line in the conversation (round 11 R1: the dot is the only mark; nothing is running)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] state failed: popover is just 本地环境 / 云端沙箱 + 准备失败 + 重试 (reason only in the title)",
+      "ok": true,
+      "detail": "本地环境 云端沙箱 （OpenSandbox，准备失败） 准备失败 重试"
+    },
+    {
+      "name": "A [intercepted] failed: the reason is only the hover title of 准备失败",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A [intercepted] the server's own driver, state ready: no dot",
+      "ok": true,
+      "detail": "kind=local"
+    },
+    {
+      "name": "A [intercepted] the server's own driver, state failed: a red dot (it failed)",
+      "ok": true,
+      "detail": "kind=local"
+    },
+    {
+      "name": "A [intercepted] nothing above sent a prepare (reading and opening the popover never start a sandbox)",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "A [intercepted] clicking 云端沙箱 while none: exactly one POST …/prepare with { trigger: \"explicit\" }; the preference is saved (PUT local-exec { preference: \"cloud\" })",
+      "ok": true,
+      "detail": "posts=[\"{\\\"trigger\\\":\\\"explicit\\\"}\"] puts=[\"{\\\"preference\\\":\\\"cloud\\\"}\"]"
+    },
+    {
+      "name": "A [intercepted] clicking 云端沙箱 while lost: exactly one POST …/prepare with { trigger: \"explicit\" }; the preference is saved (PUT local-exec { preference: \"cloud\" })",
+      "ok": true,
+      "detail": "posts=[\"{\\\"trigger\\\":\\\"explicit\\\"}\"] puts=[\"{\\\"preference\\\":\\\"cloud\\\"}\"]"
+    },
+    {
+      "name": "A [intercepted] clicking 云端沙箱 while paused: exactly one POST …/prepare with { trigger: \"explicit\" }; the preference is saved (PUT local-exec { preference: \"cloud\" })",
+      "ok": true,
+      "detail": "posts=[\"{\\\"trigger\\\":\\\"explicit\\\"}\"] puts=[\"{\\\"preference\\\":\\\"cloud\\\"}\"]"
+    },
+    {
+      "name": "A [intercepted] clicking 云端沙箱 while ready: no prepare; the preference is saved (PUT local-exec { preference: \"cloud\" })",
+      "ok": true,
+      "detail": "posts=[] puts=[\"{\\\"preference\\\":\\\"cloud\\\"}\"]"
+    },
+    {
+      "name": "A [intercepted] clicking 云端沙箱 while preparing: no prepare; the preference is saved (PUT local-exec { preference: \"cloud\" })",
+      "ok": true,
+      "detail": "posts=[] puts=[\"{\\\"preference\\\":\\\"cloud\\\"}\"]"
+    },
+    {
+      "name": "A [intercepted] clicking 云端沙箱 while failed: no prepare; the preference is saved (PUT local-exec { preference: \"cloud\" })",
+      "ok": true,
+      "detail": "posts=[] puts=[\"{\\\"preference\\\":\\\"cloud\\\"}\"]"
+    },
+    {
+      "name": "A 1440px light failed: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":549,\"y\":695,\"width\":240,\"height\":132}"
+    },
+    {
+      "name": "A 1440px light paused: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":549,\"y\":719,\"width\":240,\"height\":108}"
+    },
+    {
+      "name": "A 1440px dark failed: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":549,\"y\":695,\"width\":240,\"height\":132}"
+    },
+    {
+      "name": "A 1440px dark paused: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":549,\"y\":719,\"width\":240,\"height\":108}"
+    },
+    {
+      "name": "A 390px light failed: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":69,\"y\":643,\"width\":240,\"height\":132}"
+    },
+    {
+      "name": "A 390px light paused: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":69,\"y\":667,\"width\":240,\"height\":108}"
+    },
+    {
+      "name": "A 390px dark failed: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":69,\"y\":643,\"width\":240,\"height\":132}"
+    },
+    {
+      "name": "A 390px dark paused: button >=36px inside the viewport; popover fully opaque, inside with >=8px gutters, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":69,\"y\":667,\"width\":240,\"height\":108}"
+    },
+    {
+      "name": "A 390 home: popover fits, two rows, no dot",
+      "ok": true,
+      "detail": "{\"x\":73,\"y\":667,\"width\":240,\"height\":108}"
+    },
+    {
+      "name": "B1 home: the default is 本地环境 (data-env-pref=local), the org switch being on",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B1 home: the popover is a radiogroup with two radios, 本地环境 checked and enabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B1 home: choosing 云端沙箱 only changes the icon/pref in this tab (kept in sessionStorage, no request sent, nothing created)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B1 the home choice was carried into the new conversation: data-env-pref=cloud and the server holds preference cloud; the tab's pending value is consumed",
+      "ok": true,
+      "detail": "{\"saved\":{\"enabled\":true,\"connected\":true,\"preference\":\"cloud\"},\"puts\":[\"{\\\"preference\\\":\\\"cloud\\\"}\"]}"
+    },
+    {
+      "name": "B2 reload: still 云端沙箱 (data-env-pref=cloud; the cloud icon; aria-label says 云端沙箱)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B2 popover after reload: 云端沙箱 checked, 本地环境 not",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B2 choosing 本地环境 is saved on the server (PUT preference local) and starts nothing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B2 reload: back to 本地环境 (data-env-pref=local; the laptop icon; aria-label says 本地环境)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B3 setup: the admin switched local execution off",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B3 switch off: 本地环境 is disabled (aria-disabled, dashed, not checked), just those four characters; 云端沙箱 is the checked one",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B3 clicking the disabled 本地环境 does nothing (popover open, still cloud, no request)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B3 home with the switch off: the button is 云端沙箱 too, 本地环境 disabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B3 390 dark: popover with the disabled row fits, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":73,\"y\":667,\"width\":240,\"height\":108}"
+    },
+    {
+      "name": "B3 switched back on: 本地环境 is enabled again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C setup [live]: OpenSandbox is the channel (admin radio) and the idle pause is the minimum the server accepts, 60 s",
+      "ok": true,
+      "detail": "enabled=true idlePauseSec=60"
+    },
+    {
+      "name": "C setup [live]: the server refuses less than 60 s (400) — so 60 s really is the minimum",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C [live] a plain chat with the remote channel chosen creates nothing: no instance row for this conversation, no dot, no prepare, no create event",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C [live] 云端沙箱 on a conversation with no sandbox: the server reported none → preparing → ready (sampled from the API), the button ends with the green dot",
+      "ok": true,
+      "detail": "[{\"s\":\"none\",\"at\":4},{\"s\":\"preparing\",\"at\":438},{\"s\":\"ready\",\"at\":6854}]"
+    },
+    {
+      "name": "C [live] the button showed the pulsing dot while it was being prepared: dot sequence ends … preparing → ready",
+      "ok": true,
+      "detail": "[\"-\",\"preparing\",\"ready\"]"
+    },
+    {
+      "name": "C [live] no inline line in the chat at any moment (R1: dot only)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C [live] exactly one explicit prepare request, body { trigger: explicit }",
+      "ok": true,
+      "detail": "[\"{\\\"trigger\\\":\\\"explicit\\\"}\"]"
+    },
+    {
+      "name": "C [live] one ready instance for this conversation, with a remote id",
+      "ok": true,
+      "detail": "[\"ready\"]"
+    },
+    {
+      "name": "C [live] lifecycle stats: one create, triggered explicit (not exec, not prewarm)",
+      "ok": true,
+      "detail": "{\"exec\":0,\"prewarm\":0,\"explicit\":1}"
+    },
+    {
+      "name": "C [live] a plain chat on a ready sandbox: still the same single instance (same remote id), not counted as use (lastUsedAt unchanged), still one create",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C [live] the reaper paused the idle sandbox by itself (state paused, resume mode provider = the vendor kept it) after 75 s of waiting",
+      "ok": true,
+      "detail": "{\"id\":\"sbi_0mwca6thcd3fed54102d68954\",\"provider\":\"opensandbox\",\"spaceId\":\"sp_0mwca5z3h49ee0f26859b4a14\",\"workspaceKey\":\"c28\",\"remoteId\":\"daac362c-424f-4aa4-aa13-390377dec78c\",\"state\":\"paused\",\"resumeMode\":\"provider\",\"createdAt\":\"2026-11-11T15:35:53.280Z\",\"lastUsedAt\":\"2026-11-11T15:35:59.728Z\"}"
+    },
+    {
+      "name": "C [live] the environment DTO says paused with resumeMode fast",
+      "ok": true,
+      "detail": "{\"s\":\"paused\",\"m\":\"fast\"}"
+    },
+    {
+      "name": "C [live] after a reload the button shows the grey dot (data-dot=paused, aria-label 已暂停), still no line",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C [live] lifecycle stats: one idle pause recorded, still one create",
+      "ok": true,
+      "detail": "{\"p\":1,\"c\":1}"
+    },
+    {
+      "name": "C [live] the sandbox_exec resumed it: the server's state went paused → (resuming) → ready, ending ready",
+      "ok": true,
+      "detail": "[{\"s\":\"paused\",\"at\":5},{\"s\":\"resuming\",\"at\":89},{\"s\":\"preparing\",\"at\":4254},{\"s\":\"ready\",\"at\":8332}]"
+    },
+    {
+      "name": "C [live] the button ends with the green dot again; no inline line at any moment of the resume",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C [live] the answer carries the real output of the resumed sandbox",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C [live] admin instance data: still ONE instance for the conversation, the same row and remote id (resumed, not re-created), state ready",
+      "ok": true,
+      "detail": "[{\"s\":\"ready\",\"same\":true}]"
+    },
+    {
+      "name": "C [live] lifecycle stats: creates 1 (unchanged), resumes 1, resume failures 0, idle pauses 1",
+      "ok": true,
+      "detail": "{\"c\":1,\"r\":1,\"rf\":0,\"p\":1}"
+    }
+  ]
+}

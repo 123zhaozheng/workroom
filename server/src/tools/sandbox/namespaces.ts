@@ -5,7 +5,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { DriverRunSpec, DriverServiceProcess, DriverServiceSpec, DriverStatus, IsolationNotes, ProcessRef, RunResult, SandboxDriver, SandboxMount } from "./driver.ts";
+import { storeMounts, type DriverRunSpec, type DriverServiceProcess, type DriverServiceSpec, type DriverStatus, type IsolationNotes, type ProcessRef, type RunResult, type SandboxDriver, type SandboxMount } from "./driver.ts";
 import { capped, checkEnv, shQuote, tailBuffer } from "./util.ts";
 
 export const NAMESPACES_NOTES: IsolationNotes = {
@@ -166,7 +166,7 @@ class NamespaceDriver implements SandboxDriver {
 
 	async run(spec: DriverRunSpec): Promise<RunResult> {
 		const prog = programFor(spec);
-		const prep = prepare({ scratchBase: spec.scratchBase, id: spec.runId, workdir: spec.workdir, argv: prog.argv, code: prog.code, runtime: prog.runtime, limits: spec.limits, mounts: spec.mounts, env: spec.env });
+		const prep = prepare({ scratchBase: spec.scratchBase, id: spec.runId, workdir: spec.workdir, argv: prog.argv, code: prog.code, runtime: prog.runtime, limits: spec.limits, mounts: [...spec.mounts, ...storeMounts(spec.stores)], env: spec.env });
 		const started = Date.now();
 		const out = capped();
 		const err = capped();

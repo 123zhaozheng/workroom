@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T12:59:41.022Z",
+  "at": "2026-11-11T15:34:11.217Z",
   "results": [
     {
       "name": "A tab is called 沙箱 and the section 当前使用的沙箱渠道 is one radio group: 平台内置沙箱 + OpenSandbox + E2B + Daytona",
@@ -72,9 +72,9 @@
       "detail": ""
     },
     {
-      "name": "B local channel: 云端沙箱 is the active option (the backend name is only in the screen-reader text); popover says nothing but 云端沙箱 / 本地环境 (+ 准备失败 when the host has no driver)",
+      "name": "B local channel: popover says nothing but 本地环境 / 云端沙箱 (+ 准备失败 when the host has no driver); the backend name is only in the screen-reader text",
       "ok": true,
-      "detail": "云端沙箱 （当前：平台内置沙箱） 本地环境"
+      "detail": "本地环境 云端沙箱 （平台内置沙箱）"
     },
     {
       "name": "B no state line unless something failed; never a 现在准备 button, no backend label",
@@ -82,19 +82,19 @@
       "detail": ""
     },
     {
-      "name": "B 本地环境 is shown disabled (aria-disabled), as just the two words — no 即将推出, no explanation",
+      "name": "B [round 11] 本地环境 is an enabled radio (org switch on by default) and the chosen one — just those four characters, no 即将推出, no explanation",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "B clicking 本地环境 changes nothing (popover open, still 云端沙箱, no request sent)",
+      "name": "B on the home page (no conversation yet) choosing a row only switches the icon/pref in this tab: popover stays open, no environment request sent",
       "ok": true,
       "detail": ""
     },
     {
       "name": "B 本地环境 has no explaining tooltip (指你自己的电脑 / 还没有实现 are gone)",
       "ok": true,
-      "detail": "[\"云端沙箱（当前：平台内置沙箱）本地环境\"]"
+      "detail": "[\"本地环境云端沙箱（平台内置沙箱）\"]"
     },
     {
       "name": "B the clutter is gone: no isolation text, location/network badges, option list, 切换, project/conversation chooser hints, 详细说明",
@@ -134,7 +134,7 @@
     {
       "name": "B [intercepted] a ready E2B channel with a workDir in the data: the popover still shows only 云端沙箱 / 本地环境 (no 工作目录, no E2B label, no 已就绪, no 重试 / 现在准备)",
       "ok": true,
-      "detail": "云端沙箱 （当前：E2B） 本地环境"
+      "detail": "本地环境 云端沙箱 （E2B，就绪）"
     },
     {
       "name": "B 1440px light: popover fully opaque, inside the viewport with gutters, no horizontal scroll",

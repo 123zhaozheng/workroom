@@ -5,6 +5,7 @@ import type { StatsOverviewDTO } from "@shared/ops";
 import { KpiGrid } from "./Kpis";
 import { CalendarHeatmap, OutcomeWaffle, PunchCard } from "./Heat";
 import { ActivityCard, DrilldownTables, KnowledgeCard, LargeContextCard, ToolRanking } from "./Panels";
+import { SandboxSection } from "./SandboxStats";
 import { Skeleton } from "./parts";
 
 const loadRecharts = () => import("./RechartsPanels");
@@ -44,6 +45,7 @@ export default function Dashboard({ data, query }: { data: StatsOverviewDTO; que
 				<LargeContextCard data={data} />
 				<ActivityCard data={data} />
 			</div>
+			{data.scope === "org" ? <SandboxSection from={data.range.from} to={data.range.to} /> : null}
 			<DrilldownTables data={data} csv={csv} />
 		</div>
 	);

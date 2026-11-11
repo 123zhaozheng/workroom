@@ -1,0 +1,190 @@
+{
+  "at": "2026-11-11T15:35:11.788Z",
+  "results": [
+    {
+      "name": "setup: organisation id and two conversations",
+      "ok": true,
+      "detail": "org_0mwca5jal9d66dcb5feba3a72"
+    },
+    {
+      "name": "seeded: 16 events, 1 running sandbox, 8 prewarm decisions, 5 code_run records",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[A] the 沙箱 section renders on the organisation scope",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[A] API totals equal the seed: 6 creates (4 exec / 1 prewarm / 1 explicit), 1 failure, cold start n=6 P50 300 P95 5000",
+      "ok": true,
+      "detail": "{\"n\":6,\"p50\":300,\"p95\":5000}"
+    },
+    {
+      "name": "[A] resume n=2 P50 50 P95 150, 3 idle pauses, 1 archive, 2 destroys",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[A] running time = closed intervals (110 min) + the sandbox running now (about 1 h)",
+      "ok": true,
+      "detail": "10200402 / open 3600402"
+    },
+    {
+      "name": "[A] creates tile",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[A] cold start P50 / P95 tiles equal the API",
+      "ok": true,
+      "detail": "300 毫秒 / 5 秒"
+    },
+    {
+      "name": "[A] resume P50 / P95 tiles equal the API",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[A] idle pauses and running-time tiles equal the API",
+      "ok": true,
+      "detail": "2.8 小时"
+    },
+    {
+      "name": "[A] code_run tile shows browser / cloud and the upgrade",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[A] no price configured: NO cost tile and '—' per provider (nothing invented)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[A] provider table row (OpenSandbox): creates, cold P50 / P95, resume P50, pauses",
+      "ok": true,
+      "detail": "OpenSandbox | 5 | 300 毫秒 | 1 秒 | 50 毫秒 | 2 | 1.3 小时 | — | —"
+    },
+    {
+      "name": "[C] threshold 30%, precision 75%, recall 75%, fired 4",
+      "ok": true,
+      "detail": "75% 75%"
+    },
+    {
+      "name": "[C] what-if header 10% … 90%",
+      "ok": true,
+      "detail": "10%,20%,30%,40%,50%,60%,70%,80%,90%"
+    },
+    {
+      "name": "[C] what-if precision row equals the API",
+      "ok": true,
+      "detail": "67%,80%,75%,67%,100%,100%,100%,100%,100%"
+    },
+    {
+      "name": "[C] what-if recall row equals the API",
+      "ok": true,
+      "detail": "100%,100%,75%,50%,50%,50%,25%,25%,25%"
+    },
+    {
+      "name": "[C] the 30% column is highlighted (current threshold)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[C] API what-if at 0.3 equals the actual precision / recall",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[B] price saved through the admin UI (opensandbox 0.5 USD/hour)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[B] partially priced: cost tile appears flagged '部分', e2b stays '—'",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[B] cost = running hours x price, equal to the API and to the page",
+      "ok": true,
+      "detail": "0.66695 / $0.67"
+    },
+    {
+      "name": "[B] both priced: complete cost = sum of both providers, label without '部分'",
+      "ok": true,
+      "detail": "2.542134"
+    },
+    {
+      "name": "[B] per-provider row shows price and cost (E2B 1.25 USD/h x 1.5 h = $1.88)",
+      "ok": true,
+      "detail": "E2B | 1 | 5 秒 | 5 秒 | — | 1 | 1.5 小时 | $1.25 | $1.88"
+    },
+    {
+      "name": "[B] prices cleared: the cost tile is gone again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[D] a plain member gets 403 from /api/stats/sandbox",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "name": "[D] a plain member cannot read the prices (403)",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "name": "[D] the member's stats page has no 沙箱 section",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[D] the personal scope of the owner has no 沙箱 section either",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[E] 390px: no horizontal page scroll with the 沙箱 section",
+      "ok": true,
+      "detail": "{\"doc\":390,\"win\":390,\"sec\":374}"
+    },
+    {
+      "name": "[E] 390px: the cost tile and the what-if row are present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[E] dark mode: card and KPI backgrounds are dark and the value text is light",
+      "ok": true,
+      "detail": "{\"card\":30.666666666666668,\"kpi\":30.666666666666668,\"text\":235.66666666666666,\"body\":23.333333333333332}"
+    },
+    {
+      "name": "[F live] OpenSandbox configured through the API",
+      "ok": true,
+      "detail": "200/200"
+    },
+    {
+      "name": "[F live] a real sandbox became ready (explicit prepare)",
+      "ok": true,
+      "detail": "200 ready"
+    },
+    {
+      "name": "[F live] one more create, trigger explicit, cold start recorded",
+      "ok": true,
+      "detail": "{\"duration_ms\":632,\"trigger\":\"explicit\",\"provider\":\"opensandbox\"}"
+    },
+    {
+      "name": "[F live] the new conversation is listed with its cold start and a running sandbox",
+      "ok": true,
+      "detail": "{\"n\":1,\"p50\":632,\"p95\":632}"
+    },
+    {
+      "name": "[F live] the page shows the same creates number as the API",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

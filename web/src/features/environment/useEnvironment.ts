@@ -41,7 +41,8 @@ export function useEnvironment(spaceId: string | undefined, conversationId: numb
 	useEffect(() => {
 		if (path && d && d !== received.current) for (const fn of bus.get(path) ?? []) fn(d, self.current);
 	}, [path, d]);
-	const want = !!d && d.kind === "remote" && (d.state === "preparing" || (active && (d.state === "none" || d.state === "lost")));
+	// round 11: a prewarm or resume may start right after a message is sent (paused counts as "may change" while a turn runs)
+	const want = !!d && d.kind === "remote" && (d.state === "preparing" || d.state === "resuming" || (active && (d.state === "none" || d.state === "lost" || d.state === "paused")));
 	if (want !== poll) setPoll(want);
 	const [busy, setBusy] = useState(false);
 	const [retryError, setRetryError] = useState<string>();
@@ -50,7 +51,7 @@ export function useEnvironment(spaceId: string | undefined, conversationId: numb
 		setBusy(true);
 		setRetryError(undefined);
 		try {
-			const next = await post<ConversationEnvironmentDTO>(`${path}/prepare`);
+			const next = await post<ConversationEnvironmentDTO>(`${path}/prepare`, { trigger: "explicit" });
 			res.setData(() => next);
 		} catch (e) {
 			setRetryError(errorText(e));

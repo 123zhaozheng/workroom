@@ -413,17 +413,22 @@ try {
 	await page.waitForSelector(T("env-popover"));
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-state"]')?.getAttribute("data-state") === "failed", null, { timeout: 60000 });
 	await page.keyboard.press("Escape");
-	await page.waitForSelector(T("env-status"), { timeout: 10000 }).catch(async (e) => {
-		await page.screenshot({ path: "/tmp/claude-0/scratch/b3.png" });
-		throw e;
-	});
+	// round 11 (R1): idle conversation → no inline line at all (the red dot + the popover's 重试 carry it)
+	await sleep(1500);
+	const idleLine = await page.locator(T("env-status")).count();
+	check("B env failure alone, idle conversation [round 11]: no inline line (only the red dot; 重试 is in the popover)", idleLine === 0 && (await page.locator(T("env-dot")).getAttribute("data-dot")) === "failed");
+	// a turn that is running while the environment is failed and nothing else explains it: ONE compact line with 重试
+	await sendMessage(page, "[[slow 15000]] 再聊一句");
+	await page.waitForSelector(T("stop"), { timeout: 20000 });
+	await page.waitForSelector(T("env-status"), { timeout: 15000 });
 	await sleep(300);
 	const envBox = await page.locator(T("env-status")).boundingBox();
 	note("failure.envOnly.1440", { h: Math.round(envBox.height) });
 	await sec("B env failure alone", async () => {
-		check("B env failure alone: still shown (nothing else explains it) but as one compact line with 重试", envBox.height <= 40 && (await page.locator(T("env-retry")).count()) === 1 && (await page.locator(T("env-status")).innerText()).includes("工作环境没有准备好"), `${Math.round(envBox.height)}px`);
+		check("B env failure alone: while a turn runs it is still shown (nothing else explains it) but as one compact line with 重试", envBox.height <= 40 && (await page.locator(T("env-retry")).count()) === 1 && (await page.locator(T("env-status")).innerText()).includes("工作环境没有准备好"), `${Math.round(envBox.height)}px`);
 	});
 	await shot(page, "failure-env-only-1440-light");
+	await idle(page);
 
 	// B4. a failed run ([[fail]]): inline note + a slim 重试 bar, no second copy of the reason
 	await put("/api/sandbox/provider-policy", { orgDefault: "local", allowProjectOverride: false });

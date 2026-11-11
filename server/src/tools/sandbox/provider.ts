@@ -54,8 +54,14 @@ export interface CreateOptions {
 	readonly env?: Readonly<Record<string, string>>;
 	/** Labels written to the remote sandbox (workroom=1, instance id, org hash). Used to find orphans. No secrets, no user data. */
 	readonly metadata: Readonly<Record<string, string>>;
-	/** Remote lifetime / auto-stop (provider-side). */
+	/**
+	 * Provider-side safety timeout (R3): how long the vendor keeps the sandbox RUNNING without Workroom's say-so (E2B: the sandbox timeout, with
+	 * onTimeout "pause"; OpenSandbox: TTL; Daytona: derived auto-stop). Workroom extends it with `keepAlive` on every use; it only matters when
+	 * Workroom itself dies. It is NOT a maximum age any more.
+	 */
 	readonly lifetimeMs: number;
+	/** Lifecycle hints for vendor-side automation (best effort; Workroom's own reaper is authoritative). */
+	readonly lifecycle?: CreateLifecycle;
 	/** Deadline for creation (distinct from command timeout). */
 	readonly createTimeoutMs: number;
 	// Round 9: no `network` option. Adapters must NOT pass any network-deny/allow option to the provider; vendor defaults apply.
@@ -72,6 +78,16 @@ export interface CreateOptions {
 	 */
 	readonly defaultMemoryMb?: number;
 	readonly signal?: AbortSignal;
+}
+
+/** Vendor-side lifecycle automation requested at creation (Daytona auto-stop / auto-archive / auto-delete, E2B timeout action). */
+export interface CreateLifecycle {
+	/** Inactivity after which the vendor itself stops/pauses a running sandbox, seconds. */
+	readonly idlePauseSec: number;
+	/** How long a paused sandbox stays quickly resumable before the vendor archives it (where it can), seconds. */
+	readonly pausedRetentionSec: number;
+	/** Unused this long → the vendor deletes it (safety net behind Workroom's reaper), seconds. */
+	readonly destroyAfterSec: number;
 }
 
 /** Admin-configured sandbox size. cpus in cores, memory/disk in GiB. */
@@ -128,6 +144,12 @@ export interface RemoteSession {
 	keepAlive(lifetimeMs: number): Promise<void>;
 }
 
+/** Round 11: options of RemoteProvider.pause. */
+export interface PauseOptions {
+	/** How long the provider must keep the PAUSED sandbox at least (the fast-resume window plus slack). Providers whose paused sandboxes expire (OpenSandbox TTL) extend it. */
+	readonly retainMs: number;
+}
+
 export interface ProviderHealth {
 	readonly ok: boolean;
 	/** One line, no secrets. */
@@ -155,6 +177,15 @@ export interface RemoteProvider {
 	list(metadata: Readonly<Record<string, string>>): Promise<RemoteSandboxInfo[]>;
 	/** Idempotent: a missing sandbox is success. */
 	destroy(id: string): Promise<void>;
+	/**
+	 * Round 11 (optional; present only when `capabilities.pauseResume !== "unsupported"`): freeze/stop the sandbox keeping its filesystem (and, where the
+	 * vendor does, memory). Idempotent for an already paused sandbox. Missing sandbox → throws (the caller treats it as lost).
+	 */
+	pause?(id: string, o: PauseOptions): Promise<void>;
+	/** Optional: bring a paused (or archived) sandbox back and return a connected session; null when it no longer exists (caller recreates). */
+	resume?(id: string, signal?: AbortSignal): Promise<RemoteSession | null>;
+	/** Optional (Daytona): move a paused sandbox to cold storage (slower to resume, cheaper). Only called for paused sandboxes. */
+	archive?(id: string): Promise<void>;
 }
 
 /** Provider connection settings, decrypted, for constructing a provider. Never logged. */
@@ -182,13 +213,21 @@ export class UnsupportedError extends HttpError {
 	}
 }
 
-/** Lifecycle knobs (seconds), admin-configurable per provider; distinct concepts on purpose. */
+/**
+ * Lifecycle knobs (seconds), admin-configurable per provider (round 11; replaces idle-destroy + max-lifetime):
+ *   idle ≥ idlePauseSec → pause  ·  paused ≥ pausedRetentionSec → archive (where supported, else stays paused)  ·  unused ≥ destroyAfterSec → destroy.
+ * The files always live on the Workroom host, so every stage can be re-created from them; only installed dependencies need a live/paused sandbox.
+ */
 export interface LifecyclePolicy {
 	/** Max time to wait for create(). */
 	readonly createTimeoutSec: number;
-	/** Destroy the remote sandbox after this much inactivity (Workroom reaper). */
-	readonly idleTimeoutSec: number;
-	/** Hard maximum age of one remote sandbox; also passed to the provider as its own auto-stop. */
-	readonly lifetimeSec: number;
+	/** Idle time before the sandbox is paused (checkpoint, stop billing). */
+	readonly idlePauseSec: number;
+	/** Fast-resume window: how long a paused sandbox is kept resumable in seconds before it is archived (providers with archive) or just left paused. */
+	readonly pausedRetentionSec: number;
+	/** Unused for this long (since the last run) → destroyed for good. */
+	readonly destroyAfterSec: number;
 }
-export const DEFAULT_LIFECYCLE: LifecyclePolicy = { createTimeoutSec: 120, idleTimeoutSec: 30 * 60, lifetimeSec: 4 * 60 * 60 };
+export const DEFAULT_LIFECYCLE: LifecyclePolicy = { createTimeoutSec: 120, idlePauseSec: 5 * 60, pausedRetentionSec: 24 * 60 * 60, destroyAfterSec: 7 * 24 * 60 * 60 };
+/** Validation ranges (seconds) shared by the config service and the UI. */
+export const LIFECYCLE_RANGE = { createTimeoutSec: [10, 600], idlePauseSec: [60, 86400], pausedRetentionSec: [300, 30 * 86400], destroyAfterSec: [3600, 90 * 86400] } as const;

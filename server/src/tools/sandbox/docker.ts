@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { chownSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HttpError } from "../../core/http.ts";
-import type { DriverRunSpec, DriverServiceProcess, DriverServiceSpec, DriverStatus, IsolationNotes, ProcessRef, RunResult, SandboxDriver, SandboxMount, ServiceRuntime } from "./driver.ts";
+import { storeMounts, type DriverRunSpec, type DriverServiceProcess, type DriverServiceSpec, type DriverStatus, type IsolationNotes, type ProcessRef, type RunResult, type SandboxDriver, type SandboxMount, type ServiceRuntime } from "./driver.ts";
 import { bindMountArg, dockerSearchDirs, findExecutable, toDockerHostPath } from "./paths.ts";
 import { capped, checkEnv, runCli } from "./util.ts";
 
@@ -366,10 +366,11 @@ export class DockerDriver implements SandboxDriver {
 		const name = `wr-${spec.runId.replace(/[^a-zA-Z0-9_.-]/g, "").slice(-48)}`;
 		const started = Date.now();
 		this.prepareWorkdir(spec.workdir);
+		for (const st of spec.stores ?? []) if (!st.readOnly) this.prepareWorkdir(st.hostPath); // round 11: persistent stores are written by the container user too
 		let envFile: string | undefined;
 		try {
 			envFile = this.#writeEnv(scratch, spec.env);
-			const args = [...this.#baseArgs(name, spec.runId, { limits: spec.limits, network: spec.network, interactive: false, envFile }), ...this.#mountArgs(spec.workdir, codeDir, spec.mounts), image, ...prog.argv];
+			const args = [...this.#baseArgs(name, spec.runId, { limits: spec.limits, network: spec.network, interactive: false, envFile }), ...this.#mountArgs(spec.workdir, codeDir, [...spec.mounts, ...storeMounts(spec.stores)]), image, ...prog.argv];
 			const out = capped();
 			const err = capped();
 			this.#live.add(name);

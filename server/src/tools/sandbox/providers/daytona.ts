@@ -10,7 +10,7 @@
 // deployments and is NOT a claim that a maintained self-hostable open-source Daytona exists.
 import { UnsupportedError } from "../provider.ts";
 import type {
-	CreateOptions, ExecOptions, ExecResult, ProviderCapabilities, ProviderConnection, ProviderHealth, RemoteEntry,
+	CreateOptions, ExecOptions, ExecResult, PauseOptions, ProviderCapabilities, ProviderConnection, ProviderHealth, RemoteEntry,
 	RemoteProvider, RemoteSandboxInfo, RemoteSession,
 } from "../provider.ts";
 
@@ -42,6 +42,9 @@ interface DaytonaSandbox {
 		createFolder(path: string, mode: string): Promise<void>;
 	};
 	start(timeoutSec?: number): Promise<void>;
+	stop(timeoutSec?: number): Promise<void>;
+	archive(): Promise<void>;
+	refreshData(): Promise<void>;
 	refreshActivity(): Promise<void>;
 	setAutostopInterval(minutes: number): Promise<void>;
 }
@@ -78,7 +81,9 @@ export const DAYTONA_CAPABILITIES: ProviderCapabilities = {
 	pty: "unsupported",
 	preview: "unsupported",
 	snapshot: "unsupported",
-	pauseResume: "unsupported",
+	// Round 11: pause = stop(), resume = start(), archive = archive() (SDK 0.231.1; stopped keeps the filesystem, archived = object storage). The HTTP calls are
+	// asserted against a local fake REST API (sandbox-daytona-wire.test.ts); the real service was never run (no key).
+	pauseResume: "unverified",
 	skills: "upload_readonly",
 	isolation: "Daytona 托管沙箱（容器/运行时隔离由厂商决定，具体隔离强度未验证）",
 	location: "vendor_cloud",
@@ -128,6 +133,8 @@ function isNotFound(e: unknown): boolean {
 }
 const GONE_STATES = new Set(["destroyed", "destroying", "error", "build_failed"]);
 const STARTABLE_STATES = new Set(["stopped", "archived"]);
+const STOPPED_STATES = new Set(["stopped", "stopping", "archived", "archiving"]);
+const minutes = (sec: number): number => Math.max(1, Math.ceil(sec / 60));
 
 async function defaultLoadSdk(): Promise<DaytonaModule> {
 	const name = DAYTONA_SDK_PACKAGE; // variable specifier: the app starts and typechecks without the optional package
@@ -248,9 +255,20 @@ class DaytonaProvider implements RemoteProvider {
 				: template
 					? { snapshot: template }
 					: {}),
-			// Hard maximum age (wall clock) and an inactivity stop, both from the Workroom lifetime.
-			ttlMinutes: lifetimeMin,
-			autoStopInterval: lifetimeMin,
+			// Round 11: vendor-side lifecycle automation behind Workroom's own reaper (units: minutes, SDK 0.231.1 Daytona.d.ts).
+			//   autoStopInterval    = idle pause (inactivity → stop; a stopped sandbox keeps its filesystem)
+			//   autoArchiveInterval = time STOPPED before the vendor archives it = the fast-resume window
+			//   autoDeleteInterval  = time STOPPED before the vendor deletes it = destroy-after minus the idle time already spent running
+			// (the "counted while stopped" reading of the two intervals follows the SDK docs; unverified against the live service)
+			// No ttlMinutes any more (it would destroy even stopped/archived sandboxes at a fixed age). Without lifecycle hints (connection test) the old
+			// short TTL + auto-stop apply so a leaked test sandbox cannot live on.
+			...(o.lifecycle
+				? {
+						autoStopInterval: minutes(o.lifecycle.idlePauseSec),
+						autoArchiveInterval: minutes(o.lifecycle.pausedRetentionSec),
+						autoDeleteInterval: minutes(o.lifecycle.destroyAfterSec - o.lifecycle.idlePauseSec),
+					}
+				: { ttlMinutes: lifetimeMin, autoStopInterval: lifetimeMin }),
 			// Round 9: no networkBlockAll / allow-list — the Daytona organisation's / sandbox defaults decide (Workroom does not change vendor settings).
 		};
 		try {
@@ -271,6 +289,45 @@ class DaytonaProvider implements RemoteProvider {
 			return this.#wrapSandbox(sb);
 		} catch (e) {
 			if (isNotFound(e)) return null;
+			throw this.#wrap(e);
+		}
+	}
+
+	/** pause = stop: the filesystem is kept (installed packages survive), processes end. Already stopped/archived = success; missing = throws (caller: lost). */
+	async pause(id: string, _o: PauseOptions): Promise<void> {
+		const client = await this.#clientOnce();
+		try {
+			const sb = await client.get(id);
+			if (sb.state && STOPPED_STATES.has(sb.state)) return;
+			await sb.stop(120);
+		} catch (e) {
+			throw this.#wrap(e);
+		}
+	}
+
+	/** resume = start (also from archived: slower, the vendor restores from object storage). null when gone. */
+	async resume(id: string, _signal?: AbortSignal): Promise<RemoteSession | null> {
+		const client = await this.#clientOnce();
+		try {
+			const sb = await client.get(id);
+			if (sb.state && GONE_STATES.has(sb.state)) return null;
+			if (!sb.state || sb.state !== "started") await sb.start(180);
+			return this.#wrapSandbox(sb);
+		} catch (e) {
+			if (isNotFound(e)) return null;
+			throw this.#wrap(e);
+		}
+	}
+
+	/** Move a STOPPED sandbox to cold storage (the SDK requires it to be stopped; Workroom only archives sandboxes it paused). */
+	async archive(id: string): Promise<void> {
+		const client = await this.#clientOnce();
+		try {
+			const sb = await client.get(id);
+			if (sb.state === "archived" || sb.state === "archiving") return;
+			if (sb.state && !STOPPED_STATES.has(sb.state)) await sb.stop(120);
+			await sb.archive();
+		} catch (e) {
 			throw this.#wrap(e);
 		}
 	}
@@ -438,7 +495,7 @@ class DaytonaSession implements RemoteSession {
 		}
 	}
 
-	/** Refreshes the inactivity window only; the hard TTL set at creation (ttlMinutes) is the Workroom lifetime cap and is deliberately not extended. */
+	/** Refreshes the inactivity window and (re)sets the auto-stop interval to the requested minutes. */
 	async keepAlive(lifetimeMs: number): Promise<void> {
 		const min = Math.max(1, Math.ceil(lifetimeMs / 60_000));
 		try {

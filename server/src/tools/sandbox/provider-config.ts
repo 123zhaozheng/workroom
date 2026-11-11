@@ -23,7 +23,7 @@ import { Allowlist, resolveTarget, systemResolver, type Resolver } from "../../o
 import { isPrivateAddress } from "../netpolicy.ts";
 import { SecretBox } from "../secrets.ts";
 import { DEFAULT_WORKDIR, normalizeWorkDir, resolveWorkDir, WorkDirError } from "./workdir.ts";
-import { DEFAULT_LIFECYCLE, PROVIDER_IDS, type ExplicitResources, type LifecyclePolicy, type ProviderConnection, type ProviderId, type RemoteProvider } from "./provider.ts";
+import { DEFAULT_LIFECYCLE, LIFECYCLE_RANGE, PROVIDER_IDS, type ExplicitResources, type LifecyclePolicy, type ProviderConnection, type ProviderId, type RemoteProvider } from "./provider.ts";
 import type { SandboxProviderCapabilitiesDTO, SandboxProviderConfigDTO, SandboxProviderTestDTO, SandboxProviderUpdate, SandboxProvidersAdminDTO, SandboxSelectionPolicyDTO } from "../../../../shared/sandbox.ts";
 
 /** Export; the integrator wires these into toolsModule.migrations with version offset +900. */
@@ -94,6 +94,17 @@ ALTER TABLE tool_sandbox_providers ADD COLUMN resources TEXT;`,
 		name: "sandbox provider: working directory",
 		sql: `ALTER TABLE tool_sandbox_providers ADD COLUMN work_dir TEXT;`,
 	},
+	{
+		// round 11: pause / retention / destroy replace idle-destroy + max lifetime. EVERY existing row gets the new defaults (5 min / 24 h / 7 d):
+		// pausing is non-destructive, so it is never more expensive than the old "destroy after idle_timeout_sec". The old columns stay in the table
+		// (NOT NULL, no longer read or written with meaning) so an older build can still open the database; they are not exposed any more.
+		version: 4,
+		name: "sandbox provider: idle pause / paused retention / destroy-after",
+		sql: `
+ALTER TABLE tool_sandbox_providers ADD COLUMN idle_pause_sec INTEGER NOT NULL DEFAULT 300;
+ALTER TABLE tool_sandbox_providers ADD COLUMN paused_retention_sec INTEGER NOT NULL DEFAULT 86400;
+ALTER TABLE tool_sandbox_providers ADD COLUMN destroy_after_sec INTEGER NOT NULL DEFAULT 604800;`,
+	},
 ];
 
 interface Row {
@@ -113,6 +124,9 @@ interface Row {
 	create_timeout_sec: number;
 	idle_timeout_sec: number;
 	lifetime_sec: number;
+	idle_pause_sec?: number;
+	paused_retention_sec?: number;
+	destroy_after_sec?: number;
 	last_test: string | null;
 	caps_json: string | null;
 	updated_by: string;
@@ -125,7 +139,8 @@ const SDK_PACKAGE: Record<ProviderId, string> = { opensandbox: "@alibaba-group/o
 /** Whether data leaves the organisation by default (vendor cloud) — OpenSandbox is self-hosted by construction. */
 const DEFAULT_LOCATION: Record<ProviderId, SandboxProviderCapabilitiesDTO["location"]> = { opensandbox: "self_hosted", e2b: "vendor_cloud", daytona: "vendor_cloud" };
 
-const RANGE = { createTimeoutSec: [10, 600], idleTimeoutSec: [60, 86400], lifetimeSec: [300, 604800] } as const;
+const RANGE = LIFECYCLE_RANGE;
+const LIFECYCLE_FIELD_LABEL = { createTimeoutSec: "创建超时", idlePauseSec: "空闲暂停时间", pausedRetentionSec: "快速恢复保留时间", destroyAfterSec: "未使用销毁时间" } as const;
 const TEMPLATE_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$/;
 const DOMAIN_RE = /^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
 
@@ -164,7 +179,7 @@ export function scrubSecrets(text: string, ...secrets: (string | undefined | nul
 
 const intIn = (name: keyof typeof RANGE, v: unknown): number => {
 	const [lo, hi] = RANGE[name];
-	if (typeof v !== "number" || !Number.isInteger(v) || v < lo || v > hi) throw new HttpError(400, "invalid", `${name} 必须是 ${lo}–${hi} 之间的整数（秒）`);
+	if (typeof v !== "number" || !Number.isInteger(v) || v < lo || v > hi) throw new HttpError(400, "invalid", `${LIFECYCLE_FIELD_LABEL[name]}（${name}）必须是 ${lo}–${hi} 之间的整数（秒）`);
 	return v;
 };
 
@@ -274,8 +289,9 @@ export class SandboxProviderConfigs {
 			allowPrivateNetwork: r?.allow_private_network === 1,
 			egressAcknowledged: r?.egress_ack === 1,
 			createTimeoutSec: r?.create_timeout_sec ?? DEFAULT_LIFECYCLE.createTimeoutSec,
-			idleTimeoutSec: r?.idle_timeout_sec ?? DEFAULT_LIFECYCLE.idleTimeoutSec,
-			lifetimeSec: r?.lifetime_sec ?? DEFAULT_LIFECYCLE.lifetimeSec,
+			idlePauseSec: r?.idle_pause_sec ?? DEFAULT_LIFECYCLE.idlePauseSec,
+			pausedRetentionSec: r?.paused_retention_sec ?? DEFAULT_LIFECYCLE.pausedRetentionSec,
+			destroyAfterSec: r?.destroy_after_sec ?? DEFAULT_LIFECYCLE.destroyAfterSec,
 			capabilities: caps,
 			sdk: { name: pkg, version: sdkVersion(pkg) },
 			...(lastTest ? { lastTest } : {}),
@@ -350,8 +366,9 @@ export class SandboxProviderConfigs {
 			allowPrivate: old?.allow_private_network === 1,
 			ack: old?.egress_ack === 1,
 			createTimeoutSec: old?.create_timeout_sec ?? DEFAULT_LIFECYCLE.createTimeoutSec,
-			idleTimeoutSec: old?.idle_timeout_sec ?? DEFAULT_LIFECYCLE.idleTimeoutSec,
-			lifetimeSec: old?.lifetime_sec ?? DEFAULT_LIFECYCLE.lifetimeSec,
+			idlePauseSec: old?.idle_pause_sec ?? DEFAULT_LIFECYCLE.idlePauseSec,
+			pausedRetentionSec: old?.paused_retention_sec ?? DEFAULT_LIFECYCLE.pausedRetentionSec,
+			destroyAfterSec: old?.destroy_after_sec ?? DEFAULT_LIFECYCLE.destroyAfterSec,
 			sealed: old?.api_key_sealed ?? null,
 			hint: old?.api_key_hint ?? null,
 		};
@@ -404,8 +421,10 @@ export class SandboxProviderConfigs {
 			}
 			changed.push("workDir");
 		}
-		for (const k of ["createTimeoutSec", "idleTimeoutSec", "lifetimeSec"] as const) if (patch[k] !== undefined) ((next[k] = intIn(k, patch[k])), changed.push(k));
-		if (next.idleTimeoutSec > next.lifetimeSec) throw new HttpError(400, "invalid", "空闲回收时间不能超过最长存活时间");
+		// Round 11: the old idle-destroy / max-lifetime fields are gone; say so instead of silently ignoring them.
+		for (const old of ["idleTimeoutSec", "lifetimeSec"] as const) if ((patch as Record<string, unknown>)[old] !== undefined) throw new HttpError(400, "invalid", `${old} 已废弃：请改用 idlePauseSec（空闲暂停）、pausedRetentionSec（快速恢复保留）、destroyAfterSec（未使用销毁）`);
+		for (const k of ["createTimeoutSec", "idlePauseSec", "pausedRetentionSec", "destroyAfterSec"] as const) if (patch[k] !== undefined) ((next[k] = intIn(k, patch[k])), changed.push(k));
+		if (next.destroyAfterSec < next.idlePauseSec + next.pausedRetentionSec) throw new HttpError(400, "invalid", "未使用销毁时间不能早于“空闲暂停时间 + 快速恢复保留时间”");
 		let keyStatus: "set" | "cleared" | "unchanged" = "unchanged";
 		let plainKey: string | undefined;
 		if (patch.apiKey === null) {
@@ -434,10 +453,10 @@ export class SandboxProviderConfigs {
 		// Round 10: the row write and the single-channel bookkeeping (deactivate the others, make this the org default) are ONE transaction.
 		this.#ctx.db.tx(() => {
 		this.#ctx.db.run(
-			`INSERT INTO tool_sandbox_providers (org_id, provider, enabled, endpoint, domain, template, image, resources, api_key_sealed, api_key_hint, allow_private_network, egress_ack, create_timeout_sec, idle_timeout_sec, lifetime_sec, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint = excluded.endpoint, domain = excluded.domain, template = excluded.template, image = excluded.image, resources = excluded.resources, api_key_sealed = excluded.api_key_sealed, api_key_hint = excluded.api_key_hint, allow_private_network = excluded.allow_private_network, egress_ack = excluded.egress_ack, create_timeout_sec = excluded.create_timeout_sec, idle_timeout_sec = excluded.idle_timeout_sec, lifetime_sec = excluded.lifetime_sec, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
-			p.orgId, provider, next.enabled ? 1 : 0, next.endpoint || null, next.domain || null, next.template || null, next.image || null, next.resources && Object.keys(next.resources).length ? JSON.stringify(next.resources) : null, next.sealed, next.hint, next.allowPrivate ? 1 : 0, next.ack ? 1 : 0, next.createTimeoutSec, next.idleTimeoutSec, next.lifetimeSec, p.userId, now,
+			`INSERT INTO tool_sandbox_providers (org_id, provider, enabled, endpoint, domain, template, image, resources, api_key_sealed, api_key_hint, allow_private_network, egress_ack, create_timeout_sec, idle_pause_sec, paused_retention_sec, destroy_after_sec, idle_timeout_sec, lifetime_sec, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint = excluded.endpoint, domain = excluded.domain, template = excluded.template, image = excluded.image, resources = excluded.resources, api_key_sealed = excluded.api_key_sealed, api_key_hint = excluded.api_key_hint, allow_private_network = excluded.allow_private_network, egress_ack = excluded.egress_ack, create_timeout_sec = excluded.create_timeout_sec, idle_pause_sec = excluded.idle_pause_sec, paused_retention_sec = excluded.paused_retention_sec, destroy_after_sec = excluded.destroy_after_sec, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+			p.orgId, provider, next.enabled ? 1 : 0, next.endpoint || null, next.domain || null, next.template || null, next.image || null, next.resources && Object.keys(next.resources).length ? JSON.stringify(next.resources) : null, next.sealed, next.hint, next.allowPrivate ? 1 : 0, next.ack ? 1 : 0, next.createTimeoutSec, next.idlePauseSec, next.pausedRetentionSec, next.destroyAfterSec, old?.idle_timeout_sec ?? 1800, old?.lifetime_sec ?? 14400, p.userId, now,
 		);
 		if (workDirPatch !== undefined) this.#ctx.db.run("UPDATE tool_sandbox_providers SET work_dir = ? WHERE org_id = ? AND provider = ?", workDirPatch, p.orgId, provider);
 		this.#syncActive(p, provider, patch.enabled);
@@ -488,7 +507,7 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 	}
 	lifecycle(orgId: string, provider: ProviderId): LifecyclePolicy {
 		const r = this.#row(orgId, provider);
-		return r ? { createTimeoutSec: r.create_timeout_sec, idleTimeoutSec: r.idle_timeout_sec, lifetimeSec: r.lifetime_sec } : DEFAULT_LIFECYCLE;
+		return r ? { createTimeoutSec: r.create_timeout_sec, idlePauseSec: r.idle_pause_sec ?? DEFAULT_LIFECYCLE.idlePauseSec, pausedRetentionSec: r.paused_retention_sec ?? DEFAULT_LIFECYCLE.pausedRetentionSec, destroyAfterSec: r.destroy_after_sec ?? DEFAULT_LIFECYCLE.destroyAfterSec } : DEFAULT_LIFECYCLE;
 	}
 	/** Round 10: the working directory an admin configured for a provider (undefined = none: the provider's default applies, see `resolveWorkDir`). Stored row only. */
 	workDirOf(orgId: string, provider: ProviderId): string | undefined {

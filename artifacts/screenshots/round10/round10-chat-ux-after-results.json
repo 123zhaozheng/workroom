@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T12:58:45.958Z",
+  "at": "2026-11-11T15:33:16.721Z",
   "results": [
     {
       "name": "A medium 390-light: no horizontal scroll",
@@ -227,7 +227,12 @@
       "detail": ""
     },
     {
-      "name": "B env failure alone: still shown (nothing else explains it) but as one compact line with 重试",
+      "name": "B env failure alone, idle conversation [round 11]: no inline line (only the red dot; 重试 is in the popover)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B env failure alone: while a turn runs it is still shown (nothing else explains it) but as one compact line with 重试",
       "ok": true,
       "detail": "40px"
     },

@@ -660,7 +660,32 @@ export class Runtime implements RuntimeService {
 			if (t) this.ctx.db.run("UPDATE rt_conversations SET title = ? WHERE space_id = ? AND conversation_id = ? AND title = ?", t, spaceId, conversationId, DEFAULT_TITLE);
 		}
 		this.touch(spaceId, conversationId);
+		this.#prewarmHint(p, spaceId, conversationId, input, harness, conv);
 		return this.submissionStatus(harness, conversationId, sub.id, context);
+	}
+
+	/**
+	 * Round 11 (R2b): after the message is accepted, tell the sandbox prewarm about it. Fire and forget: the prewarm decides (intent score, org channel,
+	 * permissions, setting) and starts the remote sandbox detached; nothing here awaits it, and nothing it does can fail the submission.
+	 */
+	#prewarmHint(p: Principal, spaceId: string, conversationId: number, input: InputEntryData, harness: Harness, conv: Conversation): void {
+		try {
+			if (!this.ctx.services.has("sandboxPrewarm")) return;
+			const space = this.ctx.services.get("identity").space(spaceId);
+			if (!space) return;
+			const hook = this.ctx.services.get("sandboxPrewarm") as { onUserMessage(p: Principal, space: Space, conversationId: number, msg: { text: string; attachments?: readonly { name: string }[]; via?: unknown; assistantTools?: () => Promise<readonly string[] | undefined> }): void };
+			hook.onUserMessage(p, space, conversationId, {
+				text: input.text,
+				attachments: input.attachments?.map((a) => ({ name: a.name })),
+				via: input.via,
+				assistantTools: async () => {
+					const ad = await harness.snapshot(AssistantDoc, conv.id, BACKGROUND_CONTEXT);
+					return ad?.assistantId ? this.assistants?.byId(ad.assistantId)?.tools : undefined;
+				},
+			});
+		} catch {
+			/* a hint, never a failure */
+		}
 	}
 
 	async submissionStatus(harness: Harness, conversationId: number, id: SubmissionId | number, context: Context): Promise<SubmissionDTO> {

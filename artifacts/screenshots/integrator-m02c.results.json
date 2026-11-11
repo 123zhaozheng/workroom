@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T12:45:35.411Z",
+  "at": "2026-11-11T15:19:55.344Z",
   "results": [
     {
       "name": "M02-C: main-run timeout shown as its own terminal state (已超时), not 已完成/失败/已取消",

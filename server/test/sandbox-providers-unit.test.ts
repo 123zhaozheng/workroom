@@ -44,10 +44,11 @@ function named(name: string, message: string, extra: Record<string, unknown> = {
 // ---------------------------------------------------------------------------------------------------------------------------
 interface FakeE2b {
 	mod: E2bModule;
-	calls: { create: Record<string, unknown>[]; connect: [string, Record<string, unknown>][]; list: Record<string, unknown>[]; kill: [string, Record<string, unknown>][]; run: [string, Record<string, unknown>][]; killedHandles: number; };
+	calls: { pause: [string, Record<string, unknown>][]; create: Record<string, unknown>[]; connect: [string, Record<string, unknown>][]; list: Record<string, unknown>[]; kill: [string, Record<string, unknown>][]; run: [string, Record<string, unknown>][]; killedHandles: number; };
 	behaviour: {
 		run?: (cmd: string, opts: Record<string, unknown>) => { wait: () => Promise<{ exitCode: number }> };
 		connectError?: Error;
+		pauseError?: Error;
 		killResult?: boolean | Error;
 		listItems?: { sandboxId: string; state: string; metadata: Record<string, string>; startedAt?: Date }[];
 		createError?: Error;
@@ -58,7 +59,7 @@ interface FakeE2b {
 }
 function fakeE2b(): FakeE2b {
 	const f: FakeE2b = {
-		calls: { create: [], connect: [], list: [], kill: [], run: [], killedHandles: 0 },
+		calls: { pause: [], create: [], connect: [], list: [], kill: [], run: [], killedHandles: 0 },
 		behaviour: {},
 		files: { writes: [], removes: [], mkdirs: [], timeouts: [] },
 		mod: undefined as unknown as E2bModule,
@@ -84,6 +85,7 @@ function fakeE2b(): FakeE2b {
 	f.mod = {
 		Sandbox: {
 			async create(opts) { f.calls.create.push(opts); if (f.behaviour.createError) throw f.behaviour.createError; return instance("sbx-1"); },
+			async pause(id, opts) { f.calls.pause.push([id, opts]); if (f.behaviour.pauseError) throw f.behaviour.pauseError; return true; },
 			async connect(id, opts) { f.calls.connect.push([id, opts]); if (f.behaviour.connectError) throw f.behaviour.connectError; return instance(id); },
 			list(opts) {
 				f.calls.list.push(opts);
@@ -105,8 +107,34 @@ describe("e2b adapter (SDK test double)", () => {
 	it("capabilities are honest: nothing 'supported' without a live run; advanced features unsupported", () => {
 		const p = createE2b({ provider: "e2b", apiKey: KEY }, { loadSdk: async () => fakeE2b().mod });
 		for (const [k, v] of Object.entries(p.capabilities)) assert.notEqual(v, "supported", `${k} must not claim "supported" before a live contract run`);
-		for (const k of ["services", "pty", "preview", "snapshot", "pauseResume"] as const) assert.equal(p.capabilities[k], "unsupported");
+		for (const k of ["services", "pty", "preview", "snapshot"] as const) assert.equal(p.capabilities[k], "unsupported");
+		assert.equal(p.capabilities.pauseResume, "unverified", "round 11: implemented from the SDK typings, never run against E2B");
 		assert.equal(p.capabilities.location, "configurable");
+	});
+
+	it("round 11: create with lifecycle hints sets onTimeout 'pause' and keeps autoResume explicitly off; without hints the vendor default (kill) stays", async () => {
+		const f = fakeE2b();
+		const p = createE2b({ provider: "e2b", apiKey: KEY }, { loadSdk: async () => f.mod });
+		await p.create({ ...baseCreate, lifetimeMs: 7 * 60_000, lifecycle: { idlePauseSec: 300, pausedRetentionSec: 86400, destroyAfterSec: 604800 } });
+		assert.deepEqual(f.calls.create[0]!.lifecycle, { onTimeout: "pause", autoResume: false });
+		assert.equal(f.calls.create[0]!.timeoutMs, 7 * 60_000);
+		await p.create(baseCreate);
+		assert.equal("lifecycle" in f.calls.create[1]!, false, "connection tests and other callers without hints keep the default");
+	});
+
+	it("round 11: pause calls Sandbox.pause(id) with the key; resume = connect (which resumes a paused sandbox); a killed sandbox resumes to null; errors are scrubbed", async () => {
+		const f = fakeE2b();
+		const p = createE2b({ provider: "e2b", apiKey: KEY }, { loadSdk: async () => f.mod });
+		await p.pause!("sbx-9", { retainMs: 86_400_000 });
+		assert.equal(f.calls.pause[0]![0], "sbx-9");
+		assert.equal(f.calls.pause[0]![1].apiKey, KEY);
+		const s = await p.resume!("sbx-9");
+		assert.equal(s!.id, "sbx-9");
+		assert.equal(f.calls.connect.at(-1)![0], "sbx-9");
+		f.behaviour.connectError = named("SandboxNotFoundError", "gone");
+		assert.equal(await p.resume!("sbx-9"), null);
+		f.behaviour.pauseError = named("SandboxError", `boom ${KEY}`);
+		await assert.rejects(p.pause!("sbx-9", { retainMs: 1 }), (e: Error) => !e.message.includes(KEY) && /boom/.test(e.message));
 	});
 
 	it("create maps template/metadata/lifetime/timeout/env and passes endpoint + domain + key", async () => {
@@ -358,7 +386,8 @@ describe("daytona adapter (SDK test double)", () => {
 		const p = createDaytona({ provider: "daytona", apiKey: DKEY }, { loadSdk: async () => fakeDaytona().mod });
 		for (const [k, v] of Object.entries(p.capabilities)) assert.notEqual(v, "supported", `${k}`);
 		assert.equal(p.capabilities.location, "vendor_cloud");
-		for (const k of ["services", "pty", "preview", "snapshot", "pauseResume"] as const) assert.equal(p.capabilities[k], "unsupported");
+		for (const k of ["services", "pty", "preview", "snapshot"] as const) assert.equal(p.capabilities[k], "unsupported");
+		assert.equal(p.capabilities.pauseResume, "unverified", "round 11: stop/start/archive asserted on the wire against a fake REST API, not a live service");
 		assert.equal(p.capabilities.resourceLimits, "unverified", "round 10: image mode takes CPU/memory/disk (not verified live)");
 	});
 

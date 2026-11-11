@@ -143,48 +143,48 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 	});
 	api.get("/sandbox/:spaceId/files", async (c) => {
 		const { p, space, conversationId } = await spaceFor(c, "read");
-		const out: WorkspaceFilesResponse = { ...sb.workspace(space, conversationId), canWrite: (await acl.check(p, "write", { kind: "space", id: space.id })).allow };
+		const out: WorkspaceFilesResponse = { ...sb.workspace(space, conversationId, p), canWrite: (await acl.check(p, "write", { kind: "space", id: space.id })).allow };
 		return c.json(out);
 	});
 	api.get("/sandbox/:spaceId/preview", async (c) => {
-		const { space, conversationId } = await spaceFor(c, "read");
-		return c.json({ preview: sb.preview(space, conversationId, c.req.query("path") ?? "") });
+		const { p, space, conversationId } = await spaceFor(c, "read");
+		return c.json({ preview: sb.preview(space, conversationId, c.req.query("path") ?? "", p) });
 	});
 	api.get("/sandbox/:spaceId/file", async (c) => {
-		const { space, conversationId } = await spaceFor(c, "read");
-		const f = sb.readFile(space, conversationId, c.req.query("path") ?? "");
+		const { p, space, conversationId } = await spaceFor(c, "read");
+		const f = sb.readFile(space, conversationId, c.req.query("path") ?? "", p);
 		// Raster/SVG images may be shown inline (an <img> in the work panel); everything else is a download. Never executable in our origin.
 		const inline = c.req.query("inline") === "1" && isInlineImage(f.name);
 		return new Response(f.bytes as Uint8Array<ArrayBuffer>, { headers: { "content-type": effectiveMime(undefined, f.name), "content-disposition": contentDisposition(inline ? "inline" : "attachment", f.name), "x-content-type-options": "nosniff", "content-security-policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'", "cache-control": "private, no-store" } });
 	});
 	api.put("/sandbox/:spaceId/file", async (c) => {
-		const { space, conversationId } = await spaceFor(c, "write");
+		const { p, space, conversationId } = await spaceFor(c, "write");
 		const path = c.req.query("path") ?? "";
 		const bytes = await readCapped(c.req.raw, DEFAULT_LIMITS.maxFileBytes);
 		if (c.req.query("overwrite") === "0") {
 			try {
-				sb.preview(space, conversationId, path);
+				sb.preview(space, conversationId, path, p);
 				throw new HttpError(409, "exists", "文件已存在");
 			} catch (e) {
 				if (e instanceof HttpError && e.status === 409) throw e;
 			}
 		}
-		const rel = sb.writeFile(space, conversationId, path, bytes);
+		const rel = sb.writeFile(space, conversationId, path, bytes, p);
 		return c.json({ path: rel, size: bytes.length });
 	});
 	api.post("/sandbox/:spaceId/mkdir", async (c) => {
-		const { space } = await spaceFor(c, "write");
+		const { p, space } = await spaceFor(c, "write");
 		const b = await jsonBody<{ conversationId?: number; path: string }>(c);
-		return c.json({ path: sb.mkdir(space, b.conversationId, b.path) });
+		return c.json({ path: sb.mkdir(space, b.conversationId, b.path, p) });
 	});
 	api.delete("/sandbox/:spaceId/file", async (c) => {
-		const { space, conversationId } = await spaceFor(c, "write");
-		return c.json(sb.remove(space, conversationId, c.req.query("path") ?? ""));
+		const { p, space, conversationId } = await spaceFor(c, "write");
+		return c.json(sb.remove(space, conversationId, c.req.query("path") ?? "", p));
 	});
 	api.post("/sandbox/:spaceId/move", async (c) => {
-		const { space } = await spaceFor(c, "write");
+		const { p, space } = await spaceFor(c, "write");
 		const b = await jsonBody<{ conversationId?: number; from: string; to: string }>(c);
-		return c.json(sb.move(space, b.conversationId, b.from, b.to));
+		return c.json(sb.move(space, b.conversationId, b.from, b.to, p));
 	});
 	api.get("/sandbox/:spaceId/runs", async (c) => {
 		const { space, conversationId } = await spaceFor(c, "read");
@@ -200,7 +200,7 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 	api.post("/sandbox/:spaceId/publish", async (c) => {
 		const { p, space } = await spaceFor(c, "write");
 		const b = await jsonBody<{ conversationId?: number; path: string; name?: string; fileId?: string; changeNote?: string }>(c);
-		const f = sb.readFile(space, b.conversationId, b.path);
+		const f = sb.readFile(space, b.conversationId, b.path, p);
 		const name = b.name ?? f.name;
 		const ref = await (ctx.services.get("files") as unknown as Files).putVersion(p, { fileId: b.fileId, name, mime: effectiveMime(undefined, name), bytes: f.bytes, provenance: { createdBy: p.userId, spaceId: space.id, conversationId: b.conversationId, changeNote: b.changeNote ?? `从沙箱 ${sb.shown(space, sb.relPath(space, b.path))} 发布`, origin: "upload", tool: "sandbox_publish" } as any });
 		return c.json({ version: ref });

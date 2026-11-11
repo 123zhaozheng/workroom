@@ -13,7 +13,7 @@ import { UnsupportedError } from "../src/tools/sandbox/provider.ts";
 import type { DriverRunSpec, SandboxMount } from "../src/tools/sandbox/driver.ts";
 import { FAKE_CAPS, FakeRemoteProvider } from "./helpers/fake-remote-provider.ts";
 
-function setup(opts: { lifecycle?: { createTimeoutSec: number; idleTimeoutSec: number; lifetimeSec: number }; provider?: FakeRemoteProvider; db?: AppDb; image?: string; resources?: { cpus?: number; memoryGb?: number; diskGb?: number } } = {}) {
+function setup(opts: { lifecycle?: { createTimeoutSec: number; idlePauseSec: number; pausedRetentionSec: number; destroyAfterSec: number }; provider?: FakeRemoteProvider; db?: AppDb; image?: string; resources?: { cpus?: number; memoryGb?: number; diskGb?: number } } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "wr-remote-"));
 	const db = opts.db ?? new AppDb(":memory:");
 	if (!opts.db) db.migrate("sandbox-test", SANDBOX_MIGRATIONS);
@@ -324,13 +324,13 @@ test("create failure: clear 503, instance row in error, nothing runs, no fallbac
 	assert.equal((await t.driver.run(t.spec("echo ok"))).status, "ok", "recovers once the provider works again");
 });
 
-test("reapIdle destroys idle and expired instances, never a busy one; row state follows", async () => {
+test("reapIdle (provider WITHOUT pause = recreate mode): idle → paused (sandbox destroyed, files stay on the host), unused → destroyed; never a busy one", async () => {
 	let now = Date.now();
 	const provider = new FakeRemoteProvider();
 	const db = new AppDb(":memory:");
 	db.migrate("sandbox-test", SANDBOX_MIGRATIONS);
-	const driver = new RemoteDriver({ db, provider, orgId: "org1", lifecycle: { createTimeoutSec: 30, idleTimeoutSec: 60, lifetimeSec: 3600 }, now: () => now });
-	const t = setup({ provider, db, lifecycle: { createTimeoutSec: 30, idleTimeoutSec: 60, lifetimeSec: 3600 } });
+	const driver = new RemoteDriver({ db, provider, orgId: "org1", lifecycle: { createTimeoutSec: 30, idlePauseSec: 60, pausedRetentionSec: 600, destroyAfterSec: 3600 }, now: () => now });
+	const t = setup({ provider, db, lifecycle: { createTimeoutSec: 30, idlePauseSec: 60, pausedRetentionSec: 600, destroyAfterSec: 3600 } });
 	await driver.run(t.spec("echo x"));
 	assert.equal(await driver.reapIdle(now + 30_000), 0);
 	const busy = driver.run(t.spec("sleep 120"));
@@ -338,8 +338,12 @@ test("reapIdle destroys idle and expired instances, never a busy one; row state 
 	assert.equal(await driver.reapIdle(now + 10 * 3600_000), 0, "a run is in progress");
 	await busy;
 	assert.equal(await driver.reapIdle(now + 120_000 + 1_000_000), 1);
+	assert.equal(instancesFor(db, "org1")[0]!.state, "paused");
+	assert.equal(instancesFor(db, "org1")[0]!.resumeMode, "recreate");
+	assert.equal(provider.destroyedIds.length, 1, "no pause support: the idle sandbox is destroyed");
+	assert.equal(await driver.reapIdle(now + 2 * 3600_000), 1, "unused for destroyAfter → the bookkeeping row is closed");
 	assert.equal(instancesFor(db, "org1")[0]!.state, "destroyed");
-	assert.equal(provider.destroyedIds.length, 1);
+	assert.equal(provider.destroyedIds.length, 1, "nothing left to destroy remotely");
 	now += 1;
 });
 
@@ -387,7 +391,7 @@ test("RemoteDrivers: local choice → null; provider choice → RemoteDriver; un
 		effectiveFor: () => eff,
 		explain: () => why,
 		connection: async () => ({ provider: "opensandbox" as const, endpoint: "http://x", apiKey: key }),
-		lifecycle: () => ({ createTimeoutSec: 10, idleTimeoutSec: 60, lifetimeSec: 600 }),
+		lifecycle: () => ({ createTimeoutSec: 10, idlePauseSec: 60, pausedRetentionSec: 600, destroyAfterSec: 3600 }),
 		factory: async () => (built++, provider),
 	};
 	const rd = new RemoteDrivers({ db } as any, { configs: () => cfg });

@@ -9,7 +9,7 @@
 // such a service supports every SDK feature.
 import { UnsupportedError } from "../provider.ts";
 import type {
-	CreateOptions, ExecOptions, ExecResult, ProviderCapabilities, ProviderConnection, ProviderHealth, RemoteEntry,
+	CreateOptions, ExecOptions, ExecResult, PauseOptions, ProviderCapabilities, ProviderConnection, ProviderHealth, RemoteEntry,
 	RemoteProvider, RemoteSandboxInfo, RemoteSession,
 } from "../provider.ts";
 
@@ -56,6 +56,8 @@ export interface E2bModule {
 	Sandbox: {
 		create(opts: Record<string, unknown>): Promise<E2bSandboxInstance>;
 		connect(id: string, opts: Record<string, unknown>): Promise<E2bSandboxInstance>;
+		/** Static: pause by id. Resolves true when it got paused, false when it was already paused (SDK 2.63.0). */
+		pause(id: string, opts: Record<string, unknown>): Promise<boolean>;
 		list(opts: Record<string, unknown>): E2bPaginator;
 		kill(id: string, opts: Record<string, unknown>): Promise<boolean>;
 	};
@@ -81,7 +83,8 @@ export const E2B_CAPABILITIES: ProviderCapabilities = {
 	pty: "unsupported",
 	preview: "unsupported",
 	snapshot: "unsupported",
-	pauseResume: "unsupported",
+	// Round 11: Sandbox.pause(id) / Sandbox.connect(id) (resumes a paused sandbox) / lifecycle.onTimeout "pause" exist in SDK 2.63.0 typings; never run against E2B (no key).
+	pauseResume: "unverified",
 	skills: "upload_readonly",
 	isolation: "Firecracker microVM（E2B 官方云；自建/兼容服务的隔离由其实现决定，未验证）",
 	location: "configurable",
@@ -198,7 +201,10 @@ class E2bProvider implements RemoteProvider {
 		const sdk = await this.#sdkOnce();
 		const opts = this.#connOpts({
 			metadata: { ...o.metadata },
+			// Round 11: o.lifetimeMs is slightly above the idle-pause time and Workroom extends it on every use (keepAlive). If Workroom dies, the vendor
+			// itself PAUSES the sandbox at the timeout instead of killing it. autoResume stays explicitly off: a sandbox wakes only when Workroom resumes it.
 			timeoutMs: o.lifetimeMs,
+			...(o.lifecycle ? { lifecycle: { onTimeout: "pause", autoResume: false } } : {}),
 			requestTimeoutMs: o.createTimeoutMs,
 			// Round 9: no allowInternetAccess option at all (neither false nor true) — the SDK/vendor default applies.
 			...(o.template ? { template: o.template } : this.#conn.template ? { template: this.#conn.template } : {}),
@@ -222,6 +228,21 @@ class E2bProvider implements RemoteProvider {
 			if (isNotFound(e)) return null;
 			throw this.#wrap(e);
 		}
+	}
+
+	/** Pause keeps the filesystem and (default mode "full") memory, so installed dependencies and running state survive. Paused E2B sandboxes carry no Workroom-side TTL. */
+	async pause(id: string, _o: PauseOptions): Promise<void> {
+		const sdk = await this.#sdkOnce();
+		try {
+			await sdk.Sandbox.pause(id, this.#connOpts()); // false = already paused: success
+		} catch (e) {
+			throw this.#wrap(e);
+		}
+	}
+
+	/** connect() on a paused sandbox resumes it (and only ever extends the timeout); a killed sandbox raises not-found → null. */
+	async resume(id: string, signal?: AbortSignal): Promise<RemoteSession | null> {
+		return this.connect(id, signal);
 	}
 
 	async list(metadata: Readonly<Record<string, string>>): Promise<RemoteSandboxInfo[]> {

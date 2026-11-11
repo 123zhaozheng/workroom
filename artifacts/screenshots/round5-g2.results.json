@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T12:51:48.486Z",
+  "at": "2026-11-11T15:25:59.381Z",
   "results": [
     {
       "name": "display text: the message bubble shows only what the person wrote",
@@ -214,7 +214,7 @@
     {
       "name": "reconcile: says what, where and that nothing is redone automatically",
       "ok": true,
-      "detail": "待核对：外部操作结果不确定 fixture write crm-sync for g2-1794401478789@example.com 目标 crm://customers 情况 执行被中断，不会自动重做。请到目标系统确认后选择： 已生效 未生效 技术详情"
+      "detail": "待核对：外部操作结果不确定 fixture write crm-sync for g2-1794410730060@example.com 目标 crm://customers 情况 执行被中断，不会自动重做。请到目标系统确认后选择： 已生效 未生效 技术详情"
     },
     {
       "name": "reconcile: only 已生效 / 未生效 are offered; the idempotency key is behind 技术详情",

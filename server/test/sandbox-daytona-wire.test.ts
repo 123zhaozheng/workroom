@@ -4,7 +4,7 @@
 //   - snapshot mode  → only `snapshot`
 //   - image mode     → `buildInfo.dockerfileContent` + explicit cpu/memory(GiB)/disk(GiB)
 //   - explicit sizes without an image → refused BEFORE any request (never silently dropped)
-//   - no network options ever; lifetime → ttlMinutes/autoStopInterval; delete → DELETE /api/sandbox/:id; errors visible and scrubbed.
+//   - no network options ever; lifetime → ttlMinutes/autoStopInterval; round 11: lifecycle hints → autoStop/autoArchive/autoDelete (minutes), pause/resume/archive → POST stop/start/archive; delete → DELETE /api/sandbox/:id; errors visible and scrubbed.
 // Scope (honest): this is the control plane only. Commands and files go through Daytona's toolbox (WebSocket log stream, multipart files)
 // and are covered by the SDK-double tests in sandbox-providers-unit.test.ts — a real end-to-end run still needs a Daytona key.
 import { describe, it, before, after } from "node:test";
@@ -28,6 +28,7 @@ let server: Server;
 let base = "";
 const reqs: Req[] = [];
 /** Per-test override: return [status, json] to answer POST /api/sandbox differently. */
+let failLifecycle = false;
 let onCreate: ((body: Record<string, unknown>) => [number, unknown]) | undefined;
 const sandboxes = new Map<string, { id: string; state: string; labels: Record<string, string> }>();
 let seq = 0;
@@ -50,6 +51,16 @@ before(async () => {
 			if (onCreate) { const [st, v] = onCreate(body); json(st, v); return; }
 			const s = { id: `sb-${++seq}`, state: "started", labels: (body.labels as Record<string, string>) ?? {} };
 			sandboxes.set(s.id, s);
+			json(200, dto(s));
+			return;
+		}
+		// Round 11: lifecycle transitions (POST /api/sandbox/:id/{stop,start,archive}); the fake applies them immediately.
+		const lc = /^\/api\/sandbox\/([^/]+)\/(stop|start|archive)$/.exec(path);
+		if (lc && req.method === "POST") {
+			const s = sandboxes.get(lc[1]!);
+			if (!s) { json(404, { statusCode: 404, message: `Sandbox with ID or name ${lc[1]} not found`, error: "Not Found" }); return; }
+			if (failLifecycle) { json(500, { statusCode: 500, message: `${lc[2]} failed (key ${KEY})`, error: "Internal Server Error" }); return; }
+			s.state = lc[2] === "stop" ? "stopped" : lc[2] === "start" ? "started" : "archived";
 			json(200, dto(s));
 			return;
 		}
@@ -162,6 +173,68 @@ describe("Daytona wire contract (real SDK 0.231.1 → local fake REST API)", { s
 		assert.deepEqual(reqs.map((r) => `${r.method} ${r.path}`), [`GET /api/sandbox/${s.id}`, `DELETE /api/sandbox/${s.id}`]);
 		assert.equal(await p.connect(s.id), null);
 		await p.destroy(s.id); // already gone → no throw
+	});
+
+	it("round 11 lifecycle hints: autoStop/autoArchive/autoDelete (minutes) from the policy, no ttlMinutes (a TTL would also destroy stopped/archived sandboxes)", async () => {
+		reqs.length = 0;
+		await provider().create(baseCreate({ lifecycle: { idlePauseSec: 300, pausedRetentionSec: 86_400, destroyAfterSec: 604_800 } }));
+		const c = creates()[0]!;
+		assert.equal(c.body.autoStopInterval, 5, "idle pause 300 s → 5 min");
+		assert.equal(c.body.autoArchiveInterval, 1440, "retention 24 h → 1440 min");
+		assert.equal(c.body.autoDeleteInterval, 10_075, "destroy-after 7 d minus the 5 idle minutes, in minutes");
+		assert.equal("ttlMinutes" in c.body, false);
+		// sub-minute values round up, minimum 1
+		reqs.length = 0;
+		await provider().create(baseCreate({ lifecycle: { idlePauseSec: 61, pausedRetentionSec: 300, destroyAfterSec: 3_600 } }));
+		const d = creates()[0]!;
+		assert.equal(d.body.autoStopInterval, 2);
+		assert.equal(d.body.autoArchiveInterval, 5);
+		assert.equal(d.body.autoDeleteInterval, 59);
+		// no hints (connection test): the short TTL + auto-stop apply
+		reqs.length = 0;
+		await provider().create(baseCreate());
+		assert.equal(creates()[0]!.body.ttlMinutes, 10);
+	});
+
+	it("round 11 pause = POST stop, resume = POST start, archive = POST archive (state read first); each is idempotent where the vendor state already matches", async () => {
+		const p = provider();
+		const s = await p.create(baseCreate());
+		reqs.length = 0;
+		await p.pause!(s.id, { retainMs: 86_400_000 });
+		assert.deepEqual(reqs.filter((r) => r.method === "POST").map((r) => `${r.method} ${r.path}`), [`POST /api/sandbox/${s.id}/stop`]);
+		assert.equal(sandboxes.get(s.id)!.state, "stopped");
+		reqs.length = 0;
+		await p.pause!(s.id, { retainMs: 1 }); // already stopped: no second stop
+		assert.equal(reqs.filter((r) => r.method === "POST").length, 0);
+		reqs.length = 0;
+		await p.archive!(s.id);
+		assert.deepEqual(reqs.filter((r) => r.method === "POST").map((r) => r.path), [`/api/sandbox/${s.id}/archive`]);
+		assert.equal(sandboxes.get(s.id)!.state, "archived");
+		reqs.length = 0;
+		const back = await p.resume!(s.id);
+		assert.equal(back!.id, s.id);
+		assert.deepEqual(reqs.filter((r) => r.method === "POST").map((r) => r.path), [`/api/sandbox/${s.id}/start`]);
+		assert.equal(sandboxes.get(s.id)!.state, "started");
+		reqs.length = 0;
+		await p.resume!(s.id); // already started: no second start
+		assert.equal(reqs.filter((r) => r.method === "POST").length, 0);
+	});
+
+	it("round 11: resume of a deleted sandbox is null (caller recreates); vendor failures stay visible and scrubbed", async () => {
+		const p = provider();
+		assert.equal(await p.resume!("sb-does-not-exist"), null);
+		const s = await p.create(baseCreate());
+		failLifecycle = true;
+		try {
+			await assert.rejects(p.pause!(s.id, { retainMs: 1 }), (e: unknown) => {
+				const msg = (e as Error).message;
+				assert.match(msg, /stop failed/);
+				assert.equal(msg.includes(KEY), false);
+				return true;
+			});
+		} finally {
+			failLifecycle = false;
+		}
 	});
 
 	it("close() disposes the SDK client (its event WebSocket would otherwise keep reconnecting); a later call builds a new client", async () => {

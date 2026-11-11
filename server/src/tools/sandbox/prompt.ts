@@ -17,6 +17,8 @@ export interface SandboxPromptInfo {
 	/** False when the sandbox cannot run commands right now (disabled / unconfigured provider, no local driver). */
 	readonly usable: boolean;
 	readonly reason?: string;
+	/** Round 11 (R5): persistent folders that exist for this actor in this conversation ("project" only when the conversation belongs to a project). */
+	readonly stores?: readonly ("memories" | "project")[];
 }
 
 export function renderSandboxSection(i: SandboxPromptInfo): string {
@@ -31,6 +33,9 @@ export function renderSandboxSection(i: SandboxPromptInfo): string {
 		`- 文件工具（sandbox_write_file、sandbox_read_file、sandbox_import、sandbox_publish、skill_manage 的 dir）的路径写相对路径；绝对路径只接受以 ${i.workDir} 开头的${i.workDir === LOCAL_WORKDIR ? "" : "（或兼容旧写法的 /work/…）"}。`,
 	];
 	if (i.workDir !== LOCAL_WORKDIR) lines.push(`- 不要假设 /work 存在：这个沙箱里没有它，请使用 ${i.workDir} 或相对路径。`);
+	if (i.kind === "remote") lines.push("- 沙箱空闲时会被暂停或回收，会话文件会保留；恢复后之前装的依赖或后台进程可能需要重装、重启。");
+	if (i.stores?.includes("memories")) lines.push("- memories/ 会永久保存，并在这位用户的所有会话里都能看到：值得长期记住的笔记和资料写在这里；其余文件只属于当前会话。");
+	if (i.stores?.includes("project")) lines.push("- project/ 是本项目所有会话共享的目录，也会永久保存。");
 	lines.push(`- 技能目录（只读）：${i.skillsRoot}/<技能名>/，加载技能后才会出现；不要修改它，也不要把文件写到那里。`);
 	return lines.join("\n");
 }

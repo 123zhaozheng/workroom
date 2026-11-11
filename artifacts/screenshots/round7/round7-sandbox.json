@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T12:53:37.210Z",
+  "at": "2026-11-11T15:27:50.910Z",
   "results": [
     {
       "name": "[intercepted] admin sees the 沙箱 tab and the 当前使用的沙箱渠道 section (round 10)",
@@ -42,7 +42,7 @@
       "detail": ""
     },
     {
-      "name": "[intercepted] SDK line (inside 能力与技术详情), lifecycle units (秒/分钟/小时)",
+      "name": "[intercepted] SDK line (inside 能力与技术详情), lifecycle units (秒/分钟/小时/天)",
       "ok": true,
       "detail": ""
     },
@@ -164,7 +164,7 @@
     {
       "name": "[real] unreachable endpoint → plain failure; channel still OpenSandbox; unhealthy banner (no fallback)",
       "ok": true,
-      "detail": "连通性 完整测试 失败 连通性 · 11/11 12:53 · 用时 81 毫秒 OpenSandbox 不可用：fetch failed"
+      "detail": "连通性 完整测试 失败 连通性 · 11/11 15:27 · 用时 78 毫秒 OpenSandbox 不可用：fetch failed"
     },
     {
       "name": "[real] key still absent from every response after tests",
@@ -200,6 +200,11 @@
       "name": "[real] per-project sandbox choice is gone: endpoints 404 and the project page has no picker",
       "ok": true,
       "detail": "404/404"
+    },
+    {
+      "name": "[live] OpenSandbox full roundtrip passes (create, exec, file, destroy)",
+      "ok": true,
+      "detail": "put=200 成功 完整测试 · 11/11 15:27 · 用时 2.1 秒 · 版本 API schema 0.1.0 往返测试通过：创建、执行、文件读写、销毁均正常 通过 create 591 毫秒 通过 exec 1.0 秒 通过 file 24 毫秒 通过 destroy 453 毫秒"
     }
   ]
 }

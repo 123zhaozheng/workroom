@@ -103,7 +103,7 @@ export function dirSize(p: string): { bytes: number; files: number } {
 	return { bytes, files };
 }
 
-export function listEntries(workdir: string, retentionHours: number, cap = LIST_CAP): { entries: WorkspaceEntryDTO[]; truncated: boolean } {
+export function listEntries(workdir: string, retentionHours: number, cap = LIST_CAP, opts: { skipTop?: (name: string) => boolean; prefix?: string; noExpiry?: boolean } = {}): { entries: WorkspaceEntryDTO[]; truncated: boolean } {
 	const out: WorkspaceEntryDTO[] = [];
 	let truncated = false;
 	const walk = (d: string) => {
@@ -119,6 +119,7 @@ export function listEntries(workdir: string, retentionHours: number, cap = LIST_
 				truncated = true;
 				return;
 			}
+			if (d === workdir && opts.skipTop?.(e.name)) continue; // names a persistent store shadows (memories/, project/)
 			const f = join(d, e.name);
 			let st;
 			try {
@@ -127,12 +128,13 @@ export function listEntries(workdir: string, retentionHours: number, cap = LIST_
 				continue;
 			}
 			const dir = e.isDirectory();
+			const rel = f.slice(workdir.length + 1).split(sep).join("/");
 			out.push({
-				path: f.slice(workdir.length + 1).split(sep).join("/"),
+				path: opts.prefix ? `${opts.prefix}/${rel}` : rel,
 				kind: dir ? "directory" : "file",
 				size: dir ? 0 : st.size,
 				mtime: st.mtime.toISOString(),
-				expiresAt: new Date(st.mtimeMs + retentionHours * 3600_000).toISOString(),
+				...(opts.noExpiry ? {} : { expiresAt: new Date(st.mtimeMs + retentionHours * 3600_000).toISOString() }),
 				...(e.isSymbolicLink() ? { symlink: true } : {}),
 			});
 			if (dir) walk(f);

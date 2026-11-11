@@ -93,7 +93,8 @@ export interface WorkspaceEntryDTO {
 	readonly kind: "file" | "directory";
 	readonly size: number;
 	readonly mtime: string;
-	readonly expiresAt: string;
+	/** Absent for the persistent folders (memories/, project/): they do not expire. */
+	readonly expiresAt?: string;
 	readonly symlink?: boolean;
 }
 export interface WorkspaceUsageDTO {
@@ -122,7 +123,8 @@ export interface WorkspacePreviewDTO {
 	readonly size: number;
 	readonly mime: string;
 	readonly mtime: string;
-	readonly expiresAt: string;
+	/** Absent for files in the persistent folders (memories/, project/). */
+	readonly expiresAt?: string;
 	/** text: `text` holds up to 256 KB; image: render from the inline URL; binary: download only. */
 	readonly kind: "text" | "image" | "binary";
 	readonly text?: string;
@@ -197,8 +199,12 @@ export interface SandboxProviderConfigDTO {
 	/** Vendor-cloud providers: admin acknowledged that workspace files and commands leave the organisation. Required to enable. */
 	readonly egressAcknowledged: boolean;
 	readonly createTimeoutSec: number;
-	readonly idleTimeoutSec: number;
-	readonly lifetimeSec: number;
+	/** Round 11: idle seconds before the sandbox is paused (default 300). Replaces idleTimeoutSec. */
+	readonly idlePauseSec: number;
+	/** Round 11: fast-resume window in seconds, counted from the pause (default 86400); afterwards archived (Daytona) or left paused. */
+	readonly pausedRetentionSec: number;
+	/** Round 11: unused for this many seconds → destroyed for good (default 604800). Replaces lifetimeSec. */
+	readonly destroyAfterSec: number;
 	readonly capabilities: SandboxProviderCapabilitiesDTO;
 	/** Installed SDK package + exact version (or "not installed"). */
 	readonly sdk: { readonly name: string; readonly version: string | null };
@@ -235,8 +241,12 @@ export interface SandboxProviderUpdate {
 	readonly allowPrivateNetwork?: boolean;
 	readonly egressAcknowledged?: boolean;
 	readonly createTimeoutSec?: number;
-	readonly idleTimeoutSec?: number;
-	readonly lifetimeSec?: number;
+	/** 60..86400 s. */
+	readonly idlePauseSec?: number;
+	/** 300..2592000 s. */
+	readonly pausedRetentionSec?: number;
+	/** 3600..7776000 s; must be >= idlePauseSec + pausedRetentionSec. */
+	readonly destroyAfterSec?: number;
 }
 
 /** Which sandbox channel the organisation uses (round 10: exactly ONE at a time, enforced on the server). */
@@ -263,7 +273,10 @@ export interface SandboxInstanceDTO {
 	readonly spaceId: string;
 	readonly workspaceKey: string;
 	readonly remoteId: string | null;
-	readonly state: "creating" | "ready" | "stopping" | "destroyed" | "lost" | "error";
+	/** Round 11 added pausing / paused / resuming / archived. */
+	readonly state: "creating" | "ready" | "pausing" | "paused" | "resuming" | "archived" | "stopping" | "destroyed" | "lost" | "error";
+	/** Round 11: how a paused instance comes back: "provider" = the vendor kept it (fast), "recreate" = the sandbox was destroyed and is rebuilt from the host workspace. */
+	readonly resumeMode?: "provider" | "recreate";
 	readonly createdAt: string;
 	readonly lastUsedAt: string;
 	readonly expiresAt?: string;
@@ -292,9 +305,18 @@ export interface ConversationEnvironmentDTO {
 	 * ready     = exists and was verified on last use
 	 * failed    = last prepare failed (see error); a retry is possible
 	 * lost      = it expired or was removed; the next command recreates it and restores saved files
+	 * paused    = (round 11) idle for a while and paused/stopped to save cost; the next command resumes it (see `resumeMode` for how fast)
+	 * resuming  = (round 11) being brought back from paused/archived right now ("preparing" stays = a first-time/recreate provisioning)
 	 * For kind "local" the state is always "ready" (or "failed" when the driver is unavailable).
 	 */
-	readonly state: "none" | "preparing" | "ready" | "failed" | "lost";
+	readonly state: "none" | "preparing" | "ready" | "failed" | "lost" | "paused" | "resuming";
+	/**
+	 * Round 11, only with state "paused" / "resuming": how the workspace comes back.
+	 * "fast"     = the provider kept the paused sandbox (files and installed dependencies survive; resumes in seconds)
+	 * "archived" = the provider moved it to cold storage (files and dependencies survive; slower)
+	 * "recreate" = the provider cannot pause: the sandbox was destroyed, a new one is created from the host workspace (files survive, installed dependencies do not)
+	 */
+	readonly resumeMode?: "fast" | "archived" | "recreate";
 	readonly error?: string;
 	readonly updatedAt?: string;
 	/** True when an explicit prepare/retry is possible (remote, write access). */
@@ -303,6 +325,8 @@ export interface ConversationEnvironmentDTO {
 	readonly workDir?: string;
 	/** Round 10: where read-only skills are mounted inside the sandbox ("/skills" for local drivers, next to the working directory for a remote provider). */
 	readonly skillsDir?: string;
+	/** Round 11 (R4): local (browser) execution of this conversation — organisation switch, whether a tab of this user is connected, the conversation's preference. */
+	readonly local?: import("./localexec.ts").LocalExecStatusDTO;
 }
 
 /** Explicit sandbox size an admin sets per provider (round 10). */

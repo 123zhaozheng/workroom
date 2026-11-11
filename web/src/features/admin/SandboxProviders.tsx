@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge, EmptyState, Loadable, Spinner } from "@/components/ui/misc";
 import { Fold, Row, SectionHead, Table, useAct } from "./common";
+import { PrewarmSettings } from "./PrewarmSettings";
 
 export const PROVIDER_NAME: Record<"local" | SandboxProviderId, string> = { local: "平台内置沙箱", opensandbox: "OpenSandbox", e2b: "E2B", daytona: "Daytona" };
 
@@ -40,7 +41,7 @@ const LOCATION: Record<SandboxProviderConfigDTO["capabilities"]["location"], { t
 	vendor_cloud: { text: "厂商云：数据会离开组织", tone: "warning" },
 	configurable: { text: "自托管或厂商云，取决于地址", tone: "info" },
 };
-const STATE: Record<SandboxInstanceDTO["state"], string> = { creating: "创建中", ready: "可用", stopping: "停止中", destroyed: "已销毁", lost: "已丢失", error: "出错" };
+const STATE: Record<SandboxInstanceDTO["state"], string> = { creating: "创建中", ready: "可用", pausing: "暂停中", paused: "已暂停", resuming: "恢复中", archived: "已归档", stopping: "停止中", destroyed: "已销毁", lost: "已丢失", error: "出错" };
 
 const fmtTime = (iso?: string) => (iso ? new Date(iso).toLocaleString("zh-CN", { hour12: false, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)} 毫秒` : `${(ms / 1000).toFixed(1)} 秒`);
@@ -58,6 +59,7 @@ export function SandboxProviders() {
 						</p>
 					) : null}
 					<Channel data={res.data} reload={res.reload} />
+					{res.data.policy.orgDefault !== "local" ? <PrewarmSettings /> : null}
 					<section aria-label="渠道设置" className="space-y-3">
 						<SectionHead title="渠道设置" />
 						{res.data.providers.map((p) => (
@@ -150,8 +152,9 @@ interface Draft {
 	allowPrivateNetwork: boolean;
 	egressAcknowledged: boolean;
 	createTimeoutSec: string;
-	idleMin: string;
-	lifetimeHours: string;
+	idlePauseMin: string;
+	retentionHours: string;
+	destroyDays: string;
 	apiKey: string;
 	clearKey: boolean;
 }
@@ -168,8 +171,9 @@ const toDraft = (p: SandboxProviderConfigDTO): Draft => ({
 	allowPrivateNetwork: p.allowPrivateNetwork,
 	egressAcknowledged: p.egressAcknowledged,
 	createTimeoutSec: String(p.createTimeoutSec),
-	idleMin: String(+(p.idleTimeoutSec / 60).toFixed(2)),
-	lifetimeHours: String(+(p.lifetimeSec / 3600).toFixed(2)),
+	idlePauseMin: String(+(p.idlePauseSec / 60).toFixed(2)),
+	retentionHours: String(+(p.pausedRetentionSec / 3600).toFixed(2)),
+	destroyDays: String(+(p.destroyAfterSec / 86400).toFixed(2)),
 	apiKey: "",
 	clearKey: false,
 });
@@ -224,8 +228,9 @@ function ProviderCard({ p, secretStorage, reload }: { p: SandboxProviderConfigDT
 			allowPrivateNetwork: d.allowPrivateNetwork,
 			egressAcknowledged: d.egressAcknowledged,
 			createTimeoutSec: Math.round(Number(d.createTimeoutSec)),
-			idleTimeoutSec: Math.round(Number(d.idleMin) * 60),
-			lifetimeSec: Math.round(Number(d.lifetimeHours) * 3600),
+			idlePauseSec: Math.round(Number(d.idlePauseMin) * 60),
+			pausedRetentionSec: Math.round(Number(d.retentionHours) * 3600),
+			destroyAfterSec: Math.round(Number(d.destroyDays) * 86400),
 			...(d.clearKey ? { apiKey: null } : d.apiKey ? { apiKey: d.apiKey } : {}),
 		};
 		void run(() => put(`/sandbox/providers/${p.provider}`, body as unknown as Record<string, unknown>));
@@ -343,18 +348,22 @@ function ProviderCard({ p, secretStorage, reload }: { p: SandboxProviderConfigDT
 					</label>
 				) : null}
 			</div>
-			<div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+			<div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
 				<div>
 					<Label htmlFor={id("ct")}>创建超时（秒）</Label>
 					<Input id={id("ct")} data-testid={id("create-timeout")} type="number" min={1} value={d.createTimeoutSec} onChange={(e) => set({ createTimeoutSec: e.target.value })} />
 				</div>
 				<div>
-					<Label htmlFor={id("idle")}>空闲回收（分钟）</Label>
-					<Input id={id("idle")} data-testid={id("idle-timeout")} type="number" min={1} value={d.idleMin} onChange={(e) => set({ idleMin: e.target.value })} />
+					<Label htmlFor={id("idle")}>空闲暂停（分钟）</Label>
+					<Input id={id("idle")} data-testid={id("idle-pause")} type="number" min={1} step="any" value={d.idlePauseMin} onChange={(e) => set({ idlePauseMin: e.target.value })} />
 				</div>
 				<div>
-					<Label htmlFor={id("life")}>最长存活（小时）</Label>
-					<Input id={id("life")} data-testid={id("lifetime")} type="number" min={0.1} step="any" value={d.lifetimeHours} onChange={(e) => set({ lifetimeHours: e.target.value })} />
+					<Label htmlFor={id("ret")}>快速恢复（小时）</Label>
+					<Input id={id("ret")} data-testid={id("paused-retention")} type="number" min={0.1} step="any" value={d.retentionHours} onChange={(e) => set({ retentionHours: e.target.value })} />
+				</div>
+				<div>
+					<Label htmlFor={id("destroy")}>未使用销毁（天）</Label>
+					<Input id={id("destroy")} data-testid={id("destroy-after")} type="number" min={0.1} step="any" value={d.destroyDays} onChange={(e) => set({ destroyDays: e.target.value })} />
 				</div>
 			</div>
 			{missingAck ? <p data-testid={id("need-egress")} role="alert" className="mt-3 text-sm text-danger">启用前需先确认数据外发。</p> : null}

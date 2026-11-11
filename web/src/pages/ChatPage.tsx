@@ -28,6 +28,7 @@ import { normalizeProject } from "@/features/projects/model";
 import { usePrefs } from "@/lib/prefs";
 import { MessageQueue, type QueueNotice } from "@/features/composer/MessageQueue";
 import { EnvironmentButton } from "@/features/environment/EnvironmentButton";
+import { LocalExecHost } from "@/features/localexec/LocalExecHost"; // round 11 (R4): runs code_run jobs in this tab
 import { EnvironmentStatus } from "@/features/environment/EnvironmentStatus";
 import { failedSandboxTexts } from "@/features/chat/Steps";
 import { useConversationDetail, useConversationStream, useEarlierEntries } from "@/features/chat/useConversation";
@@ -307,6 +308,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 
 	return (
 		<div ref={pageRef} className="relative isolate flex min-h-0 flex-1 flex-col">
+			<LocalExecHost spaceId={spaceId} conversationId={id} />
 			<DotMatrix column={panelOpen ? 720 : 760} />
 			<TopBar
 				right={

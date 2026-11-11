@@ -365,7 +365,13 @@ try {
 	const st = await s.locator('[data-testid="stats-page"]').innerText();
 	check("stats: demo banner kept and 模拟 labels kept", (await s.locator('[data-testid="demo-banner"]').innerText()).includes("演示数据") && st.includes("模拟"));
 	check("stats: all charts still present (calendar, punch card, waffle, area, donut, tools, latency, knowledge, table)", (await Promise.all(["calendar", "punchcard", "waffle", "area", "donut", "tools", "latency", "knowledge", "table"].map((c) => s.locator(`[data-testid="chart-${c}"]`).count()))).every((n) => n === 1));
-	check("stats: no permanent subtitles or explanations; no docs paths or jargon", !st.includes("不受上方时间范围限制") && !/docs\//.test(st) && !JARGON.test(st), st.replace(/\s+/g, " ").slice(0, 100));
+	// round 11 (R6): the organisation stats page gained its own 沙箱 card (a product word, its own check lives in round11-sandbox-stats.mjs): everything else must stay free of jargon
+	const stRest = await s.locator('[data-testid="stats-page"]').evaluate((el) => {
+		const c = el.cloneNode(true);
+		c.querySelectorAll('[data-testid="sandbox-stats"]').forEach((n) => n.remove());
+		return c.textContent ?? "";
+	});
+	check("stats: no permanent subtitles or explanations; no docs paths or jargon (outside the 沙箱 card)", !st.includes("不受上方时间范围限制") && !/docs\//.test(st) && !JARGON.test(stRest), stRest.replace(/\s+/g, " ").slice(0, 100));
 	check("stats [round 11]: no ? explanation popovers on the cards at all (explanations are removed, not folded)", (await s.locator('[aria-label$="：说明"], [data-testid="stats-about"]').count()) === 0);
 	const hs = await s.locator("h2").evaluateAll((els) => [...new Set(els.map((e) => getComputedStyle(e).fontSize + "/" + getComputedStyle(e).fontWeight))]);
 	check("stats: all card headings share one size and weight", hs.length === 1, hs.join(","));

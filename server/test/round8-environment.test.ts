@@ -220,19 +220,25 @@ test("FAKE · lost: expiry and idle reaping show 'lost'; the next prepare recrea
 		assert.equal((await h.get(h.owner.token)).state, "lost");
 		assert.equal((await h.prepare(h.owner.token)).state, "ready");
 		assert.equal(h.fake.created, 2);
-		// (b) idle reaping destroys it
+		// (b) idle for a day: paused by the idle policy (this fake cannot pause, so the sandbox is recycled: "recreate" mode); unused for the destroy window: gone
 		const driver = h.sb.remote.drivers()[0]!;
 		assert.equal(await driver.reapIdle(Date.now() + 24 * 3600_000), 1);
+		const paused = await h.get(h.owner.token);
+		assert.equal(paused.state, "paused");
+		assert.equal(paused.resumeMode, "recreate");
+		assert.equal((await h.prepare(h.owner.token)).state, "ready", "a paused workspace comes back on prepare");
+		assert.equal(h.fake.created, 3);
+		assert.equal(await driver.reapIdle(Date.now() + 30 * 24 * 3600_000), 1, "unused for the destroy window → destroyed");
 		assert.equal((await h.get(h.owner.token)).state, "lost");
 		assert.equal((await h.prepare(h.owner.token)).state, "ready");
-		assert.equal(h.fake.created, 3);
+		assert.equal(h.fake.created, 4);
 		// (c) deleted behind our back: GET must not probe (stays "ready"), the next use detects it, recreates and says so
 		const gone = [...h.fake.boxes.values()].at(-1)!;
 		h.fake.kill(gone.id);
 		assert.equal((await h.get(h.owner.token)).state, "ready", "honest limit: not verified until used");
 		const r = await h.sb.run({ principal: h.principal, space: h.space, conversationId: 7, language: "shell", code: "echo hi" });
 		assert.match(r.stderr, /已重新创建/);
-		assert.equal(h.fake.created, 4);
+		assert.equal(h.fake.created, 5);
 		assert.equal((await h.get(h.owner.token)).state, "ready");
 	} finally {
 		await h.t.dispose();

@@ -178,10 +178,17 @@ test("validation: ranges, template charset, required fields, egress acknowledgem
 	const h = await harness();
 	try {
 		const put = (prov: string, body: unknown) => h.call(h.owner, "PUT", `/api/sandbox/providers/${prov}`, body);
-		for (const bad of [{ createTimeoutSec: 9 }, { createTimeoutSec: 601 }, { idleTimeoutSec: 59 }, { idleTimeoutSec: 86401 }, { lifetimeSec: 299 }, { lifetimeSec: 604801 }, { createTimeoutSec: 30.5 }, { createTimeoutSec: "30" }, { idleTimeoutSec: 7200, lifetimeSec: 3600 }, { template: "bad template!" }, { template: "x".repeat(200) }, { domain: "https://x.com/y" }, { apiKey: "short" }, { apiKey: "has space inside key" }, { enabled: "yes" }]) assert.equal((await put("e2b", bad)).status, 400, JSON.stringify(bad));
-		assert.equal((await put("e2b", { createTimeoutSec: 10, idleTimeoutSec: 60, lifetimeSec: 300 })).status, 200);
-		assert.equal((await put("e2b", { createTimeoutSec: 600, idleTimeoutSec: 86400, lifetimeSec: 604800 })).status, 200);
-		assert.deepEqual(h.svc.lifecycle(h.owner.me.orgId, "e2b"), { createTimeoutSec: 600, idleTimeoutSec: 86400, lifetimeSec: 604800 });
+		for (const bad of [{ createTimeoutSec: 9 }, { createTimeoutSec: 601 }, { idlePauseSec: 59 }, { idlePauseSec: 86401 }, { pausedRetentionSec: 299 }, { pausedRetentionSec: 30 * 86400 + 1 }, { destroyAfterSec: 3599 }, { destroyAfterSec: 90 * 86400 + 1 }, { createTimeoutSec: 30.5 }, { createTimeoutSec: "30" }, { idlePauseSec: "300" }, { idlePauseSec: 1800, pausedRetentionSec: 7200, destroyAfterSec: 3600 }, { idleTimeoutSec: 600 }, { lifetimeSec: 3600 }, { template: "bad template!" }, { template: "x".repeat(200) }, { domain: "https://x.com/y" }, { apiKey: "short" }, { apiKey: "has space inside key" }, { enabled: "yes" }]) assert.equal((await put("e2b", bad)).status, 400, JSON.stringify(bad));
+		// clear Chinese messages
+		assert.match((await put("e2b", { idlePauseSec: 59 })).body.error.message, /空闲暂停时间.*60.*86400/);
+		assert.match((await put("e2b", { idleTimeoutSec: 600 })).body.error.message, /已废弃.*idlePauseSec/);
+		assert.match((await put("e2b", { idlePauseSec: 1800, pausedRetentionSec: 7200, destroyAfterSec: 3600 })).body.error.message, /不能早于/);
+		assert.equal((await put("e2b", { createTimeoutSec: 10, idlePauseSec: 60, pausedRetentionSec: 300, destroyAfterSec: 3600 })).status, 200);
+		assert.equal((await put("e2b", { createTimeoutSec: 600, idlePauseSec: 86400, pausedRetentionSec: 30 * 86400, destroyAfterSec: 90 * 86400 })).status, 200);
+		assert.deepEqual(h.svc.lifecycle(h.owner.me.orgId, "e2b"), { createTimeoutSec: 600, idlePauseSec: 86400, pausedRetentionSec: 30 * 86400, destroyAfterSec: 90 * 86400 });
+		const dto = (await put("e2b", { idlePauseSec: 300, pausedRetentionSec: 86400, destroyAfterSec: 604800 })).body.provider;
+		assert.deepEqual([dto.idlePauseSec, dto.pausedRetentionSec, dto.destroyAfterSec], [300, 86400, 604800]);
+		assert.equal("idleTimeoutSec" in dto || "lifetimeSec" in dto, false, "old fields are not exposed any more");
 		// Enabling: key required, egress ack required for vendor cloud, endpoint required for opensandbox.
 		assert.equal((await put("daytona", { enabled: true })).body.error.code, "missing_field");
 		assert.equal((await put("daytona", { apiKey: KEY, enabled: true })).body.error.code, "egress_ack_required");

@@ -1,9 +1,9 @@
-// A slim inline line inside the conversation: "正在准备工作环境…" while the remote sandbox is being created / reconnected / restored, and, when
-// preparing failed and nothing else in the conversation already says so, ONE compact failure line with 重试 (details one click away).
+// A slim inline line inside the conversation, only when preparing the sandbox failed while a turn waits for it and nothing else in the
+// conversation already says so: ONE compact failure line with 重试 (details one click away). Preparing itself shows nothing here (round 11).
 // A failed sandbox step in the latest answer already shows the same reason inline (`explainedBy`): then this line stays out of the way and the
 // environment button's red dot (with its 重试) is the only other mark. Renders nothing otherwise (ready, local, not remote, unknown).
 // It is NOT an overlay: place it in the message flow so a pending approval card is never covered. Nothing here blocks sending.
-import { Loader2, RotateCcw, TriangleAlert } from "lucide-react";
+import { RotateCcw, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useEnvironment } from "./useEnvironment";
 
@@ -21,14 +21,9 @@ export function EnvironmentStatus({ spaceId, conversationId, active = false, cla
 	const { env, prepare, busy, retryError, unavailable } = useEnvironment(conversationId === undefined ? undefined : spaceId, conversationId, active);
 	const [detail, setDetail] = useState(false);
 	if (!env || unavailable || env.kind !== "remote") return null;
-	if (env.state === "preparing" || busy)
-		return (
-			<p role="status" data-testid="env-status" data-state="preparing" className={`flex items-center gap-2 px-1 text-sm text-fg-muted ${className}`}>
-				<Loader2 aria-hidden className="size-4 shrink-0 wr-spin" />
-				正在准备工作环境…
-			</p>
-		);
-	if (env.state !== "failed") return null;
+	// Round 11 (R1): provisioning / resuming never shows a line — the button's dot is the only mark. A failure is shown here only while a turn
+	// is running (something is waiting for the sandbox); a failed background prewarm is just the red dot (重试 in the popover).
+	if (env.state !== "failed" || busy || !active) return null;
 	const tail = (env.error ?? "").slice(-18);
 	if (tail && explainedBy.some((t) => t.includes(tail))) return null;
 	const long = !!env.error && env.error.length > 60;

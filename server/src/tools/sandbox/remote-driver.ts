@@ -14,11 +14,13 @@ import type { AppContext, Space } from "../../core/contracts.ts";
 import type { AppDb } from "../../core/db.ts";
 import { HttpError, newId, nowIso } from "../../core/http.ts";
 import type { SandboxInstanceDTO } from "../../../../shared/sandbox.ts";
-import type { DriverCapabilities, DriverRunSpec, DriverServiceProcess, DriverServiceSpec, DriverStatus, IsolationNotes, ProcessRef, RunResult, SandboxDriver, SandboxMount } from "./driver.ts";
+import type { DriverCapabilities, DriverRunSpec, DriverServiceProcess, DriverServiceSpec, DriverStatus, IsolationNotes, ProcessRef, RunResult, SandboxDriver, SandboxMount, SandboxTrigger } from "./driver.ts";
+import { recordSandboxEvent, type SandboxEventKind, type SandboxEventTrigger } from "./lifecycle-events.ts";
 import { DEFAULT_LIFECYCLE, UnsupportedError, type ExplicitResources, type LifecyclePolicy, type ProviderId, type RemoteProvider, type RemoteSession } from "./provider.ts";
 import { capped, checkEnv, shQuote } from "./util.ts";
 import { providerConfigsFor } from "./provider-config.ts";
 import { isWithin, mapMountTarget, resolveWorkDir, skillsRootFor } from "./workdir.ts";
+import { fmtSize, isStoreTop, STORE_NAMES, storeLabel, type StoreMount, type StoreName } from "./stores.ts";
 import * as ws from "./workspace.ts";
 
 const MB = 1024 * 1024;
@@ -49,7 +51,7 @@ export function remoteNotes(label: string, caps?: { isolation: string; location:
 		isolates: [
 			`代码在远端沙箱（${label}）中执行，${where}；宿主机上不执行任何用户代码，也不会回退到宿主机执行`,
 			...(caps ? [`提供方的隔离方式：${caps.isolation}`] : []),
-			"每个空间的每个会话使用独立的远端沙箱（不同空间、不同组织不共享沙箱或文件）；沙箱按空闲/最长存活时间自动销毁",
+			"每个空间的每个会话使用独立的远端沙箱（不同空间、不同组织不共享沙箱或文件）；沙箱空闲后自动暂停（文件始终保存在宿主机工作区），长期不用才销毁",
 			`沙箱工作目录${workDir ? `（${workDir}）` : ""}是宿主机工作区的副本：运行前上传改动的文件，运行后下载改动（路径规范化、不跟随符号链接、单文件与总量限制、配额）`,
 			"技能等挂载以“上传 + sha256 校验”方式提供（不是绑定挂载），并设为只读",
 		],
@@ -70,7 +72,7 @@ interface TreeFile { rel: string; size: number; mtimeMs: number; exec: boolean }
 interface Tree { files: TreeFile[]; dirs: string[]; notes: string[] }
 
 /** Walk a directory without following symlinks. Symlinks and special files are skipped with a note; invalid names are skipped. */
-function walk(root: string, valid: (rel: string) => boolean, cap = MAX_SYNC_ENTRIES): Tree {
+function walk(root: string, valid: (rel: string) => boolean, cap = MAX_SYNC_ENTRIES, opts: { skipTop?: (name: string) => boolean } = {}): Tree {
 	const t: Tree = { files: [], dirs: [], notes: [] };
 	let count = 0;
 	const rec = (abs: string, rel: string) => {
@@ -82,6 +84,7 @@ function walk(root: string, valid: (rel: string) => boolean, cap = MAX_SYNC_ENTR
 		}
 		list.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 		for (const e of list) {
+			if (!rel && opts.skipTop?.(e.name)) continue; // round 11: reserved top-level names (memories/, project/) are not part of the conversation tree
 			const r = rel ? `${rel}/${e.name}` : e.name;
 			if (++count > cap) {
 				if (count === cap + 1) t.notes.push(`文件数量超过 ${cap}，其余文件未同步`);
@@ -129,7 +132,41 @@ export function treeHash(entries: readonly { rel: string; sha: string }[]): stri
 	return sha256(lines.join(""));
 }
 
-type Manifest = Record<string, string>; // "a/b.txt" → sha256; "a/dir/" → "dir"
+type Manifest = Record<string, string>; // "a/b.txt" → sha256; "a/dir/" → "dir"; "memories/x" → sha256 of a persistent-store file; "@store:memories" → who the folder was seeded for
+
+/** Round 11 (R5): one host directory ↔ one remote directory (the conversation workspace, or a persistent store shown inside it). */
+interface SyncTree {
+	/** "" (conversation workspace) or the store folder name below the working directory. */
+	readonly prefix: "" | StoreName;
+	readonly hostDir: string;
+	readonly readOnly: boolean;
+	readonly store?: StoreMount;
+}
+interface RemoteSlice {
+	files: Map<string, number>;
+	dirs: Set<string>;
+	opaque: Set<string>;
+}
+/** Manifest key marking whose content a store folder in this sandbox holds ("@store:memories"); ":" can never occur in a workspace path, so no file collides with it. */
+const STORE_MARK = "@store:";
+/** `k` (a full manifest key) as a key of the tree `prefix`, or null when it belongs to another tree. The conversation tree ("") owns everything outside memories/ and project/. */
+function keyInTree(k: string, prefix: string): string | null {
+	if (k.startsWith(STORE_MARK)) return null;
+	if (prefix === "") return isStoreTop(k.split("/")[0]!) ? null : k;
+	return k.startsWith(`${prefix}/`) && k.length > prefix.length + 1 ? k.slice(prefix.length + 1) : null;
+}
+function viewOf(m: Manifest, prefix: string): Manifest {
+	const out: Manifest = {};
+	for (const [k, v] of Object.entries(m)) {
+		const r = keyInTree(k, prefix);
+		if (r !== null) out[r] = v;
+	}
+	return out;
+}
+function mergeView(m: Manifest, prefix: string, view: Manifest): void {
+	for (const k of Object.keys(m)) if (keyInTree(k, prefix) !== null) delete m[k];
+	for (const [k, v] of Object.entries(view)) m[prefix ? `${prefix}/${k}` : k] = v;
+}
 
 function parseManifest(s: string | null | undefined): Manifest {
 	try {
@@ -159,8 +196,16 @@ interface InstanceRow {
 	network: number;
 	/** Round 10: working directory the manifest refers to (NULL = instances of older versions: "/work"). */
 	work_dir: string | null;
+	/** Round 11: time of the last state change (ISO). NULL on rows of older versions (then last_used_at applies). */
+	state_at: string | null;
+	/** Round 11: for state paused: "provider" = the vendor holds the paused sandbox, "recreate" = it was destroyed (the host workspace is the only copy). */
+	resume_mode: "provider" | "recreate" | null;
+	/** Round 11: when the sandbox last STARTED running (create or resume), for the running-time (cost) of pause/destroy events. */
+	running_since: string | null;
 }
-const LIVE = "('creating','ready','stopping')";
+const LIVE = "('creating','ready','pausing','paused','resuming','archived','stopping')";
+/** Safety margin on top of the idle-pause time for the provider-side timeout: reaper tick (60 s) + pause time. */
+const TTL_MARGIN_SEC = 120;
 
 /**
  * Round 8: what remote drivers are doing for a workspace RIGHT NOW (in process, nothing persisted), so the UI can say "preparing" truthfully.
@@ -170,14 +215,18 @@ const LIVE = "('creating','ready','stopping')";
 export const remoteActivity = {
 	preparing: new Map<string, number>(),
 	failures: new Map<string, { error: string; at: number }>(),
+	/** Round 11: keys whose current `preparing` phase is a RESUME of a paused/archived sandbox (the DTO says "resuming", not "preparing") → how it comes back. */
+	resuming: new Map<string, "fast" | "archived" | "recreate">(),
 	begin(key: string, now = Date.now()): void {
 		this.preparing.set(key, now);
 	},
 	end(key: string): void {
 		this.preparing.delete(key);
+		this.resuming.delete(key);
 	},
 	fail(key: string, error: string, now = Date.now()): void {
 		this.preparing.delete(key);
+		this.resuming.delete(key);
 		this.failures.set(key, { error: scrub(error).slice(0, 300), at: now });
 	},
 	ok(key: string): void {
@@ -298,38 +347,106 @@ export class RemoteDriver implements SandboxDriver {
 		return this.#db.get<InstanceRow>(`SELECT * FROM tool_sandbox_instances WHERE org_id = ? AND space_id = ? AND workspace_key = ? AND provider = ? AND state IN ${LIVE} ORDER BY created_at DESC LIMIT 1`, t.orgId, t.spaceId, t.workspaceKey, this.id);
 	}
 	#setState(id: string, state: SandboxInstanceDTO["state"], err?: string) {
-		this.#db.run("UPDATE tool_sandbox_instances SET state = ?, last_error = COALESCE(?, last_error) WHERE id = ?", state, err ? scrub(err) : null, id);
+		this.#db.run("UPDATE tool_sandbox_instances SET state = ?, state_at = ?, last_error = COALESCE(?, last_error) WHERE id = ?", state, new Date(this.#now()).toISOString(), err ? scrub(err) : null, id);
+	}
+	#tenantOf(r: InstanceRow): { orgId: string; spaceId: string; workspaceKey: string } {
+		return { orgId: r.org_id, spaceId: r.space_id, workspaceKey: r.workspace_key };
+	}
+	#isoNow(): string {
+		return new Date(this.#now()).toISOString();
+	}
+	/** Time this instance has been running since its last create/resume (ms), for cost accounting. */
+	#runningMs(row: InstanceRow): number {
+		return Math.max(0, this.#now() - Date.parse(row.running_since ?? row.created_at));
+	}
+	#event(t: { orgId: string; spaceId: string; workspaceKey: string }, kind: SandboxEventKind, trigger: SandboxEventTrigger, o: { durationMs?: number; runningMs?: number; detail?: string } = {}): void {
+		recordSandboxEvent(this.#db, { orgId: t.orgId, spaceId: t.spaceId, workspaceKey: t.workspaceKey, provider: this.id, kind, trigger, at: this.#isoNow(), ...o, ...(o.detail ? { detail: scrub(o.detail) } : {}) });
+	}
+	/** Provider-side safety timeout while the sandbox is in use: idle-pause time + margin (+ the longest command that may run now). Extended on every use. */
+	#ttlMs(runMs = 0): number {
+		return (this.lifecycle.idlePauseSec + TTL_MARGIN_SEC) * 1000 + runMs;
+	}
+	get #canPause(): boolean {
+		return this.provider.capabilities.pauseResume !== "unsupported" && typeof this.provider.pause === "function" && typeof this.provider.resume === "function";
 	}
 
-	async #destroyRow(row: InstanceRow, why: string): Promise<void> {
+	async #destroyRow(row: InstanceRow, why: string, trigger: SandboxEventTrigger = "expiry"): Promise<void> {
+		const running = row.state === "ready" || row.state === "pausing" || row.state === "resuming" ? this.#runningMs(row) : 0; // a paused sandbox is not running
 		this.#setState(row.id, "stopping");
 		try {
 			if (row.remote_id) await this.provider.destroy(row.remote_id);
 			this.#setState(row.id, "destroyed");
+			this.#event(this.#tenantOf(row), "destroy", trigger, { runningMs: running, detail: why });
 		} catch (e: any) {
 			this.#setState(row.id, "error", `销毁失败（${why}）：${e?.message ?? e}`);
 		}
 	}
 
-	/** Get the remote sandbox for this workspace: reuse (connect + verify) or create. Returns whether it is fresh (manifest reset). */
+	/**
+	 * Get the remote sandbox for this workspace: reuse (connect + verify), RESUME a paused/archived one, or create. Returns whether it is fresh (manifest reset).
+	 * A failed resume never falls back to the host: the sandbox is recreated and the whole workspace is uploaded again (with a note).
+	 */
 	async #acquire(spec: DriverRunSpec, notes: string[]): Promise<{ row: InstanceRow; session: RemoteSession; fresh: boolean; moved?: string }> {
 		const t = spec.tenant!;
+		const trigger: SandboxTrigger = spec.trigger ?? "exec";
 		let row = this.#row(t);
 		// Round 9: instances created by older versions under the (removed) "no network" policy carry network=0, i.e. were created WITH a deny option.
 		// They are recreated once, lazily, without it (the workspace is re-synced from the host copy), so the vendor's own network behaviour applies.
 		if (row && row.network === 0) {
 			notes.push("该远端沙箱创建于旧版本的“无网络”策略下：已重建（按提供方默认网络），并从宿主机工作区重新同步");
-			await this.#destroyRow(row, "legacy network-deny instance");
+			await this.#destroyRow(row, "legacy network-deny instance", "expiry");
 			row = undefined;
 		}
+		// Rows written before round 11 carry a hard expiry (the old max lifetime); it is honoured once, then the new lifecycle takes over (new rows have none).
 		if (row && row.expires_at && Date.parse(row.expires_at) <= this.#now()) {
 			notes.push("远端沙箱已达最长存活时间：重建并重新同步");
-			await this.#destroyRow(row, "lifetime");
+			await this.#destroyRow(row, "lifetime", "expiry");
+			row = undefined;
+		}
+		let createDetail: string | undefined;
+		if (row && row.resume_mode === "recreate" && (row.state === "paused" || row.state === "resuming")) {
+			// The sandbox was destroyed when it went idle (provider cannot pause); the host workspace holds the files, dependencies must be reinstalled.
+			remoteActivity.resuming.set(activityKey(t.orgId, t.spaceId, t.workspaceKey, this.id), "recreate");
+			this.#setState(row.id, "destroyed");
+			notes.push("远端沙箱因空闲已回收（提供方不支持暂停）：已重新创建，并从宿主机工作区重新同步（已安装的依赖需要重新安装）");
+			createDetail = "after_pause_recreate";
 			row = undefined;
 		}
 		if (row) {
 			let session: RemoteSession | null = null;
-			if (row.state === "ready" && row.remote_id) {
+			let resumedFrom: InstanceRow["state"] | undefined;
+			if ((row.state === "paused" || row.state === "archived" || row.state === "resuming") && row.remote_id) {
+				// ---- resume ----
+				resumedFrom = row.state;
+				remoteActivity.resuming.set(activityKey(t.orgId, t.spaceId, t.workspaceKey, this.id), resumedFrom === "archived" ? "archived" : "fast");
+				const t0 = this.#now();
+				this.#setState(row.id, "resuming");
+				let failure: string | undefined;
+				try {
+					session = this.provider.resume ? await this.provider.resume(row.remote_id, spec.signal) : await this.provider.connect(row.remote_id, spec.signal);
+					if (!session) failure = "沙箱已不存在（已过期或被删除）";
+					else await this.#sh(session, "true", { privileged: false, timeoutMs: 20_000, signal: spec.signal });
+				} catch (e: any) {
+					if (spec.signal?.aborted) {
+						this.#setState(row.id, resumedFrom); // cancelled: it is still paused (or running, which the next acquire tolerates)
+						throw e;
+					}
+					session = null;
+					failure = scrub(String(e?.message ?? e));
+				}
+				if (session) {
+					this.#db.run("UPDATE tool_sandbox_instances SET state = 'ready', state_at = ?, running_since = ?, resume_mode = NULL WHERE id = ?", this.#isoNow(), this.#isoNow(), row.id);
+					this.#event(t, "resume", trigger, { durationMs: this.#now() - t0, detail: resumedFrom === "archived" ? "from_archived" : undefined });
+					row = { ...row, state: "ready", resume_mode: null };
+				} else {
+					this.#event(t, "resume_failed", trigger, { durationMs: this.#now() - t0, detail: failure });
+					notes.push(`恢复已暂停的远端沙箱失败（${failure}）：已重新创建，并从宿主机工作区重新同步（已安装的依赖需要重新安装）`);
+					createDetail = "after_resume_failed";
+					this.#setState(row.id, "lost", `resume failed: ${failure}`);
+					if (row.remote_id) await this.provider.destroy(row.remote_id).catch(() => {});
+					row = undefined;
+				}
+			} else if ((row.state === "ready" || row.state === "pausing") && row.remote_id) {
 				try {
 					session = await this.provider.connect(row.remote_id, spec.signal);
 				} catch (e: any) {
@@ -342,10 +459,25 @@ export class RemoteDriver implements SandboxDriver {
 						session = null; // connected but not answering: treat as lost
 					}
 				}
+				if (!session) {
+					notes.push("远端沙箱已不存在（过期/被删除）：已重新创建，并从宿主机工作区重新同步");
+					this.#setState(row.id, "lost", "remote sandbox missing");
+					if (row.remote_id) await this.provider.destroy(row.remote_id).catch(() => {});
+					row = undefined;
+				} else if (row.state === "pausing") {
+					this.#db.run("UPDATE tool_sandbox_instances SET state = 'ready', state_at = ? WHERE id = ?", this.#isoNow(), row.id);
+					row = { ...row, state: "ready" };
+				}
+			} else {
+				// a create that was interrupted (no live driver holds the lock) or a row without a remote id: it cannot be reused
+				if (row.state === "creating") notes.push("远端沙箱已不存在（过期/被删除）：已重新创建，并从宿主机工作区重新同步");
+				this.#setState(row.id, "lost", "no remote sandbox");
+				if (row.remote_id) await this.provider.destroy(row.remote_id).catch(() => {});
+				row = undefined;
 			}
-			if (session) {
-				const left = row.expires_at ? Math.max(60_000, Date.parse(row.expires_at) - this.#now()) : this.lifecycle.lifetimeSec * 1000;
-				await session.keepAlive(left).catch(() => {}); // best effort (UnsupportedError or transient)
+			if (row && session) {
+				// keep the vendor-side timeout ahead of the idle-pause time (also the resume of E2B only gives a short default)
+				await session.keepAlive(this.#ttlMs(spec.limits.timeoutMs)).catch(() => {}); // best effort (UnsupportedError or transient)
 				// Round 10: the admin changed the working directory since this sandbox was last synced: the manifest describes the OLD directory,
 				// so it is dropped and the whole workspace is uploaded into the new one (the old directory is left alone: it may hold anything).
 				const was = row.work_dir ?? "/work";
@@ -356,21 +488,19 @@ export class RemoteDriver implements SandboxDriver {
 				}
 				return { row, session, fresh: false };
 			}
-			notes.push("远端沙箱已不存在（过期/被删除）：已重新创建，并从宿主机工作区重新同步");
-			this.#setState(row.id, "lost", "remote sandbox missing");
-			if (row.remote_id) await this.provider.destroy(row.remote_id).catch(() => {});
 		}
-		return { ...(await this.#create(spec)), fresh: true };
+		return { ...(await this.#create(spec, createDetail)), fresh: true };
 	}
 
-	async #create(spec: DriverRunSpec): Promise<{ row: InstanceRow; session: RemoteSession }> {
+	async #create(spec: DriverRunSpec, detail?: string): Promise<{ row: InstanceRow; session: RemoteSession }> {
 		const t = spec.tenant!;
+		const trigger: SandboxTrigger = spec.trigger ?? "exec";
 		const id = newId("sbi");
-		const lifetimeMs = this.lifecycle.lifetimeSec * 1000;
-		const at = nowIso();
+		const at = this.#isoNow();
+		const t0 = this.#now();
 		this.#db.run(
-			"INSERT INTO tool_sandbox_instances (id, org_id, space_id, workspace_key, provider, remote_id, state, created_at, last_used_at, expires_at, manifest, network, work_dir) VALUES (?, ?, ?, ?, ?, NULL, 'creating', ?, ?, ?, '{}', ?, ?)",
-			id, t.orgId, t.spaceId, t.workspaceKey, this.id, at, at, new Date(this.#now() + lifetimeMs).toISOString(), 1, this.workDir,
+			"INSERT INTO tool_sandbox_instances (id, org_id, space_id, workspace_key, provider, remote_id, state, created_at, last_used_at, expires_at, manifest, network, work_dir, state_at, running_since) VALUES (?, ?, ?, ?, ?, NULL, 'creating', ?, ?, NULL, '{}', ?, ?, ?, ?)",
+			id, t.orgId, t.spaceId, t.workspaceKey, this.id, at, at, 1, this.workDir, at, at,
 		);
 		let session: RemoteSession;
 		try {
@@ -382,17 +512,20 @@ export class RemoteDriver implements SandboxDriver {
 				...(this.#resources ? { resources: this.#resources } : {}),
 				defaultMemoryMb: Math.max(64, Math.floor(spec.limits.memoryBytes / MB)),
 				metadata: { workroom: "1", workroom_install: this.#install, workroom_org: this.#orgTag, workroom_instance: id },
-				lifetimeMs,
+				lifetimeMs: this.#ttlMs(spec.limits.timeoutMs),
+				lifecycle: { idlePauseSec: this.lifecycle.idlePauseSec, pausedRetentionSec: this.lifecycle.pausedRetentionSec, destroyAfterSec: this.lifecycle.destroyAfterSec },
 				createTimeoutMs: this.lifecycle.createTimeoutSec * 1000,
 				signal: spec.signal,
 			});
 		} catch (e: any) {
 			this.#setState(id, "error", String(e?.message ?? e));
+			this.#event(t, "create_failed", trigger, { durationMs: this.#now() - t0, detail: String(e?.message ?? e) });
 			if (e instanceof UnsupportedError) throw e;
 			if (e instanceof HttpError) throw e;
 			throw new HttpError(503, "sandbox_provider_error", `沙箱提供方 ${this.label} 创建沙箱失败：${scrub(e?.message ?? e)}（不会回退到本机执行）`);
 		}
-		this.#db.run("UPDATE tool_sandbox_instances SET remote_id = ?, state = 'ready' WHERE id = ?", session.id, id);
+		this.#db.run("UPDATE tool_sandbox_instances SET remote_id = ?, state = 'ready', state_at = ?, running_since = ? WHERE id = ?", session.id, this.#isoNow(), this.#isoNow(), id);
+		this.#event(t, "create", trigger, { durationMs: this.#now() - t0, detail });
 		return { row: this.#db.get<InstanceRow>("SELECT * FROM tool_sandbox_instances WHERE id = ?", id)!, session };
 	}
 
@@ -491,24 +624,76 @@ export class RemoteDriver implements SandboxDriver {
 		return new HttpError(503, "sandbox_workdir_unwritable", `工作目录 ${this.workDir} 在沙箱内不可写（当前用户 ${user}）：请管理员在“沙箱提供方”中把工作目录改为该用户可写的路径`);
 	}
 
+	// ---------- workspace sync (round 11, R5: the working directory is ONE tree made of up to three host directories) ----------
+	/**
+	 * What one run syncs: the conversation workspace at the working directory and the persistent stores at <workdir>/memories and <workdir>/project.
+	 * Each tree has its own host directory and its own slice of the manifest (keys `memories/…`, `project/…`, owner marker `@store:<name>`);
+	 * the conversation tree never contains the two reserved top-level names, so a store is never written into a conversation directory and vice versa.
+	 */
+	#trees(spec: DriverRunSpec): SyncTree[] {
+		return [{ prefix: "", hostDir: spec.workdir, readOnly: false }, ...(spec.stores ?? []).map((st): SyncTree => ({ prefix: st.name, hostDir: st.hostPath, readOnly: st.readOnly, store: st }))];
+	}
+
 	// ---------- workspace sync: host → remote ----------
 	async #pushWork(s: RemoteSession, spec: DriverRunSpec, manifest: Manifest, notes: string[], persist: (m: Manifest) => void): Promise<void> {
-		const wd = spec.workdir;
 		const W = this.workDir;
-		const maxFile = spec.limits.maxFileBytes;
 		await this.#ensureWorkDir(s, spec.signal); // remote root + permissions (the workload user is unprivileged; files are uploaded by the provider's file API)
-		const tree = walk(wd, validWorkPath);
-		for (const n of tree.notes) notes.push(n);
+		const trees = this.#trees(spec);
+		// A store this run may not use (access revoked, conversation left the project, another member) must not stay in the sandbox.
+		for (const name of STORE_NAMES) {
+			if (trees.some((t) => t.prefix === name)) continue;
+			if (!Object.keys(manifest).some((k) => k === `${STORE_MARK}${name}` || k.startsWith(`${name}/`))) continue;
+			const R = shQuote(`${W}/${name}`);
+			await this.#sh(s, `chmod -R u+w ${R}; rm -rf ${R}`, { signal: spec.signal });
+			for (const k of Object.keys(manifest)) if (k === `${STORE_MARK}${name}` || k.startsWith(`${name}/`)) delete manifest[k];
+			persist(manifest);
+		}
+		let anyChanged = false;
+		for (const tree of trees) {
+			const view = viewOf(manifest, tree.prefix);
+			const remoteDir = tree.prefix ? `${W}/${tree.prefix}` : W;
+			if (tree.store) {
+				const R = shQuote(remoteDir);
+				const mark = `${STORE_MARK}${tree.prefix}`;
+				if (manifest[mark] !== tree.store.ownerKey) {
+					// First use in this sandbox, or somebody else (or another access level) used it before: start from a clean folder.
+					await this.#sh(s, `chmod -R u+w ${R} 2>/dev/null; rm -rf ${R}; mkdir -p ${R}`, { signal: spec.signal });
+					for (const k of Object.keys(view)) delete view[k];
+					manifest[mark] = tree.store.ownerKey;
+					anyChanged = true;
+				}
+				await this.#sh(s, `mkdir -p ${R} && chmod a+rwx ${R}`, { signal: spec.signal });
+				if (tree.readOnly) await this.#sh(s, `chmod -R u+w ${R} 2>/dev/null; true`, { signal: spec.signal });
+			}
+			try {
+				if (await this.#pushTree(s, spec, tree, remoteDir, view, notes)) anyChanged = true;
+			} finally {
+				mergeView(manifest, tree.prefix, view); // also on failure: what did go up is recorded
+				persist(manifest);
+			}
+		}
+		if (anyChanged) await this.#sh(s, `chmod -R a+rwX ${shQuote(W)}`, { signal: spec.signal });
+		for (const tree of trees) if (tree.store && tree.readOnly) await this.#sh(s, `chmod -R a-w,a+rX ${shQuote(`${W}/${tree.prefix}`)}`, { signal: spec.signal });
+	}
+
+	/** Upload one tree's host changes into `remoteDir` (manifest `view` is mutated). Returns whether anything changed remotely. */
+	async #pushTree(s: RemoteSession, spec: DriverRunSpec, tree: SyncTree, remoteDir: string, manifest: Manifest, notes: string[]): Promise<boolean> {
+		const wd = tree.hostDir;
+		const W = remoteDir;
+		const maxFile = spec.limits.maxFileBytes;
+		const show = (p: string) => (tree.prefix ? `${tree.prefix}/${p}` : p);
+		const walked = walk(wd, validWorkPath, MAX_SYNC_ENTRIES, tree.prefix === "" ? { skipTop: isStoreTop } : {});
+		for (const n of walked.notes) notes.push(tree.prefix ? `${tree.prefix}/：${n}` : n);
 		const hostFiles = new Map<string, { f: TreeFile; sha: string }>();
-		for (const f of tree.files) {
+		for (const f of walked.files) {
 			if (f.size > maxFile) {
-				notes.push(`文件超过单文件上限（${Math.round(maxFile / MB)} MB），未上传：${f.rel}`);
+				notes.push(`文件超过单文件上限（${Math.round(maxFile / MB)} MB），未上传：${show(f.rel)}`);
 				continue;
 			}
 			const sha = this.#hostSha(wd, f, maxFile);
 			if (sha) hostFiles.set(f.rel, { f, sha });
 		}
-		const hostDirs = new Set(tree.dirs);
+		const hostDirs = new Set(walked.dirs);
 		// deletions: things the host no longer has (files, then directories deepest-first)
 		const delFiles: string[] = [];
 		const delDirs: string[] = [];
@@ -557,16 +742,13 @@ export class RemoteDriver implements SandboxDriver {
 			}
 		};
 		await Promise.all(Array.from({ length: Math.min(4, toUpload.length) }, worker));
-		if (changed) persist(manifest); // also on failure: what did go up is recorded
 		if (failure) throw failure;
-		if (changed) await this.#sh(s, `chmod -R a+rwX ${shQuote(W)}`, { signal: spec.signal });
+		return changed;
 	}
 
 	// ---------- workspace sync: remote → host ----------
 	async #pullWork(s: RemoteSession, spec: DriverRunSpec, manifest: Manifest, runId: string, notes: string[]): Promise<void> {
-		const wd = spec.workdir;
 		const W = this.workDir;
-		const maxFile = spec.limits.maxFileBytes;
 		let entries;
 		try {
 			entries = await s.list(W);
@@ -578,23 +760,38 @@ export class RemoteDriver implements SandboxDriver {
 			notes.push(`远端工作目录 ${W} 的文件数超过 ${MAX_SYNC_ENTRIES}，未同步回宿主机（请清理后重试）`);
 			return;
 		}
-		const files = new Map<string, number>();
-		const dirs = new Set<string>();
-		const opaque = new Set<string>(); // present remotely but not syncable (symlink/special)
+		const trees = this.#trees(spec);
+		const parts = new Map<string, RemoteSlice>(trees.map((t) => [t.prefix, { files: new Map(), dirs: new Set(), opaque: new Set() }]));
+		const orphanTops = new Set<string>(); // memories/ or project/ exists remotely but this run has no such store
 		for (const e of entries) {
 			const p = normalizeRemotePath(e.path);
 			if (!p) {
 				notes.push(`远端文件名不合法，未同步：${JSON.stringify(String(e.path)).slice(0, 120)}`);
 				continue;
 			}
-			if (e.kind === "file") files.set(p, e.size);
-			else if (e.kind === "directory") dirs.add(p);
+			const top = p.split("/")[0]!;
+			let prefix = "";
+			let rel = p;
+			if (isStoreTop(top)) {
+				if (!parts.has(top)) {
+					orphanTops.add(top);
+					continue;
+				}
+				prefix = top;
+				rel = p.slice(top.length + 1);
+				if (!rel) continue; // the store folder itself
+			}
+			const slice = parts.get(prefix)!;
+			const shown = prefix ? `${prefix}/${rel}` : rel;
+			if (e.kind === "file") slice.files.set(rel, e.size);
+			else if (e.kind === "directory") slice.dirs.add(rel);
 			else {
-				opaque.add(p);
-				notes.push(`${e.kind === "symlink" ? "符号链接" : "特殊文件"}未同步到宿主机：${p}`);
+				slice.opaque.add(rel);
+				notes.push(`${e.kind === "symlink" ? "符号链接" : "特殊文件"}未同步到宿主机：${shown}`);
 			}
 		}
-		// remote hashes in one command; the result goes through a file so no output cap can truncate it
+		for (const name of orphanTops) notes.push(`沙箱里的 ${name}/ 在这次运行中没有对应的持久目录（没有权限或会话不属于项目），其中的文件没有保存`);
+		// remote hashes in one command (all trees); the result goes through a file so no output cap can truncate it
 		const hashes = new Map<string, string>();
 		const hf = `/tmp/.wr-h-${runId.replace(/[^A-Za-z0-9_-]/g, "")}`;
 		try {
@@ -609,55 +806,90 @@ export class RemoteDriver implements SandboxDriver {
 		}
 		await this.#sh(s, `rm -f ${shQuote(hf)}`).catch(() => {});
 
-		let budget = quotaBytes() - ws.dirSize(spec.scratchBase).bytes;
-		let downloaded = 0;
+		for (const tree of trees) {
+			const view = viewOf(manifest, tree.prefix);
+			try {
+				if (tree.store?.readOnly) this.#noteReadOnlyChanges(tree, parts.get(tree.prefix)!, view, hashes, notes);
+				else await this.#pullTree(s, spec, tree, W, parts.get(tree.prefix)!, hashes, view, notes);
+			} finally {
+				mergeView(manifest, tree.prefix, view);
+			}
+		}
+	}
+
+	/** A read-only store is never synced back: say so when the run changed it. */
+	#noteReadOnlyChanges(tree: SyncTree, slice: RemoteSlice, view: Manifest, hashes: Map<string, string>, notes: string[]): void {
+		let n = 0;
+		for (const [p] of slice.files) {
+			const h = hashes.get(`${tree.prefix}/${p}`);
+			if (h === undefined || view[p] !== h) n++;
+		}
+		for (const k of Object.keys(view)) if (!k.endsWith("/") && !slice.files.has(k)) n++;
+		if (n) notes.push(`${storeLabel(tree.prefix as StoreName)}对你是只读的：沙箱里对它的 ${n} 处修改没有保存`);
+	}
+
+	/** Download one tree's remote changes into its host directory (conversation workspace, or a persistent store — never the other one). */
+	async #pullTree(s: RemoteSession, spec: DriverRunSpec, tree: SyncTree, W: string, slice: RemoteSlice, hashes: Map<string, string>, manifest: Manifest, notes: string[]): Promise<void> {
+		const wd = tree.hostDir;
+		const maxFile = spec.limits.maxFileBytes;
+		const isStore = !!tree.store;
+		const show = (p: string) => (tree.prefix ? `${tree.prefix}/${p}` : p);
+		const remote = (p: string) => (tree.prefix ? `${W}/${tree.prefix}/${p}` : `${W}/${p}`);
+		const { files, dirs, opaque } = slice;
+		let budget = isStore ? tree.store!.quotaBytes - ws.dirSize(wd).bytes : quotaBytes() - ws.dirSize(spec.scratchBase).bytes;
 		for (const [p, size] of files) {
-			const claimed = hashes.get(p);
+			const claimed = hashes.get(tree.prefix ? `${tree.prefix}/${p}` : p);
 			if (claimed !== undefined && manifest[p] === claimed) continue; // unchanged since the last sync
 			if (size > maxFile) {
-				notes.push(`远端文件超过单文件上限（${Math.round(maxFile / MB)} MB），未同步：${p}`);
+				notes.push(`远端文件超过单文件上限（${Math.round(maxFile / MB)} MB），未同步：${show(p)}`);
 				continue;
 			}
 			if (size > budget) {
-				notes.push(`工作区配额不足，未同步：${p}`);
+				notes.push(isStore ? `${storeLabel(tree.prefix as StoreName)}已满（上限 ${fmtSize(tree.store!.quotaBytes)}），未保存：${show(p)}` : `工作区配额不足，未同步：${p}`);
 				continue;
 			}
 			let bytes: Uint8Array;
 			try {
-				bytes = await s.readFile(`${W}/${p}`, maxFile);
+				bytes = await s.readFile(remote(p), maxFile);
 			} catch (e: any) {
-				notes.push(`下载失败，未同步 ${p}：${scrub(e?.message ?? e)}`);
+				notes.push(`下载失败，未同步 ${show(p)}：${scrub(e?.message ?? e)}`);
 				continue;
 			}
 			const sha = sha256(bytes);
 			if (claimed !== undefined && claimed !== sha) {
-				notes.push(`文件在同步期间被修改，本次未同步：${p}`);
+				notes.push(`文件在同步期间被修改，本次未同步：${show(p)}`);
 				continue;
 			}
 			if (manifest[p] === sha) continue;
-			// host changed the same file while the run was going: the host version wins (it uploads again next run)
+			// The host copy changed since this sandbox last synced it (the same file edited somewhere else while the run was going).
 			const hostNow = this.#hostNow(wd, p, maxFile);
 			if (hostNow === "blocked") {
-				notes.push(`宿主机上该路径不是普通文件，未覆盖：${p}`);
+				notes.push(`宿主机上该路径不是普通文件，未覆盖：${show(p)}`);
 				continue;
 			}
-			if (hostNow !== null && manifest[p] !== undefined && hostNow !== manifest[p]) {
-				notes.push(`宿主机上同时修改了 ${p}，保留宿主机版本`);
-				continue;
-			}
-			if (hostNow !== null && manifest[p] === undefined && hostNow !== sha) {
-				notes.push(`宿主机上已有不同内容的 ${p}（运行期间新增），保留宿主机版本`);
+			const hostChanged = (hostNow !== null && manifest[p] !== undefined && hostNow !== manifest[p]) || (hostNow !== null && manifest[p] === undefined && hostNow !== sha);
+			if (hostChanged) {
+				if (!isStore) {
+					// conversation workspace: the host version wins (it uploads again next run) and the run says so
+					notes.push(manifest[p] !== undefined ? `宿主机上同时修改了 ${p}，保留宿主机版本` : `宿主机上已有不同内容的 ${p}（运行期间新增），保留宿主机版本`);
+					continue;
+				}
+				// persistent store (shared by other conversations): never drop either side — the sandbox's version is kept next to the file
+				const copy = this.#conflictCopy(wd, p, bytes);
+				if (copy) {
+					budget -= size;
+					notes.push(`${show(p)} 在别处（另一个会话）也被修改过：这次沙箱里的版本另存为 ${show(copy)}，原文件保留的是另一处的版本；请对比后自行合并`);
+				} else notes.push(`${show(p)} 在别处也被修改过，且无法另存沙箱里的版本（写入失败）：沙箱里的修改没有保存`);
 				continue;
 			}
 			try {
 				this.#writeHost(wd, p, bytes);
 			} catch (e: any) {
-				notes.push(`写入宿主机失败 ${p}：${scrub(e?.message ?? e)}`);
+				notes.push(`写入宿主机失败 ${show(p)}：${scrub(e?.message ?? e)}`);
 				continue;
 			}
 			manifest[p] = sha;
 			budget -= size;
-			downloaded += size;
 		}
 		// deletions made remotely (only files we synced before, only when the host copy is still the synced version)
 		for (const k of Object.keys(manifest)) {
@@ -671,7 +903,7 @@ export class RemoteDriver implements SandboxDriver {
 				}
 				delete manifest[k];
 			} else if (hostNow === null) delete manifest[k];
-			else notes.push(`远端已删除 ${k}，但宿主机上已修改，保留宿主机版本`);
+			else notes.push(`远端已删除 ${show(k)}，但宿主机上已修改，保留宿主机版本`);
 		}
 		// directories
 		for (const d of dirs) {
@@ -680,7 +912,7 @@ export class RemoteDriver implements SandboxDriver {
 				ws.mkdirp(wd, d);
 				manifest[`${d}/`] = "dir";
 			} catch (e: any) {
-				notes.push(`创建目录失败 ${d}：${scrub(e?.message ?? e)}`);
+				notes.push(`创建目录失败 ${show(d)}：${scrub(e?.message ?? e)}`);
 			}
 		}
 		for (const k of Object.keys(manifest).filter((x) => x.endsWith("/")).sort((a, b) => b.length - a.length)) {
@@ -693,7 +925,28 @@ export class RemoteDriver implements SandboxDriver {
 			}
 			if (!existsSync(join(wd, d))) delete manifest[k];
 		}
-		void downloaded;
+	}
+
+	/** Write `bytes` next to `rel` as "<name>.conflict-<time>-<n><ext>" (never overwrites). Returns the new relative path, or null when it could not be written. */
+	#conflictCopy(wd: string, rel: string, bytes: Uint8Array): string | null {
+		const dir = dirname(rel) === "." ? "" : dirname(rel);
+		const base = rel.slice(dir ? dir.length + 1 : 0);
+		const dot = base.lastIndexOf(".");
+		const stem = dot > 0 ? base.slice(0, dot) : base;
+		const ext = dot > 0 ? base.slice(dot) : "";
+		const stamp = new Date(this.#now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "-");
+		for (let i = 1; i < 100; i++) {
+			const name = `${stem}.conflict-${stamp}${i > 1 ? `-${i}` : ""}${ext}`;
+			const copy = dir ? `${dir}/${name}` : name;
+			if (!validWorkPath(copy) || this.#hostNow(wd, copy, 1) !== null) continue;
+			try {
+				this.#writeHost(wd, copy, bytes);
+				return copy;
+			} catch {
+				return null;
+			}
+		}
+		return null;
 	}
 
 	/** sha of the host file now: string | null (absent) | "blocked" (a directory/symlink/special where a file would go). */
@@ -846,23 +1099,120 @@ export class RemoteDriver implements SandboxDriver {
 		}
 	}
 
-	// ---------- lifecycle: idle / orphan reaping ----------
-	/** Destroy instances past their idle time or lifetime. Returns how many. */
+	// ---------- lifecycle: pause / archive / destroy (round 11), orphan reaping ----------
+	#reaping = false;
+	/**
+	 * One reaper pass (RemoteDrivers runs it every 60 s; tests inject `now`). Per instance, under the same per-workspace lock a run holds:
+	 *   ready    idle ≥ idlePauseSec → pause (provider pause, or "recreate": destroy the sandbox — the host workspace keeps the files)
+	 *   paused   paused ≥ pausedRetentionSec → archive (providers that can), else stays paused
+	 *   any      unused ≥ destroyAfterSec → destroy
+	 * A busy instance is never touched; the decision is re-made inside the lock, so a run that arrived (or finished) while this pass was queued wins.
+	 * Returns how many instances changed state. Overlapping passes in one process are skipped.
+	 */
 	async reapIdle(now = this.#now()): Promise<number> {
-		const rows = this.#db.all<InstanceRow>(`SELECT * FROM tool_sandbox_instances WHERE org_id = ? AND provider = ? AND state IN ('ready','stopping','creating')`, this.orgId, this.id);
-		let n = 0;
-		for (const r of rows) {
-			if (this.#busy.has(r.id)) continue;
-			const idle = now - Date.parse(r.last_used_at) > this.lifecycle.idleTimeoutSec * 1000;
-			const old = r.expires_at ? Date.parse(r.expires_at) <= now : false;
-			const stuck = r.state !== "ready" && now - Date.parse(r.last_used_at) > (this.lifecycle.createTimeoutSec + 60) * 1000;
-			if (!idle && !old && !stuck) continue;
-			await this.#locked(`${r.org_id}|${r.space_id}|${r.workspace_key}|${this.id}`, () => this.#destroyRow(r, idle ? "idle" : old ? "lifetime" : "stuck"));
-			n++;
+		if (this.#reaping) return 0;
+		this.#reaping = true;
+		try {
+			const rows = this.#db.all<InstanceRow>(`SELECT * FROM tool_sandbox_instances WHERE org_id = ? AND provider = ? AND state IN ${LIVE}`, this.orgId, this.id);
+			let n = 0;
+			for (const r of rows) {
+				if (this.#busy.has(r.id)) continue;
+				const done = await this.#locked(`${r.org_id}|${r.space_id}|${r.workspace_key}|${this.id}`, () => this.#reapOne(r.id, now)).catch((e) => {
+					console.error(`[sandbox] ${this.id}: lifecycle pass failed for ${r.id}:`, scrub(String(e?.message ?? e)));
+					return false;
+				});
+				if (done) n++;
+			}
+			// purge old bookkeeping rows
+			this.#db.run("DELETE FROM tool_sandbox_instances WHERE state IN ('destroyed','lost','error') AND COALESCE(state_at, last_used_at) < ?", new Date(this.#now() - 7 * 86400_000).toISOString()); // terminal rows are kept a week (by the driver clock, the same one that stamped them)
+			return n;
+		} finally {
+			this.#reaping = false;
 		}
-		// purge old bookkeeping rows
-		this.#db.run("DELETE FROM tool_sandbox_instances WHERE state IN ('destroyed','lost','error') AND last_used_at < ?", new Date(now - 7 * 86400_000).toISOString());
-		return n;
+	}
+
+	async #reapOne(id: string, now: number): Promise<boolean> {
+		const row = this.#db.get<InstanceRow>(`SELECT * FROM tool_sandbox_instances WHERE id = ? AND state IN ${LIVE}`, id);
+		if (!row || this.#busy.has(id)) return false;
+		const lc = this.lifecycle;
+		const unusedMs = now - Date.parse(row.last_used_at);
+		const inStateMs = now - Date.parse(row.state_at ?? row.last_used_at);
+		const stuckMs = (lc.createTimeoutSec + 60) * 1000;
+		const t = this.#tenantOf(row);
+		switch (row.state) {
+			case "creating":
+			case "stopping":
+				if (inStateMs <= stuckMs) return false;
+				await this.#destroyRow(row, "stuck", "expiry");
+				return true;
+			case "pausing": // a pause that never finished (crash): the sandbox is probably still usable; the next pass decides again
+				if (inStateMs <= stuckMs) return false;
+				this.#setState(row.id, "ready");
+				return true;
+			case "resuming": // a resume that never finished: it is paused as far as we know; the next run retries
+				if (inStateMs <= stuckMs) return false;
+				this.#setState(row.id, "paused");
+				return true;
+			case "ready": {
+				const legacyExpired = !!row.expires_at && Date.parse(row.expires_at) <= now;
+				if (legacyExpired || unusedMs >= lc.destroyAfterSec * 1000) {
+					await this.#destroyRow(row, legacyExpired ? "lifetime" : "unused", "expiry");
+					return true;
+				}
+				if (unusedMs < lc.idlePauseSec * 1000) return false;
+				return this.#pauseRow(row, "idle");
+			}
+			case "paused":
+			case "archived":
+				if (unusedMs >= lc.destroyAfterSec * 1000) {
+					await this.#destroyRow(row, "unused", "expiry");
+					return true;
+				}
+				if (row.state === "paused" && row.resume_mode !== "recreate" && row.remote_id && typeof this.provider.archive === "function" && inStateMs >= lc.pausedRetentionSec * 1000) {
+					try {
+						await this.provider.archive(row.remote_id);
+						this.#setState(row.id, "archived");
+						this.#event(t, "archive", "retention");
+						return true;
+					} catch (e: any) {
+						this.#db.run("UPDATE tool_sandbox_instances SET last_error = ? WHERE id = ?", scrub(`归档失败：${e?.message ?? e}`), row.id); // stays paused (resumable); retried next pass
+						return false;
+					}
+				}
+				return false;
+			default:
+				return false;
+		}
+	}
+
+	/** Pause one idle instance (lock held, not busy). Provider pause when it can; otherwise "recreate" mode: destroy it and remember to rebuild from the host workspace. */
+	async #pauseRow(row: InstanceRow, trigger: SandboxEventTrigger): Promise<boolean> {
+		const t = this.#tenantOf(row);
+		const runningMs = this.#runningMs(row);
+		const act = activityKey(row.org_id, row.space_id, row.workspace_key, this.id);
+		this.#setState(row.id, "pausing");
+		if (this.#canPause && row.remote_id) {
+			try {
+				await this.provider.pause!(row.remote_id, { retainMs: (this.lifecycle.pausedRetentionSec + TTL_MARGIN_SEC) * 1000 });
+			} catch (e: any) {
+				// still running as far as we know: back to ready, visible in the admin list, retried on the next pass
+				this.#db.run("UPDATE tool_sandbox_instances SET state = 'ready', state_at = ?, last_error = ? WHERE id = ?", this.#isoNow(), scrub(`暂停失败：${e?.message ?? e}`), row.id);
+				return false;
+			}
+			this.#db.run("UPDATE tool_sandbox_instances SET state = 'paused', state_at = ?, resume_mode = 'provider' WHERE id = ?", this.#isoNow(), row.id);
+			this.#event(t, "pause", trigger, { runningMs });
+		} else {
+			try {
+				if (row.remote_id) await this.provider.destroy(row.remote_id);
+			} catch (e: any) {
+				this.#setState(row.id, "error", `销毁失败（idle）：${e?.message ?? e}`);
+				return false;
+			}
+			this.#db.run("UPDATE tool_sandbox_instances SET state = 'paused', state_at = ?, resume_mode = 'recreate', remote_id = NULL WHERE id = ?", this.#isoNow(), row.id);
+			this.#event(t, "pause", trigger, { runningMs, detail: "recreate" });
+		}
+		remoteActivity.ok(act); // an old failure marker would otherwise keep the conversation "failed" while it is merely idle
+		return true;
 	}
 
 	/** Startup: idle/expired instances, then orphans (our labels, not in the table). */
@@ -896,8 +1246,8 @@ export class RemoteDriver implements SandboxDriver {
 	/** Admin: destroy one tracked instance now. */
 	async destroyInstance(id: string): Promise<boolean> {
 		const r = this.#db.get<InstanceRow>("SELECT * FROM tool_sandbox_instances WHERE id = ? AND org_id = ? AND provider = ?", id, this.orgId, this.id);
-		if (!r || !["ready", "creating", "stopping", "error"].includes(r.state)) return false;
-		await this.#locked(`${r.org_id}|${r.space_id}|${r.workspace_key}|${this.id}`, () => this.#destroyRow(r, "admin"));
+		if (!r || !["ready", "creating", "stopping", "error", "pausing", "paused", "resuming", "archived"].includes(r.state)) return false;
+		await this.#locked(`${r.org_id}|${r.space_id}|${r.workspace_key}|${this.id}`, () => this.#destroyRow(r, "admin", "admin"));
 		return true;
 	}
 
@@ -909,7 +1259,7 @@ export class RemoteDriver implements SandboxDriver {
 export function instancesFor(db: AppDb, orgId: string, limit = 200): SandboxInstanceDTO[] {
 	return db
 		.all<InstanceRow>("SELECT * FROM tool_sandbox_instances WHERE org_id = ? ORDER BY last_used_at DESC LIMIT ?", orgId, limit)
-		.map((r) => ({ id: r.id, provider: r.provider as ProviderId, spaceId: r.space_id, workspaceKey: r.workspace_key, remoteId: r.remote_id, state: r.state, createdAt: r.created_at, lastUsedAt: r.last_used_at, ...(r.expires_at ? { expiresAt: r.expires_at } : {}), ...(r.last_error ? { lastError: r.last_error } : {}) }));
+		.map((r) => ({ id: r.id, provider: r.provider as ProviderId, spaceId: r.space_id, workspaceKey: r.workspace_key, remoteId: r.remote_id, state: r.state, ...(r.state === "paused" || r.state === "archived" ? { resumeMode: r.resume_mode ?? "provider" } : {}), createdAt: r.created_at, lastUsedAt: r.last_used_at, ...(r.expires_at ? { expiresAt: r.expires_at } : {}), ...(r.last_error ? { lastError: r.last_error } : {}) }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------

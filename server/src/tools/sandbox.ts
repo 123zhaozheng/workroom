@@ -9,11 +9,12 @@ import type { AppContext, Principal, Space } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
 import type { SandboxEntryDTO, SandboxLimitsDTO, SandboxRunDTO } from "../../../shared/files.ts";
-import type { SandboxInfoDTO, WorkspaceFilesResponse, WorkspacePreviewDTO, WorkspaceUsageDTO } from "../../../shared/sandbox.ts";
+import type { SandboxInfoDTO, WorkspaceEntryDTO, WorkspaceFilesResponse, WorkspacePreviewDTO, WorkspaceUsageDTO } from "../../../shared/sandbox.ts";
 import { normalizeTarget, type DriverId, type LocalDriverId, type DriverStatus, type Language, type ProcessRef, type RunResult, type SandboxDriver, type SandboxMount, type ServiceRuntime } from "./sandbox/driver.ts";
 import { killStaleNamespaces, NAMESPACES_NOTES, probeNamespaces } from "./sandbox/namespaces.ts";
 import { SandboxDrivers } from "./sandbox/registry.ts";
 import { RemoteDriver, RemoteDrivers, remoteNotes } from "./sandbox/remote-driver.ts";
+import { SANDBOX_EVENTS_MIGRATION } from "./sandbox/lifecycle-events.ts";
 import { workspaceKeyOf, workspacePersistenceFor } from "./sandbox/persist.ts";
 import { mergeSandboxEnv, sandboxEnvFor } from "./sandbox/env-vars.ts";
 import { credentialsFor } from "./credentials/store.ts";
@@ -24,6 +25,7 @@ import { networkText } from "./sandbox/network.ts";
 import { providerConfigsFor } from "./sandbox/provider-config.ts";
 import type { ProviderId } from "./sandbox/provider.ts";
 import { displayPath, LOCAL_SKILLS_ROOT, LOCAL_WORKDIR, stripWorkPrefix } from "./sandbox/workdir.ts";
+import { isStoreTop, storeLabel, WorkspaceStores, type Routed } from "./sandbox/stores.ts";
 
 export type { Language, RunResult, SandboxMount, SandboxService };
 export { SandboxDrivers };
@@ -95,6 +97,45 @@ CREATE INDEX tool_sandbox_instances_org ON tool_sandbox_instances(org_id, last_u
 		name: "remote sandbox instances: working directory",
 		sql: `ALTER TABLE tool_sandbox_instances ADD COLUMN work_dir TEXT;`,
 	},
+	{
+		// round 11: lifecycle states pausing / paused / resuming / archived. SQLite cannot alter a CHECK constraint, so the table is rebuilt (rows are copied as they are).
+		// New columns: state_at (last state change), resume_mode ("provider" | "recreate" for paused rows), running_since (last create/resume, for run-time accounting).
+		// Live rows lose their hard expiry (the old 4 h max lifetime does not exist any more); the live-instance unique index now covers every non-terminal state.
+		// Versions 11+ are round 11 (the numbers are only required to be monotonic).
+		version: 11,
+		name: "remote sandbox instances: pause / resume / archive lifecycle",
+		sql: `
+CREATE TABLE tool_sandbox_instances_r11 (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  space_id TEXT NOT NULL,
+  workspace_key TEXT NOT NULL,
+  remote_id TEXT,
+  state TEXT NOT NULL CHECK (state IN ('creating','ready','pausing','paused','resuming','archived','stopping','destroyed','lost','error')),
+  created_at TEXT NOT NULL,
+  last_used_at TEXT NOT NULL,
+  expires_at TEXT,
+  last_error TEXT,
+  org_id TEXT NOT NULL DEFAULT '',
+  manifest TEXT NOT NULL DEFAULT '{}',
+  network INTEGER NOT NULL DEFAULT 0,
+  work_dir TEXT,
+  state_at TEXT,
+  resume_mode TEXT CHECK (resume_mode IS NULL OR resume_mode IN ('provider','recreate')),
+  running_since TEXT
+);
+INSERT INTO tool_sandbox_instances_r11 (id, provider, space_id, workspace_key, remote_id, state, created_at, last_used_at, expires_at, last_error, org_id, manifest, network, work_dir, state_at, running_since)
+  SELECT id, provider, space_id, workspace_key, remote_id, state, created_at, last_used_at,
+         CASE WHEN state IN ('creating','ready','stopping') THEN NULL ELSE expires_at END,
+         last_error, org_id, manifest, network, work_dir, last_used_at, created_at
+  FROM tool_sandbox_instances;
+DROP TABLE tool_sandbox_instances;
+ALTER TABLE tool_sandbox_instances_r11 RENAME TO tool_sandbox_instances;
+CREATE UNIQUE INDEX tool_sandbox_instances_live ON tool_sandbox_instances(org_id, space_id, workspace_key, provider) WHERE state IN ('creating','ready','pausing','paused','resuming','archived','stopping');
+CREATE INDEX tool_sandbox_instances_org ON tool_sandbox_instances(org_id, last_used_at);
+`,
+	},
+	SANDBOX_EVENTS_MIGRATION, // round 11 (R6 foundation): version 12
 ];
 
 export const DEFAULT_LIMITS: SandboxLimitsDTO = {
@@ -215,6 +256,8 @@ export class Sandbox {
 	readonly #roots = new Set<string>();
 	/** Round 7: remote providers (OpenSandbox/E2B/Daytona) selected per space by the provider-config policy. */
 	readonly remote: RemoteDrivers;
+	/** Round 11 (R5): path-prefix routing to the persistent per-user (memories/) and per-project (project/) stores. */
+	readonly stores: WorkspaceStores;
 	readonly #services = new Map<string, SandboxService>();
 	readonly #starting = new Map<string, Promise<SandboxService>>();
 	#reaped: Promise<void> = Promise.resolve();
@@ -225,6 +268,7 @@ export class Sandbox {
 		this.drivers = opts.drivers ?? new SandboxDrivers(ctx);
 		this.#slots = new Semaphore(this.drivers.settings().maxConcurrent);
 		this.remote = new RemoteDrivers(ctx);
+		this.stores = new WorkspaceStores(ctx);
 	}
 
 	// ---------- paths ----------
@@ -407,7 +451,7 @@ export class Sandbox {
 	 * workspace restore from the last saved version, get-or-create/reconnect, /work and mounts sync), without running a program and without a run record.
 	 * Returns false when the space uses a local driver (nothing to prepare). Sending a message never calls this; only the environment panel's retry does.
 	 */
-	async prepare(input: { principal: Principal; space: Space; conversationId: number; signal?: AbortSignal }): Promise<boolean> {
+	async prepare(input: { principal: Principal; space: Space; conversationId: number; signal?: AbortSignal; trigger?: "explicit" | "prewarm" }): Promise<boolean> {
 		const driver = await this.#driverFor(input.space);
 		if (!(driver instanceof RemoteDriver)) return false;
 		const network = driver.capabilities.network;
@@ -417,8 +461,9 @@ export class Sandbox {
 			throw new HttpError(409, "workspace_not_restored", `工作区未能恢复：${ready.failure ?? ready.state}`);
 		const wd = this.workdir(input.space, input.conversationId);
 		const mounts = await this.#collectMounts({ principal: input.principal, space: input.space, conversationId: input.conversationId, notes: [] });
+		const stores = this.stores.mounts(input.principal, input.space, input.conversationId, [], this.#owner());
 		await this.#reaped;
-		await driver.prepare({ runId: newId("prep"), tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: wsKey }, scratchBase: this.root(input.space), workdir: wd, exec: { language: "shell", code: "true" }, limits: { ...DEFAULT_LIMITS, network }, mounts, env: {}, network, signal: input.signal });
+		await driver.prepare({ runId: newId("prep"), tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: wsKey }, scratchBase: this.root(input.space), workdir: wd, exec: { language: "shell", code: "true" }, limits: { ...DEFAULT_LIMITS, network }, mounts, stores, env: {}, network, signal: input.signal, trigger: input.trigger ?? "explicit" });
 		return true;
 	}
 
@@ -445,6 +490,9 @@ export class Sandbox {
 		if (used > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录已用 ${Math.round(used / 1048576)} MB，超过配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并清理`);
 		const mountNotes: string[] = [];
 		const mounts = await this.#collectMounts({ principal: input.principal, space: input.space, conversationId: input.conversationId, notes: mountNotes }, input.mounts);
+		// Round 11 (R5): the persistent stores this principal may use here (memories/, project/): one tree inside the sandbox, host-side stores outside the conversation dir.
+		const stores = this.stores.mounts(input.principal, input.space, input.conversationId, mountNotes, this.#owner());
+		for (const n of this.stores.shadowed(wd)) if (stores.some((x) => x.name === n)) mountNotes.push(`会话文件夹里原有的 ${n}/ 内容被${storeLabel(n)}遮盖（仍保留在会话文件夹中，运行时看不到）`);
 		await this.#reaped;
 		// Environment: ordinary variables (org < project < user < conversation, locked org vars win) under the platform/caller variables;
 		// credentials consented for env use in THIS conversation are added for this run only and never recorded.
@@ -465,7 +513,7 @@ export class Sandbox {
 		let r: RunResult;
 		const release = await this.#slots.acquire();
 		try {
-			r = await driver.run({ runId: id, tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: wsKey }, scratchBase: this.root(input.space), workdir: wd, exec: { language: input.language, code: input.code }, limits, mounts, env, network, signal: input.signal, onSpawn: (ref: ProcessRef) => ref.pid && input.onSpawn?.(ref.pid) });
+			r = await driver.run({ runId: id, tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: wsKey }, scratchBase: this.root(input.space), workdir: wd, exec: { language: input.language, code: input.code }, limits, mounts, stores, env, network, signal: input.signal, onSpawn: (ref: ProcessRef) => ref.pid && input.onSpawn?.(ref.pid) });
 		} catch (e: any) {
 			this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = 'error', stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", String(e?.message ?? e).slice(0, 4000), Date.now() - started, nowIso(), id);
 			throw e;
@@ -596,18 +644,41 @@ export class Sandbox {
 		const conv = ws.dirSize(this.workdir(space, conversationId));
 		return { conversationBytes: conv.bytes, spaceBytes: ws.dirSize(this.root(space)).bytes, quotaBytes: quotaBytes(), maxFileBytes: DEFAULT_LIMITS.maxFileBytes, retentionHours: RETENTION_HOURS, fileCount: conv.files };
 	}
-	workspace(space: Space, conversationId: number | undefined): Omit<WorkspaceFilesResponse, "canWrite"> {
-		const { entries, truncated } = ws.listEntries(this.workdir(space, conversationId), RETENTION_HOURS);
+	/**
+	 * Round 11 (R5): where a model/UI supplied path really lives. `who` is the acting principal: without one only the conversation workspace is reachable
+	 * (a path under memories/ or project/ is refused instead of landing in the conversation directory). All host file operations below go through this.
+	 */
+	route(space: Space, conversationId: number | undefined, path: string, who?: Principal, forWrite = false): Routed {
+		return this.stores.route(who, space, conversationId, ws.cleanPath(this.#rel(space, path)), () => this.workdir(space, conversationId), { forWrite, owner: this.#owner() });
+	}
+	/** The listing: the persistent folders this principal can use (shown like ordinary folders) followed by the conversation's own files. */
+	workspace(space: Space, conversationId: number | undefined, who?: Principal): Omit<WorkspaceFilesResponse, "canWrite"> {
+		const conv = ws.listEntries(this.workdir(space, conversationId), RETENTION_HOURS, ws.LIST_CAP, { skipTop: isStoreTop });
+		const entries: WorkspaceEntryDTO[] = [];
+		let truncated = conv.truncated;
+		for (const name of this.stores.available(who, space, conversationId)) {
+			const r = this.route(space, conversationId, name, who);
+			entries.push({ path: name, kind: "directory", size: 0, mtime: statSync(r.root).mtime.toISOString() });
+			const l = ws.listEntries(r.root, RETENTION_HOURS, ws.LIST_CAP, { prefix: name, noExpiry: true });
+			entries.push(...l.entries);
+			truncated ||= l.truncated;
+		}
+		entries.push(...conv.entries);
 		return { entries, truncated, usage: this.usage(space, conversationId) };
 	}
-	entries(space: Space, conversationId: number | undefined): SandboxEntryDTO[] {
-		return ws.listEntries(this.workdir(space, conversationId), RETENTION_HOURS).entries;
+	entries(space: Space, conversationId: number | undefined, who?: Principal): SandboxEntryDTO[] {
+		return this.workspace(space, conversationId, who).entries;
 	}
-	preview(space: Space, conversationId: number | undefined, path: string): WorkspacePreviewDTO {
-		return ws.preview(this.workdir(space, conversationId), this.#rel(space, path), RETENTION_HOURS);
+	preview(space: Space, conversationId: number | undefined, path: string, who?: Principal): WorkspacePreviewDTO {
+		const r = this.route(space, conversationId, path, who);
+		const p = ws.preview(r.root, r.rel, RETENTION_HOURS);
+		if (r.store === "conversation") return p;
+		const { expiresAt: _gone, ...rest } = p;
+		return { ...rest, path: `${r.prefix}/${p.path}` };
 	}
-	readFile(space: Space, conversationId: number | undefined, path: string): { bytes: Uint8Array; name: string } {
-		const f = ws.readBytes(this.workdir(space, conversationId), this.#rel(space, path), 100 * 1024 * 1024);
+	readFile(space: Space, conversationId: number | undefined, path: string, who?: Principal): { bytes: Uint8Array; name: string } {
+		const r = this.route(space, conversationId, path, who);
+		const f = ws.readBytes(r.root, r.rel, 100 * 1024 * 1024);
 		return { bytes: f.bytes, name: f.name };
 	}
 	#checkQuota(space: Space, incoming: number, replacing = 0): void {
@@ -615,24 +686,58 @@ export class Sandbox {
 		const used = ws.dirSize(this.root(space)).bytes;
 		if (used - replacing + incoming > quotaBytes()) throw new HttpError(507, "sandbox_quota", `工作目录配额不足：已用 ${Math.round(used / 1048576)} MB，配额 ${Math.round(quotaBytes() / 1048576)} MB；请先发布需要的文件并删除不需要的文件`);
 	}
-	writeFile(space: Space, conversationId: number | undefined, path: string, bytes: Uint8Array): string {
-		const wd = this.workdir(space, conversationId);
-		path = this.#rel(space, path);
-		this.#checkQuota(space, bytes.length, ws.existingSize(wd, path));
-		return ws.writeBytes(wd, path, bytes, this.#owner());
+	/** Returns the workspace-relative path that was written (with the memories/ or project/ prefix for a persistent store). */
+	writeFile(space: Space, conversationId: number | undefined, path: string, bytes: Uint8Array, who?: Principal): string {
+		const r = this.route(space, conversationId, path, who, true);
+		if (r.store === "conversation") {
+			this.#checkQuota(space, bytes.length, ws.existingSize(r.root, r.rel));
+			return ws.writeBytes(r.root, r.rel, bytes, this.#owner());
+		}
+		if (!r.rel) throw new HttpError(400, "bad_path", "需要文件路径");
+		if (bytes.length > DEFAULT_LIMITS.maxFileBytes) throw new HttpError(413, "too_large", `单个文件不能超过 ${Math.round(DEFAULT_LIMITS.maxFileBytes / 1048576)} MB`);
+		this.stores.checkQuota(r.store, r.root, bytes.length, ws.existingSize(r.root, r.rel));
+		return `${r.prefix}/${ws.writeBytes(r.root, r.rel, bytes, this.#owner())}`;
 	}
-	mkdir(space: Space, conversationId: number | undefined, path: string): string {
-		const wd = this.workdir(space, conversationId);
-		const { rel } = ws.resolveIn(wd, this.#rel(space, path));
+	mkdir(space: Space, conversationId: number | undefined, path: string, who?: Principal): string {
+		const r = this.route(space, conversationId, path, who, true);
+		if (r.store !== "conversation" && !r.rel) return r.prefix; // the store folder itself: it always exists
+		const { rel } = ws.resolveIn(r.root, r.rel);
 		if (!rel) throw new HttpError(400, "bad_path", "需要目录路径");
-		ws.mkdirp(wd, rel, this.#owner());
-		return rel;
+		ws.mkdirp(r.root, rel, this.#owner());
+		return r.prefix ? `${r.prefix}/${rel}` : rel;
 	}
-	remove(space: Space, conversationId: number | undefined, path: string) {
-		return ws.remove(this.workdir(space, conversationId), this.#rel(space, path));
+	remove(space: Space, conversationId: number | undefined, path: string, who?: Principal) {
+		const r = this.route(space, conversationId, path, who, true);
+		if (r.store !== "conversation" && !r.rel) throw new HttpError(400, "bad_path", `不能删除${storeLabel(r.store)}本身，只能删除其中的文件`);
+		const out = ws.remove(r.root, r.rel);
+		return r.prefix ? { ...out, removed: `${r.prefix}/${out.removed}` } : out;
 	}
-	move(space: Space, conversationId: number | undefined, from: string, to: string) {
-		return ws.move(this.workdir(space, conversationId), this.#rel(space, from), this.#rel(space, to));
+	move(space: Space, conversationId: number | undefined, from: string, to: string, who?: Principal) {
+		const a = this.route(space, conversationId, from, who, true);
+		const b = this.route(space, conversationId, to, who, true);
+		const show = (r: Routed, rel: string) => (r.prefix ? `${r.prefix}/${rel}` : rel);
+		if (a.root === b.root) {
+			if (a.store !== "conversation" && (!a.rel || !b.rel)) throw new HttpError(400, "bad_path", `不能移动或改名${storeLabel(a.store)}本身`);
+			const m = ws.move(a.root, a.rel, b.rel);
+			return { from: show(a, m.from), to: show(b, m.to) };
+		}
+		// Across stores a rename is impossible (different directories, possibly different volumes): a single file is copied (quota and ACL checked on
+		// the destination) and then removed; folders are refused rather than half-moved.
+		if ((a.store !== "conversation" && !a.rel) || (b.store !== "conversation" && !b.rel)) throw new HttpError(400, "bad_path", "不能移动或改名持久目录本身");
+		const src = ws.resolveIn(a.root, a.rel, { followFinal: false });
+		if (!src.rel || !ws.resolveIn(b.root, b.rel).rel) throw new HttpError(400, "bad_path", "需要源路径和目标路径");
+		let st;
+		try {
+			st = lstatSync(src.abs);
+		} catch {
+			throw new HttpError(404, "not_found", "源文件不存在");
+		}
+		if (!st.isFile()) throw new HttpError(400, "cross_store_folder", "不能把文件夹移动到另一个存储位置（会话文件夹、memories/、project/ 之间）；请逐个移动文件");
+		if (existsSync(ws.resolveIn(b.root, b.rel).abs)) throw new HttpError(409, "exists", "目标已存在");
+		const bytes = ws.readBytes(a.root, a.rel, 100 * 1024 * 1024).bytes;
+		const written = this.writeFile(space, conversationId, to, bytes, who);
+		ws.remove(a.root, a.rel);
+		return { from: show(a, src.rel), to: written };
 	}
 
 	/** Re-read settings that live outside the drivers (concurrency). */

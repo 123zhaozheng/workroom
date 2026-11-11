@@ -326,7 +326,7 @@ test("RemoteDrivers: the fingerprint includes the working directory (a change re
 		effectiveFor: () => eff,
 		explain: () => "",
 		connection: async () => ({ provider: "opensandbox" as const, endpoint: "http://x", apiKey: "k", ...(workDir ? { workDir } : {}) }),
-		lifecycle: () => ({ createTimeoutSec: 10, idleTimeoutSec: 60, lifetimeSec: 600 }),
+		lifecycle: () => ({ createTimeoutSec: 10, idlePauseSec: 60, pausedRetentionSec: 600, destroyAfterSec: 3600 }),
 		workDirOf: () => workDir,
 		factory: async () => (built++, provider),
 	};

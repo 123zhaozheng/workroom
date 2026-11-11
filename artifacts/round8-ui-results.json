@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T12:55:42.856Z",
+  "at": "2026-11-11T15:29:57.586Z",
   "results": [
     {
       "name": "density: members page shows fewer words than before",
@@ -19,7 +19,7 @@
     {
       "name": "density: sandbox page stays compact (<= 650 words after the round-11 sweep removed the explanations: was 941)",
       "ok": true,
-      "detail": "553"
+      "detail": "597"
     },
     {
       "name": "density: no other inspected page got wordier",
@@ -74,12 +74,12 @@
     {
       "name": "select: a 30+ item list scrolls inside the popover and stays inside the viewport (1440×900)",
       "ok": true,
-      "detail": "{\"sh\":1164,\"ch\":350,\"y\":227.7516632080078,\"h\":352.0000457763672}"
+      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.137939453125,\"h\":352}"
     },
     {
       "name": "select @390: the popover is opaque and inside the viewport",
       "ok": true,
-      "detail": "{\"x\":16,\"y\":304.55157470703125,\"width\":192,\"height\":352}"
+      "detail": "{\"x\":16,\"y\":305,\"width\":192,\"height\":352}"
     },
     {
       "name": "select @390: no horizontal scroll on the page",

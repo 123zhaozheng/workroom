@@ -62,6 +62,10 @@ export function describeTool(call: Pick<ToolCallDTO, "name" | "arguments">, extr
 			const lang = LANGUAGE[str(a.language).toLowerCase()] ?? str(a.language);
 			return { kind: "code", title: `运行代码${lang ? `（${lang}）` : ""}`, running: "正在运行代码" };
 		}
+		case "code_run": {
+			const lang = LANGUAGE[str(a.language).toLowerCase()] ?? str(a.language);
+			return { kind: "code", title: `运行代码${lang ? `（${lang}）` : ""}`, running: "正在运行代码" };
+		}
 		case "sandbox_write_file":
 			return { kind: "code", title: `写入工作区文件${quote(str(a.path))}`, running: "正在写入工作区文件" };
 		case "sandbox_read_file":

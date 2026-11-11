@@ -138,6 +138,10 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 			};
 			stream.onAbort(close); // client disconnect only stops the watch; the run continues server-side
 			onStop(rt.manager.hold(spaceId)); // a watched space is never evicted while idle
+			// Round 11 (R4): a tab that opened the stream with ?local=<tabId> can run code_run jobs of its user; they are announced as `localjob` events.
+			const localTab = c.req.query("local");
+			const localExec = rt.ctx.services.has("localExec") ? (rt.ctx.services.get("localExec") as any) : undefined;
+			if (localTab && localExec && /^[A-Za-z0-9_-]{8,64}$/.test(localTab)) onStop(localExec.broker.attach({ spaceId, conversationId: id, userId: p.userId, tabId: localTab, send: (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) }) }));
 
 			const ping = setInterval(() => {
 				if (!closed) stream.writeSSE({ event: "ping", data: JSON.stringify({ at: new Date().toISOString() }) }).catch(close);

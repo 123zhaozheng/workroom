@@ -11,7 +11,7 @@
 // Facts below were verified against a real local server (opensandbox-server 1.2.0, Docker runtime, SDK 1.2.0) — see docs/research/opensandbox.md.
 import { UnsupportedError } from "../provider.ts";
 import type {
-	CreateOptions, ExecOptions, ExecResult, ProviderCapabilities, ProviderConnection, ProviderHealth, RemoteEntry,
+	CreateOptions, ExecOptions, ExecResult, PauseOptions, ProviderCapabilities, ProviderConnection, ProviderHealth, RemoteEntry,
 	RemoteProvider, RemoteSandboxInfo, RemoteSession,
 } from "../provider.ts";
 import { HttpError } from "../../../core/http.ts";
@@ -39,7 +39,10 @@ export const OPENSANDBOX_CAPABILITIES: ProviderCapabilities = {
 	pty: "unsupported",
 	preview: "unsupported",
 	snapshot: "unsupported",
-	pauseResume: "unsupported",
+	// Round 11, verified live (opensandbox-server 1.2.0, Docker runtime): POST /v1/sandboxes/{id}/pause → state Paused (docker pause: processes frozen, filesystem and
+	// memory kept, a file written before the pause was read back after resume, exec works again ~1 s later); /resume → Running; renew works while paused.
+	// A paused sandbox STILL EXPIRES at its TTL (verified: a 60 s sandbox paused for 75 s was gone → 404), so pause() first extends the TTL to the retention window.
+	pauseResume: "supported",
 	skills: "upload_readonly",
 	isolation: "Container started by the OpenSandbox server (Docker or Kubernetes runtime; self-hosted). Shares the host kernel unless the operator configured a microVM/gVisor runtime. Outbound network follows the OpenSandbox server's own configuration (Workroom sends no network policy).",
 	location: "self_hosted",
@@ -68,6 +71,10 @@ interface SdkSandbox {
 }
 interface SdkInfo { id: string; status: { state: string }; metadata?: Record<string, string>; createdAt?: Date }
 interface SdkManager {
+	getSandboxInfo(id: string): Promise<{ status: { state: string } }>;
+	pauseSandbox(id: string): Promise<void>;
+	resumeSandbox(id: string): Promise<void>;
+	renewSandbox(id: string, timeoutSeconds: number): Promise<void>;
 	listSandboxInfos(f?: { states?: string[]; metadata?: Record<string, string>; page?: number; pageSize?: number }): Promise<{ items: SdkInfo[]; pagination?: { totalPages?: number; hasNextPage?: boolean } }>;
 	killSandbox(id: string, signal?: AbortSignal): Promise<void>;
 	close(): Promise<void>;
@@ -235,6 +242,40 @@ export function createProvider(conn: ProviderConnection): RemoteProvider & { clo
 		};
 	}
 
+	/** Poll GET sandbox until `want` (or fail on Failed/Terminated). Pause/resume requests are asynchronous (202). */
+	async function waitState(mgr: SdkManager, id: string, want: string, timeoutMs: number, what: string): Promise<void> {
+		const until = Date.now() + timeoutMs;
+		for (;;) {
+			const st = (await mgr.getSandboxInfo(id)).status.state;
+			if (st === want) return;
+			if (st === "Failed" || st === "Terminated") throw new Error(`OpenSandbox ${what}失败：沙箱状态为 ${st}`);
+			if (Date.now() > until) throw new Error(`OpenSandbox ${what}超时（当前状态 ${st}）`);
+			await new Promise((r) => setTimeout(r, 300));
+		}
+	}
+	/** Bring a Paused/Pausing/Resuming sandbox to Running; true when it is Running afterwards, false when it does not exist or is gone. */
+	async function ensureRunning(mod: SdkModule, cfg: unknown, id: string, signal?: AbortSignal): Promise<boolean> {
+		const mgr = mod.SandboxManager.create({ connectionConfig: cfg });
+		try {
+			let st: string;
+			try {
+				st = (await mgr.getSandboxInfo(id)).status.state;
+			} catch (e: any) {
+				if (isMissing(e)) return false;
+				throw e;
+			}
+			if (st === "Running") return true;
+			if (st === "Terminated" || st === "Failed") return false;
+			if (signal?.aborted) throw new Error("已取消");
+			if (st === "Pausing") await waitState(mgr, id, "Paused", 30_000, "等待暂停完成");
+			if (st !== "Resuming") await mgr.resumeSandbox(id);
+			await waitState(mgr, id, "Running", 60_000, "恢复");
+			return true;
+		} finally {
+			await mgr.close().catch(() => {});
+		}
+	}
+
 	const provider: RemoteProvider & { close(): Promise<void> } = {
 		id: ID,
 		label: "OpenSandbox",
@@ -306,6 +347,33 @@ export function createProvider(conn: ProviderConnection): RemoteProvider & { clo
 			} catch (e: any) {
 				if (isMissing(e)) return null;
 				throw new Error(`OpenSandbox 连接沙箱失败：${clean(msgOf(e), key)}`);
+			}
+		},
+
+		async pause(id, o: PauseOptions) {
+			const { mod, cfg } = await load();
+			const mgr = mod.SandboxManager.create({ connectionConfig: cfg });
+			try {
+				// A paused sandbox still expires at its TTL (verified live): extend it to the retention window first (best effort; a failure only shortens the fast-resume window).
+				await mgr.renewSandbox(id, Math.max(60, Math.ceil(o.retainMs / 1000))).catch(() => {});
+				await mgr.pauseSandbox(id);
+				await waitState(mgr, id, "Paused", 30_000, "暂停");
+			} catch (e: any) {
+				throw new Error(`OpenSandbox 暂停失败：${clean(msgOf(e), key)}`);
+			} finally {
+				await mgr.close().catch(() => {});
+			}
+		},
+
+		async resume(id, signal) {
+			const { mod, cfg } = await load();
+			try {
+				if (!(await ensureRunning(mod, cfg, id, signal))) return null;
+				const sb = await mod.Sandbox.connect({ sandboxId: id, connectionConfig: cfg, skipHealthCheck: false, readyTimeoutSeconds: 30, signal });
+				return session(sb);
+			} catch (e: any) {
+				if (isMissing(e)) return null;
+				throw new Error(`OpenSandbox 恢复失败：${clean(msgOf(e), key)}`);
 			}
 		},
 

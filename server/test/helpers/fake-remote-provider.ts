@@ -3,7 +3,7 @@
 // commands RemoteDriver emits plus a tiny "program" language for the user code. It proves nothing about any real provider: real
 // acceptance is server/test/sandbox-contract.test.ts against a live service.
 import { createHash } from "node:crypto";
-import type { CreateOptions, ExecOptions, ExecResult, ProviderCapabilities, RemoteEntry, RemoteProvider, RemoteSandboxInfo, RemoteSession } from "../../src/tools/sandbox/provider.ts";
+import type { CreateOptions, ExecOptions, ExecResult, PauseOptions, ProviderCapabilities, RemoteEntry, RemoteProvider, RemoteSandboxInfo, RemoteSession } from "../../src/tools/sandbox/provider.ts";
 
 const sha = (b: Uint8Array | string) => createHash("sha256").update(b).digest("hex");
 type Ent = { kind: "file"; bytes: Uint8Array; mode: number } | { kind: "symlink"; target: string } | { kind: "other" };
@@ -26,6 +26,9 @@ export class FakeBox {
 	writes: string[] = [];
 	execLog: string[] = [];
 	alive = true;
+	/** Round 11: paused / archived (the fake models a provider that keeps the filesystem; exec on a paused box fails). */
+	paused = false;
+	archived = false;
 	readonly id: string;
 	readonly metadata: Record<string, string>;
 	/** Every option the adapter layer passed to create() (round 9: tests assert it carries no network deny/allow option). */
@@ -60,6 +63,12 @@ export const FAKE_CAPS: ProviderCapabilities = {
 	skills: "upload_readonly", isolation: "in-memory test double", location: "self_hosted",
 };
 
+/** Round 11 options: which optional lifecycle methods the fake offers (the default fake is a provider WITHOUT pause: "recreate" mode). */
+export interface FakeLifecycleOptions {
+	pause?: boolean;
+	archive?: boolean;
+}
+
 export class FakeRemoteProvider implements RemoteProvider {
 	readonly id = "opensandbox" as const;
 	readonly label = "Fake (test double)";
@@ -73,11 +82,58 @@ export class FakeRemoteProvider implements RemoteProvider {
 	/** Round 10: new sandboxes get a non-root user that can only write below `writable` (e.g. ["/home/daytona", "/tmp"]); "/work" does not exist and cannot be created. */
 	nonRoot: { user: string; writable: string[] } | undefined;
 	#n = 0;
+	// ---- round 11: lifecycle test controls ----
+	pauseCalls: { id: string; retainMs: number }[] = [];
+	resumeCalls: string[] = [];
+	archiveCalls: string[] = [];
+	keepAliveCalls: { id: string; ms: number }[] = [];
+	failPause: Error | undefined;
+	failResume: Error | undefined;
+	/** Called inside create/pause/resume/archive: tests advance an injected clock here to get non-zero durations. */
+	hooks: { create?: () => void; pause?: () => void; resume?: () => void; archive?: () => void } = {};
+	/** Present only when constructed with { pause: true } (a provider that can pause); absent = "recreate" mode. */
+	pause?: (id: string, o: PauseOptions) => Promise<void>;
+	resume?: (id: string, signal?: AbortSignal) => Promise<RemoteSession | null>;
+	archive?: (id: string) => Promise<void>;
+
+	constructor(life: FakeLifecycleOptions = {}) {
+		if (life.pause) {
+			this.capabilities = { ...FAKE_CAPS, pauseResume: "unverified" };
+			this.pause = async (id, o) => {
+				if (this.failPause) throw this.failPause;
+				const b = this.boxes.get(id);
+				if (!b?.alive) throw new Error("sandbox gone");
+				this.pauseCalls.push({ id, retainMs: o.retainMs });
+				this.hooks.pause?.();
+				b.paused = true;
+			};
+			this.resume = async (id) => {
+				this.resumeCalls.push(id);
+				this.hooks.resume?.();
+				if (this.failResume) throw this.failResume;
+				const b = this.boxes.get(id);
+				if (!b?.alive) return null;
+				b.paused = false;
+				b.archived = false;
+				return this.#session(b);
+			};
+			if (life.archive) {
+				this.archive = async (id) => {
+					const b = this.boxes.get(id);
+					if (!b?.alive || !b.paused) throw new Error("only a paused sandbox can be archived");
+					this.archiveCalls.push(id);
+					this.hooks.archive?.();
+					b.archived = true;
+				};
+			}
+		}
+	}
 
 	async health() {
 		return { ok: true, detail: "fake ok" };
 	}
 	async create(o: CreateOptions): Promise<RemoteSession> {
+		this.hooks.create?.();
 		if (this.failCreate) throw this.failCreate;
 		const id = `fake-${++this.#n}`;
 		const box = new FakeBox(id, { ...o.metadata }, { ...o });
@@ -92,7 +148,7 @@ export class FakeRemoteProvider implements RemoteProvider {
 	}
 	async connect(id: string): Promise<RemoteSession | null> {
 		const b = this.boxes.get(id);
-		return b?.alive ? this.#session(b) : null;
+		return b?.alive && !b.paused ? this.#session(b) : null;
 	}
 	async list(metadata: Readonly<Record<string, string>>): Promise<RemoteSandboxInfo[]> {
 		return [...this.boxes.values()].filter((b) => b.alive && Object.entries(metadata).every(([k, v]) => b.metadata[k] === v)).map((b) => ({ id: b.id, state: "Running", metadata: b.metadata, createdAt: b.createdAt }));
@@ -139,7 +195,9 @@ export class FakeRemoteProvider implements RemoteProvider {
 				if (!box.canCreate(path)) throw new Error("permission denied");
 				box.dirs.add(path);
 			},
-			async keepAlive() {},
+			async keepAlive(ms) {
+				self.keepAliveCalls.push({ id: box.id, ms });
+			},
 		};
 	}
 	#blocked(box: FakeBox, path: string) {
@@ -155,8 +213,12 @@ export class FakeRemoteProvider implements RemoteProvider {
 		return sha(lines.join(""));
 	}
 
+	#unro(box: FakeBox, path: string): void {
+		for (const d of [...box.ro]) if (d === path || d.startsWith(`${path}/`)) box.ro.delete(d);
+	}
 	async #exec(box: FakeBox, o: ExecOptions): Promise<ExecResult> {
 		if (!box.alive) throw new Error("sandbox gone");
+		if (box.paused) throw new Error("sandbox is paused");
 		box.execLog.push(`${o.privileged ? "#" : "$"} ${o.command}`);
 		const ok = (stdout = ""): ExecResult => ({ status: "ok", exitCode: 0, stdout, stderr: "" });
 		const c = o.command;
@@ -196,6 +258,7 @@ export class FakeRemoteProvider implements RemoteProvider {
 		if ((m = /^cd '([^']+)' && find \. -type f \| LC_ALL=C sort/.exec(c))) return ok(`${this.#treeHash(box, m[1]!, false)}\n`);
 		if ((m = /^chmod -R u\+w '([^']+)'; rm -rf '[^']+'$/.exec(c))) return (this.#rm(box, m[1]!), ok());
 		if ((m = /^chmod -R a-w,a\+rX '([^']+)'$/.exec(c))) return (box.ro.add(m[1]!), ok());
+		if ((m = /^chmod -R u\+w '([^']+)' 2>\/dev\/null; true$/.exec(c))) return (this.#unro(box, m[1]!), ok()); // round 11 (R5): make a read-only store writable again before re-seeding it
 		if ((m = /^test -w '([^']+)' && echo writable \|\| echo protected$/.exec(c))) return ok(this.singleUser ? "writable\n" : "protected\n");
 		// user program
 		if ((m = /^(?:python3|\/bin\/sh|node(?: --max-old-space-size=\d+)?) '([^']+)'$/.exec(c))) {

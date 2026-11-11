@@ -17,6 +17,8 @@ import { Authorizations } from "@/features/admin/AuthzTab";
 import { Sessions } from "@/features/admin/SessionsTab";
 import { ModelsAdmin } from "@/features/admin/models/ModelsAdmin";
 import { SandboxProviders } from "@/features/admin/SandboxProviders";
+import { LocalExecAdmin } from "@/features/admin/LocalExecAdmin";
+import { SandboxPrices } from "@/features/admin/SandboxPrices";
 import { EnvVarsEditor } from "@/features/settings/EnvVars";
 import { Budgets } from "@/features/admin/BudgetsTab";
 import { Audit } from "@/features/admin/AuditTab";
@@ -133,7 +135,7 @@ export default function AdminPage() {
 							{tab === "roles" ? <Roles /> : null}
 							{tab === "authz" ? <Authorizations /> : null}
 							{tab === "models" ? <ModelsAdmin /> : null}
-							{tab === "sandbox" ? <SandboxProviders /> : null}
+							{tab === "sandbox" ? <><LocalExecAdmin /><SandboxProviders /><SandboxPrices /></> : null}
 							{tab === "env" ? (
 								<div data-testid="admin-env" className="space-y-3">
 									<EnvVarsEditor scope="org" scopeRef={me.orgId} editable testId="env-vars-org" />

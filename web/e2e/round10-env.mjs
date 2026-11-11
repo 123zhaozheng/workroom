@@ -1,8 +1,8 @@
-// Round 10 · the conversation environment button is two options (云端沙箱 active / 本地环境 coming soon) and the org has ONE active sandbox channel.
+// Round 10 · the conversation environment button is two options (round 11: 本地环境 + 云端沙箱, both real) and the org has ONE active sandbox channel.
 //  A. admin 沙箱 page (REAL server): 当前使用的沙箱渠道 is a single radio choice; choosing a provider deactivates the others; choosing 平台内置沙箱 deactivates all;
 //     a provider that fails server validation shows the server's message and changes nothing; allowProjectOverride=true is refused; the project page has no picker.
 //  B. the popover (REAL server): exactly two options (云端沙箱 / 本地环境) and nothing else — round 11 simplification (intentional): no backend name, state line,
-//     working directory, admin link, 即将推出 or tooltip text; 本地环境 is disabled; only a real failure adds one short line 「准备失败 · 重试」 (reason on hover).
+//     working directory, admin link, 即将推出 or tooltip text; 本地环境 is enabled while the org switch is on (disabled case: round11-lifecycle.mjs); only a real failure adds one short line 「准备失败 · 重试」 (reason on hover).
 //  Screenshots (artifacts/screenshots/round10/): popover at 1440 and 390, light and dark; the admin channel choice at 1440 and 390.
 // Run: npm run build:web && node web/e2e/round10-env.mjs        (port 8952)
 import { mkdirSync } from "node:fs";
@@ -46,7 +46,7 @@ try {
 	// ================================================================ A. one active channel (admin)
 	await openAdmin();
 	check("A tab is called 沙箱 and the section 当前使用的沙箱渠道 is one radio group: 平台内置沙箱 + OpenSandbox + E2B + Daytona", (await admin.locator('[data-testid="admin-tab-sandbox"]').innerText()).includes("沙箱") && (await admin.locator('[data-testid="sandbox-channel"]').innerText()).includes("当前使用的沙箱渠道") && (await admin.locator('[data-testid="sandbox-channel"] input[type="radio"]').count()) === 4);
-	check("A fresh org: 平台内置沙箱 is chosen, no provider is active, nothing else to switch on or off", (await admin.locator('[data-testid="channel-local"] input').isChecked()) && (await enabledIds()) === "" && (await admin.locator('[data-testid="allow-override"], [data-testid$="-enabled"]').count()) === 0);
+	check("A fresh org: 平台内置沙箱 is chosen, no provider is active, nothing else to switch on or off", (await admin.locator('[data-testid="channel-local"] input').isChecked()) && (await enabledIds()) === "" && (await admin.locator('[data-testid="allow-override"], [data-testid^="provider-"] [data-testid$="-enabled"]').count()) === 0);
 	check("A providers without a saved key cannot be chosen (disabled radio, with the reason)", (await admin.locator('[data-testid="channel-e2b"] input').isDisabled()) && (await admin.locator('[data-testid="channel-e2b"]').innerText()).includes("未配置密钥"));
 	await shotR(admin, "admin-channel-1440-light");
 
@@ -117,12 +117,15 @@ try {
 	const text = await pop.innerText();
 	const kind = await admin.locator('[data-testid="env-button"]').getAttribute("data-env-kind");
 	const popText = text.replace(/\s+/g, " ").trim();
-	check("B local channel: 云端沙箱 is the active option (the backend name is only in the screen-reader text); popover says nothing but 云端沙箱 / 本地环境 (+ 准备失败 when the host has no driver)", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && (kind === "local" || kind === "none") && /^云端沙箱\s?(\（当前：[^）]*\）)?\s?(准备失败)?\s?本地环境$/.test(popText.replace(/（当前：[^）]*）/, "")), popText);
+	check("B local channel: popover says nothing but 本地环境 / 云端沙箱 (+ 准备失败 when the host has no driver); the backend name is only in the screen-reader text", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && (kind === "local" || kind === "none") && /^本地环境\s?云端沙箱\s?(准备失败)?$/.test(popText.replace(/\s?（[^）]*）/, "")), popText);
 	check("B no state line unless something failed; never a 现在准备 button, no backend label", (await pop.locator('[data-testid="env-label"]').count()) === 0 && (await pop.locator('[data-testid="env-prepare"]').count()) === 0 && ((await pop.locator('[data-testid="env-state"]').count()) === 0 || /^准备失败/.test((await pop.locator('[data-testid="env-state"]').innerText()).trim())));
 	const local = pop.locator('[data-testid="env-local"]');
-	check("B 本地环境 is shown disabled (aria-disabled), as just the two words — no 即将推出, no explanation", (await local.getAttribute("aria-disabled")) === "true" && (await local.innerText()).trim() === "本地环境");
-	await local.click({ force: true });
-	check("B clicking 本地环境 changes nothing (popover open, still 云端沙箱, no request sent)", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && posts.length === 0);
+	check("B [round 11] 本地环境 is an enabled radio (org switch on by default) and the chosen one — just those four characters, no 即将推出, no explanation", (await local.getAttribute("aria-disabled")) === null && (await local.getAttribute("aria-checked")) === "true" && (await local.innerText()).trim() === "本地环境");
+	await pop.locator('[data-testid="env-cloud"]').click();
+	await admin.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
+	await local.click();
+	await admin.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "local");
+	check("B on the home page (no conversation yet) choosing a row only switches the icon/pref in this tab: popover stays open, no environment request sent", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && posts.length === 0);
 	await admin.mouse.move(5, 5); // the click above left the pointer on the element: move away, then hover for real
 	await local.hover();
 	await sleep(900); // tooltip delay is 400ms

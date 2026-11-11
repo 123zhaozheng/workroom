@@ -1,0 +1,1090 @@
+[
+	{
+		"id": 1,
+		"split": "train",
+		"needs": true,
+		"text": "帮我运行一下这段 Python 代码，看看输出是什么\n```python\nprint(sum(range(100)))\n```"
+	},
+	{
+		"id": 2,
+		"split": "train",
+		"needs": true,
+		"text": "Run this script and tell me the output"
+	},
+	{
+		"id": 3,
+		"split": "train",
+		"needs": true,
+		"text": "分析一下这份销售数据，按月份统计总额并画折线图",
+		"attachments": [
+			{
+				"name": "sales.csv"
+			}
+		]
+	},
+	{
+		"id": 4,
+		"split": "train",
+		"needs": true,
+		"text": "把这个 zip 解压，统计里面有多少个文件",
+		"attachments": [
+			{
+				"name": "photos.zip"
+			}
+		]
+	},
+	{
+		"id": 5,
+		"split": "train",
+		"needs": true,
+		"text": "Convert these PNG screenshots into a single PDF",
+		"attachments": [
+			{
+				"name": "shot1.png"
+			},
+			{
+				"name": "shot2.png"
+			}
+		]
+	},
+	{
+		"id": 6,
+		"split": "train",
+		"needs": true,
+		"text": "pip install pandas 然后读取 data.xlsx 做个透视表"
+	},
+	{
+		"id": 7,
+		"split": "train",
+		"needs": true,
+		"text": "Can you plot a histogram of the ages in this spreadsheet?",
+		"attachments": [
+			{
+				"name": "ages.xlsx"
+			}
+		]
+	},
+	{
+		"id": 8,
+		"split": "train",
+		"needs": true,
+		"text": "写个脚本批量把文件夹里的 jpg 压缩到 800 像素宽"
+	},
+	{
+		"id": 9,
+		"split": "train",
+		"needs": true,
+		"text": "编译这个 C 程序并运行看看结果\n```c\n#include <stdio.h>\nint main(){printf(\"hi\");}\n```"
+	},
+	{
+		"id": 10,
+		"split": "train",
+		"needs": true,
+		"text": "Build a small Flask app and deploy it so I can test the endpoint"
+	},
+	{
+		"id": 11,
+		"split": "train",
+		"needs": true,
+		"text": "用沙箱跑一下，看看这个正则能不能匹配全部日志行"
+	},
+	{
+		"id": 12,
+		"split": "train",
+		"needs": true,
+		"text": "帮我爬取这个网页上的表格并保存成 csv：https://example.com/list"
+	},
+	{
+		"id": 13,
+		"split": "train",
+		"needs": true,
+		"text": "计算斐波那契数列前 500 项的和"
+	},
+	{
+		"id": 14,
+		"split": "train",
+		"needs": true,
+		"text": "Please clean this CSV: drop duplicates, fix the date column, and export a new file.",
+		"attachments": [
+			{
+				"name": "customers.csv"
+			}
+		]
+	},
+	{
+		"id": 15,
+		"split": "train",
+		"needs": true,
+		"text": "测试一下这个函数有没有 bug，跑几个用例\ndef add(a, b):\n    return a - b"
+	},
+	{
+		"id": 16,
+		"split": "train",
+		"needs": true,
+		"text": "cd /tmp && git clone https://github.com/example/repo.git && npm install，帮我跑起来"
+	},
+	{
+		"id": 17,
+		"split": "train",
+		"needs": true,
+		"text": "把这个 notebook 跑一遍，导出 html",
+		"attachments": [
+			{
+				"name": "analysis.ipynb"
+			}
+		]
+	},
+	{
+		"id": 18,
+		"split": "train",
+		"needs": true,
+		"text": "Use pandas to compute the correlation between price and sales in the attached file.",
+		"attachments": [
+			{
+				"name": "prices.csv"
+			}
+		]
+	},
+	{
+		"id": 19,
+		"split": "train",
+		"needs": true,
+		"text": "对这 3 个 Excel 做合并，按订单号去重",
+		"attachments": [
+			{
+				"name": "q1.xlsx"
+			},
+			{
+				"name": "q2.xlsx"
+			},
+			{
+				"name": "q3.xlsx"
+			}
+		]
+	},
+	{
+		"id": 20,
+		"split": "train",
+		"needs": true,
+		"text": "Run the unit tests in this repo and summarize the failures.",
+		"attachments": [
+			{
+				"name": "repo.tar.gz"
+			}
+		]
+	},
+	{
+		"id": 21,
+		"split": "train",
+		"needs": true,
+		"text": "用 Python 模拟一下蒙特卡洛，估算圆周率，迭代一百万次"
+	},
+	{
+		"id": 22,
+		"split": "train",
+		"needs": true,
+		"text": "把视频第 10 秒到第 20 秒截出来，转成 gif",
+		"attachments": [
+			{
+				"name": "clip.mp4"
+			}
+		]
+	},
+	{
+		"id": 23,
+		"split": "train",
+		"needs": true,
+		"text": "Write a Python script that renders a QR code for this URL and give me the PNG"
+	},
+	{
+		"id": 24,
+		"split": "train",
+		"needs": true,
+		"text": "识别这几张图片里的文字（OCR）并整理成表格",
+		"attachments": [
+			{
+				"name": "a.png"
+			},
+			{
+				"name": "b.png"
+			}
+		]
+	},
+	{
+		"id": 25,
+		"split": "train",
+		"needs": true,
+		"text": "统计这份日志里每个 IP 的访问次数，找出前十",
+		"attachments": [
+			{
+				"name": "access.log"
+			}
+		]
+	},
+	{
+		"id": 26,
+		"split": "train",
+		"needs": true,
+		"text": "Install numpy and benchmark matrix multiplication for 2000x2000 matrices"
+	},
+	{
+		"id": 27,
+		"split": "train",
+		"needs": true,
+		"text": "帮我把这个 json 转换成 csv，字段扁平化",
+		"attachments": [
+			{
+				"name": "data.json"
+			}
+		]
+	},
+	{
+		"id": 28,
+		"split": "train",
+		"needs": true,
+		"text": "这个 SQL 脚本帮我在 sqlite 里跑一下，建表后查询前十条\n```sql\nCREATE TABLE t(a int);\n```"
+	},
+	{
+		"id": 29,
+		"split": "train",
+		"needs": true,
+		"text": "再加一列，按地区汇总",
+		"usedSandbox": true
+	},
+	{
+		"id": 30,
+		"split": "train",
+		"needs": true,
+		"text": "好的，继续，把结果导出一下",
+		"usedSandbox": true
+	},
+	{
+		"id": 31,
+		"split": "train",
+		"needs": false,
+		"text": "帮我写一封给客户的道歉邮件，语气诚恳一点"
+	},
+	{
+		"id": 32,
+		"split": "train",
+		"needs": false,
+		"text": "Translate this paragraph into French: 'The meeting has been moved to Friday.'"
+	},
+	{
+		"id": 33,
+		"split": "train",
+		"needs": false,
+		"text": "什么是 Python 的装饰器？举个例子"
+	},
+	{
+		"id": 34,
+		"split": "train",
+		"needs": false,
+		"text": "Explain the difference between TCP and UDP."
+	},
+	{
+		"id": 35,
+		"split": "train",
+		"needs": false,
+		"text": "总结一下这篇文章的要点",
+		"attachments": [
+			{
+				"name": "article.pdf"
+			}
+		]
+	},
+	{
+		"id": 36,
+		"split": "train",
+		"needs": false,
+		"text": "你好"
+	},
+	{
+		"id": 37,
+		"split": "train",
+		"needs": false,
+		"text": "给我推荐几本适合入门的经济学书"
+	},
+	{
+		"id": 38,
+		"split": "train",
+		"needs": false,
+		"text": "润色这段自我介绍，让它更专业"
+	},
+	{
+		"id": 39,
+		"split": "train",
+		"needs": false,
+		"text": "What's a good name for a coffee shop?"
+	},
+	{
+		"id": 40,
+		"split": "train",
+		"needs": false,
+		"text": "帮我想一个周末的亲子活动方案"
+	},
+	{
+		"id": 41,
+		"split": "train",
+		"needs": false,
+		"text": "如何看待远程办公对团队效率的影响？"
+	},
+	{
+		"id": 42,
+		"split": "train",
+		"needs": false,
+		"text": "Summarize the key points of this contract.",
+		"attachments": [
+			{
+				"name": "contract.docx"
+			}
+		]
+	},
+	{
+		"id": 43,
+		"split": "train",
+		"needs": false,
+		"text": "解释一下这段代码是做什么的\n```js\nconst a = [1,2,3].map(x => x*2)\n```"
+	},
+	{
+		"id": 44,
+		"split": "train",
+		"needs": false,
+		"text": "Write a cover letter for a marketing manager position."
+	},
+	{
+		"id": 45,
+		"split": "train",
+		"needs": false,
+		"text": "请把下面这段话翻译成英文并保持正式语气"
+	},
+	{
+		"id": 46,
+		"split": "train",
+		"needs": false,
+		"text": "数据分析师这个职业前景怎么样？需要学什么？"
+	},
+	{
+		"id": 47,
+		"split": "train",
+		"needs": false,
+		"text": "Can you explain how Docker containers differ from virtual machines?"
+	},
+	{
+		"id": 48,
+		"split": "train",
+		"needs": false,
+		"text": "帮我把这句话改得更简洁：我们将会在下周的时候召开一个会议"
+	},
+	{
+		"id": 49,
+		"split": "train",
+		"needs": false,
+		"text": "写一首关于秋天的诗"
+	},
+	{
+		"id": 50,
+		"split": "train",
+		"needs": false,
+		"text": "What are the pros and cons of using Kubernetes for a small team?"
+	},
+	{
+		"id": 51,
+		"split": "train",
+		"needs": false,
+		"text": "总结下今天会议纪要，列出待办事项"
+	},
+	{
+		"id": 52,
+		"split": "train",
+		"needs": false,
+		"text": "How do I politely decline a meeting invite?"
+	},
+	{
+		"id": 53,
+		"split": "train",
+		"needs": false,
+		"text": "我想学习机器学习，给我一个三个月的学习计划"
+	},
+	{
+		"id": 54,
+		"split": "train",
+		"needs": false,
+		"text": "帮我润色一下这份周报",
+		"attachments": [
+			{
+				"name": "weekly.docx"
+			}
+		]
+	},
+	{
+		"id": 55,
+		"split": "train",
+		"needs": false,
+		"text": "Write a short bio for my LinkedIn profile, I'm a product designer."
+	},
+	{
+		"id": 56,
+		"split": "train",
+		"needs": false,
+		"text": "能不能比较一下 Python 和 Go 的优缺点？"
+	},
+	{
+		"id": 57,
+		"split": "train",
+		"needs": false,
+		"text": "Give me a recipe for vegetarian lasagna"
+	},
+	{
+		"id": 58,
+		"split": "train",
+		"needs": false,
+		"text": "Draft an agenda for tomorrow's planning meeting"
+	},
+	{
+		"id": 59,
+		"split": "train",
+		"needs": false,
+		"text": "这张图里有什么？",
+		"attachments": [
+			{
+				"name": "photo.png"
+			}
+		]
+	},
+	{
+		"id": 60,
+		"split": "train",
+		"needs": false,
+		"text": "谢谢，这个回答很有帮助"
+	},
+	{
+		"id": 61,
+		"split": "heldout",
+		"needs": true,
+		"text": "帮我看看这份财报的各项指标同比变化，做成图表",
+		"attachments": [
+			{
+				"name": "report.xlsx"
+			}
+		]
+	},
+	{
+		"id": 62,
+		"split": "heldout",
+		"needs": true,
+		"text": "Parse this JSON log and count errors by service",
+		"attachments": [
+			{
+				"name": "app.json"
+			}
+		]
+	},
+	{
+		"id": 63,
+		"split": "heldout",
+		"needs": true,
+		"text": "跑一下 pytest，把失败的用例贴出来"
+	},
+	{
+		"id": 64,
+		"split": "heldout",
+		"needs": true,
+		"text": "Can you run `npm run build` and tell me if it passes?"
+	},
+	{
+		"id": 65,
+		"split": "heldout",
+		"needs": true,
+		"text": "把这批照片统一缩放到 1080p，打包成 zip 给我",
+		"attachments": [
+			{
+				"name": "a.jpg"
+			},
+			{
+				"name": "b.jpg"
+			},
+			{
+				"name": "c.jpg"
+			}
+		]
+	},
+	{
+		"id": 66,
+		"split": "heldout",
+		"needs": true,
+		"text": "```python\nimport pandas as pd\ndf = pd.read_csv('x.csv')\nprint(df.describe())\n```\n这段在我数据上会输出什么？",
+		"attachments": [
+			{
+				"name": "x.csv"
+			}
+		]
+	},
+	{
+		"id": 67,
+		"split": "heldout",
+		"needs": true,
+		"text": "Create a bar chart comparing Q1–Q4 revenue: 120, 150, 90, 200"
+	},
+	{
+		"id": 68,
+		"split": "heldout",
+		"needs": true,
+		"text": "写个 Python 脚本把目录下所有 docx 转换成 pdf 并且跑一遍"
+	},
+	{
+		"id": 69,
+		"split": "heldout",
+		"needs": true,
+		"text": "Scrape the headlines from this page and save them to a text file: https://news.example.com"
+	},
+	{
+		"id": 70,
+		"split": "heldout",
+		"needs": true,
+		"text": "解压 backup.tar.gz，找出最大的 5 个文件",
+		"attachments": [
+			{
+				"name": "backup.tar.gz"
+			}
+		]
+	},
+	{
+		"id": 71,
+		"split": "heldout",
+		"needs": true,
+		"text": "安装 ffmpeg 然后把 mp3 转成 wav",
+		"attachments": [
+			{
+				"name": "song.mp3"
+			}
+		]
+	},
+	{
+		"id": 72,
+		"split": "heldout",
+		"needs": true,
+		"text": "Calculate the SHA-256 of the attached file.",
+		"attachments": [
+			{
+				"name": "firmware.bin"
+			}
+		]
+	},
+	{
+		"id": 73,
+		"split": "heldout",
+		"needs": true,
+		"text": "用 R 做一个线性回归，看看广告投入对销量的影响",
+		"attachments": [
+			{
+				"name": "ads.csv"
+			}
+		]
+	},
+	{
+		"id": 74,
+		"split": "heldout",
+		"needs": true,
+		"text": "帮我写个爬虫抓取豆瓣电影 Top250 的片名和评分，并运行验证一下"
+	},
+	{
+		"id": 75,
+		"split": "heldout",
+		"needs": true,
+		"text": "Simulate 10,000 dice rolls and show me the distribution"
+	},
+	{
+		"id": 76,
+		"split": "heldout",
+		"needs": true,
+		"text": "把这个 PPT 里的所有图片导出来",
+		"attachments": [
+			{
+				"name": "deck.pptx"
+			}
+		]
+	},
+	{
+		"id": 77,
+		"split": "heldout",
+		"needs": true,
+		"text": "Set up a virtualenv, install requests, and test whether this API returns 200"
+	},
+	{
+		"id": 78,
+		"split": "heldout",
+		"needs": true,
+		"text": "把这个 Markdown 转成 PDF，用 pandoc"
+	},
+	{
+		"id": 79,
+		"split": "heldout",
+		"needs": true,
+		"text": "解析这个 sqlite 数据库，列出所有表和行数",
+		"attachments": [
+			{
+				"name": "app.db"
+			}
+		]
+	},
+	{
+		"id": 80,
+		"split": "heldout",
+		"needs": true,
+		"text": "Merge these three PDFs into one and add page numbers",
+		"attachments": [
+			{
+				"name": "1.pdf"
+			},
+			{
+				"name": "2.pdf"
+			},
+			{
+				"name": "3.pdf"
+			}
+		]
+	},
+	{
+		"id": 81,
+		"split": "heldout",
+		"needs": true,
+		"text": "统计一下这批评论里出现频率最高的 20 个词",
+		"attachments": [
+			{
+				"name": "comments.txt"
+			}
+		]
+	},
+	{
+		"id": 82,
+		"split": "heldout",
+		"needs": true,
+		"text": "Check if this regex matches all the emails in the list, run it on the sample"
+	},
+	{
+		"id": 83,
+		"split": "heldout",
+		"needs": true,
+		"text": "再跑一次，这回把阈值改成 0.5",
+		"usedSandbox": true
+	},
+	{
+		"id": 84,
+		"split": "heldout",
+		"needs": true,
+		"text": "docker build 这个项目然后告诉我镜像多大",
+		"attachments": [
+			{
+				"name": "Dockerfile"
+			}
+		]
+	},
+	{
+		"id": 85,
+		"split": "heldout",
+		"needs": true,
+		"text": "生成一个 1000 行的测试数据 csv 文件，包含姓名、年龄、城市"
+	},
+	{
+		"id": 86,
+		"split": "heldout",
+		"needs": true,
+		"text": "Run a quick benchmark: how long does sorting 1M random integers take in Python vs Node?"
+	},
+	{
+		"id": 87,
+		"split": "heldout",
+		"needs": true,
+		"text": "把 Excel 里的 sheet 拆成单独的 csv 文件",
+		"attachments": [
+			{
+				"name": "book.xlsx"
+			}
+		]
+	},
+	{
+		"id": 88,
+		"split": "heldout",
+		"needs": true,
+		"text": "Compile this Rust program and fix any errors\n```rust\nfn main() { println!(\"hi\") }\n```"
+	},
+	{
+		"id": 89,
+		"split": "heldout",
+		"needs": true,
+		"text": "帮我画一张 sin(x) 和 cos(x) 的图，范围 0 到 2π"
+	},
+	{
+		"id": 90,
+		"split": "heldout",
+		"needs": true,
+		"text": "Compress these images to under 200KB each without visible quality loss",
+		"attachments": [
+			{
+				"name": "p1.jpg"
+			},
+			{
+				"name": "p2.jpg"
+			}
+		]
+	},
+	{
+		"id": 91,
+		"split": "heldout",
+		"needs": false,
+		"text": "写一份给全体员工的放假通知"
+	},
+	{
+		"id": 92,
+		"split": "heldout",
+		"needs": false,
+		"text": "Proofread this email before I send it."
+	},
+	{
+		"id": 93,
+		"split": "heldout",
+		"needs": false,
+		"text": "解释一下什么是梯度下降"
+	},
+	{
+		"id": 94,
+		"split": "heldout",
+		"needs": false,
+		"text": "What's the capital of Australia and why was it chosen?"
+	},
+	{
+		"id": 95,
+		"split": "heldout",
+		"needs": false,
+		"text": "请帮我总结这份会议录音的文字稿",
+		"attachments": [
+			{
+				"name": "transcript.docx"
+			}
+		]
+	},
+	{
+		"id": 96,
+		"split": "heldout",
+		"needs": false,
+		"text": "帮我起个公众号名字，主题是职场成长"
+	},
+	{
+		"id": 97,
+		"split": "heldout",
+		"needs": false,
+		"text": "Rewrite this paragraph to sound more confident."
+	},
+	{
+		"id": 98,
+		"split": "heldout",
+		"needs": false,
+		"text": "分析一下当前宏观经济形势对房地产的影响"
+	},
+	{
+		"id": 99,
+		"split": "heldout",
+		"needs": false,
+		"text": "Is it better to learn Python or JavaScript first?"
+	},
+	{
+		"id": 100,
+		"split": "heldout",
+		"needs": false,
+		"text": "把这段话翻译成日语：谢谢您的耐心等待"
+	},
+	{
+		"id": 101,
+		"split": "heldout",
+		"needs": false,
+		"text": "Tell me a joke about programmers."
+	},
+	{
+		"id": 102,
+		"split": "heldout",
+		"needs": false,
+		"text": "帮我设计一个 7 天的东京旅行行程"
+	},
+	{
+		"id": 103,
+		"split": "heldout",
+		"needs": false,
+		"text": "Explain what a REST API is to a non-technical manager."
+	},
+	{
+		"id": 104,
+		"split": "heldout",
+		"needs": false,
+		"text": "Why does my sourdough starter smell like acetone?"
+	},
+	{
+		"id": 105,
+		"split": "heldout",
+		"needs": false,
+		"text": "帮我审一下这份合同里有没有对我不利的条款",
+		"attachments": [
+			{
+				"name": "contract.pdf"
+			}
+		]
+	},
+	{
+		"id": 106,
+		"split": "heldout",
+		"needs": false,
+		"text": "这个 bug 的原因是什么？报错信息：TypeError: undefined is not a function"
+	},
+	{
+		"id": 107,
+		"split": "heldout",
+		"needs": false,
+		"text": "Summarize this report in five bullet points.",
+		"attachments": [
+			{
+				"name": "annual-report.pdf"
+			}
+		]
+	},
+	{
+		"id": 108,
+		"split": "heldout",
+		"needs": false,
+		"text": "给我讲讲 Docker 和虚拟机的区别"
+	},
+	{
+		"id": 109,
+		"split": "heldout",
+		"needs": false,
+		"text": "I need a catchy slogan for our eco-friendly water bottle."
+	},
+	{
+		"id": 110,
+		"split": "heldout",
+		"needs": false,
+		"text": "如何向领导汇报工作进展？有什么技巧？"
+	},
+	{
+		"id": 111,
+		"split": "heldout",
+		"needs": false,
+		"text": "What does the 'async' keyword do in JavaScript?"
+	},
+	{
+		"id": 112,
+		"split": "heldout",
+		"needs": false,
+		"text": "写一篇 800 字的读后感，书是《人类简史》"
+	},
+	{
+		"id": 113,
+		"split": "heldout",
+		"needs": false,
+		"text": "Can you recommend a good project management tool for a 10-person team?"
+	},
+	{
+		"id": 114,
+		"split": "heldout",
+		"needs": false,
+		"text": "这份简历有什么需要改进的地方？",
+		"attachments": [
+			{
+				"name": "resume.docx"
+			}
+		]
+	},
+	{
+		"id": 115,
+		"split": "heldout",
+		"needs": false,
+		"text": "Describe what's in this picture.",
+		"attachments": [
+			{
+				"name": "cat.jpg"
+			}
+		]
+	},
+	{
+		"id": 116,
+		"split": "heldout",
+		"needs": false,
+		"text": "怎样写好一份产品需求文档？给个大纲"
+	},
+	{
+		"id": 117,
+		"split": "heldout",
+		"needs": false,
+		"text": "What's the difference between a list and a tuple in Python?"
+	},
+	{
+		"id": 118,
+		"split": "heldout",
+		"needs": false,
+		"text": "Draft a polite follow-up message to a recruiter."
+	},
+	{
+		"id": 119,
+		"split": "heldout",
+		"needs": false,
+		"text": "帮我把这首诗翻译成英文，并解释其中的意象"
+	},
+	{
+		"id": 120,
+		"split": "heldout",
+		"needs": false,
+		"text": "数据分析和数据科学有什么区别？"
+	},
+	{
+		"id": 121,
+		"split": "heldout",
+		"needs": true,
+		"text": "帮我算一下这 200 个订单的总金额和平均客单价",
+		"attachments": [
+			{
+				"name": "orders.xlsx"
+			}
+		]
+	},
+	{
+		"id": 122,
+		"split": "heldout",
+		"needs": true,
+		"text": "这个网站现在能不能打开？帮我检查一下 https://status.example.org 的响应时间"
+	},
+	{
+		"id": 123,
+		"split": "heldout",
+		"needs": true,
+		"text": "我的脚本一直报 ModuleNotFoundError，你帮我复现一下并修好\nimport requests\nprint(requests.get('http://localhost:8000').status_code)"
+	},
+	{
+		"id": 124,
+		"split": "heldout",
+		"needs": true,
+		"text": "把这段 base64 解码，看看是什么内容：aGVsbG8gd29ybGQ="
+	},
+	{
+		"id": 125,
+		"split": "heldout",
+		"needs": true,
+		"text": "Is 1000000007 prime? Check it properly."
+	},
+	{
+		"id": 126,
+		"split": "heldout",
+		"needs": true,
+		"text": "What are the differences between these two files?",
+		"attachments": [
+			{
+				"name": "old_config.yaml"
+			},
+			{
+				"name": "new_config.yaml"
+			}
+		]
+	},
+	{
+		"id": 127,
+		"split": "heldout",
+		"needs": true,
+		"text": "Sort these lines alphabetically, drop blank ones and give me the result as a file",
+		"attachments": [
+			{
+				"name": "names.txt"
+			}
+		]
+	},
+	{
+		"id": 128,
+		"split": "heldout",
+		"needs": true,
+		"text": "帮我整理这个压缩包里的文件，按扩展名分到不同文件夹",
+		"attachments": [
+			{
+				"name": "download.zip"
+			}
+		]
+	},
+	{
+		"id": 129,
+		"split": "heldout",
+		"needs": true,
+		"text": "把这张图转成黑白的，再加 10 像素白边",
+		"attachments": [
+			{
+				"name": "photo.jpg"
+			}
+		]
+	},
+	{
+		"id": 130,
+		"split": "heldout",
+		"needs": true,
+		"text": "How many words are in the attached document? Give me an exact count.",
+		"attachments": [
+			{
+				"name": "thesis.docx"
+			}
+		]
+	},
+	{
+		"id": 131,
+		"split": "heldout",
+		"needs": false,
+		"text": "写一个 Python 函数判断一个字符串是不是回文"
+	},
+	{
+		"id": 132,
+		"split": "heldout",
+		"needs": false,
+		"text": "How do I install Python on Windows 11?"
+	},
+	{
+		"id": 133,
+		"split": "heldout",
+		"needs": false,
+		"text": "给我讲讲 pandas 和 numpy 的区别"
+	},
+	{
+		"id": 134,
+		"split": "heldout",
+		"needs": false,
+		"text": "What's the best chart type for showing market share over time?"
+	},
+	{
+		"id": 135,
+		"split": "heldout",
+		"needs": false,
+		"text": "帮我写一份数据分析岗位的招聘 JD"
+	},
+	{
+		"id": 136,
+		"split": "heldout",
+		"needs": false,
+		"text": "Write a SQL query that returns the top 3 customers by revenue. Tables: customers(id, name), orders(id, customer_id, total)."
+	},
+	{
+		"id": 137,
+		"split": "heldout",
+		"needs": false,
+		"text": "帮我解释一下这个报错：ModuleNotFoundError: No module named 'requests'"
+	},
+	{
+		"id": 138,
+		"split": "heldout",
+		"needs": false,
+		"text": "用 Excel 怎么做数据透视表？一步步告诉我"
+	},
+	{
+		"id": 139,
+		"split": "heldout",
+		"needs": false,
+		"text": "Convert 5 miles to kilometers."
+	},
+	{
+		"id": 140,
+		"split": "heldout",
+		"needs": false,
+		"text": "What does `git rebase` do compared to `git merge`?"
+	}
+]

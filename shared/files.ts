@@ -308,7 +308,7 @@ export interface SandboxEntryDTO {
 	readonly kind: "file" | "directory";
 	readonly size: number;
 	readonly mtime: string;
-	readonly expiresAt: string;
+	readonly expiresAt?: string;
 }
 /** GET /sandbox/:spaceId → info; GET /sandbox/:spaceId/files?conversationId= (now the workspace listing); GET /sandbox/:spaceId/runs?conversationId= ; GET /sandbox/:spaceId/runs/:runId ; GET /sandbox/:spaceId/file?path=&conversationId= (download) */
 export type { WorkspaceFilesResponse as SandboxFilesResponse } from "./sandbox.ts";

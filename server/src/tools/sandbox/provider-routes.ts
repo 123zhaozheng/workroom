@@ -8,7 +8,7 @@ import { jsonBody, principalOf } from "../../core/http.ts";
 import type { SandboxInstanceDTO, SandboxProviderUpdate, SandboxSelectionPolicyDTO } from "../../../../shared/sandbox.ts";
 import { providerConfigsFor, SandboxProviderConfigs } from "./provider-config.ts";
 
-const STATES = new Set(["creating", "ready", "stopping", "destroyed", "lost", "error"]);
+const STATES = new Set(["creating", "ready", "pausing", "paused", "resuming", "archived", "stopping", "destroyed", "lost", "error"]);
 
 export function registerSandboxProviderRoutes(api: Hono<AppEnv>, ctx: AppContext): void {
 	const svc = () => providerConfigsFor(ctx);
@@ -42,7 +42,7 @@ export function registerSandboxProviderRoutes(api: Hono<AppEnv>, ctx: AppContext
 				if (!STATES.has(state)) continue;
 				SandboxProviderConfigs.provider(provider);
 				const s = (k: string) => (r[k] == null ? undefined : String(r[k]));
-				out.push({ id: String(r.id), provider: provider as SandboxInstanceDTO["provider"], spaceId, workspaceKey: String(r.workspace_key ?? ""), remoteId: s("remote_id") ?? null, state: state as SandboxInstanceDTO["state"], createdAt: s("created_at") ?? "", lastUsedAt: s("last_used_at") ?? "", ...(s("expires_at") ? { expiresAt: s("expires_at")! } : {}), ...(s("last_error") ? { lastError: s("last_error")!.slice(0, 300) } : {}) });
+				out.push({ id: String(r.id), provider: provider as SandboxInstanceDTO["provider"], spaceId, workspaceKey: String(r.workspace_key ?? ""), remoteId: s("remote_id") ?? null, state: state as SandboxInstanceDTO["state"], ...(state === "paused" || state === "archived" ? { resumeMode: (r.resume_mode === "recreate" ? "recreate" : "provider") as "provider" | "recreate" } : {}), createdAt: s("created_at") ?? "", lastUsedAt: s("last_used_at") ?? "", ...(s("expires_at") ? { expiresAt: s("expires_at")! } : {}), ...(s("last_error") ? { lastError: s("last_error")!.slice(0, 300) } : {}) });
 			}
 		} catch {
 			/* table not present (adapters not installed): empty list */

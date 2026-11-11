@@ -40,8 +40,9 @@ test("workspace files: list/preview/download/upload/mkdir/move/delete/publish, v
 
 		const files = await t.json("GET", url("files"), { token: a.token });
 		assert.equal(files.canWrite, true);
-		assert.deepEqual(files.entries.map((e: any) => e.path).sort(), ["blob.bin", "data", "data/in.csv", "notes", "notes/长文本.md", "pic.png"]);
-		assert.ok(files.entries.every((e: any) => e.expiresAt && e.mtime), "every entry shows when it expires");
+		// Round 11 (R5): a writer also sees the persistent folder memories/ (it does not expire, so it carries no expiresAt).
+		assert.deepEqual(files.entries.map((e: any) => e.path).sort(), ["blob.bin", "data", "data/in.csv", "memories", "notes", "notes/长文本.md", "pic.png"]);
+		assert.ok(files.entries.filter((e: any) => !e.path.startsWith("memories")).every((e: any) => e.expiresAt && e.mtime), "every workspace entry shows when it expires");
 		assert.equal(files.entries.find((e: any) => e.path === "data").kind, "directory");
 		assert.equal(files.usage.retentionHours, 72);
 		assert.equal(files.usage.quotaBytes, 512 * 1024 * 1024);

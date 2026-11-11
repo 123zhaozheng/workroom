@@ -221,7 +221,7 @@ export class Jobs {
 				const outputs: FileVersionRef[] = [];
 				for (const path of input.sandbox!.publish ?? []) {
 					try {
-						const f = sb.readFile(space, r.conversation_id, path);
+						const f = sb.readFile(space, r.conversation_id, path, principal); // round 11: memories/ and project/ are routed by principal
 						outputs.push(await put(f.name, effectiveMime(undefined, f.name), f.bytes, `out:${path}`, `后台任务「${r.title}」的输出 ${sb.shown(space, sb.relPath(space, path))}`));
 					} catch (e: any) {
 						if (run.status === "ok") throw new Error(`输出文件 ${path} 不存在或无法读取：${e?.message ?? e}`);

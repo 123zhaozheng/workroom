@@ -10,7 +10,7 @@ const LABEL: Record<SandboxPermission, string> = { "sandbox.use": "使用沙箱"
 
 /** Permission needed to call a tool by name (undefined: no sandbox permission involved). */
 export function permissionForTool(name: string): SandboxPermission | undefined {
-	if (name.startsWith("sandbox_") || name === "codemode") return "sandbox.use";
+	if (name.startsWith("sandbox_") || name === "codemode" || name === "code_run") return "sandbox.use";
 	if (name === "browse" || name.startsWith("browser_")) return "sandbox.browser";
 	return undefined;
 }

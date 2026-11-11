@@ -16,6 +16,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import type { AppContext, Principal, Space } from "../../core/contracts.ts";
 import type { Migration } from "../../core/db.ts";
 import { HttpError, newId, nowIso } from "../../core/http.ts";
+import { isStoreTop } from "./stores.ts";
 import type { WorkspacePersistPolicyDTO, WorkspaceSaveState, WorkspaceSaveStatusDTO, WorkspaceVersionDTO } from "../../../../shared/workspace-safety.ts";
 
 /** Export; the integrator wires these into toolsModule.migrations with version offset +1000. */
@@ -200,6 +201,7 @@ async function walk(root: string, exclude: (rel: string, isDir: boolean) => bool
 	const go = async (dir: string, relDir: string, depth: number): Promise<void> => {
 		const names = (await readdir(dir)).sort();
 		for (const name of names) {
+			if (!relDir && isStoreTop(name)) continue; // round 11 (R5): memories/ and project/ belong to the user / project, never to this conversation's versions
 			const rel = relDir ? `${relDir}/${name}` : name;
 			const abs = join(dir, name);
 			const st = await lstat(abs);

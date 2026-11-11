@@ -64,7 +64,7 @@ async function remoteTarget(name: "opensandbox" | "e2b" | "daytona", conn: Provi
 	const provider = await createRemoteProvider(conn);
 	const db = new AppDb(":memory:");
 	db.migrate("sandbox-contract", SANDBOX_MIGRATIONS);
-	const lifecycle: LifecyclePolicy = { createTimeoutSec: 180, idleTimeoutSec: 600, lifetimeSec: 1800 };
+	const lifecycle: LifecyclePolicy = { createTimeoutSec: 180, idlePauseSec: 600, pausedRetentionSec: 3600, destroyAfterSec: 86400 };
 	const made: RemoteDriver[] = [];
 	const newDriver = (o: { orphanGraceMs?: number; lifecycle?: LifecyclePolicy } = {}) => {
 		const d = new RemoteDriver({ db, provider, orgId: "org-contract", lifecycle: o.lifecycle ?? lifecycle, orphanGraceMs: o.orphanGraceMs, ...(conn.template ? { template: conn.template } : {}) });
@@ -375,13 +375,36 @@ contract("lost sandbox (destroyed externally): recreated and re-synced from the 
 	assert.ok(now && now !== id);
 }, "remote");
 
+contract("round 11: idle pause → resume: the SAME sandbox comes back with remote-only state (files outside the workspace, i.e. installed dependencies) intact", async (t, c) => {
+	if (t.remote!.provider.capabilities.pauseResume === "unsupported") return; // recreate mode is covered by "idle reaping" below and sandbox-lifecycle.test.ts
+	const d = t.remote!.newDriver({ lifecycle: { createTimeoutSec: 120, idlePauseSec: 60, pausedRetentionSec: 600, destroyAfterSec: 3600 } });
+	const space = `space-pause-${Math.random().toString(36).slice(2, 8)}`;
+	writeFileSync(join(c.wd, "kept.txt"), "workspace-file");
+	const r1 = await d.run(c.spec("mkdir -p /tmp/deps && echo installed-dep > /tmp/deps/marker; cat kept.txt", { space }));
+	assert.equal(r1.status, "ok", r1.stderr);
+	const id = t.remote!.remoteId(space, "c1")!;
+	assert.ok(id);
+	assert.equal(await d.reapIdle(Date.now() + 120_000), 1, "idle past idlePauseSec → paused");
+	const paused = t.remote!.db.get<{ state: string; resume_mode: string | null }>("SELECT state, resume_mode FROM tool_sandbox_instances WHERE space_id = ? ORDER BY created_at DESC LIMIT 1", space)!;
+	assert.deepEqual({ ...paused }, { state: "paused", resume_mode: "provider" });
+	const r2 = await d.run(c.spec("cat /tmp/deps/marker; cat kept.txt", { space }));
+	assert.equal(r2.status, "ok", r2.stderr);
+	assert.match(r2.stdout, /installed-dep/, "state outside the workspace survived the pause: the very same sandbox was resumed");
+	assert.match(r2.stdout, /workspace-file/);
+	assert.equal(t.remote!.remoteId(space, "c1"), id, "no new sandbox was created");
+	const kinds = t.remote!.db.all<{ kind: string }>("SELECT kind FROM tool_sandbox_events WHERE space_id = ? ORDER BY at, rowid", space).map((e) => e.kind);
+	assert.deepEqual(kinds.filter((k) => k !== "destroy"), ["create", "pause", "resume"]);
+}, "remote");
+
 contract("idle reaping and orphan reaping", async (t, c) => {
-	const d = t.remote!.newDriver({ orphanGraceMs: 0, lifecycle: { createTimeoutSec: 120, idleTimeoutSec: 60, lifetimeSec: 1800 } });
+	const d = t.remote!.newDriver({ orphanGraceMs: 0, lifecycle: { createTimeoutSec: 120, idlePauseSec: 60, pausedRetentionSec: 600, destroyAfterSec: 3600 } });
 	const sp = c.spec("echo idle", { space: "space-idle" });
 	assert.equal((await d.run(sp)).status, "ok");
 	const id = t.remote!.remoteId("space-idle", "c1")!;
 	assert.equal(await d.reapIdle(Date.now() + 5_000), 0, "not idle yet");
-	assert.equal(await d.reapIdle(Date.now() + 3_600_000), 1, "idle past the policy → destroyed");
+	// Round 11: idle → paused where the provider can pause (else destroyed = "recreate"); unused for destroyAfter → destroyed for real.
+	assert.equal(await d.reapIdle(Date.now() + 120_000), 1, "idle past idlePauseSec → paused (or recycled)");
+	assert.equal(await d.reapIdle(Date.now() + 2 * 3_600_000), 1, "unused past destroyAfterSec → destroyed");
 	assert.equal((await t.remote!.provider.connect(id)), null, "the remote sandbox is really gone");
 	// orphan: created with this install's labels but unknown to the table
 	const row = [...t.remote!.db.all<{ id: string }>("SELECT id FROM tool_sandbox_instances")][0]!;
@@ -445,7 +468,7 @@ contract("services and pty are refused with UnsupportedError (501), never run on
 
 contract("capability honesty: every 'supported' claim has a passing case above; nothing is claimed that was not exercised", async (t) => {
 	const caps = t.remote!.provider.capabilities;
-	const exercised = new Set(["exec", "streamOutput", "cancel", "commandTimeout", "files", "reconnect"]);
+	const exercised = new Set(["exec", "streamOutput", "cancel", "commandTimeout", "files", "reconnect", "pauseResume"]);
 	for (const [k, v] of Object.entries(caps)) {
 		if (v === "supported" && !exercised.has(k) && !["networkOn", "networkOff", "resourceLimits"].includes(k) && typeof v === "string") assert.fail(`capability ${k} is marked supported but no contract case exercises it`);
 	}
