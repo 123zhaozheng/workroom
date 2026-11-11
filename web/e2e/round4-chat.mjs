@@ -447,8 +447,8 @@ try {
 	check("dots: canvas is behind content and ignores pointer events", Number(layer.z) < 0 && layer.pe === "none", JSON.stringify(layer));
 
 	// ================================================================= 5. settings toggle + reduced motion
-	await page.goto(`${base}/settings`);
-	await page.waitForSelector('[data-testid="dot-matrix-toggle"]');
+	await page.goto(`${base}/settings?tab=models`);
+	await page.waitForSelector('[data-testid="settings-tab-models"]');
 	await sleep(600);
 	const offSection = await page.locator('[data-testid="personal-keys-section"]').count();
 	await page.request.put(`${base}/api/admin/model-settings`, { data: { personalProviders: true } });

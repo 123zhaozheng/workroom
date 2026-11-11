@@ -11,6 +11,8 @@ import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
+import { Help } from "@/components/ui/help";
+import { Switch } from "@/components/ui/switch";
 import { useConfirm } from "@/features/admin/confirm";
 
 export const ENV_SCOPE_LABEL: Record<EnvScope, string> = { org: "组织", project: "项目", user: "个人", conversation: "本对话" };
@@ -71,7 +73,7 @@ export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", 
 			<Loadable state={res} what="环境变量">
 				{vars.length === 0 ? (
 					<p data-testid="env-empty" className="rounded-xl border border-dashed border-border-strong px-4 py-4 text-center text-sm text-fg-muted">
-						还没有设置环境变量。
+						还没有环境变量
 					</p>
 				) : (
 					<div className="overflow-x-auto rounded-xl border border-border bg-surface">
@@ -157,10 +159,10 @@ export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", 
 						<Input id={`${testId}-value`} data-testid="env-value" value={value} onChange={(e) => setValue(e.target.value)} className="font-mono" autoComplete="off" spellCheck={false} />
 					</div>
 					{scope === "org" ? (
-						<label className="flex h-9 cursor-pointer items-center gap-1.5 text-sm">
-							<input type="checkbox" data-testid="env-lock" checked={locked} onChange={(e) => setLocked(e.target.checked)} className="size-4 accent-[var(--accent)]" />
-							锁定（项目、个人和对话都不能覆盖）
-						</label>
+						<div className="flex h-9 items-center gap-2 text-sm">
+							<Switch data-testid="env-lock" aria-label="锁定" checked={locked} onCheckedChange={setLocked} />
+							<span>锁定（下级不能覆盖）</span>
+						</div>
 					) : null}
 					<Button type="submit" variant="primary" disabled={busy || !name.trim()} data-testid="env-save">
 						{busy ? <Loader2 className="wr-spin" /> : null}
@@ -182,7 +184,12 @@ export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", 
 					{err}
 				</p>
 			) : null}
-			<p className="text-xs text-fg-muted">{ENV_TIMING_NOTE}不要在这里放密钥，需要密钥时请使用「凭据」。</p>
+			<div className="flex items-center gap-1 text-xs text-fg-muted" data-testid="env-note">
+				<span>不要在这里放密钥。</span>
+				<Help label="变量生效说明" side="top">
+					{ENV_TIMING_NOTE}需要密钥时请使用「凭据」。
+				</Help>
+			</div>
 			{dialog}
 		</div>
 	);

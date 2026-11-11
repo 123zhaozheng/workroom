@@ -10,7 +10,8 @@ import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { Fold, Table, useAct } from "@/features/admin/common";
+import { Switch } from "@/components/ui/switch";
+import { Fold, Help, Table, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
 import { ModelDialog } from "./ModelDialog";
 import { ProviderDialog } from "./ProviderDialog";
@@ -45,7 +46,7 @@ export function ProviderPanel(props: PanelProps) {
 				<p className="text-xs text-fg-muted">你没有管理模型服务的权限，只能查看。</p>
 			)}
 			{providers.length === 0 ? (
-				<p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-fg-muted">{personal ? "还没有自己的模型服务。添加后只有你能看到和使用。" : "还没有模型服务。点右上角「添加服务」，选择类型并填写地址和密钥。"}</p>
+				<p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-fg-muted">{personal ? "还没有自己的模型服务" : "还没有模型服务"}</p>
 			) : (
 				<Table testId="model-provider-list">
 					{providers.map((p) => (
@@ -114,7 +115,7 @@ function ProviderRowView({ p, base, personal, canProviders, canModels, catalog, 
 											setFetchNote(undefined);
 											try {
 												const r = await post<FetchModelsResponse>(`${base}/${p.id}/fetch-models`, {});
-												setFetchNote(r.ok ? `已获取 ${r.count} 个模型，在下方选择要对成员开放的。` : `获取失败：${r.error ?? ""}`);
+												setFetchNote(r.ok ? `已获取 ${r.count} 个模型。` : `获取失败：${r.error ?? ""}`);
 											} catch (e) {
 												setFetchNote(`获取失败：${errorText(e)}`);
 											}
@@ -134,10 +135,10 @@ function ProviderRowView({ p, base, personal, canProviders, canModels, catalog, 
 						<span className="flex-1" />
 						{writable ? (
 							<>
-								<label className="flex cursor-pointer items-center gap-1.5 text-sm text-fg-muted">
-									<input type="checkbox" className="size-4 accent-[var(--accent)]" checked={p.status === "enabled"} disabled={busy} onChange={(e) => run(() => patch(`${base}/${p.id}`, { status: e.target.checked ? "enabled" : "disabled" }))} data-testid="provider-enable" />
+								<span className="flex items-center gap-2 text-sm text-fg-muted">
+									<Switch aria-label={`启用 ${p.name}`} checked={p.status === "enabled"} busy={busy} onCheckedChange={(v) => run(() => patch(`${base}/${p.id}`, { status: v ? "enabled" : "disabled" }))} data-testid="provider-enable" />
 									启用
-								</label>
+								</span>
 								<Button size="sm" disabled={busy} onClick={() => setEdit(true)} data-testid="provider-edit">
 									<Pencil />
 									编辑
@@ -234,11 +235,12 @@ function ModelsTable({ p, base, personal, canModels, canProviders, onChanged, de
 		<div data-testid="provider-models">
 			<div className="mb-2 flex flex-wrap items-center gap-2">
 				<h4 className="text-sm font-medium">模型</h4>
+				<Help label="模型说明" side="top">从服务商获取的模型默认不对成员开放。价格和上下文长度以服务商提供的为准，请自行核对。</Help>
 				<Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选模型" aria-label="筛选模型" className="h-8 w-44 text-sm" />
-				<label className="flex cursor-pointer items-center gap-1.5 text-xs text-fg-muted">
-					<input type="checkbox" className="size-4 accent-[var(--accent)]" checked={onlyOn} onChange={(e) => setOnlyOn(e.target.checked)} />
+				<span className="flex items-center gap-2 text-xs text-fg-muted">
+					<Switch aria-label="只看已开放" checked={onlyOn} onCheckedChange={setOnlyOn} />
 					只看已开放
-				</label>
+				</span>
 				<span className="flex-1" />
 				{mayToggle && off.length > 0 ? (
 					<Button
@@ -262,7 +264,7 @@ function ModelsTable({ p, base, personal, canModels, canProviders, onChanged, de
 			{note}
 			<Loadable state={res} what="模型">
 				{models.length === 0 ? (
-					<p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-fg-muted">{(res.data?.models ?? []).length === 0 ? "这个服务还没有模型。点「获取模型」，或「手动添加」。" : "没有符合筛选的模型。"}</p>
+					<p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-fg-muted">{(res.data?.models ?? []).length === 0 ? "还没有模型" : "没有符合筛选的模型。"}</p>
 				) : (
 					<div className="overflow-hidden rounded-lg border border-border bg-surface [&>div+div]:border-t [&>div+div]:border-border" data-testid="model-table">
 						{models.map((m) => (
@@ -281,10 +283,10 @@ function ModelsTable({ p, base, personal, canModels, canProviders, onChanged, de
 									</span>
 								</span>
 								<CapabilityBadges m={m} />
-								<label className="flex cursor-pointer items-center gap-1.5 text-sm text-fg-muted">
-									<input type="checkbox" className="size-4 accent-[var(--accent)]" checked={m.enabled} disabled={busy || !mayToggle} onChange={(e) => run(() => patch(`${base}/${p.id}/models/${encodeURIComponent(m.modelId)}`, { enabled: e.target.checked }))} data-testid="model-enable" />
+								<span className="flex items-center gap-2 text-sm text-fg-muted">
+									<Switch aria-label={`${personal ? "启用" : "对成员开放"} ${m.name}`} checked={m.enabled} disabled={!mayToggle} busy={busy} onCheckedChange={(v) => run(() => patch(`${base}/${p.id}/models/${encodeURIComponent(m.modelId)}`, { enabled: v }))} data-testid="model-enable" />
 									{personal ? "启用" : "对成员开放"}
-								</label>
+								</span>
 								{mayToggle ? (
 									<Button size="icon-sm" variant="ghost" aria-label={`编辑 ${m.name}`} onClick={() => setEditing(m)}>
 										<Pencil />
@@ -308,7 +310,6 @@ function ModelsTable({ p, base, personal, canModels, canProviders, onChanged, de
 					</div>
 				)}
 			</Loadable>
-			<p className="mt-2 text-xs text-fg-muted">从服务商获取的模型默认不对成员开放。价格和上下文长度以服务商提供的为准，请自行核对。</p>
 			{adding ? <ModelDialog open onOpenChange={setAdding} provider={p} base={base} personal={personal} onSaved={() => (res.reload(), onChanged())} /> : null}
 			{editing ? <ModelDialog open onOpenChange={() => setEditing(undefined)} provider={p} base={base} personal={personal} model={editing} onSaved={() => (res.reload(), onChanged())} /> : null}
 			{dialog}

@@ -7,7 +7,8 @@ import { ApiError, errorText, post, qs } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent, Sheet } from "@/components/ui/overlay";
 import { Badge, Blocked, EmptyState, Loadable } from "@/components/ui/misc";
 import { FindingList, Section, useAct, useMarketMe } from "./common";
@@ -48,9 +49,7 @@ export function McpMarket() {
 			) : null}
 			<Loadable state={list} what="连接市场">
 				{(list.data?.entries ?? []).length === 0 ? (
-					<EmptyState icon={<Boxes />} title={mine ? "你还没有导入过连接" : "连接市场里还没有已发布的连接"} action={<Button onClick={() => setImp(true)}>导入连接</Button>}>
-						导入后是你的个人草稿；提交审核并发布后，全组织都可以安装。
-					</EmptyState>
+					<EmptyState icon={<Boxes />} title={mine ? "你还没有导入过连接" : "连接市场里还没有已发布的连接"} action={<Button onClick={() => setImp(true)}>导入连接</Button>} />
 				) : (
 					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
 						{list.data!.entries.map((e) => (
@@ -304,7 +303,6 @@ function InstallWizard({ entry, option, onClose, onDone }: { entry: McpCatalogDe
 						<p>
 							已创建连接：<b>{result.approval === "pending" ? "等待审核（批准前不会连接）" : result.status === "ready" ? "已连接，可用" : `状态 ${result.status}`}</b>
 						</p>
-						<p className="text-fg-muted">可在「我的连接」里管理工具开关与凭据。</p>
 						<div className="flex justify-end">
 							<Button onClick={onClose}>完成</Button>
 						</div>

@@ -6,7 +6,9 @@ import { del, patch, post } from "@/lib/api";
 import { type Project } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { useAct, Table, Row } from "@/features/admin/common";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
@@ -43,14 +45,14 @@ export function Budgets() {
 						</option>
 					))}
 				</Select>
-				<Select value={period} onChange={(e) => setPeriod(e.target.value as "day" | "month" | "total")} className="h-8 text-sm">
+				<Select aria-label="周期" value={period} onChange={(e) => setPeriod(e.target.value as "day" | "month" | "total")} className="h-8 text-sm">
 					<option value="day">每日</option>
 					<option value="month">每月</option>
 					<option value="total">累计</option>
 				</Select>
 				<Input value={cost} onChange={(e) => setCost(e.target.value)} placeholder="费用上限 USD" type="number" min={0} step="0.01" className="h-8 w-32 text-sm" />
 				<Input value={tokens} onChange={(e) => setTokens(e.target.value)} placeholder="Token 上限" type="number" min={0} className="h-8 w-32 text-sm" />
-				<Select value={action} onChange={(e) => setAction(e.target.value as "block" | "warn")} className="h-8 text-sm">
+				<Select aria-label="超限处理" value={action} onChange={(e) => setAction(e.target.value as "block" | "warn")} className="h-8 text-sm">
 					<option value="block">超限阻止</option>
 					<option value="warn">仅提醒</option>
 				</Select>
@@ -65,7 +67,7 @@ export function Budgets() {
 			{note}
 			<Loadable state={res} what="预算">
 				{(res.data?.budgets ?? []).length === 0 ? (
-					<p className="text-sm text-fg-subtle">没有预算。测试模型用量不计入预算。</p>
+					<p className="text-sm text-fg-subtle">还没有预算</p>
 				) : (
 					<Table testId="admin-budgets">
 						{res.data!.budgets.map((b) => (
@@ -82,10 +84,7 @@ export function Budgets() {
 										</span>
 									</span>
 									<Badge tone={b.state === "ok" ? "success" : b.state === "warn" ? "warning" : "danger"}>{b.state === "ok" ? "正常" : b.state === "warn" ? "接近上限" : "已超限"}</Badge>
-									<label className="flex items-center gap-1.5 text-xs text-fg-muted">
-										<input type="checkbox" checked={b.enabled} disabled={busy || !perms.org.has("budget.manage")} onChange={(e) => run(() => patch(`/admin/budgets/${b.id}`, { enabled: e.target.checked }))} />
-										启用
-									</label>
+									<Switch aria-label="启用预算" data-testid="budget-enabled" checked={b.enabled} disabled={!perms.org.has("budget.manage")} busy={busy} onCheckedChange={(v) => run(() => patch(`/admin/budgets/${b.id}`, { enabled: v }))} />
 									{perms.org.has("budget.manage") ? (
 										<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/budgets/${b.id}`), "预算已删除")}>
 											<Trash2 />

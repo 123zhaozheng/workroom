@@ -9,6 +9,7 @@ import { fullTime, relTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Section } from "@/features/admin/common";
+import { Help } from "@/components/ui/help";
 import { useConfirm } from "@/features/admin/confirm";
 import { SecretInput } from "@/features/chat/CredentialRequestCard";
 
@@ -41,11 +42,10 @@ export function CredentialsSection() {
 		}
 	};
 	return (
-		<Section title="我的凭据" testId="credentials-section">
-			<p className="mb-2 text-xs text-fg-muted">助手请求并经你同意保存的密钥。这里只显示信息，永远不会显示密钥本身。</p>
+		<Section title="我的凭据" testId="credentials-section" action={<Help label="凭据说明">助手请求并经你同意保存的密钥。这里只显示信息，永远不会显示密钥本身。</Help>}>
 			{store.data && !store.data.store.available ? (
 				<p data-testid="credentials-no-store" className="mb-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-					服务器未配置密钥存储，暂不能提供或保存凭据。
+					未配置密钥存储，暂不能保存凭据。
 				</p>
 			) : null}
 			{err ? (
@@ -56,9 +56,7 @@ export function CredentialsSection() {
 			<Loadable state={res} what="凭据">
 				{list.length === 0 ? (
 					<div className="rounded-xl border border-border bg-surface">
-						<EmptyState icon={<KeyRound />} title="还没有保存的凭据">
-							助手需要密钥时会在对话里请你填写；选择「保存供以后使用」后会出现在这里。
-						</EmptyState>
+						<EmptyState icon={<KeyRound />} title="还没有保存的凭据" />
 					</div>
 				) : (
 					<ul data-testid="credentials-list" className="divide-y divide-border rounded-xl border border-border bg-surface">

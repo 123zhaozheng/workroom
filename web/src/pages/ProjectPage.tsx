@@ -7,7 +7,8 @@ import type { Project, ProjectMember, ProjectRole } from "@/lib/types";
 import { useSession } from "@/lib/session";
 import { TopBar } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable, Page } from "@/components/ui/misc";
 import { Composer } from "@/features/chat/Composer";
 import { ProjectHandoffSummary } from "@/features/handoff/Handoff";
@@ -158,7 +159,7 @@ function AddMember({ projectId, onAdded }: { projectId: string; onAdded: () => v
 		>
 			<Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="同组织成员的邮箱" type="email" required className="h-8 text-[13px]" />
 			<div className="flex gap-2">
-				<Select value={role} onChange={(e) => setRole(e.target.value as ProjectRole)} className="h-8 flex-1 text-[13px]">
+				<Select aria-label="成员角色" value={role} onChange={(e) => setRole(e.target.value as ProjectRole)} className="h-8 flex-1 text-[13px]">
 					<option value="editor">编辑者</option>
 					<option value="viewer">查看者</option>
 					<option value="owner">所有者</option>

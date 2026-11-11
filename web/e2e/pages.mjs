@@ -1,7 +1,7 @@
 // Actionable pages against the real server: 自动化 editor & runs (E), 组织管理 (E), 能力 (D).
 // Run: npm run -w web build && node web/e2e/pages.mjs
 import { join } from "node:path";
-import { check, chromium, register, ROOT, sendMessage, shot, SHOTS, sleep, startServer, summary } from "./lib.mjs";
+import { check, chromium, register, ROOT, sendMessage, shot, SHOTS, sleep, startServer, summary, pick, selOptions } from "./lib.mjs";
 
 const MCP_ARGS = ["--disable-warning=ExperimentalWarning", join(ROOT, "server/test/fixtures/mcp-fixture-server.ts")];
 const server = await startServer({ port: 8822, env: { WORKROOM_AUTOMATION_TICK_MS: "1000", WORKROOM_MCP_STDIO_ALLOW: [process.execPath, ...MCP_ARGS].join(" ") } });
@@ -19,7 +19,7 @@ try {
 	await page.fill("#an", "工作日早报");
 	await page.fill("#ap", '汇总昨天的进展 [[call file_create {"name":"日报","format":"md","content":"# 日报\\n- 进展正常"}]]');
 	await page.fill('[data-testid="automation-cron"]', "0 9 * * 1-5");
-	await page.selectOption("#atz", "Asia/Shanghai");
+	await pick(page.locator("#atz"), "Asia/Shanghai");
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation-preview"] li').length === 5, null, { timeout: 10000 });
 	check("automation: next-run preview (5 runs, server-computed, chosen time zone)", true);
 	await shot(page, "1440-automation-editor");
@@ -68,7 +68,7 @@ try {
 	await page.click('[data-testid="automation-new"]');
 	await page.fill("#an", "会失败的任务");
 	await page.fill("#ap", "[[fail]] 这一步会失败");
-	await page.selectOption("#ak", "manual");
+	await pick(page.locator("#ak"), "manual");
 	await page.click('[data-testid="automation-save"]');
 	const failing = page.locator('[data-testid="automation"]', { hasText: "会失败的任务" });
 	await failing.waitFor();
@@ -82,7 +82,7 @@ try {
 	await page.click('[data-testid="automation-new"]');
 	await page.fill("#an", "慢任务");
 	await page.fill("#ap", "[[slow 30000]] 慢慢做");
-	await page.selectOption("#ak", "manual");
+	await pick(page.locator("#ak"), "manual");
 	await page.click('[data-testid="automation-save"]');
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation"]').length === 3, null, { timeout: 10000 });
 	const slow = page.locator('[data-testid="automation"]', { hasText: "慢任务" });
@@ -168,9 +168,9 @@ try {
 	await page.reload();
 	const card = page.locator('[data-testid="skill"]').first();
 	await card.locator("button[aria-expanded]").click();
-	await card.locator('[data-testid="skill-pin"] option[value="1"]').waitFor({ state: "attached", timeout: 10000 });
+	for (let i = 0; i < 40 && !(await selOptions(card.locator('[data-testid="skill-pin"]'))).some((o) => o.value === "1"); i++) await sleep(250);
 	await sleep(300);
-	await card.locator('[data-testid="skill-pin"]').selectOption("1");
+	await pick(card.locator('[data-testid="skill-pin"]'), "1");
 	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("v1（固定）"), null, { timeout: 10000 }).catch(async (e) => {
 		console.log("DEBUG card:", (await card.innerText()).replace(/\s+/g, " "));
 		throw e;
@@ -216,10 +216,10 @@ try {
 	await conn.getByRole("button", { name: /检查|重新连接/ }).click();
 	await page.waitForFunction(() => document.querySelector('[data-testid="connector"]')?.textContent?.includes("可用"), null, { timeout: 20000 });
 	check("connector: re-check shows 可用 and its tools (write tools marked)", (await conn.innerText()).includes("写操作"));
-	const en = conn.locator('input[type="checkbox"]');
+	const en = conn.locator('[data-testid="connector-enable"]');
 	const before = await en.isChecked();
 	await en.click();
-	await page.waitForFunction((b) => (document.querySelector('[data-testid="connector"] input[type="checkbox"]'))?.checked === !b, before, { timeout: 10000 });
+	await page.waitForFunction((b) => (document.querySelector('[data-testid="connector"] [data-testid="connector-enable"]'))?.getAttribute("aria-checked") === String(!b), before, { timeout: 10000 });
 	check("connector: per-user enablement toggles", true);
 	await shot(page, "1440-capabilities-connectors");
 	await ctx.close();

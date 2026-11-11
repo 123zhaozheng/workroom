@@ -3,7 +3,7 @@
 //  B. real flow: the agent writes my-skill/, submit_draft → card → 不保存 → nothing in 我的技能; again → 保存 → in 我的技能; load + run; malicious dirs → error, no card
 //  C. submit-review dialog defaults to a target a member may use
 // Run: npm run build:web && node web/e2e/round6-skills.mjs        (port 8906)
-import { check, chromium, register, ROOT, sendMessage, shot, sleep, startServer, summary, SHOTS } from "./lib.mjs";
+import { check, chromium, register, ROOT, sendMessage, shot, sleep, startServer, summary, SHOTS, selValue, selOptions } from "./lib.mjs";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -297,8 +297,8 @@ try {
 	await mp.waitForSelector('[data-testid="submit-scope"]');
 	await sleep(300);
 	const sel = mp.locator('[data-testid="submit-scope"]');
-	check("C member: the target defaults to something other than 整个组织", (await sel.inputValue()) !== "org", await sel.inputValue());
-	check("C member: 整个组织 is disabled and a one-line reason is shown", (await sel.locator('option[value="org"]').isDisabled()) && (await mp.locator('[data-testid="submit-scope-note"]').innerText()).includes("没有向整个组织发布的权限"));
+	check("C member: the target defaults to something other than 整个组织", (await selValue(sel)) !== "org", await selValue(sel));
+	check("C member: 整个组织 is disabled and a one-line reason is shown", (await selOptions(sel)).some((o) => o.value === "org" && o.disabled) && (await mp.locator('[data-testid="submit-scope-note"]').innerText()).includes("没有向整个组织发布的权限"));
 	await shot(mp, "round6/submit-dialog-member-1440-light");
 	await mp.keyboard.press("Escape");
 	await member.close();
@@ -308,7 +308,7 @@ try {
 	await page.click('[data-testid="submit-review"]');
 	await page.waitForSelector('[data-testid="submit-scope"]');
 	await sleep(300);
-	check("C owner: an org publisher still defaults to 整个组织", (await page.locator('[data-testid="submit-scope"]').inputValue()) === "org");
+	check("C owner: an org publisher still defaults to 整个组织", (await selValue(page.locator('[data-testid="submit-scope"]'))) === "org");
 	await page.keyboard.press("Escape");
 
 	check("page: no uncaught errors", errors.length === 0, errors.join(" | ").slice(0, 200));

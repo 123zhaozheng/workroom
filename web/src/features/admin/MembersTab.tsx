@@ -45,12 +45,10 @@ export function Members({ selfId }: { selfId?: string }) {
 					<Search aria-hidden className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-fg-subtle" />
 					<Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索姓名或邮箱" aria-label="搜索成员" className="pl-8" />
 				</div>
-				<span className="text-xs text-fg-muted">共 {all.length} 位成员</span>
+				<span className="text-xs text-fg-muted">{all.length} 人</span>
 			</div>
 			{rows.length === 0 ? (
-				<EmptyState icon={<Search />} title="没有找到成员">
-					换个关键词试试。
-				</EmptyState>
+				<EmptyState icon={<Search />} title="没有找到成员" />
 			) : (
 				<Table testId="admin-members">
 					{rows.map((m) => {

@@ -7,7 +7,8 @@ import { errorText, patch, post } from "@/lib/api";
 import { Fold } from "@/features/admin/common";
 import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { useDepartments } from "@/features/admin/rbac-ui";
 import { THINKING_LEVELS } from "./shared";
@@ -189,7 +190,7 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 							<p className="mt-1 text-xs text-fg-muted">未勾选的强度会标为“不支持”。具体如何发给厂商由下面的兼容性设置决定。</p>
 							<div className="mt-2">
 								<Label>默认思考强度</Label>
-								<Select value={defaultThinking} onChange={(e) => setDefaultThinking(e.target.value)}>
+								<Select aria-label="默认思考强度" value={defaultThinking} onChange={(e) => setDefaultThinking(e.target.value)}>
 									<option value="">不指定</option>
 									<option value="off">off</option>
 									{[...levels].map((l) => (
@@ -214,7 +215,7 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 								<Label>备用模型（主模型出错、超时或被限流时，按顺序改用）</Label>
 								{fallbacks.map((f, i) => (
 									<div key={i} className="mb-1 flex gap-1.5">
-										<Select value={f} onChange={(e) => setFallbacks(fallbacks.map((x, j) => (j === i ? e.target.value : x)))} className="flex-1">
+										<Select aria-label={`备用模型 ${i + 1}`} value={f} onChange={(e) => setFallbacks(fallbacks.map((x, j) => (j === i ? e.target.value : x)))} className="flex-1">
 											{fallbackOptions.map((m) => (
 												<option key={m.id} value={m.id}>
 													{m.label}（{m.providerName ?? m.ref.provider}）

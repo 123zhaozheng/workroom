@@ -4,7 +4,7 @@
 // Run: npm run -w web build && node web/e2e/round3-knowledge.mjs
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { check, chromium, register, sendMessage, shot, SHOTS, sleep, startServer, summary } from "./lib.mjs";
+import { check, chromium, register, sendMessage, shot, SHOTS, sleep, startServer, summary, pick, selOptions } from "./lib.mjs";
 
 const require = createRequire(import.meta.url);
 const { PDFDocument, StandardFonts } = require("pdf-lib");
@@ -56,9 +56,9 @@ try {
 		await a.goto(`${base}/knowledge`);
 		await a.getByRole("button", { name: "新建知识库" }).first().click();
 		await a.fill("#kbname", name);
-		await a.selectOption('[data-testid="kb-scope"]', scope);
-		if (scope === "project") await a.selectOption('[data-testid="kb-scope-project"]', extra);
-		if (scope === "department") await a.selectOption('[data-testid="kb-scope-department"]', extra);
+		await pick(a.locator('[data-testid="kb-scope"]'), scope);
+		if (scope === "project") await pick(a.locator('[data-testid="kb-scope-project"]'), extra);
+		if (scope === "department") await pick(a.locator('[data-testid="kb-scope-department"]'), extra);
 		await a.getByRole("button", { name: "创建" }).click();
 		await a.waitForURL(/\/knowledge\/.+/);
 		created[name] = a.url().split("/knowledge/")[1];
@@ -86,10 +86,10 @@ try {
 	const oldRow = a.locator('[data-testid="kb-doc"]', { hasText: "差旅制度-旧.md" });
 	await oldRow.locator('[data-testid="gov-edit"]').click();
 	const form = oldRow.locator('[data-testid="gov-form"]');
-	await form.locator("select").first().selectOption("policy");
-	await form.locator("select").nth(1).selectOption("effective");
-	await form.locator('[data-testid="gov-owner"] option', { hasText: "知识管理员" }).waitFor({ state: "attached" });
-	await form.locator('[data-testid="gov-owner"]').selectOption({ label: "知识管理员" });
+	await pick(form.locator("[data-wr-select]").first(), "policy");
+	await pick(form.locator("[data-wr-select]").nth(1), "effective");
+	for (let i = 0; i < 60 && !(await selOptions(form.locator('[data-testid="gov-owner"]'))).some((o) => o.label === "知识管理员"); i++) await sleep(250);
+	await pick(form.locator('[data-testid="gov-owner"]'), { label: "知识管理员" });
 	await form.locator('[data-testid="gov-version"]').fill("2025 版");
 	await form.locator('[data-testid="gov-expires"]').fill("2027-12-31");
 	await form.locator('[data-testid="gov-save"]').click();
@@ -97,7 +97,7 @@ try {
 	const g1 = await oldRow.locator('[data-testid="governance"]').innerText();
 	check("M07-B: owner, version label, effective status and expiry shown after editing", g1.includes("制度") && g1.includes("生效中") && g1.includes("责任人 知识管理员") && g1.includes("2025 版") && g1.includes("2027-12-31"), g1);
 	await oldRow.locator('[data-testid="gov-edit"]').click();
-	await oldRow.locator('[data-testid="gov-replace"]').selectOption({ label: "差旅制度-新.md" });
+	await pick(oldRow.locator('[data-testid="gov-replace"]'), { label: "差旅制度-新.md" });
 	await oldRow.locator('[data-testid="gov-save"]').click();
 	await a.waitForFunction(() => [...document.querySelectorAll('[data-testid="kb-doc"]')].some((e) => e.textContent?.includes("已由「差旅制度-新.md」替换")), null, { timeout: 10000 });
 	check("M07-B: replace → old version withdrawn and pointing at its replacement, excluded from default retrieval", (await oldRow.innerText()).includes("已下架") && (await oldRow.innerText()).includes("默认不参与检索"));
@@ -195,7 +195,7 @@ try {
 	check("M08-C: after upload the file is stored but NOT in any knowledge base (explicit step)", k0.includes("未加入") && (await a.locator("main").innerText()).includes("存储：已保存"), k0);
 	await shot(a, "1440-file-storage-vs-knowledge");
 	await a.getByRole("button", { name: "加入知识库" }).click();
-	await a.selectOption('select[aria-label="知识库"]', { label: "个人笔记" });
+	await pick(a.locator('[data-wr-select][aria-label="知识库"]'), { label: "个人笔记" });
 	await a.getByRole("button", { name: "加入", exact: true }).click();
 	await a.waitForSelector("text=尚不可检索", { timeout: 10000 });
 	await a.keyboard.press("Escape");

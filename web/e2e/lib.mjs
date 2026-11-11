@@ -119,3 +119,37 @@ export async function sendMessage(page, text) {
 	await input.fill(text);
 	await page.click('[data-testid="send"]');
 }
+
+/**
+ * Choose an option in a popover <Select> (Radix; a combobox button, not a native <select>) — the stand-in for
+ * `selectOption`. `want`: a value string (falls back to a label match), { label }, or { index }.
+ */
+export async function pick(trigger, want) {
+	const page = trigger.page();
+	await trigger.click();
+	const list = page.locator('[role="listbox"]');
+	await list.waitFor({ state: "visible", timeout: 5000 });
+	const opts = list.locator('[role="option"]');
+	let opt;
+	if (typeof want === "string") {
+		opt = list.locator(`[role="option"][data-value="${want.replace(/"/g, '\\"')}"]`);
+		if ((await opt.count()) === 0) opt = list.locator(`[role="option"][data-label="${want.replace(/"/g, '\\"')}"]`);
+	} else if (want && "label" in want) opt = list.locator(`[role="option"][data-label="${want.label.replace(/"/g, '\\"')}"]`);
+	else opt = opts.nth(want.index);
+	await opt.first().click();
+	await list.waitFor({ state: "hidden", timeout: 5000 });
+}
+
+/** Current value of a popover <Select> (what `inputValue()` was on a native select). */
+export const selValue = (trigger) => trigger.getAttribute("data-value");
+/** Options of a popover <Select> as [{ value, label, disabled }] (opens the list, reads it, closes with Escape). */
+export async function selOptions(trigger) {
+	const page = trigger.page();
+	await trigger.click();
+	const list = page.locator('[role="listbox"]');
+	await list.waitFor({ state: "visible", timeout: 5000 });
+	const out = await list.locator('[role="option"]').evaluateAll((els) => els.map((e) => ({ value: e.getAttribute("data-value"), label: e.getAttribute("data-label"), disabled: e.getAttribute("aria-disabled") === "true" || e.hasAttribute("data-disabled") })));
+	await page.keyboard.press("Escape");
+	await list.waitFor({ state: "hidden", timeout: 5000 });
+	return out;
+}

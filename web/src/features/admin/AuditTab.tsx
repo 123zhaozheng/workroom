@@ -6,7 +6,9 @@ import { api, qs } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Row, Table } from "@/features/admin/common";
 
@@ -45,10 +47,10 @@ export function Audit() {
 					))}
 				</Select>
 				{tech ? <Input value={action} onChange={(e) => (setAction(e.target.value), setMore([]))} placeholder="动作（支持前缀*，如 member.*）" aria-label="按动作筛选" className="h-8 w-60 text-sm" /> : null}
-				<label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-fg-muted">
-					<input type="checkbox" className="size-4 accent-[var(--accent)]" checked={tech} onChange={(e) => setTech(e.target.checked)} data-testid="audit-tech" />
-					显示技术详情
-				</label>
+				<span className="inline-flex items-center gap-2 text-sm text-fg-muted">
+					<Switch aria-label="显示技术详情" checked={tech} onCheckedChange={setTech} data-testid="audit-tech" />
+					技术详情
+				</span>
 				<span className="flex-1" />
 				<Button size="sm" asChild>
 					<a href={`/api/admin/audit.csv${qs({ category: cat, action: action || undefined })}`} data-testid="audit-export">

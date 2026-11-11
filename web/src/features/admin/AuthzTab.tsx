@@ -6,7 +6,8 @@ import type { MemberDTO } from "@shared/ops";
 import { del, post } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Help, Row, Table, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
@@ -85,7 +86,7 @@ export function Authorizations() {
 						</span>
 					</label>
 					<label className="text-xs text-fg-muted">
-						角色
+						<span className="inline-flex items-center gap-1">角色{role ? <Help label="角色说明" side="top">{rolePurpose(role)}</Help> : null}</span>
 						<span className="mt-1 block">
 							<Select aria-label="角色" data-testid="authz-role" value={role?.id ?? ""} className="h-8 text-sm" onChange={(e) => setRoleId(e.target.value)}>
 								{usable.map((r) => (
@@ -103,11 +104,9 @@ export function Authorizations() {
 					</Button>
 				</form>
 			) : null}
-			{role ? <p className="-mt-3 mb-4 text-xs text-fg-muted">{rolePurpose(role)}</p> : null}
 			{note}
 			<div className="mb-3 flex flex-wrap items-center gap-3">
 				<Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选：姓名 / 角色 / 范围" className="h-8 max-w-xs text-sm" aria-label="筛选授权" />
-				<span className="text-xs text-fg-muted">{rows.length} 条</span>
 				<span className="flex-1" />
 				<span className="relative">
 					<Help label="授权说明">角色可以授予个人、整个部门（含子部门成员）或用户组；范围可以是整个组织、某个部门或某个项目。基础角色（所有者 / 管理员 / 普通成员 / 访客）在成员详情里修改。你只能授予自己拥有的权限。</Help>
@@ -115,9 +114,7 @@ export function Authorizations() {
 			</div>
 			<Loadable state={list} what="授权">
 				{rows.length === 0 ? (
-					<EmptyState icon={<Users />} title="还没有额外授权">
-						除基础角色外，被授予其他角色（如部门管理员、技能审核员、自定义角色）的人会出现在这里。
-					</EmptyState>
+					<EmptyState icon={<Users />} title="还没有额外授权" />
 				) : (
 					<Table testId="authz-list">
 						{rows.map((a) => (

@@ -7,7 +7,8 @@ import { del, patch, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Help, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
@@ -140,9 +141,7 @@ export function OrgStructure() {
 				) : null}
 				{note}
 				{deps.length === 0 ? (
-					<EmptyState icon={<Network />} title="还没有部门">
-						先新建一个顶级部门，再添加成员、指定负责人和部门管理员。
-					</EmptyState>
+					<EmptyState icon={<Network />} title="还没有部门" />
 				) : (
 					<div className="grid gap-4 md:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
 						<div>
@@ -167,7 +166,7 @@ export function OrgStructure() {
 							{selected ? (
 								<DeptDetail key={selected.id} dept={selected} deps={deps} descendants={descendants(selected.id)} members={members.data?.members ?? []} busy={busy} run={run} onChanged={res.reload} onGone={() => setSel(undefined)} onSelect={setSel} kids={kids.get(selected.id) ?? []} />
 							) : (
-								<div className="rounded-xl border border-dashed border-border-strong px-4 py-10 text-center text-sm text-fg-muted">选择左侧的部门，查看成员和部门管理员。</div>
+								<div className="rounded-xl border border-dashed border-border-strong px-4 py-10 text-center text-sm text-fg-muted">选择左侧的部门</div>
 							)}
 						</div>
 					</div>
@@ -225,7 +224,7 @@ function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChange
 				) : (
 					<Loadable state={mem} what="部门成员">
 						<ul className="divide-y divide-border rounded-lg border border-border" data-testid="dept-members">
-							{list.length === 0 ? <li className="px-3 py-2.5 text-xs text-fg-muted">还没有成员。</li> : null}
+							{list.length === 0 ? <li className="px-3 py-2.5 text-xs text-fg-muted">还没有成员</li> : null}
 							{list.map((m) => (
 								<li key={m.userId} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
 									<span className="min-w-0 flex-1 truncate">
@@ -271,7 +270,7 @@ function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChange
 			<section aria-label="部门管理员">
 				<h4 className="mb-2 text-sm font-medium">部门管理员</h4>
 				<ul className="mb-2 flex flex-wrap gap-1.5" data-testid="dept-admins">
-					{dept.admins.length === 0 ? <li className="text-xs text-fg-muted">还没有部门管理员。</li> : null}
+					{dept.admins.length === 0 ? <li className="text-xs text-fg-muted">暂无</li> : null}
 					{dept.admins.map((a) => (
 						<li key={a.assignmentId}>
 							<Badge tone="info" className="h-6 gap-1.5 pr-1">

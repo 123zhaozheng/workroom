@@ -10,6 +10,7 @@ import { useSession } from "@/lib/session";
 import { cn, fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Fold } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
@@ -35,17 +36,15 @@ export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: nu
 							</button>
 						))}
 					</div>
-					<select value={kind} onChange={(e) => (setKind(e.target.value as typeof kind), setSel(undefined))} aria-label="类型" className="h-8 rounded-lg border border-border bg-surface px-2 text-sm">
+					<Select value={kind} onChange={(e) => (setKind(e.target.value as typeof kind), setSel(undefined))} aria-label="类型" className="h-8 text-sm">
 						<option value="">全部类型</option>
 						<option value="skill" disabled={!me.canReviewSkills}>技能</option>
 						<option value="mcp" disabled={!me.canReviewMcp}>连接</option>
-					</select>
+					</Select>
 				</div>
 				<Loadable state={list} what="审核队列">
 					{items.length === 0 ? (
-						<EmptyState icon={<Check />} title={view === "queue" ? "没有待审核的内容" : "还没有处理过的内容"}>
-							{view === "queue" ? "你只会看到自己有权审核的范围。" : ""}
-						</EmptyState>
+						<EmptyState icon={<Check />} title={view === "queue" ? "没有待审核的内容" : "还没有处理过的内容"} />
 					) : (
 						<ul className="space-y-1.5" data-testid="review-list">
 							{items.map((s) => (

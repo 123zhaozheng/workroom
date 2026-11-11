@@ -7,7 +7,10 @@ import type { AdminModelDTO, CreateModelProviderRequest, ModelAuthStyle, ModelPr
 import { errorText, get, patch, post } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Help } from "@/components/ui/help";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Spinner } from "@/components/ui/misc";
 import { Fold } from "@/features/admin/common";
@@ -259,11 +262,11 @@ export function ProviderDialog({
 							) : (
 								<Input id="pv-key" value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="环境变量名，以 WORKROOM_ 开头" />
 							)}
-							<label className="mt-1.5 flex items-center gap-1.5 text-xs text-fg-muted">
-								<input type="checkbox" checked={keyless} onChange={(e) => setKeyless(e.target.checked)} />
+							<div className="mt-2 flex items-center gap-2 text-sm text-fg-muted">
+								<Switch aria-label="不需要密钥" data-testid="provider-keyless" checked={keyless} onCheckedChange={setKeyless} />
 								不需要密钥（本地部署的模型）
-							</label>
-							<p className="mt-1 text-xs text-fg-muted">密钥只保存在服务端，保存后不会再显示。</p>
+								<Help label="密钥说明" side="top">密钥只保存在服务端，保存后不会再显示。</Help>
+							</div>
 						</div>
 
 						<Fold title="高级设置" hint="鉴权、请求头、限流、失败保护、超时" testId="provider-advanced">
@@ -281,13 +284,11 @@ export function ProviderDialog({
 									</div>
 								) : null}
 								{family === "openai" && !editing ? (
-									<label className="flex items-start gap-1.5 text-sm">
-										<input type="checkbox" className="mt-1" checked={type === "openai-responses"} onChange={(e) => setType(e.target.checked ? "openai-responses" : "openai-completions")} />
-										<span>
-											使用 OpenAI 新版对话接口
-											<span className="block text-xs text-fg-muted">只有 OpenAI 官方支持；多数第三方服务不要勾选。</span>
-										</span>
-									</label>
+									<div className="flex items-center gap-2 text-sm">
+										<Switch aria-label="使用 OpenAI 新版对话接口" checked={type === "openai-responses"} onCheckedChange={(v) => setType(v ? "openai-responses" : "openai-completions")} />
+										使用 OpenAI 新版对话接口
+										<Help label="接口说明" side="top">只有 OpenAI 官方支持；多数第三方服务不要开启。</Help>
+									</div>
 								) : null}
 								<div>
 									<Label>自定义请求头（值加密保存；显示 **** 表示保持不变）</Label>

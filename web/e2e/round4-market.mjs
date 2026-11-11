@@ -5,7 +5,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { check, chromium, register, ROOT, shot, startServer, summary } from "./lib.mjs";
+import { check, chromium, register, ROOT, shot, startServer, summary, pick } from "./lib.mjs";
 
 const require = createRequire(import.meta.url);
 const { zipSync, strToU8 } = await import(join(ROOT, "node_modules/fflate/esm/browser.js")).catch(() => require(join(ROOT, "node_modules/fflate")));
@@ -108,7 +108,7 @@ try {
 	// ---------------------------------------------------------------- submit for review (UI)
 	await a.locator('[data-testid="skill"]').first().locator("button[aria-expanded]").click();
 	await a.click('[data-testid="submit-review"]');
-	await a.selectOption('[data-testid="submit-scope"]', "org");
+	await pick(a.locator('[data-testid="submit-scope"]'), "org");
 	await a.click('[data-testid="submit-confirm"]');
 	await a.waitForSelector('[data-testid="my-submission"][data-state="pending_review"]', { timeout: 15000 });
 	check("submit: the submission is pending review in 我的提交", true);
@@ -224,7 +224,7 @@ try {
 	const cardText = await m.locator('[data-testid="connector"]').first().innerText();
 	check("connectors: installed connector is 可用, tools listed, secret value not shown", cardText.includes("可用") && cardText.includes("echo") && !cardText.includes(TOKEN));
 	// Per-tool control: switch whoami off for me.
-	await m.locator('[data-tool="whoami"] select').first().selectOption("disabled");
+	await pick(m.locator('[data-tool="whoami"] [data-wr-select]').first(), "disabled");
 	await m.waitForSelector('[data-tool="whoami"][data-disabled="true"]', { timeout: 10000 });
 	check("connectors: a user can switch a tool off for themselves", true);
 	await shots(m, "market-connectors");
@@ -232,8 +232,8 @@ try {
 	// ---------------------------------------------------------------- personal MCP approval policy
 	await a.goto(`${base}/capabilities?tab=market`);
 	await a.click('[data-testid="market-policy"]');
-	await a.selectOption('[data-testid="policy-mcp"]', "approval");
-	await a.waitForFunction(() => document.querySelector('[data-testid="policy-mcp"]')?.value === "approval");
+	await pick(a.locator('[data-testid="policy-mcp"]'), "approval");
+	await a.waitForFunction(() => document.querySelector('[data-testid="policy-mcp"]')?.getAttribute("data-value") === "approval");
 	await sleep(400);
 	await a.keyboard.press("Escape");
 	const created = await m.request.post(`${base}/api/connectors`, { data: { name: "我的外部服务", scope: "personal", transport: "http", url: fx.url, secrets: { Authorization: `Bearer ${TOKEN}` } } });

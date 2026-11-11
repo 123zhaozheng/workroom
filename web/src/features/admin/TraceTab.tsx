@@ -7,7 +7,7 @@ import { fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/misc";
-import { Fold } from "@/features/admin/common";
+import { Fold, Help } from "@/features/admin/common";
 
 /** 排查 (M18-B): one correlation id (request id, run id, automation id, request key, or spaceId:conversationId) →
  * audit, model route attempts, usage rows, automation runs, notifications and other modules' events, all tenant-scoped
@@ -43,7 +43,7 @@ export function Trace() {
 	return (
 		<div data-testid="trace">
 			<form
-				className="mb-4 flex gap-2"
+				className="mb-4 flex items-center gap-2"
 				onSubmit={(e) => {
 					e.preventDefault();
 					void run();
@@ -53,8 +53,8 @@ export function Trace() {
 				<Button type="submit" disabled={busy} data-testid="trace-run">
 					查询
 				</Button>
+				<Help label="排查说明">只显示本组织的数据；提示词、检索词和工具参数等敏感内容已脱敏。</Help>
 			</form>
-			<p className="mb-3 text-xs text-fg-muted">只显示本组织的数据；提示词、检索词和工具参数等敏感内容已脱敏。</p>
 			{err ? <p className="text-sm text-danger" role="alert">{err}</p> : null}
 			{res ? (
 				<div className="space-y-4 text-sm">
@@ -64,9 +64,8 @@ export function Trace() {
 								{k} {n}
 							</Badge>
 						))}
-						{res.sources.length ? <span className="text-xs text-fg-muted">来源：{res.sources.join("、")}</span> : null}
 					</div>
-					{res.eventErrors?.length ? <p className="text-xs text-warning">部分模块未返回：{res.eventErrors.map((x) => `${x.source}（${x.error}）`).join("、")}</p> : null}
+					{res.eventErrors?.length ? <p className="text-xs text-warning">部分数据未能返回，结果可能不完整。</p> : null}
 					<Fold title="技术详情" defaultOpen testId="trace-tech">
 					<div className="space-y-4">
 					<TraceTable title="模型路由" rows={res.routeAttempts.map((r) => [fullTime(r.startedAt), `${r.platformModelId} → ${r.channelName ?? r.channelId ?? "—"}/${r.upstreamModelId ?? "—"}`, `${r.status}${r.errorClass ? ` · ${r.errorClass}` : ""}${r.fixture ? " · 测试模型" : ""}`])} />

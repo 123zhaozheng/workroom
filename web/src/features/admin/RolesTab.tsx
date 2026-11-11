@@ -9,7 +9,7 @@ import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { useAct } from "@/features/admin/common";
+import { Help, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
 import { LockedNote, PermissionMatrix, ROLE_ORDER, criticalOf, isBaseRole, permDesc, permLabel, rolePurpose, scopeText, useViewerPerms } from "@/features/admin/rbac-ui";
 
@@ -26,9 +26,9 @@ export function Roles() {
 	const sections = useMemo(() => {
 		const byOrder = (a: RoleDTO, b: RoleDTO) => ROLE_ORDER.indexOf(a.id) - ROLE_ORDER.indexOf(b.id);
 		return [
-			{ title: "基础角色", hint: "每位成员有且仅有一个", list: roles.filter((r) => isBaseRole(r.id)).sort(byOrder) },
-			{ title: "附加角色", hint: "叠加在基础角色之上，可限定到部门或项目", list: roles.filter((r) => r.builtin && !isBaseRole(r.id)).sort(byOrder) },
-			{ title: "自定义角色", hint: "由你的组织定义", list: roles.filter((r) => !r.builtin) },
+			{ title: "基础角色", hint: "每位成员有且仅有一个。", list: roles.filter((r) => isBaseRole(r.id)).sort(byOrder) },
+			{ title: "附加角色", hint: "叠加在基础角色之上，可限定到部门或项目。", list: roles.filter((r) => r.builtin && !isBaseRole(r.id)).sort(byOrder) },
+			{ title: "自定义角色", hint: "由你的组织定义；内置角色不能修改，克隆后可编辑。", list: roles.filter((r) => !r.builtin) },
 		];
 	}, [roles]);
 
@@ -86,10 +86,10 @@ export function Roles() {
 					<section key={s.title}>
 						<div className="mb-2 flex items-baseline gap-2">
 							<h3 className="text-sm font-medium">{s.title}</h3>
-							<span className="text-xs text-fg-muted">{s.hint}</span>
+							<Help label={`${s.title}说明`} side="top">{s.hint}</Help>
 						</div>
 						{s.list.length === 0 ? (
-							<p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-fg-muted">{canManage ? "还没有自定义角色。点右上角「新建角色」，或打开一个内置角色后「克隆」。" : "还没有自定义角色。"}</p>
+							<p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-fg-muted">还没有自定义角色</p>
 						) : (
 							<ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface" data-testid={s.title === "基础角色" ? "role-list" : undefined}>
 								{s.list.map((r) => {
@@ -169,12 +169,11 @@ function RoleEditor({ role, busy, canManage, ask, onSave, onClone, onDelete }: {
 					</Button>
 				) : null}
 			</div>
-			{role?.builtin ? <LockedNote>内置角色不能修改。需要不同的权限组合时，点「克隆」得到可编辑的副本。{role.scopes.length === 1 && role.scopes[0] === "department" ? "此角色只能授予在部门范围。" : ""}</LockedNote> : null}
+			{role?.builtin ? <LockedNote>内置角色不能修改，可克隆后编辑。{role.scopes.length === 1 && role.scopes[0] === "department" ? "只能授予在部门范围。" : ""}</LockedNote> : null}
 			{role ? <p className="mb-4 text-sm text-fg-muted">{rolePurpose(role)}</p> : null}
 			{!role?.builtin && !readOnly ? <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="一句话说明这个角色做什么（可选）" rows={2} className="mb-4" aria-label="角色说明" /> : null}
 			<PermissionMatrix selected={selected} onChange={setSelected} readOnly={readOnly} restrictTo={role?.builtin ? undefined : restrict} testId="perm-matrix" />
-			{!readOnly ? <p className="mt-2 text-xs text-fg-muted">你只能勾选自己拥有的权限；「变更组织所有者」不能放进自定义角色。</p> : null}
-			{role ? (
+						{role ? (
 				<section className="mt-6">
 					<h4 className="mb-2 text-sm font-medium">使用者（{assigned.data?.assignments.length ?? 0}）</h4>
 					{assigned.data?.assignments.length ? (
@@ -189,7 +188,7 @@ function RoleEditor({ role, busy, canManage, ask, onSave, onClone, onDelete }: {
 							))}
 						</ul>
 					) : (
-						<p className="text-xs text-fg-muted">暂无（或你无权查看这些分配）。</p>
+						<p className="text-xs text-fg-muted">暂无</p>
 					)}
 				</section>
 			) : null}

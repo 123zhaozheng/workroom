@@ -349,7 +349,7 @@ await idle(page);
 
 // =========================================================================================================================
 // B. credentials list (settings)
-await page.goto(`${base}/settings`);
+await page.goto(`${base}/settings?tab=credentials`);
 await page.waitForSelector('[data-testid="credentials-section"]');
 await page.waitForSelector('[data-testid="credential-row"]', { timeout: 15000 });
 const rows = page.locator('[data-testid="credential-row"]');
@@ -362,7 +362,7 @@ await shotTo(page, "1440-credentials-list");
 {
 	const m = await newCtx(390, 844, { storageState: await alice.ctx.storageState() });
 	const mp = await m.newPage();
-	await mp.goto(`${base}/settings`);
+	await mp.goto(`${base}/settings?tab=credentials`);
 	await mp.waitForSelector('[data-testid="credential-row"]');
 	await mp.locator('[data-testid="credentials-section"]').scrollIntoViewIfNeeded();
 	const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -395,13 +395,13 @@ async function addVar(root, name, value, { lock = false } = {}) {
 	if (lock) await root.locator('[data-testid="env-lock"]').check();
 	await root.locator('[data-testid="env-save"]').click();
 }
-await page.goto(`${base}/settings`);
+await page.goto(`${base}/settings?tab=credentials`);
 const uenv = envOf("env-vars-user");
 await uenv.waitFor();
 await addVar(uenv, "TEAM_REGION", "cn-east");
 await uenv.locator('[data-testid="env-row"][data-name="TEAM_REGION"]').waitFor({ timeout: 8000 });
 check("C member sets a personal variable → it appears in the table with who/when", (await uenv.locator('[data-testid="env-row"][data-name="TEAM_REGION"]').innerText()).includes("cn-east") && (await uenv.locator('[data-testid="env-row"][data-name="TEAM_REGION"]').innerText()).includes("你"));
-check("C the timing note is shown: 修改只对之后启动的命令生效，正在运行的进程不受影响", (await uenv.innerText()).includes("修改只对之后启动的命令生效，正在运行的进程不受影响"));
+check("C the timing note is shown: 修改只对之后启动的命令生效，正在运行的进程不受影响", await (async () => { await uenv.getByRole("button", { name: "变量生效说明" }).click(); const t = await page.locator('[data-testid="help-content"]').innerText(); await page.keyboard.press("Escape"); return t.includes("修改只对之后启动的命令生效，正在运行的进程不受影响"); })());
 for (const bad of ["LD_PRELOAD", "PATH", "HTTPS_PROXY"]) {
 	await addVar(uenv, bad, "x");
 	await uenv.locator('[data-testid="env-error"]').waitFor({ timeout: 8000 });
@@ -420,7 +420,7 @@ await shotTo(page, "1440-env-vars-user");
 {
 	const m = await newCtx(390, 844, { storageState: await alice.ctx.storageState() });
 	const mp = await m.newPage();
-	await mp.goto(`${base}/settings`);
+	await mp.goto(`${base}/settings?tab=credentials`);
 	await mp.locator('[data-testid="env-vars-user"]').scrollIntoViewIfNeeded();
 	const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 	check("C 390px: env table + form fit without horizontal page scroll", overflow <= 0, `overflow ${overflow}`);
@@ -574,9 +574,9 @@ try {
 	const t = await p2.locator('[data-testid="credential-outcome"]').innerText();
 	check("E server without a secret key: the card says 服务器未配置密钥存储，暂不能提供凭据 (nothing to fill in)", t.includes("服务器未配置密钥存储，暂不能提供凭据") && (await p2.locator('[data-testid="credential-secret"]').count()) === 0 && (await p2.locator('[data-testid="credential-submit"]').count()) === 0, t.replace(/\s+/g, " "));
 	await shotTo(p2, "1440-credential-no-store");
-	await p2.goto(`${server2.base}/settings`);
+	await p2.goto(`${server2.base}/settings?tab=credentials`);
 	await p2.waitForSelector('[data-testid="credentials-no-store"]', { timeout: 15000 });
-	check("E settings → 我的凭据 also says the store is not configured", (await p2.locator('[data-testid="credentials-no-store"]').innerText()).includes("服务器未配置密钥存储"));
+	check("E settings → 我的凭据 also says the store is not configured", (await p2.locator('[data-testid="credentials-no-store"]').innerText()).includes("未配置密钥存储"));
 	await ctx2.close();
 } finally {
 	await server2.stop();

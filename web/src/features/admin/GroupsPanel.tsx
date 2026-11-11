@@ -5,7 +5,8 @@ import type { MemberDTO } from "@shared/ops";
 import { del, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { Fold, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
@@ -29,7 +30,7 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 	const can = perms.org.has("group.manage");
 	return (
 		<section className="mt-8" data-testid="groups-panel">
-			<Fold title="用户组（可选）" hint="把不在同一部门的人编成一组，再把角色授予整个组">
+			<Fold title="用户组">
 			{dialog}
 			{can ? (
 				<form
@@ -49,7 +50,7 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 			{note}
 			<Loadable state={res} what="用户组">
 				{(res.data?.groups ?? []).length === 0 ? (
-					<p className="text-xs text-fg-muted">还没有用户组。</p>
+					<p className="text-xs text-fg-muted">还没有用户组</p>
 				) : (
 					<ul className="divide-y divide-border rounded-xl border border-border bg-surface" data-testid="group-list">
 						{res.data!.groups.map((g) => (
@@ -84,7 +85,7 @@ function GroupMembers({ group, all, can, onChanged }: { group: Group; all: Membe
 		<div className="border-t border-border bg-surface-2/50 px-3 py-2 text-sm">
 			{note}
 			<div className="mb-2 flex flex-wrap gap-1.5">
-				{list.length === 0 ? <span className="text-xs text-fg-subtle">还没有成员。</span> : null}
+				{list.length === 0 ? <span className="text-xs text-fg-subtle">还没有成员</span> : null}
 				{list.map((m) => (
 					<Badge key={m.userId} className="h-6 gap-1 pr-1">
 						{m.name}

@@ -137,7 +137,10 @@ export default function AdminPage() {
 							{tab === "sandbox" ? <SandboxProviders /> : null}
 							{tab === "env" ? (
 								<div data-testid="admin-env" className="space-y-3">
-									<p className="text-sm text-fg-muted">整个组织的工作区命令都会带上这些变量。「锁定」的变量，项目、个人和对话都不能覆盖。</p>
+									<div className="flex items-center gap-1 text-sm text-fg-muted">
+										整个组织的工作区变量
+										<Help label="环境变量说明">整个组织的工作区命令都会带上这些变量。「锁定」的变量，项目、个人和对话都不能覆盖。</Help>
+									</div>
 									<EnvVarsEditor scope="org" scopeRef={me.orgId} editable testId="env-vars-org" />
 								</div>
 							) : null}

@@ -1,9 +1,10 @@
 // Shared building blocks for the admin tabs.
-import { ChevronDown, CircleHelp } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { errorText } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+export { Help } from "@/components/ui/help";
 export const ROLE: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员", guest: "访客" };
 
 /** Runs an action, reports its error inline, then refreshes. */
@@ -40,19 +41,6 @@ export function Row({ children }: { children: ReactNode }) {
 	return <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">{children}</div>;
 }
 
-/** Short help kept out of the way: a "说明" button that opens an opaque popover (Esc / click the button again to close). */
-export function Help({ label = "说明", children }: { label?: string; children: ReactNode }) {
-	return (
-		<details className="group relative">
-			<summary className="inline-flex h-8 cursor-pointer list-none items-center gap-1 rounded-lg px-2 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg [&::-webkit-details-marker]:hidden" onKeyDown={(e) => e.key === "Escape" && ((e.currentTarget.parentElement as HTMLDetailsElement).open = false)}>
-				<CircleHelp aria-hidden className="size-4" />
-				{label}
-			</summary>
-			<div className="absolute right-0 z-20 mt-1 w-[min(20rem,calc(100vw-2rem))] rounded-xl border border-border bg-surface p-3 text-sm text-fg-muted shadow-pop">{children}</div>
-		</details>
-	);
-}
-
 /** Collapsed-by-default block for technical detail or rarely used settings. */
 export function Fold({ title, hint, children, testId, defaultOpen }: { title: string; hint?: string; children: ReactNode; testId?: string; defaultOpen?: boolean }) {
 	return (
@@ -82,7 +70,7 @@ export function Section({ title, action, children, testId, className }: { title:
 	return (
 		<section className={cn("mb-8", className)} data-testid={testId}>
 			<div className="mb-2 flex min-h-8 items-center gap-2">
-				<h2 className="flex-1 text-sm font-medium text-fg-muted">{title}</h2>
+				<h2 className="flex-1 text-sm font-semibold">{title}</h2>
 				{action}
 			</div>
 			{children}

@@ -8,7 +8,10 @@ import { ApiError, errorText, patch, post } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Help } from "@/components/ui/help";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { FindingList, SCOPE, StateBadge, permText, useAct, useMarketMe } from "./common";
@@ -37,9 +40,7 @@ export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onD
 			</div>
 			<Loadable state={skills} what="技能">
 				{(skills.data?.skills ?? []).length === 0 ? (
-					<EmptyState icon={<Sparkles />} title="还没有技能">
-						上传技能包，从技能市场安装，或在一次成功的对话里选择“整理为技能”。
-					</EmptyState>
+					<EmptyState icon={<Sparkles />} title="还没有技能" />
 				) : (
 					<div className="space-y-2">
 						{skills.data!.skills.map((s) => (
@@ -148,9 +149,12 @@ function UploadPanel({ onUploaded, skillId }: { onUploaded: () => void; skillId?
 					<Upload className="size-5" />
 				</div>
 				<div className="text-[14px] font-medium">把技能包（.zip）拖到这里上传</div>
-				<p className="max-w-lg text-xs text-fg-muted">
-					包里需要 SKILL.md（含 name、description 的 frontmatter），可带 scripts/、references/、assets/。上传后自动检查；个人使用无需审核，要分享给项目、部门或组织需提交审核。
-					{lim ? ` 上限：${Math.round(lim.uploadBytes / 1048576)} MB、${lim.files} 个文件。` : ""}
+				<p className="flex max-w-lg items-center justify-center gap-1 text-xs text-fg-muted">
+					个人使用无需审核，分享给项目、部门或组织需提交审核。
+					<Help label="技能包说明" side="top">
+						包里需要 SKILL.md（含 name、description 的 frontmatter），可带 scripts/、references/、assets/。上传后自动检查。
+						{lim ? ` 上限：${Math.round(lim.uploadBytes / 1048576)} MB、${lim.files} 个文件。` : ""}
+					</Help>
 				</p>
 				<div className="mt-1 flex flex-wrap justify-center gap-2">
 					<Button size="sm" disabled={busy} onClick={() => zipRef.current?.click()} data-testid="upload-zip">
@@ -319,10 +323,10 @@ function SkillCard({ s, onChanged }: { s: SkillDTO; onChanged: () => void }) {
 							{inst.enabled ? "已启用" : "已停用"} · 使用 v{inst.effectiveVersionNo}
 							{inst.pinnedVersionNo !== null ? "（固定）" : "（跟随最新）"}
 						</Badge>
-						<label className="flex items-center gap-1.5 text-xs text-fg-muted">
-							<input type="checkbox" data-testid="skill-enable" checked={inst.enabled} disabled={busy} onChange={(e) => run(() => patch(`/skills/${s.id}/install`, { enabled: e.target.checked }))} />
+						<span className="flex items-center gap-2 text-xs text-fg-muted">
+							<Switch aria-label={`启用 ${s.name}`} data-testid="skill-enable" checked={inst.enabled} busy={busy} onCheckedChange={(v) => run(() => patch(`/skills/${s.id}/install`, { enabled: v }))} />
 							启用
-						</label>
+						</span>
 					</>
 				) : (
 					<Button size="sm" disabled={busy} onClick={() => run(() => post(`/skills/${s.id}/install`))} data-testid="skill-install">

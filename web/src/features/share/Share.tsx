@@ -8,7 +8,7 @@ import { del, errorText, post, qs } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { copyText, fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { BrandMark } from "@/components/shell/BrandMark";

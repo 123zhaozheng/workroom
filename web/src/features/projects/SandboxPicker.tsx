@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { errorText, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { Label, Select } from "@/components/ui/input";
+import { Label } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 interface Choice {
 	provider: string | null;
@@ -40,7 +41,7 @@ export function SandboxPicker({ projectId }: { projectId: string }) {
 					</option>
 				))}
 			</Select>
-			<p className="mt-1 text-xs text-fg-muted">只能选择管理员已启用的位置。远程位置的数据可能离开组织。</p>
+			<p className="mt-1 text-xs text-fg-muted">远程位置的数据可能离开组织。</p>
 			{err ? <p role="alert" className="mt-2 rounded-lg bg-danger-soft px-3 py-1.5 text-sm text-danger">{err}</p> : ok ? <p role="status" className="mt-2 text-sm text-success">已保存</p> : null}
 		</section>
 	);

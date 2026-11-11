@@ -15,7 +15,9 @@ import { cn, formatBytes, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { usePanel } from "@/components/shell/panel";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Help } from "@/components/ui/help";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { FilePickerDialog, listOf } from "@/features/chat/pickers";
@@ -45,19 +47,19 @@ function KbList() {
 				<Page>
 					<PageHeader
 						title="个人知识库"
-						description="把资料加入知识库后，系统会解析并建立索引；只有“可检索”的资料会被助手引用。"
 						actions={
+							<>
+							<Help label="知识库说明">把资料加入知识库后，系统会解析并建立索引；只有“可检索”的资料会被助手引用。</Help>
 							<Button variant="primary" onClick={() => setCreate(true)} disabled={res.unavailable}>
 								<Plus />
 								新建知识库
 							</Button>
+							</>
 						}
 					/>
 					<Loadable state={res} what="知识库" need="C 组：GET /api/kb">
 						{list.length === 0 ? (
-							<EmptyState icon={<BookOpen />} title="还没有知识库" action={<Button onClick={() => setCreate(true)}>新建知识库</Button>}>
-								建一个知识库，把常用资料放进去，对话时用 / 引用。
-							</EmptyState>
+							<EmptyState icon={<BookOpen />} title="还没有知识库" action={<Button onClick={() => setCreate(true)}>新建知识库</Button>} />
 						) : (
 							<div className="grid gap-3 sm:grid-cols-2">
 								{list.map((k) => (
@@ -241,9 +243,11 @@ function KbDetail({ kbId }: { kbId: string }) {
 				<Page>
 					<PageHeader
 						title={kb?.name ?? "知识库"}
-						description={kb?.description || "状态说明：处理中＝尚不可检索；可检索＝已建立索引，可被引用；失败＝可查看原因并重试。"}
+						description={kb?.description || undefined}
 						actions={
-							canWrite ? (
+							<>
+								<Help label="状态说明">处理中＝尚不可检索；可检索＝已建立索引，可被引用；失败＝可查看原因并重试。</Help>
+								{canWrite ? (
 								<>
 									<input ref={input} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} data-testid="kb-upload-input" />
 									<Button onClick={() => setPicker(true)}>
@@ -255,15 +259,14 @@ function KbDetail({ kbId }: { kbId: string }) {
 										{busy ? "上传中…" : "上传资料"}
 									</Button>
 								</>
-							) : null
+								) : null}
+							</>
 						}
 					/>
 					{msg ? <p className={cn("mb-3 rounded-lg px-3 py-2 text-[13px]", msg.tone === "danger" ? "bg-danger-soft text-danger" : "bg-info-soft text-info")}>{msg.text}</p> : null}
 					<Loadable state={docs} what="知识库文档" need="C 组：GET /api/kb/:id/docs">
 						{list.length === 0 ? (
-							<EmptyState icon={<BookOpen />} title="这个知识库还没有资料">
-								上传文件或从文件库加入。加入后会自动解析和建立索引。
-							</EmptyState>
+							<EmptyState icon={<BookOpen />} title="这个知识库还没有资料" />
 						) : (
 							<div className="overflow-hidden rounded-xl border border-border bg-surface">
 								{list.map((d, i) => (
@@ -456,7 +459,7 @@ function Governance({ d, kbId, canWrite, siblings, onChanged }: { d: KbDocDTO; k
 				<div className="mt-2 grid gap-2 rounded-lg border border-border bg-surface p-3 sm:grid-cols-2" data-testid="gov-form">
 					<label className="flex flex-col gap-1">
 						类型
-						<Select value={form.kind ?? g.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as KbDocKind }))} className="h-8 text-xs">
+						<Select aria-label="类型" value={form.kind ?? g.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as KbDocKind }))} className="h-8 text-xs">
 							<option value="reference">参考资料</option>
 							<option value="policy">制度</option>
 							<option value="template">模板</option>
@@ -464,7 +467,7 @@ function Governance({ d, kbId, canWrite, siblings, onChanged }: { d: KbDocDTO; k
 					</label>
 					<label className="flex flex-col gap-1">
 						状态
-						<Select value={form.status ?? g.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as KbGovStatus }))} className="h-8 text-xs">
+						<Select aria-label="状态" value={form.status ?? g.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as KbGovStatus }))} className="h-8 text-xs">
 							<option value="draft">草稿</option>
 							<option value="effective">生效</option>
 							<option value="expired">过期</option>
@@ -473,7 +476,7 @@ function Governance({ d, kbId, canWrite, siblings, onChanged }: { d: KbDocDTO; k
 					</label>
 					<label className="flex flex-col gap-1">
 						责任人
-						<Select value={form.responsibleUserId ?? g.responsibleUserId ?? ""} onChange={(e) => setForm((f) => ({ ...f, responsibleUserId: e.target.value || null }))} className="h-8 text-xs" data-testid="gov-owner">
+						<Select aria-label="责任人" value={form.responsibleUserId ?? g.responsibleUserId ?? ""} onChange={(e) => setForm((f) => ({ ...f, responsibleUserId: e.target.value || null }))} className="h-8 text-xs" data-testid="gov-owner">
 							<option value="">未指定</option>
 							{(members.data?.members ?? []).map((m) => (
 								<option key={m.userId} value={m.userId}>
@@ -496,7 +499,7 @@ function Governance({ d, kbId, canWrite, siblings, onChanged }: { d: KbDocDTO; k
 					</label>
 					<label className="flex flex-col gap-1 sm:col-span-2">
 						由以下文档替换（替换后本文档下架）
-						<Select value={form.replacedByDocId ?? g.replacedByDocId ?? ""} onChange={(e) => setForm((f) => ({ ...f, replacedByDocId: e.target.value || null, ...(e.target.value ? { status: "withdrawn" as const } : {}) }))} className="h-8 text-xs" data-testid="gov-replace">
+						<Select aria-label="替换文档" value={form.replacedByDocId ?? g.replacedByDocId ?? ""} onChange={(e) => setForm((f) => ({ ...f, replacedByDocId: e.target.value || null, ...(e.target.value ? { status: "withdrawn" as const } : {}) }))} className="h-8 text-xs" data-testid="gov-replace">
 							<option value="">不替换</option>
 							{siblings.filter((x) => x.id !== d.id).map((x) => (
 								<option key={x.id} value={x.id}>

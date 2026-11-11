@@ -7,7 +7,8 @@ import { useApi } from "@/lib/useApi";
 import { fullTime, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
 
@@ -45,7 +46,7 @@ export default function MemoryPage() {
 						>
 							<Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} placeholder="例如：周报用简体中文，结论放在最前面" className="border-0 px-1 focus:border-0" />
 							<div className="mt-2 flex items-center gap-2">
-								<Select value={kind} onChange={(e) => setKind(e.target.value as MemoryKind)} className="h-8 text-[13px]">
+								<Select aria-label="记忆类型" value={kind} onChange={(e) => setKind(e.target.value as MemoryKind)} className="h-8 text-[13px]">
 									{Object.entries(KIND).map(([k, l]) => (
 										<option key={k} value={k}>
 											{l}

@@ -1,7 +1,7 @@
 // Filter bar: scope, range presets, custom range, granularity. State lives in the URL (shareable, survives reload).
 import { useMemo } from "react";
 import type { StatsGranularity, StatsScopesDTO } from "@shared/ops";
-import { Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { addDays, isoLocalDate, startOfLocalDay, tzOffsetMinutes } from "./format";
 

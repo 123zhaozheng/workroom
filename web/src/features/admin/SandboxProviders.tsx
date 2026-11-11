@@ -1,14 +1,16 @@
 // 运行环境 (admin, sandbox.policy.manage): where workspace code runs — org default, per-provider cards, connection tests, instances.
-// The API key is write-only: it is never read back, only "已保存 ••••1234" is shown. Nothing falls back silently.
+// The access key is write-only: it is never read back, only "已保存 ••••1234" is shown. Nothing falls back silently.
 import { CheckCircle2, KeyRound, Server, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CapabilitySupport, SandboxInstanceDTO, SandboxProviderConfigDTO, SandboxProviderId, SandboxProviderTestDTO, SandboxProviderUpdate, SandboxProvidersAdminDTO, SandboxSelectionPolicyDTO } from "@shared/sandbox";
 import { errorText, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge, EmptyState, Loadable, Spinner } from "@/components/ui/misc";
-import { Fold, Row, SectionHead, Table, useAct } from "./common";
+import { Fold, Help, Row, SectionHead, Table, useAct } from "./common";
 
 export const PROVIDER_NAME: Record<"local" | SandboxProviderId, string> = { local: "本机沙箱", opensandbox: "OpenSandbox", e2b: "E2B", daytona: "Daytona" };
 
@@ -30,7 +32,7 @@ const CAPS: { key: keyof SandboxProviderConfigDTO["capabilities"]; label: string
 ];
 const SUPPORT: Record<CapabilitySupport, { text: string; tone: "success" | "warning" | "neutral" }> = {
 	supported: { text: "支持", tone: "success" },
-	unverified: { text: "已实现，未联调", tone: "warning" },
+	unverified: { text: "未验证", tone: "warning" },
 	unsupported: { text: "不支持", tone: "neutral" },
 };
 const LOCATION: Record<SandboxProviderConfigDTO["capabilities"]["location"], { text: string; tone: "success" | "warning" | "info" }> = {
@@ -52,7 +54,8 @@ export function SandboxProviders() {
 				<div className="space-y-6" data-testid="sandbox-admin">
 					{!res.data.secretStorage ? (
 						<p data-testid="secret-missing" role="status" className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-							服务器未配置密钥存储（WORKROOM_SECRET_KEY）：现在无法保存访问密钥。请服务器管理员配置后重启。
+							未配置密钥存储，现在无法保存访问密钥。
+							<Help label="配置方法" side="bottom" className="ml-1 align-middle">需要服务器管理员设置环境变量 WORKROOM_SECRET_KEY 后重启服务。</Help>
 						</p>
 					) : null}
 					<Location data={res.data} reload={res.reload} />
@@ -75,8 +78,9 @@ function Location({ data, reload }: { data: SandboxProvidersAdminDTO; reload: ()
 	const save = (patch: Partial<SandboxSelectionPolicyDTO>) => run(() => put("/sandbox/provider-policy", { ...policy, ...patch }), "已保存");
 	return (
 		<section data-testid="sandbox-location" className="rounded-xl border border-border bg-surface p-4">
-			<SectionHead title="执行位置" />
-			<p className="mb-3 text-xs text-fg-muted">工作区里的代码在哪里运行。个人空间始终使用这里的默认位置。</p>
+			<SectionHead title="执行位置">
+				<Help label="执行位置说明">工作区里的代码在哪里运行。个人空间始终使用这里的默认位置。</Help>
+			</SectionHead>
 			<div className="flex flex-wrap items-end gap-4">
 				<div>
 					<Label htmlFor="org-default">组织默认</Label>
@@ -90,10 +94,10 @@ function Location({ data, reload }: { data: SandboxProvidersAdminDTO; reload: ()
 						))}
 					</Select>
 				</div>
-				<label className="flex h-9 items-center gap-2 text-sm">
-					<input type="checkbox" role="switch" data-testid="allow-override" checked={policy.allowProjectOverride} disabled={busy} onChange={(e) => void save({ allowProjectOverride: e.target.checked })} className="size-4 accent-[var(--accent)]" />
-					允许项目单独选择
-				</label>
+				<div className="flex h-9 items-center gap-2 text-sm">
+					<Switch data-testid="allow-override" aria-label="允许项目单独选择" checked={policy.allowProjectOverride} busy={busy} onCheckedChange={(v) => void save({ allowProjectOverride: v })} />
+					<span>允许项目单独选择</span>
+				</div>
 			</div>
 			{note}
 			{def && (!def.lastTest || !def.lastTest.ok) ? (
@@ -191,10 +195,10 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 				<Badge tone={LOCATION[loc].tone} data-testid={`loc-${p.provider}`}>{LOCATION[loc].text}</Badge>
 				{isDefault ? <Badge tone="info">组织默认</Badge> : null}
 				<span className="flex-1" />
-				<label className="flex items-center gap-2 text-sm">
-					<input type="checkbox" role="switch" data-testid={id("enabled")} checked={d.enabled} onChange={(e) => set({ enabled: e.target.checked })} className="size-4 accent-[var(--accent)]" />
+				<span className="flex items-center gap-2 text-sm">
+					<Switch data-testid={id("enabled")} aria-label={`启用 ${PROVIDER_NAME[p.provider]}`} checked={d.enabled} onCheckedChange={(v) => set({ enabled: v })} />
 					启用
-				</label>
+				</span>
 			</header>
 			<div className="mt-3 grid gap-3 sm:grid-cols-2">
 				<div>
@@ -229,22 +233,23 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 						</div>
 					) : (
 						<div className="flex items-center gap-2">
-							<Input id={id("apikey")} data-testid={id("apikey")} type="password" value={d.apiKey} onChange={(e) => set({ apiKey: e.target.value })} disabled={keyDisabled} placeholder={keyDisabled ? "服务器未配置密钥存储" : "粘贴新密钥，保存后不再显示"} autoComplete="off" />
+							<Input id={id("apikey")} data-testid={id("apikey")} type="password" value={d.apiKey} onChange={(e) => set({ apiKey: e.target.value })} disabled={keyDisabled} placeholder={keyDisabled ? "未配置密钥存储" : "粘贴新密钥，保存后不再显示"} autoComplete="off" />
 							{replacing ? <Button size="sm" onClick={() => { setReplacing(false); set({ apiKey: "" }); }}>取消</Button> : null}
 						</div>
 					)}
-					{keyDisabled ? <p className="mt-1 text-xs text-fg-muted">服务器未配置密钥存储（WORKROOM_SECRET_KEY），无法保存密钥。</p> : null}
+					{keyDisabled ? <p className="mt-1 text-xs text-fg-muted">未配置密钥存储，无法保存密钥。</p> : null}
 				</div>
 			</div>
 			<div className="mt-3 space-y-2">
-				<label className="flex items-start gap-2 text-sm">
-					<input type="checkbox" data-testid={id("private")} checked={d.allowPrivateNetwork} onChange={(e) => set({ allowPrivateNetwork: e.target.checked })} className="mt-0.5 size-4 accent-[var(--accent)]" />
-					允许内网地址（需服务器管理员已放行）
-				</label>
+				<div className="flex items-center gap-2 text-sm">
+					<Switch data-testid={id("private")} aria-label="允许内网地址" checked={d.allowPrivateNetwork} onCheckedChange={(v) => set({ allowPrivateNetwork: v })} />
+					<span>允许内网地址</span>
+					<Help label="内网地址说明" side="top">需服务器管理员已放行。</Help>
+				</div>
 				{needsEgress ? (
 					<label className="flex items-start gap-2 text-sm">
 						<input type="checkbox" data-testid={id("egress")} checked={d.egressAcknowledged} onChange={(e) => set({ egressAcknowledged: e.target.checked })} className="mt-0.5 size-4 accent-[var(--accent)]" />
-						<span>我确认：工作区里的文件和命令会发送到该服务商的云端，不再留在本组织内。启用前必须确认。</span>
+						<span>我确认：工作区里的文件和命令会发送到该服务商的云端，不再留在本组织内。</span>
 					</label>
 				) : null}
 			</div>
@@ -262,18 +267,19 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 					<Input id={id("life")} data-testid={id("lifetime")} type="number" min={0.1} step="any" value={d.lifetimeHours} onChange={(e) => set({ lifetimeHours: e.target.value })} />
 				</div>
 			</div>
-			{missingAck ? <p data-testid={id("need-egress")} role="alert" className="mt-3 text-sm text-danger">启用前需要先勾选上面的数据外发确认。</p> : null}
+			{missingAck ? <p data-testid={id("need-egress")} role="alert" className="mt-3 text-sm text-danger">启用前需先确认数据外发。</p> : null}
 			{note}
 			<div className="mt-3 flex flex-wrap items-center gap-2">
 				<Button variant="primary" size="sm" disabled={busy || !dirty || missingAck} onClick={save} data-testid={id("save")}>
 					保存
 				</Button>
 				{dirty ? <Button size="sm" onClick={() => { setD(base); setReplacing(false); }}>放弃修改</Button> : null}
-				<span className="flex-1" />
-				<span className="text-xs text-fg-subtle" data-testid={id("sdk")}>
-					SDK：{p.sdk.name} {p.sdk.version ?? "未安装"}
-				</span>
 			</div>
+			{p.capabilities.networkOff !== "supported" ? (
+				<p data-testid={id("net-warning")} className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+					「禁止联网」{p.capabilities.networkOff === "unverified" ? "尚未验证" : "不受支持"}，请不要依赖它隔离网络。
+				</p>
+			) : null}
 			<div className="mt-4 border-t border-border pt-3" data-testid={id("test")}>
 				<div className="flex flex-wrap items-center gap-2">
 					<Button size="sm" disabled={!!testing || dirty} onClick={() => void runTest("health")} data-testid={id("test-health")}>
@@ -282,14 +288,17 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 					<Button size="sm" disabled={!!testing || dirty} onClick={() => void runTest("roundtrip")} data-testid={id("test-roundtrip")}>
 						{testing === "roundtrip" ? <Spinner /> : null}完整测试
 					</Button>
-					<span className="text-xs text-fg-muted">{dirty ? "有未保存的修改，先保存再测试。" : "完整测试会临时创建一个沙箱，只使用合成数据，结束后立即销毁。"}</span>
+					{dirty ? <span className="text-xs text-fg-muted">先保存再测试</span> : <Help label="测试说明" side="top">完整测试会临时创建一个沙箱，只使用合成数据，结束后立即销毁。</Help>}
 				</div>
 				{testErr ? <p role="alert" data-testid={id("test-error")} className="mt-2 rounded-lg bg-danger-soft px-3 py-1.5 text-sm text-danger">{testErr}</p> : null}
 				{test ? <TestResult t={test} id={id("test-result")} /> : <p className="mt-2 text-xs text-fg-subtle">还没有测试过。</p>}
 			</div>
 			<div className="mt-3">
-				<Fold title="能力" testId={id("caps")} hint={p.capabilities.isolation}>
+				<Fold title="能力与技术详情" testId={id("caps")}>
 					<p className="mb-2 text-sm text-fg-muted" data-testid={id("isolation")}>隔离方式：{p.capabilities.isolation}</p>
+					<p className="mb-2 text-xs text-fg-subtle" data-testid={id("sdk")}>
+						SDK：{p.sdk.name} {p.sdk.version ?? "未安装"}
+					</p>
 					<table className="w-full text-sm">
 						<tbody>
 							{CAPS.map((c) => {
@@ -346,14 +355,14 @@ function Instances({ inst }: { inst: ReturnType<typeof useApi<{ instances: Sandb
 			<Loadable state={inst} what="沙箱列表">
 				{rows.length === 0 ? (
 					<div className="rounded-xl border border-border bg-surface">
-						<EmptyState title="还没有远程沙箱">有工作区在远程位置运行代码后，会在这里列出。</EmptyState>
+						<EmptyState title="还没有远程沙箱" />
 					</div>
 				) : (
 					<Table>
 						{rows.map((r) => (
 							<Row key={r.id}>
 								<span className="w-24 font-medium">{PROVIDER_NAME[r.provider]}</span>
-								<span className="min-w-0 flex-1 truncate text-fg-muted" title={r.spaceId}>空间 {r.spaceId}</span>
+								<span className="min-w-0 flex-1 truncate text-fg-muted" title={r.spaceId}>工作区</span>
 								<Badge tone={r.state === "ready" ? "success" : r.state === "error" || r.state === "lost" ? "danger" : "neutral"}>{STATE[r.state]}</Badge>
 								<span className="text-xs text-fg-muted">最近使用 {fmtTime(r.lastUsedAt)}</span>
 								{r.lastError ? <span className="w-full break-words text-xs text-danger">{r.lastError}</span> : null}

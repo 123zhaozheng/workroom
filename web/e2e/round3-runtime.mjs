@@ -16,7 +16,7 @@ try {
 	await register(page, base, { email, name: "运行测试" });
 
 	// ---------------------------------------------------------------- M03-A: assistant identity apart from conversations
-	await page.goto(`${base}/settings`);
+	await page.goto(`${base}/settings?tab=assistants`);
 	await page.click('[data-testid="assistant-new"]');
 	await page.fill("#aav", "研");
 	await page.fill("#anm", "研究助理");

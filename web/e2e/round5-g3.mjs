@@ -11,7 +11,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { check, chromium, ROOT, sleep, startServer, summary } from "./lib.mjs";
+import { check, chromium, ROOT, sleep, startServer, summary, pick, selValue } from "./lib.mjs";
 
 const require = createRequire(import.meta.url);
 const { zipSync, strToU8 } = await import(join(ROOT, "node_modules/fflate/esm/browser.js")).catch(() => require(join(ROOT, "node_modules/fflate")));
@@ -243,19 +243,19 @@ try {
 	// ownership / admin base role change
 	await memberRow("王五").locator('[data-testid="member-detail-open"]').click();
 	await p.waitForSelector('[data-testid="detail-base-role"]');
-	await p.selectOption('[data-testid="detail-base-role"]', "owner");
+	await pick(p.locator('[data-testid="detail-base-role"]'), "owner");
 	await p.waitForSelector('[data-testid="confirm-dialog"]');
 	check("confirm: making someone an owner warns about full permissions", (await p.locator('[data-testid="confirm-dialog"]').innerText()).includes("全部权限"));
 	await p.click('[data-testid="confirm-cancel"]');
 	await sleep(200);
-	check("confirm: cancelling the ownership change keeps the base role (select and server)", (await p.locator('[data-testid="detail-base-role"]').inputValue()) === "member" && (await access(wang)).assignments.some((x) => x.roleId === "builtin:member") && !(await access(wang)).assignments.some((x) => x.roleId === "builtin:owner"));
-	await p.selectOption('[data-testid="detail-base-role"]', "admin");
+	check("confirm: cancelling the ownership change keeps the base role (select and server)", (await selValue(p.locator('[data-testid="detail-base-role"]'))) === "member" && (await access(wang)).assignments.some((x) => x.roleId === "builtin:member") && !(await access(wang)).assignments.some((x) => x.roleId === "builtin:owner"));
+	await pick(p.locator('[data-testid="detail-base-role"]'), "admin");
 	await p.waitForSelector('[data-testid="confirm-dialog"]');
 	await p.click('[data-testid="confirm-cancel"]');
 	// direct high-risk grant
 	await p.click('[data-testid="detail-grants-fold"] summary');
-	await p.selectOption('[data-testid="grant-effect"]', "allow");
-	await p.selectOption('[data-testid="grant-perm"]', { label: "管理模型服务与密钥（高危）" });
+	await pick(p.locator('[data-testid="grant-effect"]'), "allow");
+	await pick(p.locator('[data-testid="grant-perm"]'), { label: "管理模型服务与密钥（高危）" });
 	await p.click('[data-testid="grant-add"]');
 	await p.waitForSelector('[data-testid="confirm-dialog"]');
 	const gText = await p.locator('[data-testid="confirm-dialog"]').innerText();
@@ -271,7 +271,7 @@ try {
 	await p.locator('[data-testid="detail-grants"] li', { hasText: "管理模型服务与密钥" }).getByRole("button", { name: "移除" }).click();
 	await p.waitForSelector('[data-testid="detail-grants"]', { state: "detached" });
 	// high-risk role on the member
-	await p.selectOption('[data-testid="detail-role-pick"]', { label: "人员清理" });
+	await pick(p.locator('[data-testid="detail-role-pick"]'), { label: "人员清理" });
 	await p.click('[data-testid="detail-role-assign"]');
 	await p.waitForSelector('[data-testid="confirm-dialog"]');
 	check("confirm: a role containing a high-risk permission lists it before granting", (await p.locator('[data-testid="confirm-dialog"]').innerText()).includes("移出组织"));
@@ -315,8 +315,8 @@ try {
 	// authz: assigning a high-risk role asks
 	await p.goto(`${base}/admin?tab=authz`);
 	await p.waitForSelector('[data-testid="authz-form"]');
-	await p.selectOption('[data-testid="authz-subject"]', { label: "钱八（钱八@ui3.example）" });
-	await p.selectOption('[data-testid="authz-role"]', { label: "人员清理（自定义）" });
+	await pick(p.locator('[data-testid="authz-subject"]'), { label: "钱八（钱八@ui3.example）" });
+	await pick(p.locator('[data-testid="authz-role"]'), { label: "人员清理（自定义）" });
 	await p.click('[data-testid="authz-assign"]');
 	await p.waitForSelector('[data-testid="confirm-dialog"]');
 	await p.click('[data-testid="confirm-cancel"]');
@@ -328,7 +328,7 @@ try {
 	await p.waitForSelector('[data-testid="admin-departments"]');
 	await p.locator(`[data-testid="dept-node"][data-dept="${sales.id}"] [data-testid="dept-select"]`).click();
 	await p.waitForSelector('[data-testid="dept-detail"]');
-	await p.selectOption('[data-testid="dept-admin-pick"]', { label: "李四" });
+	await pick(p.locator('[data-testid="dept-admin-pick"]'), { label: "李四" });
 	await p.click('[data-testid="dept-admin-add"]');
 	await p.waitForSelector('[data-testid="confirm-dialog"]');
 	await p.click('[data-testid="confirm-cancel"]');
@@ -384,7 +384,7 @@ try {
 	await jargonFree(mp, "the connection market");
 
 	// settings + my permissions
-	await p.goto(`${base}/settings`);
+	await p.goto(`${base}/settings?tab=permissions`);
 	await p.waitForSelector('[data-testid="my-permissions"]');
 	await jargonFree(p, "settings");
 	check("settings: 我的权限 keeps the full list collapsed", (await p.locator('[data-testid="my-effective"] [data-testid="eff-row"]').count()) === 0);
@@ -494,7 +494,7 @@ try {
 	await m390.locator('[data-testid="provider-advanced"] summary').click();
 	check("390: the service dialog (step 2, advanced open) fits", await noOverflow(m390));
 	await m390.keyboard.press("Escape");
-	for (const url of ["/settings", "/capabilities?tab=market", "/capabilities?tab=mine", "/capabilities?tab=connectors"]) {
+	for (const url of ["/settings", "/settings?tab=credentials", "/settings?tab=models", "/capabilities?tab=market", "/capabilities?tab=mine", "/capabilities?tab=connectors"]) {
 		await m390.goto(`${base}${url}`);
 		await sleep(500);
 		check(`390: ${url} has no horizontal scroll`, await noOverflow(m390));
@@ -559,7 +559,7 @@ try {
 	await p.waitForSelector('[data-testid="provider-step-conn"]');
 	await shots(p, "provider-dialog-step2");
 	await p.keyboard.press("Escape");
-	await p.goto(`${base}/settings`);
+	await p.goto(`${base}/settings?tab=permissions`);
 	await p.waitForSelector('[data-testid="my-permissions"]');
 	await shots(p, "settings");
 	await shots(p, "my-permissions", async () => p.locator('[data-testid="my-permissions"]').scrollIntoViewIfNeeded());

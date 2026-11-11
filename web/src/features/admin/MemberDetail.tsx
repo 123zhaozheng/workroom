@@ -9,10 +9,11 @@ import { del, patch, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { fullTime, relTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/overlay";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { Fold, useAct } from "@/features/admin/common";
+import { Fold, Help, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
 import { EffectiveView, ROLE_SHORT, RiskBadge, ScopePicker, baseRoleConfirm, groupLabel, permDesc, permLabel, roleGrantConfirm, rolePurpose, scopeText, useViewerPerms } from "@/features/admin/rbac-ui";
 
@@ -36,7 +37,7 @@ function H({ children, hint }: { children: string; hint?: string }) {
 	return (
 		<div className="mb-2 flex items-baseline gap-2">
 			<h3 className="text-sm font-medium">{children}</h3>
-			{hint ? <span className="text-xs text-fg-muted">{hint}</span> : null}
+			{hint ? <Help label={`${children}说明`} side="top">{hint}</Help> : null}
 		</div>
 	);
 }
@@ -187,7 +188,7 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 												))}
 											</ul>
 										) : (
-											<p className="mb-3 text-xs text-fg-muted">还没有单独授权或禁止。</p>
+											<p className="mb-3 text-xs text-fg-muted">暂无</p>
 										)}
 										{a.can.grant ? (
 											<div className="flex flex-wrap items-center gap-2" data-testid="detail-grant-add">

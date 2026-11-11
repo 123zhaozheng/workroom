@@ -69,7 +69,7 @@ export function SeriesPanel({ data, csv }: { data: StatsOverviewDTO; csv: (dim: 
 		<div className="grid gap-4 sm:gap-6 lg:grid-cols-3" data-testid="series-panel">
 			<Card testid="chart-area" className="lg:col-span-2" title={`${metricLabel}趋势`} subtitle={`按${DIMS.find((d) => d.value === dim)!.label}堆叠，${gran === "hour" ? "每小时" : gran === "week" ? "每周" : "每天"}${metric === "tokens" ? "；标“模拟”的是测试模型用量" : ""}`} csv={csv(dim, metric)} actions={controls}>
 				{empty ? (
-					<Empty>此范围内没有模型请求记录。{data.notes[0] ?? ""}</Empty>
+					<Empty>此范围内没有模型请求记录</Empty>
 				) : (
 					<>
 						<div className="h-64" role="img" aria-label={`${metricLabel}堆叠面积图，共 ${items.length} 个${DIMS.find((d) => d.value === dim)!.label}，合计 ${fmtCompact(total)}`} data-testid="area-chart">

@@ -8,6 +8,8 @@ import { useApi } from "@/lib/useApi";
 import { fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge, Blocked, EmptyState, Loadable } from "@/components/ui/misc";
 import { useAct } from "./common";
 
@@ -26,8 +28,8 @@ export function Connectors() {
 		<Loadable state={conns} what="连接">
 			{conns.data ? (
 				<div className="space-y-2" data-testid="connectors">
-					{conns.data.secretStorage === "unavailable" ? <Blocked title="凭据存储不可用">服务端未配置加密密钥（WORKROOM_SECRET_KEY），需要密钥的连接无法保存。</Blocked> : null}
-					{conns.data.connectors.length === 0 ? <EmptyState icon={<Plug />} title="还没有可用的连接">在「连接市场」安装，或由管理员添加组织连接。</EmptyState> : null}
+					{conns.data.secretStorage === "unavailable" ? <Blocked title="密钥存储不可用">需要密钥的连接无法保存。</Blocked> : null}
+					{conns.data.connectors.length === 0 ? <EmptyState icon={<Plug />} title="还没有可用的连接" /> : null}
 					{conns.data.connectors.map((c) => (
 						<ConnectorCard key={c.id} c={c} onChanged={conns.reload} />
 					))}
@@ -69,10 +71,10 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 				<Badge tone={st.tone}>{st.label}</Badge>
 				{c.access === "allowed" ? (
 					<>
-						<label className="flex items-center gap-1.5 text-xs text-fg-muted">
-							<input type="checkbox" checked={c.enabledForMe} disabled={busy} onChange={(e) => run(() => put(`/connectors/${c.id}/enablement`, { enabled: e.target.checked }))} />
+						<span className="flex items-center gap-2 text-xs text-fg-muted">
+							<Switch aria-label={`${c.name} 我的任务可用`} data-testid="connector-enable" checked={c.enabledForMe} busy={busy} onCheckedChange={(v) => run(() => put(`/connectors/${c.id}/enablement`, { enabled: v }))} />
 							我的任务可用
-						</label>
+						</span>
 						<Button size="sm" disabled={busy || pending || rejected} data-testid="connector-reconnect" onClick={() => run(() => post(`/connectors/${c.id}/reconnect`))}>
 							<RefreshCw />
 							{c.status === "needs_reconnect" || c.status === "error" || c.status === "unauthorized" ? "重新连接" : "检查"}
@@ -126,9 +128,9 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 							{t.policy === "write" ? <span className="text-fg-subtle">（写操作，需确认）</span> : null}
 							{c.access === "allowed" ? (
 								<>
-									<select
+									<Select
 										aria-label={`我对 ${t.tool} 的设置`}
-										className="h-6 rounded-md border border-border bg-surface px-1 text-xs"
+										className="h-6 px-2 text-xs"
 										value={t.userOverride ?? "default"}
 										disabled={busy}
 										onChange={(e) => run(() => put(`/connectors/${c.id}/my-tools`, { overrides: { [t.tool]: e.target.value === "default" ? null : e.target.value } }))}
@@ -136,11 +138,11 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 										<option value="default">默认</option>
 										<option value="ask">每次确认</option>
 										<option value="disabled">对我关闭</option>
-									</select>
+									</Select>
 									{c.canManage ? (
-										<select
+										<Select
 											aria-label={`管理员对 ${t.tool} 的策略`}
-											className="h-6 rounded-md border border-border bg-surface px-1 text-xs"
+											className="h-6 px-2 text-xs"
 											value={t.disabled && !t.userOverride ? "disabled" : t.policy}
 											disabled={busy}
 											onChange={(e) => run(() => patch(`/connectors/${c.id}`, { toolPolicies: { ...Object.fromEntries(c.tools.filter((x) => x.disabled && !x.userOverride).map((x) => [x.tool, "disabled"])), [t.tool]: e.target.value } }))}
@@ -148,7 +150,7 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 											<option value="read">允许</option>
 											<option value="write">需确认</option>
 											<option value="disabled">全员关闭</option>
-										</select>
+										</Select>
 									) : null}
 								</>
 							) : null}

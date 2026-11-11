@@ -161,7 +161,7 @@ try {
 	const other = await browser.newContext({ viewport: { width: 1366, height: 768 } });
 	const op = await other.newPage();
 	await login(op, base, { email: adminEmail });
-	await a.goto(`${base}/settings`);
+	await a.goto(`${base}/settings?tab=devices`);
 	await a.waitForFunction(() => document.querySelectorAll('[data-testid="my-session"]').length >= 2, null, { timeout: 10000 });
 	await shot(a, "1440-my-sessions");
 	await a.click('[data-testid="revoke-others"]');

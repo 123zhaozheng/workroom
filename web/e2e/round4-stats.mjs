@@ -5,7 +5,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { check, chromium, ROOT, SHOTS, sleep, summary } from "./lib.mjs";
+import { check, chromium, ROOT, SHOTS, sleep, summary, pick, selOptions } from "./lib.mjs";
 
 const PORT = 8864;
 const base = `http://127.0.0.1:${PORT}`;
@@ -134,7 +134,7 @@ try {
 	await mem.goto(`${base}/stats?scope=org&range=30d`);
 	await mem.waitForSelector('[data-testid="scope-select"]');
 	await mem.waitForTimeout(800);
-	const opts = await mem.locator('[data-testid="scope-select"] option').allInnerTexts();
+	const opts = (await selOptions(mem.locator('[data-testid="scope-select"]'))).map((o) => o.label);
 	check("member: scope list offers only 个人", opts.length === 1 && opts[0] === "个人", opts.join(","));
 	check("member: org scope via URL is refused (403 error state, no data)", (await mem.locator('[data-testid="stats-dashboard"]').count()) === 0 && (await mem.getByText("加载失败").count()) > 0);
 	check("member: empty personal state explains why", await (async () => {
@@ -294,10 +294,10 @@ try {
 	await page.waitForFunction(() => location.search.includes("from=2026-01-01") && location.search.includes("to=2026-03-31"), null, { timeout: 10000 }).catch(() => {});
 	await page.waitForSelector('[data-testid="stats-dashboard"]');
 	check("custom range 2026-01-01…2026-03-31 applies (URL + adjusted granularity hint absent for week default)", page.url().includes("from=2026-01-01") && page.url().includes("to=2026-03-31"));
-	await page.locator('[data-testid="scope-select"]').selectOption({ index: 0 });
-	const scopes = await page.locator('[data-testid="scope-select"] option').allInnerTexts();
+	await pick(page.locator('[data-testid="scope-select"]'), { index: 0 });
+	const scopes = (await selOptions(page.locator('[data-testid="scope-select"]'))).map((o) => o.label);
 	check("admin scope list: 个人 / 组织 / 部门 / 项目", scopes.length >= 6 && scopes.some((s) => s.startsWith("组织")) && scopes.some((s) => s.startsWith("部门")) && scopes.some((s) => s.startsWith("项目")), scopes.join(" | "));
-	await page.locator('[data-testid="scope-select"]').selectOption({ label: scopes.find((s) => s.startsWith("项目")) });
+	await pick(page.locator('[data-testid="scope-select"]'), { label: scopes.find((s) => s.startsWith("项目")) });
 	await page.waitForSelector('[data-testid="stats-dashboard"]');
 	check("project scope loads", page.url().includes("scope=project%3A") || page.url().includes("scope=project:"));
 	await ctx.close();

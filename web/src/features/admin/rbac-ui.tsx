@@ -8,7 +8,9 @@ import { useApi } from "@/lib/useApi";
 import type { Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/misc";
-import { Select } from "@/components/ui/input";
+import { Help } from "@/components/ui/help";
+import { Switch } from "@/components/ui/switch";
+import { Select } from "@/components/ui/select";
 import type { ConfirmOptions } from "./confirm";
 
 export { PERMISSIONS, PERMISSION_GROUPS, permissionDef };
@@ -183,10 +185,9 @@ export function PermissionMatrix({ selected, onChange, readOnly, restrictTo, tes
 				<span>
 					已选 {allIds.filter((id) => selected.has(id)).length} / {allIds.length} 项
 				</span>
-				<span className="inline-flex items-center gap-1">
-					<ShieldAlert aria-hidden className="size-3.5 text-danger" />
-					带「高危」标记的权限可能影响整个组织的数据或安全
-				</span>
+				<Help label="权限说明" side="top">
+					带「高危」标记的权限可能影响整个组织的数据或安全。你只能勾选自己拥有的权限；「变更组织所有者」不能放进自定义角色。
+				</Help>
 				<span className="flex-1" />
 				<button type="button" className="rounded px-1.5 py-0.5 text-fg-muted underline-offset-2 hover:text-fg hover:underline" data-testid="matrix-toggle-all" onClick={() => setOpen(Object.fromEntries(PERMISSION_GROUPS.map((g) => [g.id, anyClosed])))}>
 					{anyClosed ? "展开全部" : "收起全部"}
@@ -295,10 +296,10 @@ export function EffectiveView({ effective, onlyGranted: initialOnly = true, test
 								已拥有 {granted} / {effective.length} 项权限
 							</span>
 						) : null}
-						<label className="inline-flex cursor-pointer items-center gap-1.5">
-							<input type="checkbox" className="size-4 accent-[var(--accent)]" checked={only} onChange={(e) => setOnly(e.target.checked)} />
+						<span className="inline-flex items-center gap-2">
+							<Switch aria-label="只显示已拥有" checked={only} onCheckedChange={setOnly} />
 							只显示已拥有
-						</label>
+						</span>
 					</div>
 					<div className="space-y-3">
 						{PERMISSION_GROUPS.map((g) => {

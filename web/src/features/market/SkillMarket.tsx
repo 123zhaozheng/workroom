@@ -7,7 +7,8 @@ import { del, post, put, qs } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent, Sheet } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { FileTree, FileViewer, FindingList, PermChips, SCOPE, Stars, StarInput, StateBadge, permExplain, useAct, useMarketMe } from "./common";
@@ -63,9 +64,7 @@ export function SkillMarket() {
 			) : null}
 			<Loadable state={list} what="技能市场">
 				{(list.data?.skills ?? []).length === 0 ? (
-					<EmptyState icon={<Sparkles />} title={q || category ? "没有符合条件的技能" : "市场里还没有已发布的技能"}>
-						在「我的技能」上传技能并提交审核，通过后会出现在这里。
-					</EmptyState>
+					<EmptyState icon={<Sparkles />} title={q || category ? "没有符合条件的技能" : "市场里还没有已发布的技能"} />
 				) : (
 					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
 						{list.data!.skills.map((s) => (

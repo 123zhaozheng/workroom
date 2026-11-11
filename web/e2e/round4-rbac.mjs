@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { check, chromium, ROOT, shot, sleep, summary } from "./lib.mjs";
+import { check, chromium, ROOT, shot, sleep, summary, pick } from "./lib.mjs";
 
 const PORT = 8865;
 const base = `http://127.0.0.1:${PORT}`;
@@ -71,7 +71,7 @@ try {
 	await owner.waitForSelector('[data-testid="org-structure"]');
 	const createDept = async (name, parentLabel) => {
 		await owner.fill('input[placeholder="新部门名称"]', name);
-		if (parentLabel) await owner.selectOption('select[aria-label="上级部门"]', { label: `上级：${parentLabel}` });
+		if (parentLabel) await pick(owner.locator('[data-wr-select][aria-label="上级部门"]'), { label: `上级：${parentLabel}` });
 		await owner.click('[data-testid="dept-create"]');
 		await owner.waitForFunction((n) => [...document.querySelectorAll('[data-testid="dept-node"]')].some((e) => e.textContent.includes(n)), name, { timeout: 10000 });
 	};
@@ -92,24 +92,24 @@ try {
 	// move back with the menu
 	await owner.locator(`[data-testid="dept-node"][data-dept="${D["华东"]}"] [data-testid="dept-select"]`).click();
 	await owner.waitForSelector('[data-testid="dept-detail"]');
-	await owner.selectOption('[data-testid="dept-move-to"]', { label: "销售部" });
+	await pick(owner.locator('[data-testid="dept-move-to"]'), { label: "销售部" });
 	await owner.click('[data-testid="dept-move"]');
 	await owner.waitForFunction(async ([base, id, to]) => (await (await fetch(`${base}/api/departments`)).json()).departments.find((d) => d.id === id)?.parentId === to, [base, D["华东"], D["销售部"]], { timeout: 8000 });
 	check("org structure: 移动到 menu moves it back under 销售部", true);
 	// members + head + department admin
-	await owner.selectOption('[data-testid="dept-member-pick"]', { label: "李四" });
+	await pick(owner.locator('[data-testid="dept-member-pick"]'), { label: "李四" });
 	await owner.click('[data-testid="dept-member-add"]');
 	await owner.waitForFunction(() => document.querySelector('[data-testid="dept-members"]')?.textContent.includes("李四"));
-	await owner.locator('[data-testid="dept-members"] select').first().selectOption("manager");
-	await owner.waitForFunction(() => document.querySelector('[data-testid="dept-members"] select')?.value === "manager");
+	await pick(owner.locator('[data-testid="dept-members"] [data-wr-select]').first(), "manager");
+	await owner.waitForFunction(() => document.querySelector('[data-testid="dept-members"] [data-wr-select]')?.getAttribute("data-value") === "manager");
 	check("org structure: member added to 华东 and made its head (负责人)", true);
 	await owner.locator(`[data-testid="dept-node"][data-dept="${D["销售部"]}"] [data-testid="dept-select"]`).click();
-	await owner.selectOption('[data-testid="dept-admin-pick"]', { label: "张三" });
+	await pick(owner.locator('[data-testid="dept-admin-pick"]'), { label: "张三" });
 	await owner.click('[data-testid="dept-admin-add"]');
 	await owner.click('[data-testid="confirm-ok"]');
 	await owner.waitForFunction(() => document.querySelector('[data-testid="dept-admins"]')?.textContent.includes("张三"));
 	check("org structure: 张三 is 销售部's department admin", true);
-	await owner.selectOption('[data-testid="dept-member-pick"]', { label: "张三" });
+	await pick(owner.locator('[data-testid="dept-member-pick"]'), { label: "张三" });
 	await owner.click('[data-testid="dept-member-add"]');
 	await owner.waitForFunction(() => document.querySelector('[data-testid="dept-members"]')?.textContent.includes("张三"));
 	// 王五 in 研发部 (outside 张三's subtree)
@@ -154,16 +154,16 @@ try {
 	// ------------------------------------------------------------------ 授权
 	await owner.goto(`${base}/admin?tab=authz`);
 	await owner.waitForSelector('[data-testid="authz-form"]');
-	await owner.selectOption('[data-testid="authz-subject"]', { label: "赵六（赵六@rbac.example）" });
-	await owner.selectOption('[data-testid="authz-role"]', { label: "内部审计（自定义）" });
+	await pick(owner.locator('[data-testid="authz-subject"]'), { label: "赵六（赵六@rbac.example）" });
+	await pick(owner.locator('[data-testid="authz-role"]'), { label: "内部审计（自定义）" });
 	await owner.click('[data-testid="authz-assign"]');
 	await owner.waitForSelector('[data-testid="authz-row"]:has-text("赵六")');
 	check("authz: custom role assigned org-wide to 赵六", true);
 	// department-scoped assignment: 技能审核员 limited to 华西
-	await owner.selectOption('[data-testid="authz-subject"]', { label: "王五（王五@rbac.example）" });
-	await owner.selectOption('[data-testid="authz-scope"] select[aria-label="范围"]', "department");
-	await owner.selectOption('[data-testid="authz-scope"] select[aria-label="部门"]', D["华西"]);
-	await owner.selectOption('[data-testid="authz-role"]', { label: "技能审核员" });
+	await pick(owner.locator('[data-testid="authz-subject"]'), { label: "王五（王五@rbac.example）" });
+	await pick(owner.locator('[data-testid="authz-scope"] [data-wr-select][aria-label="范围"]'), "department");
+	await pick(owner.locator('[data-testid="authz-scope"] [data-wr-select][aria-label="部门"]'), D["华西"]);
+	await pick(owner.locator('[data-testid="authz-role"]'), { label: "技能审核员" });
 	await owner.click('[data-testid="authz-assign"]');
 	await owner.waitForSelector('[data-testid="authz-row"]:has-text("王五")');
 	const rowText = await owner.locator('[data-testid="authz-row"]:has-text("王五")').innerText();
@@ -174,12 +174,12 @@ try {
 	await owner.click('[data-testid="group-create"]');
 	await owner.waitForSelector('[data-testid="group-list"]:has-text("报表组")');
 	await owner.locator('[data-testid="group-list"] li button', { hasText: "报表组" }).click();
-	await owner.selectOption('[data-testid="group-list"] select[aria-label="添加成员"]', { label: "李四" });
+	await pick(owner.locator('[data-testid="group-list"] [data-wr-select][aria-label="添加成员"]'), { label: "李四" });
 	await owner.locator('[data-testid="group-list"] button', { hasText: "添加" }).click();
 	await owner.waitForSelector('[data-testid="group-list"] :text("李四")');
-	await owner.selectOption('select[aria-label="主体类型"]', "group");
-	await owner.selectOption('[data-testid="authz-scope"] select[aria-label="范围"]', "org");
-	await owner.selectOption('[data-testid="authz-role"]', { label: "计费管理员" });
+	await pick(owner.locator('[data-wr-select][aria-label="主体类型"]'), "group");
+	await pick(owner.locator('[data-testid="authz-scope"] [data-wr-select][aria-label="范围"]'), "org");
+	await pick(owner.locator('[data-testid="authz-role"]'), { label: "计费管理员" });
 	await owner.click('[data-testid="authz-assign"]');
 	await owner.waitForSelector('[data-testid="authz-row"]:has-text("报表组")');
 	const liBudget = await li.api.post(`${base}/api/admin/budgets`, { data: { scope: { kind: "org", id: "" }, period: "month", limitCost: 50, action: "warn" } });
@@ -206,13 +206,13 @@ try {
 	await shot(owner, "1440-rbac-member-detail");
 	// add a direct deny
 	await owner.click('[data-testid="detail-grants-fold"] summary');
-	await owner.selectOption('[data-testid="grant-effect"]', "deny");
-	await owner.selectOption('[data-testid="grant-perm"]', { label: "查看审计日志" });
+	await pick(owner.locator('[data-testid="grant-effect"]'), "deny");
+	await pick(owner.locator('[data-testid="grant-perm"]'), { label: "查看审计日志" });
 	await owner.fill('input[aria-label="原因"]', "离岗审查");
 	await owner.click('[data-testid="grant-add"]');
 	await owner.waitForSelector('[data-testid="detail-grants"] [data-effect="deny"]');
 	await owner.waitForSelector('[data-testid="detail-effective"] [data-perm="audit.view"]', { state: "detached", timeout: 3000 }).catch(() => {});
-	await owner.locator('[data-testid="detail-effective"] input[type="checkbox"]').uncheck();
+	await owner.locator('[data-testid="detail-effective"] [role="switch"]').uncheck();
 	if ((await owner.locator('[data-testid="detail-effective"] [data-perm="audit.view"] [data-testid="why-list"]').count()) === 0) await owner.locator('[data-testid="detail-effective"] [data-perm="audit.view"] [data-testid="why-btn"]').click();
 	const why2 = await owner.locator('[data-testid="detail-effective"] [data-perm="audit.view"]').innerText();
 	check("member detail: direct deny wins and the reason is explained", (await owner.locator('[data-testid="detail-effective"] [data-perm="audit.view"]').getAttribute("data-allow")) === "0" && why2.includes("直接禁止") && why2.includes("离岗审查"), why2.replace(/\s+/g, " ").slice(0, 160));
@@ -223,7 +223,7 @@ try {
 	// ------------------------------------------------------------------ audit shows every change
 	await owner.goto(`${base}/admin?tab=audit`);
 	await owner.waitForSelector('[data-testid="admin-audit"]');
-	await owner.selectOption('select[aria-label="类别"]', "grant");
+	await pick(owner.locator('[data-wr-select][aria-label="类别"]'), "grant");
 	await owner.waitForFunction(() => ["授予角色", "单独禁止权限", "调整部门成员"].every((a) => document.querySelector('[data-testid="admin-audit"]')?.textContent.includes(a)), null, { timeout: 8000 });
 	await owner.check('[data-testid="audit-tech"]');
 	check("audit: technical ids appear only after 显示技术详情", (await owner.locator('[data-testid="audit-tech-line"]').first().innerText()).includes("grant."));
@@ -277,11 +277,11 @@ try {
 	await sp.goto(`${base}/admin`);
 	await sp.waitForSelector('[data-testid="home-greeting"]', { timeout: 10000 });
 	check("guest: /admin redirects home (no admin permission anywhere)", !sp.url().includes("/admin"));
-	await sp.goto(`${base}/settings`);
+	await sp.goto(`${base}/settings?tab=permissions`);
 	await sp.waitForSelector('[data-testid="my-permissions"] [data-testid="my-roles"]');
 	check("我的权限: shows the guest role", (await sp.locator('[data-testid="my-roles"]').innerText()).includes("访客"));
 	await sp.locator('[data-testid="my-effective"] [data-testid="effective-toggle"]').click();
-	await sp.locator('[data-testid="my-effective"] input[type="checkbox"]').uncheck();
+	await sp.locator('[data-testid="my-effective"] [role="switch"]').uncheck();
 	const sandbox = sp.locator('[data-testid="my-effective"] [data-perm="sandbox.use"]');
 	check("我的权限: sandbox is not granted to a guest", (await sandbox.getAttribute("data-allow")) === "0");
 	await sandbox.locator('[data-testid="why-btn"]').click();
@@ -328,7 +328,7 @@ try {
 	const sctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: "zh-CN" });
 	await sctx.addCookies(await sun.ctx.cookies());
 	const smobile = await sctx.newPage();
-	await smobile.goto(`${base}/settings`);
+	await smobile.goto(`${base}/settings?tab=permissions`);
 	await smobile.waitForSelector('[data-testid="my-permissions"] [data-testid="my-roles"]');
 	await smobile.locator('[data-testid="my-permissions"]').scrollIntoViewIfNeeded();
 	check("390: 我的权限 fits the viewport", await smobile.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));

@@ -10,7 +10,8 @@ import { cn, formatBytes, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { usePanel } from "@/components/shell/panel";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { EmptyState, Page, PageHeader } from "@/components/ui/misc";
 import { LoadState } from "@/features/work/states";
 import { fileIcon } from "@/features/chat/Cards";
@@ -95,9 +96,7 @@ export default function FilesPage() {
 					{upErr ? <p role="alert" className="mb-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">上传失败：{upErr}</p> : null}
 					<LoadState state={files} what="文件库">
 						{(files.data?.files ?? []).length === 0 ? (
-							<EmptyState icon={<FolderOpen />} title={q ? "没有匹配的文件" : "文件库还是空的"}>
-								上传资料，或让助手生成文档、表格和演示稿。
-							</EmptyState>
+							<EmptyState icon={<FolderOpen />} title={q ? "没有匹配的文件" : "文件库还是空的"} />
 						) : (
 							<div className="overflow-hidden rounded-xl border border-border bg-surface">
 								{files.data!.files.map((f, i) => {

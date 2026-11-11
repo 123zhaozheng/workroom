@@ -4,7 +4,7 @@
 //     SSRF refusal, unreachable endpoint → failure shown with no silent fallback, project override rules. Skipped with a reason while the routes are absent.
 //  C. LIVE roundtrip against a real OpenSandbox (WORKROOM_TEST_OPENSANDBOX_URL / _KEY) — skipped with an explicit reason otherwise, never faked.
 // Run: npm run build:web && node web/e2e/round7-sandbox.mjs        (port 8907)
-import { check, chromium, register, ROOT, shot, startServer, summary, SHOTS } from "./lib.mjs";
+import { check, chromium, register, ROOT, shot, startServer, summary, SHOTS, pick, selValue, selOptions } from "./lib.mjs";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -61,20 +61,23 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await page.waitForSelector('[data-testid="sandbox-admin"]');
 	check("[intercepted] admin sees 运行环境 tab and the 执行位置 section", (await page.locator('[data-testid="admin-tab-sandbox"]').count()) === 1 && (await page.locator('[data-testid="sandbox-location"]').innerText()).includes("执行位置"));
 	check("[intercepted] one card per provider (3) with location badges", (await page.locator('[data-testid^="provider-"]').count()) === 3 && (await page.locator('[data-testid="loc-e2b"]').innerText()).includes("数据会离开组织") && (await page.locator('[data-testid="loc-opensandbox"]').innerText()).includes("自托管"));
-	check("[intercepted] org default select: only enabled providers selectable", (await page.locator('#org-default option[value="e2b"]').isDisabled()) && !(await page.locator('#org-default option[value="opensandbox"]').isDisabled()) && (await page.locator("#org-default").inputValue()) === "opensandbox");
+	check("[intercepted] org default select: only enabled providers selectable", await (async () => { const o = await selOptions(page.locator("#org-default")); return o.find((x) => x.value === "e2b")?.disabled && !o.find((x) => x.value === "opensandbox")?.disabled; })() && (await selValue(page.locator("#org-default"))) === "opensandbox");
 	const saved = await page.locator('[data-testid="opensandbox-key-saved"]').innerText();
 	check("[intercepted] key shown as 已保存 ••••1234, never an input value", saved.includes("已保存") && saved.includes("••••1234") && (await page.locator('[data-testid="opensandbox-apikey"]').count()) === 0);
 	await page.locator('[data-testid="opensandbox-key-replace"]').click();
 	check("[intercepted] 更换 opens an EMPTY write-only field", (await page.locator('[data-testid="opensandbox-apikey"]').inputValue()) === "" && (await page.locator('[data-testid="opensandbox-apikey"]').getAttribute("type")) === "password");
 	check("[intercepted] domain only for E2B", (await page.locator('[data-testid="e2b-domain"]').count()) === 1 && (await page.locator('[data-testid="daytona-domain"]').count()) === 0 && (await page.locator('[data-testid="opensandbox-domain"]').count()) === 0);
 	check("[intercepted] egress acknowledgement only on vendor-cloud cards", (await page.locator('[data-testid="e2b-egress"]').count()) === 1 && (await page.locator('[data-testid="opensandbox-egress"]').count()) === 0);
-	check("[intercepted] SDK line, lifecycle units (秒/分钟/小时)", (await page.locator('[data-testid="opensandbox-sdk"]').innerText()).includes("1.2.3") && (await page.locator('[data-testid="daytona-sdk"]').innerText()).includes("未安装") && (await page.locator('[data-testid="opensandbox"], [data-testid="provider-opensandbox"]').first().innerText()).includes("空闲回收（分钟）"));
+	await page.locator('[data-testid="provider-opensandbox"] summary').click();
+	await page.locator('[data-testid="provider-daytona"] summary').click();
+	check("[intercepted] SDK line (inside 能力与技术详情), lifecycle units (秒/分钟/小时)", (await page.locator('[data-testid="opensandbox-sdk"]').innerText()).includes("1.2.3") && (await page.locator('[data-testid="daytona-sdk"]').innerText()).includes("未安装") && (await page.locator('[data-testid="opensandbox"], [data-testid="provider-opensandbox"]').first().innerText()).includes("空闲回收（分钟）"));
 	check("[intercepted] last test: result, steps, time", await page.locator('[data-testid="opensandbox-test-result"]').evaluate((el) => /成功/.test(el.textContent) && /创建沙箱/.test(el.textContent) && /4\.2 秒/.test(el.textContent)));
 	await page.locator('[data-testid="provider-e2b"] summary').click();
+	check("[intercepted] unverified 禁止联网 is warned about visibly (not hidden in the fold)", (await page.locator('[data-testid="e2b-net-warning"]').innerText()).includes("尚未验证"));
 	const capText = await page.locator('[data-testid="e2b-caps"]').innerText();
-	check("[intercepted] capability table: 支持 / 已实现，未联调 / 不支持 + isolation sentence", ["支持", "已实现，未联调", "不支持", "每个工作区一台云端微虚拟机"].every((t) => capText.includes(t)));
-	check("[intercepted] no unsaved-change test hint conflict: 完整测试 explains temporary sandbox", (await page.locator('[data-testid="provider-opensandbox"]').innerText()).includes("只使用合成数据"));
-	check("[intercepted] instances table lists provider, space, state, error", await page.locator('[data-testid="sandbox-instances"]').evaluate((el) => /OpenSandbox/.test(el.textContent) && /spc_demo1/.test(el.textContent) && /可用/.test(el.textContent) && /创建超时/.test(el.textContent)));
+	check("[intercepted] capability table: 支持 / 未验证 / 不支持 + isolation sentence", ["支持", "未验证", "不支持", "每个工作区一台云端微虚拟机"].every((t) => capText.includes(t)));
+	check("[intercepted] no unsaved-change test hint conflict: 完整测试 explains temporary sandbox", await (async () => { await page.locator('[data-testid="provider-opensandbox"]').getByRole("button", { name: "测试说明" }).click(); const t = await page.locator('[data-testid="help-content"]').innerText(); await page.keyboard.press("Escape"); return t.includes("只使用合成数据"); })());
+	check("[intercepted] instances table lists provider, space, state, error", await page.locator('[data-testid="sandbox-instances"]').evaluate((el) => /OpenSandbox/.test(el.textContent) && /工作区/.test(el.textContent) && el.innerHTML.includes("spc_demo1") && /可用/.test(el.textContent) && /创建超时/.test(el.textContent)));
 	await shotR(page, "admin-sandbox-1440-caps");
 	await page.locator('[data-testid="provider-e2b"] summary').click();
 	await page.evaluate(() => document.querySelector(".wr-scroll")?.scrollTo(0, 0));
@@ -87,8 +90,8 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await mockRoutes(page, bad, []);
 	await page.reload();
 	await page.waitForSelector('[data-testid="sandbox-admin"]');
-	check("[intercepted] secretStorage=false → explicit state, key field disabled with reason", (await page.locator('[data-testid="secret-missing"]').innerText()).includes("WORKROOM_SECRET_KEY") && (await page.locator('[data-testid="opensandbox-apikey"]').isDisabled()));
-	check("[intercepted] unhealthy default shown, says no silent fallback, selection unchanged", (await page.locator('[data-testid="default-unhealthy"]').innerText()).includes("不会自动改用本机沙箱") && (await page.locator("#org-default").inputValue()) === "opensandbox");
+	check("[intercepted] secretStorage=false → explicit state, key field disabled with reason", (await page.locator('[data-testid="secret-missing"]').innerText()).includes("密钥存储") && (await page.locator('[data-testid="opensandbox-apikey"]').isDisabled()));
+	check("[intercepted] unhealthy default shown, says no silent fallback, selection unchanged", (await page.locator('[data-testid="default-unhealthy"]').innerText()).includes("不会自动改用本机沙箱") && (await selValue(page.locator("#org-default"))) === "opensandbox");
 	check("[intercepted] empty instances → empty state", (await page.locator('[data-testid="sandbox-instances"]').innerText()).includes("还没有远程沙箱"));
 	await shotR(page, "admin-sandbox-1440-states");
 	const overflow = (p) => p.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
@@ -206,7 +209,7 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await card.locator('[data-testid="opensandbox-test-health"]').click();
 	await admin.waitForSelector('[data-testid="opensandbox-test-result"][data-ok="false"], [data-testid="opensandbox-test-error"]', { timeout: 45000 });
 	const failTxt = await card.locator('[data-testid="opensandbox-test"]').innerText();
-	check("[real] unreachable endpoint → plain failure; default still OpenSandbox; unhealthy banner (no fallback)", failTxt.includes("失败") && (await admin.locator("#org-default").inputValue()) === "opensandbox" && (await admin.locator('[data-testid="default-unhealthy"]').count()) === 1, failTxt.replace(/\s+/g, " ").slice(0, 100));
+	check("[real] unreachable endpoint → plain failure; default still OpenSandbox; unhealthy banner (no fallback)", failTxt.includes("失败") && (await selValue(admin.locator("#org-default"))) === "opensandbox" && (await admin.locator('[data-testid="default-unhealthy"]').count()) === 1, failTxt.replace(/\s+/g, " ").slice(0, 100));
 	await shotR(admin, "admin-sandbox-real-test-failed");
 	await admin.evaluate(() => document.querySelector(".wr-scroll")?.scrollTo(0, 0));
 	await shotR(admin, "admin-sandbox-real-1440-light");
@@ -245,11 +248,11 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await admin.request.put(`${base}/api/sandbox/provider-policy`, { data: { allowProjectOverride: true } });
 	await admin.goto(`${base}/projects/${pid}`);
 	await admin.waitForSelector('[data-testid="project-sandbox"]');
-	await admin.selectOption('[data-testid="project-sandbox-select"]', "opensandbox");
+	await pick(admin.locator('[data-testid="project-sandbox-select"]'), "opensandbox");
 	await admin.waitForSelector('[data-testid="project-sandbox"] [role="status"]');
-	check("[real] allowed: owner sees the picker, choosing OpenSandbox is saved and read back", (await gp(admin)).body?.provider === "opensandbox" && (await admin.locator('[data-testid="project-sandbox-select"]').inputValue()) === "opensandbox");
+	check("[real] allowed: owner sees the picker, choosing OpenSandbox is saved and read back", (await gp(admin)).body?.provider === "opensandbox" && (await selValue(admin.locator('[data-testid="project-sandbox-select"]'))) === "opensandbox");
 	await shotR(admin, "project-sandbox-override");
-	await admin.selectOption('[data-testid="project-sandbox-select"]', "");
+	await pick(admin.locator('[data-testid="project-sandbox-select"]'), "");
 	await admin.waitForSelector('[data-testid="project-sandbox"] [role="status"]');
 	check("[real] 跟随组织默认 clears the override (provider null)", (await gp(admin)).body?.provider === null);
 	const mGet = await member.request.get(`${base}/api/projects/${pid}/sandbox-provider`);

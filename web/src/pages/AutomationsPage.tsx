@@ -10,7 +10,10 @@ import type { Project } from "@/lib/types";
 import { cn, fullTime, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Help } from "@/components/ui/help";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable, Page, PageHeader, Spinner } from "@/components/ui/misc";
 import { listOf } from "@/features/chat/pickers";
@@ -51,17 +54,19 @@ export default function AutomationsPage() {
 				<Page>
 					<PageHeader
 						title="自动化"
-						description="按时间、手动或事件自动发起的任务。每次运行都会记录状态、原因和结果对话；通知失败与任务失败分开记录。"
 						actions={
+							<>
+							<Help label="自动化说明">按时间、手动或事件自动发起的任务。每次运行都会记录状态、原因和结果对话；通知失败与任务失败分开记录。</Help>
 							<Button variant="primary" onClick={() => setEditing("new")} disabled={res.unavailable} data-testid="automation-new">
 								<Plus />
 								新建自动化
 							</Button>
+							</>
 						}
 					/>
 					{secret ? (
 						<div className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-[13px] text-warning" data-testid="webhook-secret">
-							Webhook 地址（只显示这一次，请妥善保存）：<code className="break-all">{secret}</code>
+							触发地址（只显示这一次，请妥善保存）：<code className="break-all">{secret}</code>
 							<button className="ml-2 underline" onClick={() => setSecret(undefined)}>
 								我已保存
 							</button>
@@ -69,9 +74,7 @@ export default function AutomationsPage() {
 					) : null}
 					<Loadable state={res} what="自动化" need="E 组：GET /api/automations">
 						{list.length === 0 ? (
-							<EmptyState icon={<Workflow />} title="还没有自动化" action={<Button onClick={() => setEditing("new")}>新建自动化</Button>}>
-								例如：每个工作日 9:00 汇总昨天的项目进展。
-							</EmptyState>
+							<EmptyState icon={<Workflow />} title="还没有自动化" action={<Button onClick={() => setEditing("new")}>新建自动化</Button>} />
 						) : (
 							<div className="space-y-2">
 								{list.map((a) => (
@@ -129,10 +132,10 @@ function AutomationCard({ a, onEdit, onChanged }: { a: AutomationDTO; onEdit: ()
 					</span>
 				</button>
 				{a.lastRun ? <Badge tone={RUN[a.lastRun.status].tone}>上次：{RUN[a.lastRun.status].label}</Badge> : null}
-				<label className="flex items-center gap-1.5 text-xs text-fg-muted">
-					<input type="checkbox" checked={a.enabled} disabled={busy} onChange={(e) => act(() => patch(`/automations/${a.id}`, { enabled: e.target.checked }))} className="size-4 accent-[var(--accent)]" />
+				<span className="flex items-center gap-2 text-xs text-fg-muted">
+					<Switch aria-label={`启用 ${a.name}`} data-testid="automation-enabled" checked={a.enabled} busy={busy} onCheckedChange={(v) => act(() => patch(`/automations/${a.id}`, { enabled: v }))} />
 					启用
-				</label>
+				</span>
 				<Button size="sm" disabled={busy} onClick={() => act(() => post(`/automations/${a.id}/run`))} data-testid="automation-run-now">
 					<Play />
 					立即运行
@@ -344,7 +347,7 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial?: AutomationD
 							<Input id="aat" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
 						</div>
 					) : kind === "webhook" ? (
-						<p className="text-xs text-fg-muted">保存后会生成一次性显示的 Webhook 地址；相同 Idempotency-Key 的重复投递只触发一次。</p>
+						<p className="text-xs text-fg-muted">保存后会生成一次性显示的触发地址，重复投递只触发一次。</p>
 					) : null}
 					{preview ? (
 						<div className="rounded-lg bg-surface-2 px-3 py-2 text-xs" data-testid="automation-preview">
@@ -392,7 +395,7 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial?: AutomationD
 					<div>
 						<Label>输出到</Label>
 						<div className="flex flex-wrap items-center gap-3 text-[13px]">
-							<Select value={conversation} onChange={(e) => setConversation(e.target.value as "new" | "reuse")} className="h-8 text-[13px]">
+							<Select aria-label="输出到" value={conversation} onChange={(e) => setConversation(e.target.value as "new" | "reuse")} className="h-8 text-[13px]">
 								<option value="new">每次新建对话</option>
 								<option value="reuse">追加到同一个对话</option>
 							</Select>

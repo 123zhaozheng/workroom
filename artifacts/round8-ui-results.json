@@ -1,0 +1,170 @@
+{
+  "at": "2026-11-11T03:09:09.539Z",
+  "results": [
+    {
+      "name": "density: members page shows fewer words than before",
+      "ok": true,
+      "detail": "183 → 180"
+    },
+    {
+      "name": "density: authz page shows fewer words than before",
+      "ok": true,
+      "detail": "227 → 168"
+    },
+    {
+      "name": "density: models page shows fewer words than before",
+      "ok": true,
+      "detail": "219 → 198"
+    },
+    {
+      "name": "density: sandbox providers page shows at least 25% fewer words",
+      "ok": true,
+      "detail": "843 → 577"
+    },
+    {
+      "name": "density: no inspected page got wordier",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "select: the trigger is a combobox with an accessible name and no native <select> on the page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "select: arrows / End / Home move the highlight",
+      "ok": true,
+      "detail": "全部,登录,安全,全部"
+    },
+    {
+      "name": "select: the current option carries a check mark on the right",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "select: Escape closes the list and gives focus back to the trigger",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "select: Enter picks the highlighted option and the audit filter sends the same query param",
+      "ok": true,
+      "detail": "want=管理/admin sent=admin"
+    },
+    {
+      "name": "select: focus is on the trigger after choosing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "select: option labels are readable text",
+      "ok": true,
+      "detail": "全部|登录|管理|授权|分享|外部写|模型|预算|自动化|安全"
+    },
+    {
+      "name": "select: pointer selection works and resets to the first option (all categories → category param empty)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "select: the popover is opaque (alpha 1) with a rounded surface",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "select: a 30+ item list scrolls inside the popover and stays inside the viewport (1440×900)",
+      "ok": true,
+      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.13861083984375,\"h\":352}"
+    },
+    {
+      "name": "select @390: the popover is opaque and inside the viewport",
+      "ok": true,
+      "detail": "{\"x\":16,\"y\":304.5507507324219,\"width\":192,\"height\":352.0000305175781}"
+    },
+    {
+      "name": "select @390: no horizontal scroll on the page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "switch: role=switch with an accessible name",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "switch: Space toggles aria-checked",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "switch: click toggles it back",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "switch: the preference survives a reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "switch: on state is the blue info colour",
+      "ok": true,
+      "detail": "rgb(36, 88, 198)"
+    },
+    {
+      "name": "switch: 允许项目单独选择 persists through the existing policy API",
+      "ok": true,
+      "detail": "false → true"
+    },
+    {
+      "name": "switch: Space on the admin switch saves too",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "switch: busy/invalid states are exposed as aria-busy / aria-invalid",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "help: closed by default with aria-expanded=false",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "help: Enter opens it (aria-expanded=true) with the explanation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "help: Escape closes it and focus returns to the button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "help: Space opens, a click outside closes",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "help @390: a tap opens it, fully inside the viewport",
+      "ok": true,
+      "detail": "{\"x\":54,\"y\":531,\"width\":320,\"height\":71.5}"
+    },
+    {
+      "name": "settings: left navigation with six entries and a content column ≤ 720px",
+      "ok": true,
+      "detail": "w=720"
+    },
+    {
+      "name": "settings: control is right-aligned in its row",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "settings: no console errors on the pages exercised",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

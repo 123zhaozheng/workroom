@@ -16,7 +16,7 @@ export function PersonalProviders() {
 		<section data-testid="personal-keys">
 			<p className="mb-3 flex items-start gap-1.5 text-xs text-fg-muted">
 				<ShieldCheck aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-				密钥加密保存，只有你能使用。用这些模型对话时，内容会直接发给你填写的地址，费用由你自己的服务账户承担。
+				用这些模型对话时，内容会直接发给你填写的地址，费用由你自己的服务账户承担。
 			</p>
 			<Loadable state={res} what="我的模型服务">
 				<ProviderPanel base="/me/model-providers" personal canProviders canModels catalog={res.data} providers={res.data?.providers ?? []} reload={res.reload} />

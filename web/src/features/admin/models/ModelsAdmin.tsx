@@ -4,7 +4,8 @@ import { FlaskConical } from "lucide-react";
 import type { ModelProvidersResponse, PlatformModelDTO } from "@shared/ops";
 import { put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { Fold, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
@@ -34,6 +35,7 @@ export function ModelsAdmin() {
 					<label className="flex flex-wrap items-center gap-2">
 						<span className="text-fg-muted">默认模型</span>
 						<Select
+							aria-label="默认模型"
 							value={settings?.defaultModel && choices.some((m) => m.ref.provider === settings.defaultModel!.provider && m.ref.modelId === settings.defaultModel!.modelId) ? `${settings.defaultModel.provider}/${settings.defaultModel.modelId}` : ""}
 							disabled={busy || !canModels}
 							className="max-w-64"
@@ -51,21 +53,20 @@ export function ModelsAdmin() {
 							))}
 						</Select>
 					</label>
-					<label className="flex cursor-pointer items-center gap-2">
-						<input
-							type="checkbox"
-							className="size-4 accent-[var(--accent)]"
+					<span className="flex items-center gap-2">
+						<Switch
+							aria-label="允许成员自带密钥"
 							checked={!!settings?.personalProviders}
-							disabled={busy || !canProviders}
+							disabled={!canProviders}
+							busy={busy}
 							data-testid="personal-providers-toggle"
-							onChange={async (e) => {
-								const on = e.target.checked;
+							onCheckedChange={async (on) => {
 								if (on && !(await ask({ title: "允许成员使用自己的密钥？", consequence: "成员可以在设置里添加自己的模型服务和密钥。他们发送的内容会直接发给所选服务，不经过你配置的服务，也不受这里的模型开放范围限制。", items: ["密钥只保存给本人，管理员看不到", "随时可以再关闭"], confirmLabel: "允许", danger: true }))) return;
 								await run(() => put("/admin/model-settings", { personalProviders: on }));
 							}}
 						/>
 						允许成员自带密钥
-					</label>
+					</span>
 				</div>
 				{settings && !settings.secretKeyConfigured ? <p className="mt-2 text-xs text-warning">服务端还没有开启密钥加密，暂时不能直接保存密钥。</p> : null}
 			</section>

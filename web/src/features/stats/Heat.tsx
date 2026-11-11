@@ -80,7 +80,7 @@ export function CalendarHeatmap({ data, csv }: { data: StatsOverviewDTO; csv: st
 			actions={<Segmented label="指标" value={metric} onChange={setMetric} options={METRICS} />}
 		>
 			{model.total === 0 ? (
-				<Empty>过去 365 天内没有记录。{data.notes[0] ?? "有对话产生用量后，这里会显示每天的活跃度。"}</Empty>
+				<Empty>过去 365 天内没有记录</Empty>
 			) : (
 				<>
 					<div ref={box} className="relative overflow-x-auto pb-1">
