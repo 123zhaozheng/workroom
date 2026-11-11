@@ -32,7 +32,7 @@ symlinks, special files (sockets, fifos, devices), unsafe file names, directorie
 Limits fail the whole commit explicitly (state `failed`, text names the file / limit and the policy field); nothing is truncated silently.
 
 ## Sync points (who calls `commit`)
-Always `commit(principal, space, workspaceKey, reason)`; reasons `run_end`, `before_publish`, `turn_end`, `periodic`, `manual`, `restore`.
+Always `commit(principal, space, workspaceKey, reason)`; reasons `run_end`, `file_write`, `before_publish`, `periodic`, `manual`, `restore` (`turn_end` exists in the API but is NOT wired in this round — the save points actually in use are run end, workspace file writes and before publish).
 Commit is idempotent (same manifest as head → no new version, still `saved`), serialised per workspace, and checks the base version in the same DB
 transaction that inserts the version. Hooks must treat a non-`ok` result as "report, don't fail the run".
 

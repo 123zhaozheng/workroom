@@ -270,9 +270,10 @@ if (!LIVE_URL) {
 	await admin.waitForSelector('[data-testid="sandbox-admin"]');
 	const c = admin.locator('[data-testid="provider-opensandbox"]');
 	await c.locator('[data-testid="opensandbox-test-roundtrip"]').click();
-	await admin.waitForSelector('[data-testid="opensandbox-test-result"]', { timeout: 120000 });
+	// Wait for THIS run's full-test result (an earlier connectivity result for the same card may already be on screen).
+	await admin.waitForFunction(() => (document.querySelector('[data-testid="opensandbox-test-result"]')?.textContent ?? "").includes("完整测试"), null, { timeout: 180000 });
 	const ok = (await c.locator('[data-testid="opensandbox-test-result"]').getAttribute("data-ok")) === "true";
-	check("[live] OpenSandbox full roundtrip passes (create, exec, file, destroy)", put.status() < 400 && ok, (await c.locator('[data-testid="opensandbox-test"]').innerText()).slice(0, 200));
+	check("[live] OpenSandbox full roundtrip passes (create, exec, file, destroy)", put.status() < 400 && ok, `put=${put.status()} ` + (await c.locator('[data-testid="opensandbox-test-result"]').innerText()).replace(/\s+/g, " ").slice(0, 300));
 	await shotR(admin, "admin-sandbox-live-roundtrip");
 }
 

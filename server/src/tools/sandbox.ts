@@ -389,7 +389,9 @@ export class Sandbox {
 		// Round 7b: the working copy is restored from its last saved version when it is missing (sandbox/host copy expired); never overwrites.
 		const persist = workspacePersistenceFor(this.#ctx);
 		const wsKey = workspaceKeyOf(input.conversationId);
-		const ready = await persist.ensureReady(input.principal, input.space, wsKey);
+		// Internal throwaway workspaces (e.g. a skill draft's sample run uses key -1) belong to no conversation: nothing to restore or keep.
+		const persistable = input.conversationId === undefined || (Number.isInteger(input.conversationId) && input.conversationId >= 0);
+		const ready = persistable ? await persist.ensureReady(input.principal, input.space, wsKey) : ({ state: "saved" } as { state: string; failure?: string });
 		if ((ready.state === "failed" || ready.state === "conflict") && !existsSync(join(this.root(input.space), input.conversationId === undefined ? "shared" : `c${input.conversationId}`)))
 			throw new HttpError(409, "workspace_not_restored", `工作区未能恢复，已停止运行以免在空目录上工作：${ready.failure ?? ready.state}`);
 		const wd = this.workdir(input.space, input.conversationId);
@@ -424,7 +426,7 @@ export class Sandbox {
 			release();
 			cred.cleanup();
 			// Save point: after every run (also failed/timed-out ones), after the remote sync-back. Failures are recorded in the workspace status, never thrown.
-			await persist.commit(input.principal, input.space, wsKey, "run_end").catch((e) => console.error("[sandbox] workspace commit failed", e));
+			if (persistable) await persist.commit(input.principal, input.space, wsKey, "run_end").catch((e) => console.error("[sandbox] workspace commit failed", e));
 		}
 		if (network && !input.network) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}[网络] 该远端沙箱无法保证断网，本次运行按“可联网”处理（管理员已允许沙箱联网）` };
 		if (cred.names.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}[凭据] 本次运行注入了环境变量：${cred.names.join("、")}（进程及其子进程可读取）` };

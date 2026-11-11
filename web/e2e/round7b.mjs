@@ -504,7 +504,7 @@ await page.waitForFunction(() => ["saved", "dirty"].includes(document.querySelec
 const st0 = (await (await page.request.get(`${wsApi}/status`)).json()).status;
 check("D after a command that wrote a file the workspace is 已保存 with a version (saved at the end of the command)", st0.state === "saved" && st0.headVersion >= 1 && (await page.locator('[data-testid="ws-save-badge"]').innerText()) === "已保存", JSON.stringify({ state: st0.state, head: st0.headVersion }));
 const rule = await page.locator('[data-testid="ws-save-rule"]').innerText();
-check("D the plain rule sentence is shown (沙箱可能随时到期；…每次命令结束、发布成果和每轮结束时保存。) with the driver's loss-window sentence", rule.includes("沙箱可能随时到期；工作文件在每次命令结束、发布成果和每轮结束时保存。") && (await page.locator('[data-testid="ws-loss-window"]').innerText()).length > 20);
+check("D the plain rule sentence is shown (运行环境可能随时到期；…每次命令结束、写入文件后和发布成果前保存。) with the driver's loss-window sentence", rule.includes("运行环境可能随时到期；工作文件在每次命令结束、写入文件后和发布成果前保存。") && (await page.locator('[data-testid="ws-loss-window"]').innerText()).length > 20);
 check("D last-saved time is shown", (await page.locator('[data-testid="ws-save-time"]').innerText()).includes("上次保存"));
 check("D the versions list shows time, reason in words, file count, size and the current marker", await page.locator('[data-testid="ws-version"]').first().evaluate((el) => /版本 \d+/.test(el.textContent) && /命令结束时自动保存/.test(el.textContent) && /\d+ 个文件/.test(el.textContent) && /当前/.test(el.textContent)));
 check("D no wording that mixes the layers (no 'pi', 'durable', 'checkpoint', 'sha256', 'manifest')", !/pi-durable|durable|checkpoint|sha256|manifest/i.test(await page.locator('[data-testid="ws-save"]').innerText()));

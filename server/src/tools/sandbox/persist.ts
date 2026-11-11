@@ -82,8 +82,8 @@ export const DEFAULT_PERSIST_POLICY: WorkspacePersistPolicyDTO = {
 };
 
 export const RUN_RECONCILED_NOTE = "服务重启时仍在运行，结果未知；不会自动重新执行";
-export const LOCAL_LOSS_WINDOW = "本地沙箱直接使用服务器上的工作目录。最近一次保存之后的改动尚未写入版本历史；工作目录被清理或服务器磁盘损坏时，这部分改动无法找回。";
-export const REMOTE_LOSS_WINDOW = "运行中的命令结束前，其在远程沙箱中的改动尚未同步回服务器，也未保存为版本；远程沙箱丢失时这些改动会丢失（服务器上的工作目录和已保存的版本不受影响）。";
+export const LOCAL_LOSS_WINDOW = "本地运行环境直接使用服务器上的工作目录。最近一次保存之后的改动尚未写入版本历史；工作目录被清理或服务器磁盘损坏时，这部分改动无法找回。";
+export const REMOTE_LOSS_WINDOW = "运行中的命令结束前，其在远程运行环境中的改动尚未同步回服务器，也未保存为版本；远程运行环境丢失时这些改动会丢失（服务器上的工作目录和已保存的版本不受影响）。";
 
 const KEY_RE = /^(shared|c[0-9]{1,12})$/;
 const MAX_DEPTH = 64;

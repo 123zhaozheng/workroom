@@ -23,12 +23,13 @@ export const SAVE_STATE: Record<WorkspaceSaveState, { label: string; tone: Tone 
 const REASON: Record<string, string> = {
 	run_end: "命令结束时自动保存",
 	before_publish: "发布成果前自动保存",
+	file_write: "写入文件后自动保存",
 	turn_end: "一轮对话结束时自动保存",
 	periodic: "定时保存",
 	manual: "手动保存",
 	restore: "恢复前保存的当前内容",
 };
-export const SAVE_RULE = "沙箱可能随时到期；工作文件在每次命令结束、发布成果和每轮结束时保存。";
+export const SAVE_RULE = "运行环境可能随时到期；工作文件在每次命令结束、写入文件后和发布成果前保存。";
 
 export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spaceId: string; conversationId: number; canWrite: boolean }) {
 	const key = `c${conversationId}`;
