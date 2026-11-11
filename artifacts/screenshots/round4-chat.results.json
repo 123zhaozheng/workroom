@@ -1,15 +1,15 @@
 {
-  "at": "2026-11-11T04:08:40.308Z",
+  "at": "2026-11-11T04:32:03.837Z",
   "results": [
     {
       "name": "setup: a second ready model (provider with capabilities) and a blocked one (no key) created through the models API",
       "ok": true,
-      "detail": "{\"pro\":\"e2e-5a0f\",\"nokey\":\"blocked\"}"
+      "detail": "{\"pro\":\"e2e-71c2\",\"nokey\":\"blocked\"}"
     },
     {
       "name": "dots: canvas rendered on home, animated, devicePixelRatio honoured (2x)",
       "ok": true,
-      "detail": "{\"mode\":\"animated\",\"draws\":48,\"rafCalls\":93,\"avgDrawMs\":0.3854166666278616,\"maxDrawMs\":1.099999999627471,\"dpr\":2,\"dots\":858,\"regions\":2,\"pixels\":1785600,\"width\":1176,\"height\":900}"
+      "detail": "{\"mode\":\"animated\",\"draws\":48,\"rafCalls\":93,\"avgDrawMs\":0.3354166666589057,\"maxDrawMs\":0.7999999988824129,\"dpr\":2,\"dots\":858,\"regions\":2,\"pixels\":1785600,\"width\":1176,\"height\":900}"
     },
     {
       "name": "dots: backing store = css size × dpr (crisp) on both side canvases",
@@ -24,12 +24,12 @@
     {
       "name": "dots perf: a frame is cheap (avg < 4 ms, 1950 dots @2x, software canvas)",
       "ok": true,
-      "detail": "avg 0.32 ms, max 1.1 ms, 858 dots"
+      "detail": "avg 0.30 ms, max 0.8 ms, 858 dots"
     },
     {
       "name": "dots perf: animating adds < 20 points of main-thread time over the paused page (headless, software canvas, 2 side canvases @2x)",
       "ok": true,
-      "detail": "animating 10.0% vs paused 0.3% → +9.6"
+      "detail": "animating 9.0% vs paused 0.3% → +8.7"
     },
     {
       "name": "dots readability: the dot canvases never overlap the message column (nothing behind the text)",
@@ -129,7 +129,7 @@
     {
       "name": "paste: an image on the clipboard becomes an attachment card (named, ready)",
       "ok": true,
-      "detail": "粘贴的图片-040733.png 图片 · 179 B"
+      "detail": "粘贴的图片-043057.png 图片 · 179 B"
     },
     {
       "name": "paste: clipboard text + image → text paste, no stray image attachment",
@@ -149,7 +149,7 @@
     {
       "name": "progress: card shows 上传中 N% with a growing percentage, then ready",
       "ok": true,
-      "detail": "0,7,10,13,16,20,27,30,33,36,39,46,50,53,56,60,63,69,72,76,79,83,89,92,95,99 | 大文件-录音.zip 上传中 0%"
+      "detail": "0,4,7,10,16,20,23,27,30,36,39,43,46,50,53,60,63,66,69,72,79,83,86,89,92,99 | 大文件-录音.zip 上传中 0%"
     },
     {
       "name": "cards: a zip is an 压缩包 card",
@@ -199,7 +199,7 @@
     {
       "name": "models: the choice is saved as the user default (model + thinking level)",
       "ok": true,
-      "detail": "{\"id\":\"e2e-5a0f/e2e-pro\",\"thinking\":\"high\"}"
+      "detail": "{\"id\":\"e2e-71c2/e2e-pro\",\"thinking\":\"high\"}"
     },
     {
       "name": "models: after reload the home composer still shows the chosen model and level",
@@ -209,7 +209,7 @@
     {
       "name": "models: new conversation is created with the chosen model (server-side per conversation)",
       "ok": true,
-      "detail": "{\"provider\":\"e2e-5a0f\",\"modelId\":\"e2e-pro\"}"
+      "detail": "{\"provider\":\"e2e-71c2\",\"modelId\":\"e2e-pro\"}"
     },
     {
       "name": "models: chat page switcher shows the conversation's model, also after reload",
@@ -234,7 +234,7 @@
     {
       "name": "bubble: image attachment renders its thumbnail from the server",
       "ok": true,
-      "detail": "{\"src\":\"/api/files/file_0mwblltnze175404740ff95a0/versions/fv_0mwblltnz856ed9aab9fe1f19/download\",\"ok\":true}"
+      "detail": "{\"src\":\"/api/files/file_0mwbmfx1l54125db003c5816e/versions/fv_0mwbmfx1l96700b0ccce08641/download\",\"ok\":true}"
     },
     {
       "name": "chat: composer is cleared after sending and the empty state is gone",
@@ -264,7 +264,7 @@
     {
       "name": "dots: also behind the chat page, same guards",
       "ok": true,
-      "detail": "{\"mode\":\"animated\",\"draws\":40,\"rafCalls\":78,\"avgDrawMs\":0.3249999998603016,\"maxDrawMs\":0.5,\"dpr\":2,\"dots\":702,\"regions\":2,\"pixels\":1497600,\"width\":1176,\"height\":900}"
+      "detail": "{\"mode\":\"animated\",\"draws\":40,\"rafCalls\":77,\"avgDrawMs\":0.35000000000000003,\"maxDrawMs\":1.199999999254942,\"dpr\":2,\"dots\":702,\"regions\":2,\"pixels\":1497600,\"width\":1176,\"height\":900}"
     },
     {
       "name": "dots: canvas is behind content and ignores pointer events",
@@ -294,7 +294,7 @@
     {
       "name": "reduced motion: static dots cost ~nothing (main thread < 2%)",
       "ok": true,
-      "detail": "0.12%"
+      "detail": "0.11%"
     },
     {
       "name": "models: richer /api/models shape (provider name, capability object, context window) is grouped and badged",

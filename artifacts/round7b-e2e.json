@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T03:59:55.523Z",
+  "at": "2026-11-11T04:39:13.282Z",
   "results": [
     {
       "name": "A [fixture model] credential_request → the card appears in the conversation while the agent waits",
@@ -109,7 +109,7 @@
     {
       "name": "A the secret travelled in exactly one request: the POST to …/fulfill",
       "ok": true,
-      "detail": "http://127.0.0.1:8908/api/credential-requests/crq_0mwblaxz95f2b2ab902d95403/fulfill"
+      "detail": "http://127.0.0.1:8908/api/credential-requests/crq_0mwbmph4z4871115bf5267cab/fulfill"
     },
     {
       "name": "A the tool result the model got is status only (fulfilled, a credentialId, no value)",
@@ -149,7 +149,7 @@
     {
       "name": "A replaying the used nonce is answered as the same result (idempotent) and creates nothing new",
       "ok": true,
-      "detail": "{\"request\":{\"id\":\"crq_0mwblb78u8f5cd460ef6fb2de\",\"service\":\"Replay Svc\",\"purpose\":\"读取 Replay Svc 的项目列表\",\"targetHosts\":[\""
+      "detail": "{\"request\":{\"id\":\"crq_0mwbmpqk77521001195963a6b\",\"service\":\"Replay Svc\",\"purpose\":\"读取 Replay Svc 的项目列表\",\"targetHosts\":[\""
     },
     {
       "name": "A a forged / unknown nonce after fulfilment is refused (409), no second credential",
@@ -379,7 +379,7 @@
     {
       "name": "D status after restore: state 已恢复 with a verified restore record (no conflicts)",
       "ok": true,
-      "detail": "{\"s\":\"restored\",\"r\":{\"fromVersion\":1,\"at\":\"2026-11-11T03:59:51.669Z\",\"verified\":true,\"conflicts\":[]}}"
+      "detail": "{\"s\":\"restored\",\"r\":{\"fromVersion\":1,\"at\":\"2026-11-11T04:39:09.324Z\",\"verified\":true,\"conflicts\":[]}}"
     },
     {
       "name": "D the working files really are those of version 1: notes.txt present, later uploads gone",

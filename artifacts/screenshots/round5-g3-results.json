@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T03:56:50.487Z",
+  "at": "2026-11-11T04:36:04.997Z",
   "results": [
     {
       "name": "seed: owner, departments, members, roles, two model services and a pending skill submission exist",
@@ -399,7 +399,7 @@
     {
       "name": "dark mode: authz page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "42 texts, min 5.33 "
+      "detail": "42 texts, min 5.02 "
     },
     {
       "name": "dark mode: the confirmation dialog is fully opaque",
