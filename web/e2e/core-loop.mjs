@@ -191,7 +191,7 @@ try {
 	// collapse sidebar
 	await p2.click('[data-testid="close-panel"]');
 	await p2.click('button[aria-label="收起侧栏"]');
-	await sleep(200);
+	await p2.locator('[data-testid="sidebar"]').waitFor({ state: "detached", timeout: 3000 }).catch(() => {}); // slides shut (width transition) before it unmounts
 	check("1366: sidebar collapsible", (await p2.locator('[data-testid="sidebar"]').count()) === 0);
 	await shot(p2, "1366-chat-sidebar-collapsed");
 	await p2.click('[data-testid="open-sidebar"]');

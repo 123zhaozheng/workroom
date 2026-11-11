@@ -2,6 +2,7 @@ import { Menu as MenuIcon, PanelLeftOpen } from "lucide-react";
 import { createContext, lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Outlet, useLocation } from "react-router";
 import { useMedia, usePrefs } from "@/lib/prefs";
+import { SearchProvider } from "@/features/search/SearchProvider";
 import { cn } from "@/lib/utils";
 import { Sheet, Tip } from "@/components/ui/overlay";
 import { Spinner } from "@/components/ui/misc";
@@ -39,17 +40,46 @@ function useRestoreFocus(open: boolean) {
 	}, [open]);
 }
 
+/**
+ * Keeps the sidebar mounted while it slides shut (width transition), and mounts it at width 0 before it opens.
+ * `show` follows the layout state immediately; `mounted` lags on the way out. No motion when reduced.
+ */
+function useSidebarPresence(inline: boolean, reduced: boolean) {
+	const [mounted, setMounted] = useState(inline);
+	const [expanded, setExpanded] = useState(inline);
+	useEffect(() => {
+		if (inline) {
+			setMounted(true);
+			if (reduced) setExpanded(true);
+			else {
+				const id = requestAnimationFrame(() => requestAnimationFrame(() => setExpanded(true)));
+				return () => cancelAnimationFrame(id);
+			}
+		} else {
+			setExpanded(false);
+			if (reduced) setMounted(false);
+			else {
+				const t = setTimeout(() => setMounted(false), 260);
+				return () => clearTimeout(t);
+			}
+		}
+	}, [inline, reduced]);
+	return { render: inline || mounted, expanded: reduced ? inline : expanded && inline };
+}
+
 export function AppShell() {
 	return (
 		<PanelProvider>
-			<ShellLayout />
+			<SearchProvider>
+				<ShellLayout />
+			</SearchProvider>
 		</PanelProvider>
 	);
 }
 
 function ShellLayout() {
 	const wide = useMedia(WIDE_QUERY);
-	const { sidebarCollapsed, set } = usePrefs();
+	const { sidebarCollapsed, set, motionReduced } = usePrefs();
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const { panel, close } = usePanel();
 	const loc = useLocation();
@@ -63,6 +93,7 @@ function ShellLayout() {
 	}, [loc.pathname, close]);
 
 	const sidebarInline = wide && !sidebarCollapsed;
+	const presence = useSidebarPresence(sidebarInline, motionReduced);
 	const ctx: ShellCtx = { sidebarHidden: !sidebarInline, openSidebar: () => (wide ? set("sidebarCollapsed", false) : setDrawerOpen(true)), wide };
 
 	const panelBody = panel ? (
@@ -82,9 +113,18 @@ function ShellLayout() {
 	return (
 		<Ctx.Provider value={ctx}>
 			<div className="flex h-dvh w-full overflow-hidden bg-bg">
-				{sidebarInline ? (
-					<aside data-testid="sidebar" className="w-[var(--sidebar-w)] shrink-0 border-r border-border">
-						<Sidebar onCollapse={() => set("sidebarCollapsed", true)} />
+				{wide && presence.render ? (
+					<aside
+						data-testid="sidebar"
+						data-state={presence.expanded ? "open" : "closed"}
+						inert={!sidebarInline}
+						aria-hidden={!sidebarInline || undefined}
+						style={{ width: presence.expanded ? "var(--sidebar-w)" : 0 }}
+						className={cn("shrink-0 overflow-hidden border-border", presence.expanded ? "border-r" : "border-r-0", motionReduced ? "" : "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]")}
+					>
+						<div className="h-full w-[var(--sidebar-w)]">
+							<Sidebar onCollapse={() => set("sidebarCollapsed", true)} />
+						</div>
 					</aside>
 				) : null}
 				{!wide ? (

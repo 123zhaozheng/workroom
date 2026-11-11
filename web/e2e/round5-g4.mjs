@@ -263,6 +263,7 @@ try {
 	await a.goto(`${base}/files`);
 	await a.waitForSelector('[data-testid="sidebar"]');
 	await a.click('button[aria-label="收起侧栏"]');
+	await a.locator('[data-testid="sidebar"]').waitFor({ state: "detached", timeout: 3000 }).catch(() => {}); // width transition, then unmount
 	check("sidebar: collapses (no rail left) and the top bar offers the opener", (await a.locator('[data-testid="sidebar"]').count()) === 0 && (await a.locator('[data-testid="open-sidebar"]').isVisible()));
 	await a.click('[data-testid="open-sidebar"]');
 	check("sidebar: expands again", (await a.locator('[data-testid="sidebar"]').count()) === 1);

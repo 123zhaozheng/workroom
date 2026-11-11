@@ -1,12 +1,11 @@
 import { ArrowDown, ChevronDown, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, WithdrawResponse } from "@shared/chat";
 import type { ThinkingLevel } from "@shared/ops";
 import { ApiError, errorText, get, patch, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { AssistantAvatarMark } from "@/features/assistants/Assistants";
-import type { Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { usePanel, type WorkTab } from "@/components/shell/panel";
@@ -23,7 +22,10 @@ import type { ConversationCitationStatus } from "@shared/knowledge";
 import { AssistantMessage, BranchPointSwitcher, UserMessage } from "@/features/chat/Messages";
 import { buildTurns, type AssistantTurn, type Turn } from "@/features/chat/model";
 import { RUN_LABEL, RunIcon, reasonText } from "@/features/chat/status";
-import { cleanErrorText } from "@/features/chat/testText";
+import { cleanErrorText, userTextOf } from "@/features/chat/testText";
+import { PositionRail, railItemOf, type RailItem } from "@/features/chat/PositionRail";
+import { normalizeProject } from "@/features/projects/model";
+import { usePrefs } from "@/lib/prefs";
 import { MessageQueue, type QueueNotice } from "@/features/composer/MessageQueue";
 import { EnvironmentButton } from "@/features/environment/EnvironmentButton";
 import { EnvironmentStatus } from "@/features/environment/EnvironmentStatus";
@@ -66,9 +68,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const runStatus = live?.status ?? conv?.status ?? "idle";
 	const busy = !!live?.busy;
 	// Project role decides what this user may do here (the server enforces it as well).
-	const projects = useApi<{ projects: Project[] }>(conv?.projectId ? "/projects" : null);
-	const projectRole = conv?.projectId ? (projects.data?.projects.find((p) => p.id === conv.projectId)?.role ?? null) : undefined;
-	const viewer = projectRole === "viewer";
+	const projects = useApi<{ projects: unknown[] }>(conv?.projectId ? "/projects" : null);
+	const project = conv?.projectId ? projects.data?.projects.map(normalizeProject).find((p) => p.id === conv.projectId) : undefined;
+	// Legacy project viewers and people who see a container project through a share can read, not write.
+	const sharedRead = project?.access === "shared_read";
+	const viewer = project?.role === "viewer" || sharedRead;
 	const readOnly = conv?.kind === "subagent" || viewer;
 	// Current validity of everything this conversation cited (old answers keep their snapshot + a 失效提示).
 	const citeStatus = useApi<ConversationCitationStatus>(`/kb/conversations/${spaceId}/${id}/citation-status`);
@@ -90,6 +94,18 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 		return out.sort((a, b) => a.id - b.id);
 	}, [earlier.earlier, state?.entries]);
 	const turns = useMemo(() => buildTurns(entries, state), [entries, state]);
+	const { motionReduced } = usePrefs();
+	// One rail tick per question. Short strings only, so the rail re-renders when a question or an answer's first words change — not per streamed token.
+	const railItems = useMemo<RailItem[]>(() => {
+		const out: RailItem[] = [];
+		for (let i = 0; i < turns.length; i++) {
+			const t = turns[i]!;
+			if (t.kind !== "user") continue;
+			const next = turns[i + 1];
+			out.push({ id: t.entry.id, ...railItemOf(userTextOf(t.entry).text || "（测试指令）", next?.kind === "assistant" ? next.answer : undefined) });
+		}
+		return out;
+	}, [turns]);
 
 	// Branch points: where this conversation diverges from its parent, and where its own branches start.
 	const branchPoints = useMemo(() => {
@@ -136,6 +152,35 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			toBottom();
 		} else if (nearBottom.current) toBottom();
 	}, [state, turns.length]);
+
+	// ----- deep link: ?entry=<entry id> (from search) scrolls to that message and highlights it for a moment -----
+	const [sp] = useSearchParams();
+	const entryParam = Number(sp.get("entry")) || undefined;
+	const [hitKey, setHitKey] = useState<string>();
+	const handledEntry = useRef<number | undefined>(undefined);
+	const hitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+	const firstLoaded = entries[0]?.id;
+	const loadEarlier = earlier.load;
+	useEffect(() => {
+		if (!entryParam || !state || handledEntry.current === entryParam || turns.length === 0) return;
+		// the message may sit before the loaded window: load earlier pages until it is in (or there is nothing earlier)
+		if (firstLoaded !== undefined && entryParam < firstLoaded && (state.hasEarlier || earlier.hasMore) && earlier.hasMore !== false) {
+			if (!earlier.loading) void loadEarlier(firstLoaded);
+			return;
+		}
+		let idx = 0;
+		for (let i = 0; i < turns.length; i++) if (firstId(turns[i]!) <= entryParam) idx = i;
+		const t = turns[idx]!;
+		const el = scroller.current?.querySelector<HTMLElement>(`[data-turn-key="${t.key}"]`);
+		if (!el) return;
+		handledEntry.current = entryParam;
+		nearBottom.current = false;
+		el.scrollIntoView({ block: "center", behavior: "auto" });
+		setHitKey(t.key);
+		clearTimeout(hitTimer.current);
+		hitTimer.current = setTimeout(() => setHitKey(undefined), 2600);
+	}, [entryParam, state, turns, firstLoaded, earlier.hasMore, earlier.loading, loadEarlier]);
+	useEffect(() => () => clearTimeout(hitTimer.current), []);
 
 	// ----- actions -----
 	// The composer sends with a requestId that stays the same for a retry of the same content (the server dedupes on it).
@@ -356,7 +401,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 				</div>
 			</TopBar>
 
-			<div ref={scroller} onScroll={onScroll} className="wr-scroll relative min-h-0 flex-1 overflow-y-auto">
+			<div className="relative flex min-h-0 flex-1 flex-col">
+			<div ref={scroller} onScroll={onScroll} data-testid="chat-scroll" className="wr-scroll relative min-h-0 flex-1 overflow-y-auto">
 				<div className={cn("mx-auto w-full px-4 pb-6 pt-2 sm:px-6", panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]")}>
 					{!state ? (
 						<div className="flex items-center justify-center gap-2 py-20 text-[13px] text-fg-subtle">
@@ -383,7 +429,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 							const here = firstId(t);
 							const pts = branchPoints.filter((p) => p.entryId >= prevMax && p.entryId < here && Number.isFinite(here));
 							return (
-								<div key={t.key} className="flex flex-col gap-2">
+								<div key={t.key} data-turn-key={t.key} data-turn-kind={t.kind} data-hit={hitKey === t.key || undefined} className={cn("flex flex-col gap-2 rounded-xl transition-[background-color,box-shadow] duration-700", hitKey === t.key && "bg-info-soft shadow-[0_0_0_8px_var(--info-soft)]")}>
 									{pts.map((p) => (
 										<BranchPointSwitcher key={p.entryId} options={p.options} currentId={id} onSelect={goBranch} />
 									))}
@@ -443,6 +489,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 					</button>
 				) : null}
 			</div>
+			<PositionRail items={railItems} scroller={scroller} reduced={motionReduced} />
+			</div>
 
 			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]")}>
 				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} />
@@ -463,7 +511,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 				) : null}
 				{readOnly ? (
 					<p data-testid="read-only-note" className="rounded-xl border border-border bg-surface-2 px-4 py-3 text-[13px] text-fg-muted">
-						{viewer ? "你在这个项目中是查看者：可以查看对话、成果和交接摘要，但不能发消息、确认操作或创建分支。" : "这是子任务的对话记录，只读。"}
+						{sharedRead ? `这是${project?.ownerName ?? "同事"}分享给你的项目，只读：可以查看对话和成果，不能发送消息或确认操作。` : viewer ? "你在这个项目中是查看者：可以查看对话、成果和交接摘要，但不能发消息、确认操作或创建分支。" : "这是子任务的对话记录，只读。"}
 					</p>
 				) : (
 					<Composer

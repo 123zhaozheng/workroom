@@ -1,17 +1,14 @@
-import { BarChart3, BookOpen, ChevronRight, Clock4, FolderClosed, Folders, LogOut, MessageSquarePlus, PanelLeftClose, Plus, Search, Settings, Shield, Sparkles, Workflow, X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router";
-import { Collapsible } from "radix-ui";
-import type { ConversationSummary } from "@shared/chat";
+import { BarChart3, BookOpen, Clock4, Folders, LogOut, MessageSquarePlus, PanelLeftClose, Search, Settings, Shield, Sparkles, Workflow, X } from "lucide-react";
+import { NavLink, useNavigate } from "react-router";
 import { useSession } from "@/lib/session";
-import { useApi } from "@/lib/useApi";
 import { cn } from "@/lib/utils";
-import type { Project } from "@/lib/types";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tip } from "@/components/ui/overlay";
-import { RunDot } from "@/features/chat/status";
 import { BrandMark } from "./BrandMark";
 import { NotificationsBell } from "./Notifications";
-import { NewProjectDialog } from "@/features/projects/NewProjectDialog";
+import { useSearchModal } from "@/features/search/SearchProvider";
+import { SidebarTree } from "./SidebarTree";
+
+const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
 	cn("flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors [&_svg]:size-[17px] [&_svg]:text-fg-muted", isActive ? "bg-surface-3 text-fg font-medium" : "text-fg hover:bg-surface-3/70");
@@ -19,24 +16,12 @@ const navCls = ({ isActive }: { isActive: boolean }) =>
 export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () => void; onNavigate?: () => void; onClose?: () => void }) {
 	const { brand, me, logout, isOrgAdmin } = useSession();
 	const navigate = useNavigate();
-	const projects = useApi<{ projects: Project[] }>("/projects", { pollMs: 30000 });
-	const recent = useApi<{ conversations: ConversationSummary[] }>("/conversations?limit=40", { pollMs: 8000 });
-	const [newProject, setNewProject] = useState(false);
-	const { pathname } = useLocation();
-	const reloadRecent = recent.reload;
-	// Refresh titles / run states whenever the user moves between conversations, and when a conversation reports a change.
-	useEffect(() => reloadRecent(), [pathname, reloadRecent]);
-	useEffect(() => {
-		const on = () => reloadRecent();
-		window.addEventListener("wr:conversations-changed", on);
-		return () => window.removeEventListener("wr:conversations-changed", on);
-	}, [reloadRecent]);
+	const search = useSearchModal();
 
 	const go = (to: string) => {
 		navigate(to);
 		onNavigate?.();
 	};
-	const convs = (recent.data?.conversations ?? []).filter((c) => c.kind !== "subagent" && !c.archived);
 
 	return (
 		<nav aria-label="主导航" className="flex h-full w-full flex-col bg-surface-2">
@@ -66,10 +51,19 @@ export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () =
 					<MessageSquarePlus />
 					新对话
 				</button>
-				<NavLink to="/search" onClick={onNavigate} className={navCls}>
+				<button
+					data-testid="nav-search"
+					onClick={() => {
+						onNavigate?.();
+						search.open();
+					}}
+					aria-keyshortcuts="Control+K Meta+K"
+					className={navCls({ isActive: false })}
+				>
 					<Search />
 					搜索
-				</NavLink>
+					<kbd className="ml-auto hidden rounded border border-border px-1 font-sans text-xs text-fg-subtle lg:inline">{isMac() ? "⌘K" : "Ctrl K"}</kbd>
+				</button>
 				<NavLink to="/knowledge" onClick={onNavigate} className={navCls}>
 					<BookOpen />
 					个人知识库
@@ -80,55 +74,7 @@ export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () =
 				</NavLink>
 			</div>
 
-			<div className="wr-scroll mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-				<Section
-					title="项目"
-					storageKey="projects"
-					action={
-						<Tip label="新建项目">
-							<button aria-label="新建项目" onClick={() => setNewProject(true)} className="inline-flex size-7 items-center justify-center rounded-md text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-								<Plus className="size-3.5" />
-							</button>
-						</Tip>
-					}
-				>
-					{projects.unavailable ? (
-						<p className="px-2.5 py-1 text-xs text-fg-muted">项目暂时无法加载</p>
-					) : (projects.data?.projects ?? []).length === 0 ? (
-						<p className="px-2.5 py-1 text-xs text-fg-muted">还没有项目</p>
-					) : (
-						projects.data!.projects.map((p) => (
-							<NavLink key={p.id} to={`/projects/${p.id}`} onClick={onNavigate} className={({ isActive }) => cn(navCls({ isActive }), "h-8")}>
-								<FolderClosed />
-								<span className="truncate">{p.name}</span>
-							</NavLink>
-						))
-					)}
-				</Section>
-				<Section title="最近对话" storageKey="recent" defaultOpen>
-					{recent.unavailable ? (
-						<p className="px-2.5 py-1 text-xs text-fg-muted">对话暂时无法加载</p>
-					) : recent.error ? (
-						<p className="px-2.5 py-1 text-xs text-danger">对话加载失败</p>
-					) : convs.length === 0 && !recent.loading ? (
-						<p className="px-2.5 py-1 text-xs text-fg-muted">还没有对话</p>
-					) : (
-						convs.map((c) => (
-							<NavLink
-								key={`${c.spaceId}/${c.conversationId}`}
-								to={`/c/${c.spaceId}/${c.conversationId}`}
-								onClick={onNavigate}
-								title={c.title}
-								className={({ isActive }) => cn("group flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm", isActive ? "bg-surface-3 font-medium text-fg" : "text-fg-muted hover:bg-surface-3/70 hover:text-fg")}
-							>
-								<span className="min-w-0 flex-1 truncate">{c.title || "未命名对话"}</span>
-								{c.kind === "branch" ? <span className="text-xs text-fg-muted">分支</span> : null}
-								{c.status ? <RunDot status={c.status} /> : null}
-							</NavLink>
-						))
-					)}
-				</Section>
-			</div>
+			<SidebarTree onNavigate={onNavigate} />
 
 			<div className="shrink-0 border-t border-border p-2">
 				<Menu>
@@ -182,49 +128,6 @@ export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () =
 					</MenuContent>
 				</Menu>
 			</div>
-			<NewProjectDialog
-				open={newProject}
-				onOpenChange={setNewProject}
-				onCreated={(p) => {
-					projects.reload();
-					go(`/projects/${p.id}`);
-				}}
-			/>
 		</nav>
-	);
-}
-
-function Section({ title, children, action, defaultOpen, storageKey }: { title: string; children: ReactNode; action?: ReactNode; defaultOpen?: boolean; storageKey: string }) {
-	const key = `wr.sidebar.${storageKey}`;
-	const [open, setOpen] = useState(() => {
-		try {
-			const v = localStorage.getItem(key);
-			return v === null ? !!defaultOpen : v === "1";
-		} catch {
-			return !!defaultOpen;
-		}
-	});
-	return (
-		<Collapsible.Root
-			open={open}
-			onOpenChange={(o) => {
-				setOpen(o);
-				try {
-					localStorage.setItem(key, o ? "1" : "0");
-				} catch {
-					/* ignore */
-				}
-			}}
-			className="mb-2"
-		>
-			<div className="flex items-center pr-1">
-				<Collapsible.Trigger className="flex h-7 flex-1 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-					<ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
-					{title}
-				</Collapsible.Trigger>
-				{action}
-			</div>
-			<Collapsible.Content className="flex flex-col gap-px">{children}</Collapsible.Content>
-		</Collapsible.Root>
 	);
 }

@@ -1,0 +1,560 @@
+{
+  "at": "2026-11-11T06:50:11.344Z",
+  "results": [
+    {
+      "name": "setup: second organisation member registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "project: created from the sidebar (+), its page opens",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "project: real API record is a container project owned by the caller",
+      "ok": true,
+      "detail": "{\"id\":\"prj_0mwbrdnis5c768ac26d5e9a65\",\"name\":\"季度复盘\",\"kind\":\"container\",\"ownerId\":\"usr_0mwbrdmwh4187b3f6d4fdc2b7\",\"ownerName\":\"所有者\",\"access\":\"owner\",\"shared\":false,\"conversationCount\":0,\"createdAt\":\"2026-11-11T06:49:19.444Z\",\"updatedAt\":\"2026-11-11T06:49:19.444Z\"}"
+    },
+    {
+      "name": "sidebar: the new project is in the tree and open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "project: ＋ 新对话 creates a conversation with projectId and opens it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: the conversation sits under its project with the server-derived title",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: a conversation inside a project is not repeated under 最近对话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat: a short conversation has no position rail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: a conversation without a project is under 最近对话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "menu: 移至项目 lists my container projects",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: the moved row (and the ones it displaced) were animated with WAAPI FLIP, ~250 ms",
+      "ok": true,
+      "detail": "[{\"id\":\"c:sp_0mwbrdmz88ee4ecd64a7c30fd/18\",\"kf\":\"[{\\\"transform\\\":\\\"translate(0px, 105px)\\\"},{\\\"transform\\\":\\\"none\\\"}]\",\"dur\":250},{\"id\":\"c:sp_0mwbrdmz88ee4ecd64a7c30fd/3\",\"kf\":\"[{\\\"transform\\\":\\\"translate(0px, -33px)\\\"},{\\\"transform\\\":\\\"none\\\"}]\",\"dur\":250}]"
+    },
+    {
+      "name": "move: real API says the conversation now belongs to the project",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "move: nothing lost — same entries, title intact",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "move: it left 最近对话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "move: 移出项目 puts it back under 最近对话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: moving out animates too",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: collapsing hides the rows (inert) and flips aria-expanded",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: the collapsed state survives a reload (localStorage, per user)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: the key carries the user id",
+      "ok": true,
+      "detail": "wr.sidebar.usr_0mwbrdmwh4187b3f6d4fdc2b7.projects={\"prj_0mwbrdnis5c768ac26d5e9a65\":false}"
+    },
+    {
+      "name": "sidebar: opening shows the rows again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "project: inline rename reaches the server",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "share dialog: the permission is explained in the agreed words",
+      "ok": true,
+      "detail": "只读：可以查看此项目中的对话和成果，不能发送消息或确认操作。"
+    },
+    {
+      "name": "share dialog: same-organisation directory search finds the colleague (not myself)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "share dialog: the grant is listed as 只读 with a revoke button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "share: real API lists the share with permission read",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar (colleague): the project is under 共享给我, read only, no ⋯ menu and no ＋ 新对话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar (colleague): the owner's conversations of the project are listed",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "project page (colleague): read-only note, no composer, conversations listed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat (colleague): can read the conversation, composer is disabled (replaced by the read-only note)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "menu (colleague): only what a reader may do — 星标 and 导出, no rename / tags / move / archive / delete",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "share: the server refuses a message from the colleague",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "name": "share dialog: revoke removes the person from the list",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "share: access is gone at once (real API 403/404 for the colleague)",
+      "ok": true,
+      "detail": "403"
+    },
+    {
+      "name": "sidebar (colleague): the project disappears after revoke",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat (colleague): opening the old link shows no messages",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "delete project: the dialog says conversations are kept and move back to 最近对话",
+      "ok": true,
+      "detail": "删除这个项目？ 「临时项目」里的对话不会被删除，会移回“最近对话”。 取消 删除项目"
+    },
+    {
+      "name": "delete project: the project is gone, the conversation is in 最近对话 and still exists",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "legacy: a project with its own space can still be created (kind space)",
+      "ok": true,
+      "detail": "{\"id\":\"prj_0mwbrdy0ie9ade58f37a8001c\",\"name\":\"旧版项目甲\",\"kind\":\"space\",\"spaceId\":\"sp_0mwbrdy0i3102afa6390115af\",\"ownerId\":\"usr_0mwbrdmwh4187b3f6d4fdc2b7\",\"ownerName\":\"所有者\",\"access\":\"member\",\"shared\":false,\"conversationCount\":0,\"createdAt\":\"2026-11-11T06:49:33.042Z\",\"updatedAt\":\"2026-11-11T06:49:33.042Z\",\"description\":\"\",\"role\":\"owner\"}"
+    },
+    {
+      "name": "sidebar: a legacy project shows the quiet 旧版 label",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "menu (legacy project): 重命名 and 项目设置 only — no sharing, no delete",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "menu (legacy conversation): 移至项目 is disabled and says why",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "project page: a legacy project keeps its own page (environment, members, 旧版 badge)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "star: the conversation floats into the 星标 group and leaves 最近对话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "star: real API stores it per user",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: star → the row moved with FLIP",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "menu: a starred conversation offers 取消星标",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "star: unstar returns it to 最近对话 (group disappears)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rename: the title becomes an input with focus",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rename: Esc cancels (server title unchanged)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rename: Enter saves through PATCH",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tags: the popover opens with the input focused",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tags: Enter and comma both add a chip",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tags: saved through PUT …/tags",
+      "ok": true,
+      "detail": "{\"spaceId\":\"sp_0mwbrdmz88ee4ecd64a7c30fd\",\"conversationId\":43,\"starred\":false,\"tags\":[\"甜点\",\"家庭\"]}"
+    },
+    {
+      "name": "export: a Markdown file is downloaded with the conversation text, directives hidden",
+      "ok": true,
+      "detail": "download · 202 chars"
+    },
+    {
+      "name": "[intercepted] a failing action shows the server's reason in the sidebar and leaves the list unchanged",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "archive: the row leaves the list and the server marks it archived",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "delete: the confirmation says it can no longer be opened or searched in Workroom",
+      "ok": true,
+      "detail": "删除这个对话？ 「删除测试」删除后将无法在 Workroom 中打开和搜索。 取消 删除"
+    },
+    {
+      "name": "delete: focus starts on 取消, not on the destructive button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: a removed row leaves as a fading ghost (FLIP remove)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "delete: gone from the list, 404 from the server, and no longer found by search",
+      "ok": true,
+      "detail": "404 · 0 hits"
+    },
+    {
+      "name": "keyboard: Tab from a conversation lands on its ⋯ button, which becomes visible",
+      "ok": true,
+      "detail": "{\"label\":\"对话「周报草稿」的操作\",\"opacity\":\"1\"}"
+    },
+    {
+      "name": "keyboard: arrows move through the menu items",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Esc closes the menu and focus returns to ⋯",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pointer: at rest (no hover, no focus) the ⋯ button is hidden on a desktop",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: a new row is animated in (FLIP insert: fade + slide)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: with reduced motion (system setting) rows move without any animation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: Ctrl/Cmd+K opens the modal from anywhere with the input focused",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: before typing it lists recent conversations",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: Tab stays inside the modal (focus trap)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: Esc closes it and focus returns to where it was",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: the sidebar 搜索 entry opens the same modal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: typing is debounced (one request for a quickly typed word)",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "search: result shows title, message-match badge and the match marked in the snippet",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: the preview pane (≥1024) shows the turns around the hit with the hit highlighted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: ArrowDown/ArrowUp move (and loop) the active result, aria-activedescendant follows",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: Enter opens the conversation, scrolls to the matched message and highlights it",
+      "ok": true,
+      "detail": "{\"inView\":true,\"text\":\"请润色这份周报，关键词紫罗兰测试所有者\"}"
+    },
+    {
+      "name": "search: the modal closed on open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: the highlight fades after a moment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: no results → a plain empty state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: a tag match is found and shows its tag",
+      "ok": true,
+      "detail": "蓝莓蛋糕 刚刚 标签 #甜点 #家庭"
+    },
+    {
+      "name": "[intercepted] 403 from /search → a plain 无权限 message, no retry button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] a failing search shows the reason with 重试, and retry succeeds once the server answers",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "search: a match inside an assistant answer opens the conversation at that answer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "/search page: still works and uses the same conversation search",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail: a 12-turn conversation has 12 ticks",
+      "ok": true,
+      "detail": "{\"ticks\":12,\"turns\":\"12\",\"current\":\"11\"}"
+    },
+    {
+      "name": "rail: at the bottom the last turn is current",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail: each tick has an aria-label 第 N 轮：question",
+      "ok": true,
+      "detail": "第 3 轮：第3个问题：请说说主题3"
+    },
+    {
+      "name": "rail: hover shows a preview with the question and the start of the answer",
+      "ok": true,
+      "detail": "第 3 轮 第3个问题：请说说主题3 【测试模型·非真实AI】 第3个回答：这是关于主题3的说明。"
+    },
+    {
+      "name": "rail: clicking a tick scrolls (smoothly) to that question",
+      "ok": true,
+      "detail": "{\"top0\":2184,\"top\":473,\"delta\":16.25,\"current\":\"2\"}"
+    },
+    {
+      "name": "rail: the current tick follows (IntersectionObserver)",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "rail keyboard: ArrowDown moves focus to the next tick and shows its preview",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail keyboard: End goes to the last tick, Home to the first",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail keyboard: Enter scrolls to that turn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail keyboard: the rail is one tab stop (roving tabindex)",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "rail: with reduced motion the jump is instant",
+      "ok": true,
+      "detail": "{\"delta\":16}"
+    },
+    {
+      "name": "rail: a short window buckets the ticks instead of overflowing (fewer ticks than turns)",
+      "ok": true,
+      "detail": "{\"ticks\":4,\"turns\":\"12\"}"
+    },
+    {
+      "name": "rail: 500 turns are bucketed into at most 120 ticks that cover every turn once, in order",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail: up to the capacity every turn has its own tick",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: collapsing keeps the sidebar mounted while it slides (state=closed)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: unmounted once closed; the top bar offers the opener",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: expands back to full width",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "motion: with reduced motion the sidebar closes at once (no width transition)",
+      "ok": true,
+      "detail": "70 ms"
+    },
+    {
+      "name": "touch: the ⋯ button is visible without hovering",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "touch: tapping ⋯ opens the menu",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "touch: choosing a menu item inside the drawer works (星标 → group, saved on the server)",
+      "ok": true,
+      "detail": "sp_0mwbrdmz88ee4ecd64a7c30fd/18"
+    },
+    {
+      "name": "search (phone): list uses the full width, no preview pane, no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail (phone): first tap shows the preview with a 跳转 button, it does not scroll yet",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rail (phone): the button scrolls to that turn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "phone: no horizontal overflow in the chat with the rail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440: no horizontal overflow",
+      "ok": true,
+      "detail": "{\"sw\":1440,\"cw\":1440}"
+    },
+    {
+      "name": "no uncaught page errors during the run",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

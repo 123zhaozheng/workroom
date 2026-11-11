@@ -1,29 +1,36 @@
 import { useState } from "react";
-import { errorText, post } from "@/lib/api";
-import type { Project } from "@/lib/types";
+import { errorText } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Textarea } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
+import { createProject } from "./actions";
+import type { UiProject } from "./model";
 
-export function NewProjectDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: (p: Project) => void }) {
+/** Creates a container project: a named group for conversations (they stay in their owners' personal spaces). */
+export function NewProjectDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: (p: UiProject) => void }) {
 	const [name, setName] = useState("");
-	const [desc, setDesc] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string>();
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="新建项目" description="项目有独立的对话、文件和知识空间，可以邀请成员并设置角色。">
+		<Dialog
+			open={open}
+			onOpenChange={(o) => {
+				if (!o) setErr(undefined);
+				onOpenChange(o);
+			}}
+		>
+			<DialogContent title="新建项目" description="把相关的对话放在一起，也可以只读分享给同事。">
 				<form
 					onSubmit={async (e) => {
 						e.preventDefault();
+						if (busy) return;
 						setBusy(true);
 						setErr(undefined);
 						try {
-							const r = await post<{ project: Project }>("/projects", { name, description: desc });
+							const p = await createProject(name.trim());
 							setName("");
-							setDesc("");
 							onOpenChange(false);
-							onCreated(r.project);
+							onCreated(p);
 						} catch (e) {
 							setErr(errorText(e));
 						} finally {
@@ -34,18 +41,18 @@ export function NewProjectDialog({ open, onOpenChange, onCreated }: { open: bool
 				>
 					<div>
 						<Label htmlFor="pname">名称</Label>
-						<Input id="pname" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+						<Input id="pname" data-testid="new-project-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} required autoFocus />
 					</div>
-					<div>
-						<Label htmlFor="pdesc">说明（可选）</Label>
-						<Textarea id="pdesc" value={desc} onChange={(e) => setDesc(e.target.value)} rows={2} />
-					</div>
-					{err ? <p className="text-[13px] text-danger">{err}</p> : null}
+					{err ? (
+						<p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+							{err}
+						</p>
+					) : null}
 					<div className="flex justify-end gap-2">
 						<Button variant="ghost" onClick={() => onOpenChange(false)}>
 							取消
 						</Button>
-						<Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+						<Button type="submit" variant="primary" data-testid="new-project-create" disabled={busy || !name.trim()}>
 							创建
 						</Button>
 					</div>

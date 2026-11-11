@@ -1,16 +1,17 @@
 import { BookOpen, FileText, MessageSquare, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import type { ConversationSummary } from "@shared/chat";
 import type { FileListResponse } from "@shared/files";
 import type { KbSearchResponse } from "@shared/knowledge";
 import { ApiError, errorText, post, qs } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { usePanel } from "@/components/shell/panel";
 import { Input } from "@/components/ui/input";
 import { Loadable, Page, Unavailable } from "@/components/ui/misc";
+import { SearchHitBody } from "@/features/search/SearchHitRow";
+import { useSearch } from "@/features/search/useSearch";
+import { convPath } from "@/features/projects/model";
 
 export default function SearchPage() {
 	const [q, setQ] = useState("");
@@ -19,7 +20,8 @@ export default function SearchPage() {
 		const t = setTimeout(() => setDq(q.trim()), 250);
 		return () => clearTimeout(t);
 	}, [q]);
-	const convs = useApi<{ conversations: ConversationSummary[] }>(dq ? `/conversations${qs({ q: dq, limit: 20 })}` : null);
+	// conversations: title, messages, tags and project names (the same search as Ctrl/Cmd+K)
+	const convs = useSearch(dq, { debounceMs: 0, limit: 20 });
 	const files = useApi<FileListResponse>(dq ? `/files${qs({ q: dq })}` : null);
 	const [kb, setKb] = useState<{ res?: KbSearchResponse; err?: unknown }>({});
 	const { openPreview } = usePanel();
@@ -44,22 +46,25 @@ export default function SearchPage() {
 						<Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索对话、文件和知识" className="h-11 rounded-xl pl-10 text-[15px]" data-testid="search-input" />
 					</div>
 					{!dq ? (
-						<p className="text-center text-[13px] text-fg-subtle">输入关键词，同时搜索对话标题、文件库和你能访问的知识库。</p>
+						<p className="text-center text-[13px] text-fg-subtle">输入关键词，同时搜索对话、文件库和你能访问的知识库。随时按 Ctrl 或 ⌘ + K 可以快速搜索对话。</p>
 					) : (
 						<div className="space-y-8">
 							<Section icon={<MessageSquare />} title="对话">
-								<Loadable state={convs} what="对话搜索" need="A 组：GET /conversations?q=">
-									{(convs.data?.conversations ?? []).length === 0 ? (
-										<Empty />
-									) : (
-										convs.data!.conversations.map((c) => (
-											<Link key={`${c.spaceId}/${c.conversationId}`} to={`/c/${c.spaceId}/${c.conversationId}`} className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-surface-2">
-												<span className="min-w-0 flex-1 truncate text-sm">{c.title || "未命名对话"}</span>
-												<span className="text-xs text-fg-subtle">{relTime(c.updatedAt)}</span>
-											</Link>
-										))
-									)}
-								</Loadable>
+								{convs.status === "error" ? (
+									<p role="alert" data-kind={convs.error?.kind} className="px-2 text-[13px] text-danger">
+										{convs.error?.message}
+									</p>
+								) : convs.status === "loading" && convs.hits.length === 0 ? (
+									<p className="px-2 text-[13px] text-fg-subtle">正在搜索…</p>
+								) : convs.hits.length === 0 ? (
+									<Empty />
+								) : (
+									convs.hits.map((h) => (
+										<Link key={`${h.spaceId}/${h.conversationId}/${h.entryId ?? ""}`} to={convPath(h, h.entryId)} data-testid="search-page-result" className="block rounded-lg px-2 py-2 hover:bg-surface-2">
+											<SearchHitBody hit={h} query={dq} />
+										</Link>
+									))
+								)}
 							</Section>
 							<Section icon={<FileText />} title="文件">
 								<Loadable state={files} what="文件搜索" need="D 组：GET /files?q=">
