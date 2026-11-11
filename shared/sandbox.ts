@@ -133,3 +133,113 @@ export function workTabForTool(toolName: string): WorkTabId | null {
 	if (toolName === "delegate" || toolName.startsWith("team")) return "tasks";
 	return null;
 }
+
+// ---------------- round 7: pluggable remote sandbox providers (integrator-owned contract) ----------------
+// Server types: server/src/tools/sandbox/provider.ts. Remote ids extend SandboxDriverId on the server side; the UI uses these DTOs.
+
+export type SandboxProviderId = "opensandbox" | "e2b" | "daytona";
+export type CapabilitySupport = "supported" | "unverified" | "unsupported";
+
+export interface SandboxProviderCapabilitiesDTO {
+	readonly exec: CapabilitySupport;
+	readonly streamOutput: CapabilitySupport;
+	readonly cancel: CapabilitySupport;
+	readonly commandTimeout: CapabilitySupport;
+	readonly files: CapabilitySupport;
+	readonly networkOff: CapabilitySupport;
+	readonly networkOn: CapabilitySupport;
+	readonly resourceLimits: CapabilitySupport;
+	readonly reconnect: CapabilitySupport;
+	readonly services: CapabilitySupport;
+	readonly pty: CapabilitySupport;
+	readonly preview: CapabilitySupport;
+	readonly snapshot: CapabilitySupport;
+	readonly pauseResume: CapabilitySupport;
+	readonly skills: "upload_readonly" | "unsupported";
+	readonly isolation: string;
+	readonly location: "self_hosted" | "vendor_cloud" | "configurable";
+}
+
+/** One provider's admin configuration as the UI sees it. The API key is NEVER returned: only whether one is stored and its last 4 chars. */
+export interface SandboxProviderConfigDTO {
+	readonly provider: SandboxProviderId;
+	readonly label: string;
+	/** Admin turned it on (it can then be chosen as the org default / by projects if allowed). */
+	readonly enabled: boolean;
+	readonly endpoint?: string;
+	/** E2B-compatible services: sandbox domain. */
+	readonly domain?: string;
+	readonly template?: string;
+	readonly apiKeySet: boolean;
+	readonly apiKeyHint?: string;
+	/** The endpoint resolves to a private/internal address and the admin explicitly allowed that (self-hosted intranet). */
+	readonly allowPrivateNetwork: boolean;
+	/** Vendor-cloud providers: admin acknowledged that workspace files and commands leave the organisation. Required to enable. */
+	readonly egressAcknowledged: boolean;
+	readonly createTimeoutSec: number;
+	readonly idleTimeoutSec: number;
+	readonly lifetimeSec: number;
+	readonly capabilities: SandboxProviderCapabilitiesDTO;
+	/** Installed SDK package + exact version (or "not installed"). */
+	readonly sdk: { readonly name: string; readonly version: string | null };
+	readonly lastTest?: SandboxProviderTestDTO;
+	readonly updatedAt?: string;
+}
+
+/** POST /api/sandbox/providers/:provider/test — never echoes credentials. */
+export interface SandboxProviderTestDTO {
+	readonly ok: boolean;
+	readonly at: string;
+	/** "health" = reachability/auth only; "roundtrip" = created a throwaway sandbox, ran a command, wrote/read a file, destroyed it. */
+	readonly kind: "health" | "roundtrip";
+	readonly detail: string;
+	readonly version?: string;
+	readonly durationMs: number;
+	/** Steps of a roundtrip test with their own result (create / exec / file / destroy). */
+	readonly steps?: readonly { readonly step: string; readonly ok: boolean; readonly ms: number; readonly detail?: string }[];
+}
+
+/** PUT /api/sandbox/providers/:provider (sandbox.policy.manage). `apiKey: null` deletes the stored key; omitted keeps it. */
+export interface SandboxProviderUpdate {
+	readonly enabled?: boolean;
+	readonly endpoint?: string;
+	readonly domain?: string;
+	readonly template?: string;
+	readonly apiKey?: string | null;
+	readonly allowPrivateNetwork?: boolean;
+	readonly egressAcknowledged?: boolean;
+	readonly createTimeoutSec?: number;
+	readonly idleTimeoutSec?: number;
+	readonly lifetimeSec?: number;
+}
+
+/** Who may pick which sandbox. Enforced on the server. */
+export interface SandboxSelectionPolicyDTO {
+	/** Org default for every space (personal spaces always use it). "local" = the local driver setting (auto/namespaces/docker). */
+	readonly orgDefault: "local" | SandboxProviderId;
+	/** Project managers may choose another enabled provider for their project. */
+	readonly allowProjectOverride: boolean;
+}
+
+/** GET /api/sandbox/providers (admins: full; members: 403). */
+export interface SandboxProvidersAdminDTO {
+	readonly providers: readonly SandboxProviderConfigDTO[];
+	readonly policy: SandboxSelectionPolicyDTO;
+	/** Server can store secrets (WORKROOM_SECRET_KEY configured). */
+	readonly secretStorage: boolean;
+	readonly canManage: boolean;
+}
+
+/** Remote sandbox instances Workroom tracks (admin view). */
+export interface SandboxInstanceDTO {
+	readonly id: string;
+	readonly provider: SandboxProviderId;
+	readonly spaceId: string;
+	readonly workspaceKey: string;
+	readonly remoteId: string | null;
+	readonly state: "creating" | "ready" | "stopping" | "destroyed" | "lost" | "error";
+	readonly createdAt: string;
+	readonly lastUsedAt: string;
+	readonly expiresAt?: string;
+	readonly lastError?: string;
+}
