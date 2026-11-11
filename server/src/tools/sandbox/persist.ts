@@ -684,7 +684,8 @@ export class WorkspacePersistence {
 	}
 
 	#failRestore(space: { id: string; orgId: string }, key: string, target: number, at: string, failure: string, conflicts: string[], status: 409 | 500, code: string): never {
-		this.#upsert(space, key, { state: status === 409 ? "conflict" : "failed", failure, lastAttemptAt: at, restore: { fromVersion: target, at, verified: false, conflicts: conflicts.slice(0, UNSYNCED_CAP) } });
+		// A restore REFUSED because of unsaved changes changed nothing: the workspace stays "dirty" (not a conflict); the refusal is recorded.
+		this.#upsert(space, key, { state: code === "workspace_dirty" ? "dirty" : status === 409 ? "conflict" : "failed", failure, lastAttemptAt: at, restore: { fromVersion: target, at, verified: false, conflicts: conflicts.slice(0, UNSYNCED_CAP) } });
 		throw new HttpError(status, code, failure);
 	}
 

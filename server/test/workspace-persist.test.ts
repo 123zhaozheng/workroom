@@ -319,7 +319,7 @@ test("restore refuses to overwrite unsynced changes (conflict lists paths); keep
 		await assert.rejects(w.svc.restore(w.ownerP, w.space, KEY, { version: 1 }), (e: any) => e.status === 409 && e.code === "workspace_dirty");
 		assert.equal(readFileSync(join(w.wd, "a.txt"), "utf8"), "unsaved work");
 		const st = await w.svc.status(w.ownerP, w.space, KEY);
-		assert.equal(st.state, "conflict");
+		assert.equal(st.state, "dirty"); // a refused restore changed nothing: still just unsaved changes (not a conflict)
 		assert.deepEqual(st.restore?.conflicts, ["a.txt", "new.txt"]);
 		assert.equal(st.restore?.verified, false);
 

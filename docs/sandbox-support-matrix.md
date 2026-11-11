@@ -43,6 +43,46 @@
 - 文件工具：`sandbox_write_file`、`sandbox_read_file`、`sandbox_publish` 等；
 - 文档渲染：`execIsolated` 带 `hostTools` 时只允许 namespaces 驱动。
 
-## B. 第 7 轮完成后
+## B. 第 7 轮（含 7b）完成后
 
-（集成完成后补充，各项按“真实联调通过 / 已实现但未联调 / 不支持”标注。）
+**图例**
+- **联调通过**：对真实服务运行合同测试，并通过。
+- **已实现未联调**：代码完成，单元测试使用的是标注清楚的 SDK 替身，没有接真实服务。
+- **不支持**：返回 501 `UNSUPPORTED`，绝不回退到宿主机执行。
+
+### 驱动与提供方
+
+| 提供方 | 版本 / 许可 | 状态 | 证据 |
+|---|---|---|---|
+| namespaces、docker（本机） | — | 联调通过（与之前相同） | `server/test/tools-sandbox*.test.ts`；合同测试中适用于本机的 6 项 |
+| OpenSandbox（自托管） | `@alibaba-group/opensandbox` 1.2.0，服务端 `opensandbox-server` 1.2.0，均为 Apache-2.0 | **联调通过**：本机 Docker 运行时 | `server/test/sandbox-contract.test.ts` 共 20 项、`server/test/sandbox-remote-e2e.test.ts` 共 1 项，都对 `scripts/opensandbox-local.sh` 拉起的真实服务运行 |
+| E2B（官方，或明确配置的兼容端点） | `e2b` 2.63.0，MIT | 已实现未联调：没有密钥 | `server/test/sandbox-providers-unit.test.ts`，用 SDK 替身；真实测试自动跳过 |
+| Daytona（厂商云） | `@daytonaio/sdk` 0.231.1，Apache-2.0 | 已实现未联调：没有密钥。开源仓库已于 2026-10-03 归档，不作为自托管开源方案 | 同上 |
+| Kubernetes Agent Sandbox | — | 未实现，只做了调研 | `docs/research/sandbox-providers.md` |
+
+### OpenSandbox 能力（实测）
+
+| 能力 | 状态 |
+|---|---|
+| exec、输出流、取消、命令超时、文件、联网、重连 | 联调通过 |
+| 断网 | **未验证**：在 dns 模式下仍可直连 IP；在 dns+nft 模式下 DNS 上游仍可达，存在 DNS 隧道风险。<br>因此管理员策略为“无网络”时，运行会被拒绝；策略为“允许联网”时，运行按“可联网”执行，并在输出中写明。 |
+| 资源限制 | 未验证：参数已下发，但嵌套 Docker 环境中无法回读 cgroup 确认是否生效 |
+| 长驻服务（沙箱内 MCP stdio）、PTY、预览、快照、暂停/恢复 | 不支持（501） |
+| 技能 | 哈希校验后受控上传，再用 `chmod a-w` 设为只读。这不是内核级只读挂载；每次运行前会重新校验哈希 |
+
+### 统一行为（远端驱动）
+
+- 宿主机工作区是权威副本。每次运行时按 sha256 清单增量上传；运行结束后回传结果，回传时拒绝符号链接和特殊文件，路径规范化，限制大小。
+- 实例持久化在表 `tool_sandbox_instances`，记录租户、提供方、远端 ID、状态和生命周期。
+- 恢复时先重连并核实远端沙箱；如果已不存在，就重建并完整重新同步。
+- 空闲回收、最长存活和孤儿清理按 metadata 标签进行。
+
+### 第 7b 轮
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| 工作区版本化（清单、哈希、原子提交、冲突处理、恢复与校验、安全回收、中断的运行标为“未知”） | 已实现，有测试；在 OpenSandbox 上真实联调通过 | `server/test/workspace-persist.test.ts`（14 项）、`tools-sandbox.test.ts`、`sandbox-remote-e2e.test.ts` |
+| 普通环境变量（组织、项目、用户、会话四级；锁定；危险变量拒绝；审计只记哈希） | 已实现，有测试 | `server/test/sandbox-env-vars.test.ts` |
+| 凭据（`credential_request`、安全表单、SecretStore、`credential_http` 代理、单次运行的环境注入） | 已实现，有测试。本地 AES-GCM 实测通过；Vault Transit 只对替身测试过，**未接真实 Vault** | `server/test/credentials.test.ts`（20 项，使用假密钥） |
+| 把凭据注入远端沙箱的进程环境 | **不支持（501）**：提供方未验证进程环境不会被持久化 | `sandbox.ts` |
+| 提供方快照、内存或进程迁移 | **不承诺、未启用** | — |

@@ -80,8 +80,8 @@ export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spa
 		}
 	};
 
-	// A restore the server refused because the files were changed (state "conflict", restore.verified false): nothing was touched.
-	const refusedRestore = !!s && s.state === "conflict" && !!s.restore && !s.restore.verified && s.restore.conflicts.length > 0;
+	// A restore the server refused because the files were changed (state stays "dirty"; restore.verified false): nothing was touched.
+	const refusedRestore = !!s && (s.state === "dirty" || s.state === "conflict") && !!s.restore && !s.restore.verified && s.restore.conflicts.length > 0;
 	const st = s ? SAVE_STATE[s.state] : undefined;
 	return (
 		<section data-testid="ws-save" data-state={s?.state ?? "loading"} aria-label="保存状态" className="rounded-xl border border-border bg-surface p-3">
