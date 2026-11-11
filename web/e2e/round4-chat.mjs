@@ -456,6 +456,8 @@ try {
 	for (let i = 0; i < 50 && !(await (await page.request.get(`${base}/api/models`)).json()).personalProviders; i++) await sleep(100);
 	await page.reload();
 	await page.waitForSelector('[data-testid="personal-keys-section"]', { timeout: 10000 }).catch(() => {});
+	// the section's body is lazy-loaded (Suspense) and reads /model-settings itself: wait for it too before counting
+	await page.waitForSelector('[data-testid="personal-keys"]', { timeout: 10000 }).catch(() => {});
 	check("settings: 我的模型密钥 section appears only when the admin policy enables personal keys", offSection === 0 && (await page.locator('[data-testid="personal-keys-section"]').count()) === 1 && (await page.locator('[data-testid="personal-keys"]').count()) === 1, `off=${offSection} put=${putKeys.status()} on=${await page.locator('[data-testid="personal-keys-section"]').count()}/${await page.locator('[data-testid="personal-keys"]').count()} ${(await putKeys.text()).slice(0, 120)}`);
 	await page.request.put(`${base}/api/admin/model-settings`, { data: { personalProviders: false } });
 	await page.goto(`${base}/`);

@@ -367,7 +367,8 @@ test("labels carry no user data and the driver exposes honest capabilities", asy
 	await t.driver.run(t.spec("echo x"));
 	const md = t.box().metadata;
 	assert.deepEqual(Object.keys(md).sort(), ["workroom", "workroom_install", "workroom_instance", "workroom_org"]);
-	assert.ok(!JSON.stringify(md).includes("org1") && !JSON.stringify(md).includes("s1"));
+	// No label is (or embeds, as a token) the org or space id. Substring checks on "s1" were flaky: random base36 instance ids can contain it.
+	for (const v of Object.values(md)) for (const id of ["org1", "s1"]) assert.ok(!String(v).split(/[^A-Za-z0-9]+/).includes(id), `label ${v} carries ${id}`);
 	assert.equal(t.driver.id, "opensandbox");
 	assert.ok(t.driver.notes.doesNotIsolate.some((x) => /chmod/.test(x)));
 	assert.equal((await t.driver.detect()).state, "ready");
