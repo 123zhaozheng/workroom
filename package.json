@@ -50,6 +50,9 @@
     "typescript": "7.0.2"
   },
   "optionalDependencies": {
+    "@alibaba-group/opensandbox": "1.2.0",
+    "@daytonaio/sdk": "0.231.1",
+    "e2b": "2.63.0",
     "playwright-core": "1.63.0"
   }
 }
