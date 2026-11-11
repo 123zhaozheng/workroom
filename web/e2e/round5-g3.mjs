@@ -120,7 +120,7 @@ try {
 	await p.goto(`${base}/admin?tab=members`);
 	await p.waitForSelector('[data-testid="admin-member"]');
 	const groups = await p.locator('[data-testid="admin-tabs"] [role="group"]').evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
-	check("admin: navigation is grouped 成员与组织 / 角色与权限 / 模型 / 技能与连接 / 用量与预算 / 审计", ["成员与组织", "角色与权限", "模型", "技能与连接", "用量与预算", "审计"].every((g, i) => groups[i] === g), groups.join(","));
+	check("admin: navigation is grouped 成员与组织 / 角色与权限 / 模型 / 工作区运行 / 技能与连接 / 用量与预算 / 审计", ["成员与组织", "角色与权限", "模型", "工作区运行", "技能与连接", "用量与预算", "审计"].every((g, i) => groups[i] === g), groups.join(","));
 	check("admin: the page title is short and has no paragraph subtitle", (await p.locator("h1").innerText()) === "组织管理" && (await p.locator("h1 ~ p").count()) === 0);
 	await p.focus('[data-testid="admin-tab-members"]');
 	await p.keyboard.press("ArrowDown");
