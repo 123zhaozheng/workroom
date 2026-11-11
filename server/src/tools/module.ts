@@ -10,6 +10,8 @@ import { PROVIDER_CONFIG_MIGRATIONS } from "./sandbox/provider-config.ts"; // ro
 import { registerSandboxProviderRoutes } from "./sandbox/provider-routes.ts";
 import { ENV_MIGRATIONS } from "./sandbox/env-vars.ts"; // round 7b: sandbox env vars
 import { registerSandboxEnvRoutes } from "./sandbox/env-routes.ts";
+import { PERSIST_MIGRATIONS, workspacePersistenceFor } from "./sandbox/persist.ts"; // round 7b: persistent workspace versions
+import { registerPersistRoutes } from "./sandbox/persist-routes.ts";
 import { pdfFontStatus } from "../files/generate.ts";
 import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
@@ -72,6 +74,7 @@ export const toolsModule: WorkroomModule = {
 		...SKILL_DRAFT_MIGRATIONS.map((m) => ({ ...m, version: m.version + 800 })), // skill drafts (round 6)
 		...PROVIDER_CONFIG_MIGRATIONS.map((m) => ({ ...m, version: m.version + 900 })), // sandbox provider configs (round 7)
 		...ENV_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1100 })), // sandbox env vars (round 7b)
+		...PERSIST_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1000 })), // workspace versions (round 7b)
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -110,6 +113,8 @@ export const toolsModule: WorkroomModule = {
 		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
+		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).
+		workspacePersistenceFor(ctx).reconcileInterruptedRuns();
 		(ctx.services.get("mcp") as McpManager).start();
 		(ctx.services.get("sandbox") as Sandbox).start();
 		(ctx.services.get("market") as Market).start(); // marketplace group: skills mount provider
@@ -145,6 +150,7 @@ export const toolsModule: WorkroomModule = {
 
 		// ---- sandbox: driver status/settings, workspace file API, runs, publish (server/src/tools/sandbox-routes.ts) ----
 		registerSandboxEnvRoutes(api, ctx); // round 7b: /sandbox-env/*
+		registerPersistRoutes(api, ctx); // round 7b: /workspaces/*, /workspace-policy
 		registerSandboxProviderRoutes(api, ctx); // before /sandbox/:spaceId so /sandbox/providers etc. are not captured
 		registerSandboxRoutes(api, ctx);
 
