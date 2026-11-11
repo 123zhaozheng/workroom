@@ -8,7 +8,7 @@ import { cn, formatBytes } from "@/lib/utils";
 import { Badge, Spinner } from "@/components/ui/misc";
 
 export const PERM: Record<string, string> = { "sandbox.exec": "运行代码", network: "联网", "file.write": "写入文件" };
-export const PERM_EXPLAIN: Record<string, string> = { "sandbox.exec": "运行代码：在工作区里执行技能自带的脚本", network: "联网：访问互联网（默认不允许，需管理员另外开启）", "file.write": "写入文件：把结果保存到文件库" };
+export const PERM_EXPLAIN: Record<string, string> = { "sandbox.exec": "运行代码：在工作区里执行技能自带的脚本", network: "联网：访问互联网（能否联网取决于所用的执行环境）", "file.write": "写入文件：把结果保存到文件库" };
 export const permText = (p: string): string => PERM[p] ?? (p.startsWith("tool:") ? `工具「${p.slice(5)}」` : p);
 /** Name plus what it means, for places that have room (review screen, skill detail). */
 export const permExplain = (p: string): string => PERM_EXPLAIN[p] ?? permText(p);

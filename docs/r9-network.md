@@ -82,7 +82,19 @@ WORKROOM_TEST_OPENSANDBOX_URL=http://127.0.0.1:8080 WORKROOM_TEST_OPENSANDBOX_KE
 
 结果（本次执行）：见交付报告中的“LIVE 结果”一节；记录如下。
 
-{{LIVE_RESULTS}}
+2026-11-11，本环境实测：在沙箱内依次探测 DNS、TCP 443、TLS 握手，并对 `https://example.com` 做正常校验证书的 GET。
+
+| 目标 | 结果 |
+|---|---|
+| 本机 Docker（默认 bridge） | DNS 能解析，TCP 能连上，TLS 握手成功。正常校验证书的 GET 失败：`CERTIFICATE_VERIFY_FAILED`（证书链中有自签名证书）。 |
+| 本机 Docker（`WORKROOM_DOCKER_NETWORK=none`） | 只有回环接口；运行不会被拒绝。 |
+| OpenSandbox（本机 127.0.0.1:8080） | 与 Docker bridge 相同：DNS、TCP、TLS 都能连通，校验证书的 GET 因同样的证书错误失败。也经应用路径实际运行验证过。 |
+| namespaces | DNS 失败，符合预期：这是驱动的技术限制。 |
+| E2B、Daytona | 未联调（没有密钥），只做了 SDK 替身测试：创建参数里不带任何断网选项。 |
+
+**证书失败的原因**：这是本测试环境的出口代理用自己的 CA 重新签发 TLS 证书，而沙箱镜像不信任这个 CA，并不是 Workroom 在拦截。临时把该代理 CA 提供给沙箱后（只做核对，不属于产品和测试的一部分），Docker 和 OpenSandbox 访问 `example.com` 都返回 HTTP 200。
+
+**部署环境**：正常部署环境没有这类代理，不受此影响。
 
 E2B、Daytona：没有密钥，**未联调**，不宣称任何联网结论；适配器测试用 SDK 替身证明“不传任何网络参数”。
 

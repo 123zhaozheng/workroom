@@ -432,7 +432,7 @@ export function scanFiles(files: readonly PackageFile[]): { findings: PackageFin
 			let mm = NET_RE.exec(text);
 			if (mm) {
 				usesNetwork = true;
-				add("warn", "network_use", `${f.path} 看起来会联网（${mm[0].trim().slice(0, 30)}）；沙箱默认无网络`, f.path, lineOf(text, mm.index));
+				add("warn", "network_use", `${f.path} 看起来会联网（${mm[0].trim().slice(0, 30)}）；能否联网取决于所用的执行环境`, f.path, lineOf(text, mm.index));
 			}
 			mm = EXEC_RE.exec(text);
 			if (mm) add("warn", "exec_call", `${f.path} 调用了进程/动态执行（${mm[0].slice(0, 30)}）`, f.path, lineOf(text, mm.index));
@@ -451,7 +451,7 @@ export function scanPackage(files: readonly PackageFile[], parsed: ParsedSkill):
 	const m = parsed.manifest;
 	const hasScripts = files.some((f) => SCRIPT_EXT.test(f.path));
 	if (usesNetwork && !m.requiredPermissions.includes("network")) add("warn", "network_undeclared", "脚本使用网络但 manifest 没有声明 network 权限");
-	if (m.requiredPermissions.includes("network")) add("warn", "network_declared", "声明了 network 权限：沙箱默认无网络，需管理员开启后才能运行");
+	if (m.requiredPermissions.includes("network")) add("warn", "network_declared", "声明了 network 权限：使用前需要你授权；能否联网取决于所用的执行环境");
 	if (hasScripts && !m.entry) add("info", "scripts_without_entry", "包含脚本但没有声明 entry：脚本只能由模型在沙箱中手动运行，无法通过 skill_run 一键运行");
 	if (m.description.length < 20) add("warn", "description_short", "description 过短：请同时写明做什么以及何时使用");
 	const mdLines = new TextDecoder().decode(files.find((f) => f.path === "SKILL.md")!.bytes).split("\n").length;

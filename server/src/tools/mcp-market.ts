@@ -176,7 +176,7 @@ export function installOptions(sj: ServerJson, caps: SandboxCaps | null, hasBund
 		else if (!caps || caps.state !== "ready") blocked = "沙箱不可用：stdio 服务器只能在沙箱中运行（请管理员启用沙箱驱动）";
 		else if (!caps.services || !caps.mounts) blocked = "当前沙箱驱动不支持常驻服务或只读挂载";
 		else if (p.registryType === "npm" || p.registryType === "pypi") {
-			if (!caps.networkAllowed) blocked = `需要联网下载 ${p.registryType} 包：沙箱默认无网络（管理员需在沙箱设置中允许联网，并使用 Docker 驱动）`;
+			if (!caps.networkAllowed) blocked = `需要联网下载 ${p.registryType} 包：当前执行环境无法联网（例如本机命名空间驱动），请改用可联网的执行环境`;
 		} else if (p.registryType === "bundle") {
 			if (!hasBundle) blocked = "这是离线包条目，但没有随附代码包（请用 .zip 导入）";
 		} else blocked = `暂不支持 ${p.registryType} 类型的软件包（支持 npm、pypi 与离线 bundle）`;

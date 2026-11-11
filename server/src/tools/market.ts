@@ -444,7 +444,7 @@ export class Market {
 			}
 		}
 		const perms: string[] = JSON.parse(v.required_permissions);
-		if (perms.includes("network")) add("warn", "network_unsatisfiable", "声明了 network 权限：沙箱默认无网络，需要管理员开启后才能运行");
+		if (perms.includes("network")) add("warn", "network_unsatisfiable", "声明了 network 权限：使用前需要用户授权；能否联网取决于所用的执行环境");
 		const known = new Set(this.#knownTools());
 		const missingTools = (JSON.parse(v.required_tools) as string[]).filter((t) => !known.has(t));
 		if (missingTools.length) add("warn", "unknown_tool", `依赖的工具当前不可用：${missingTools.join("、")}`);

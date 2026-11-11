@@ -34,7 +34,7 @@ export const RISK_LABEL: Record<string, string> = { sensitive: "敏感", critica
 
 /** Plainer names for a few catalog entries (the catalog lives in shared/ and still uses some internal vocabulary). */
 const GROUP_LABEL: Record<string, string> = { model: "模型", mcp: "连接", sandbox: "工作区运行", audit: "审计与排查" };
-const PERM_LABEL: Record<string, string> = { "model.provider.manage": "管理模型服务与密钥", "sandbox.use": "使用工作区运行代码", "sandbox.network": "工作区联网", "sandbox.browser": "使用浏览器工具", "sandbox.policy.manage": "管理运行与工具策略", "model.manage": "管理模型" };
+const PERM_LABEL: Record<string, string> = { "model.provider.manage": "管理模型服务与密钥", "sandbox.use": "使用工作区运行代码", "sandbox.network": "工作区联网（已停用）", "sandbox.browser": "使用浏览器工具", "sandbox.policy.manage": "管理运行与工具策略", "model.manage": "管理模型" };
 const PERM_DESC: Record<string, string> = { "model.provider.manage": "新增模型服务、保存和更换密钥、测试连通" };
 export const groupLabel = (g: { id: string; label: string }): string => GROUP_LABEL[g.id] ?? g.label;
 export const permLabel = (p: { id: string; label: string }): string => PERM_LABEL[p.id] ?? p.label;
