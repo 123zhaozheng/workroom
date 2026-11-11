@@ -45,7 +45,7 @@ const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)} 毫秒` : `${(ms /
 
 export function SandboxProviders() {
 	const res = useApi<SandboxProvidersAdminDTO>("/sandbox/providers");
-	const inst = useApi<SandboxInstanceDTO[]>("/sandbox/instances");
+	const inst = useApi<{ instances: SandboxInstanceDTO[] }>("/sandbox/instances");
 	return (
 		<Loadable state={res} what="运行环境">
 			{res.data ? (
@@ -148,7 +148,8 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 	const base = toDraft(p);
 	const dirty = JSON.stringify(d) !== JSON.stringify(base);
 	const loc = p.capabilities.location;
-	const needsEgress = loc !== "self_hosted";
+	// Vendor clouds always; a self-hosted service only counts as inside the organisation when it is an allowed private address.
+	const needsEgress = loc !== "self_hosted" || !d.allowPrivateNetwork;
 	const id = (s: string) => `${p.provider}-${s}`;
 	const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
 	const missingAck = d.enabled && needsEgress && !d.egressAcknowledged;
@@ -172,7 +173,7 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 		setTesting(kind);
 		setTestErr(undefined);
 		try {
-			setTest(await post<SandboxProviderTestDTO>(`/sandbox/providers/${p.provider}/test`, { kind }));
+			setTest((await post<{ test: SandboxProviderTestDTO }>(`/sandbox/providers/${p.provider}/test`, { kind })).test);
 			reload();
 		} catch (e) {
 			setTestErr(errorText(e));
@@ -337,8 +338,8 @@ function TestResult({ t, id }: { t: SandboxProviderTestDTO; id: string }) {
 	);
 }
 
-function Instances({ inst }: { inst: ReturnType<typeof useApi<SandboxInstanceDTO[]>> }) {
-	const rows = inst.data ?? [];
+function Instances({ inst }: { inst: ReturnType<typeof useApi<{ instances: SandboxInstanceDTO[] }>> }) {
+	const rows = inst.data?.instances ?? [];
 	return (
 		<section data-testid="sandbox-instances">
 			<SectionHead title="运行中的远程沙箱" />

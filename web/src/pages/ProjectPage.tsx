@@ -60,7 +60,7 @@ export default function ProjectPage() {
 								) : (
 									<p className="mb-8 rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-fg-muted">你是查看者：可以查看项目内容，但不能发起对话或修改文件。</p>
 								)}
-								{isOwner ? <SandboxPicker project={project} onChanged={projects.reload} /> : null}
+								{isOwner ? <SandboxPicker projectId={project.id} /> : null}
 								<div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_280px]">
 									<section>
 										<h2 className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-fg-muted">

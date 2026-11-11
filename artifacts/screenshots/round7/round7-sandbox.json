@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T00:19:35.372Z",
+  "at": "2026-11-11T00:23:00.470Z",
   "results": [
     {
       "name": "[intercepted] admin sees 运行环境 tab and the 执行位置 section",
@@ -80,6 +80,116 @@
       "name": "[intercepted] 390px: no horizontal scroll",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "[real] GET /api/sandbox/providers answers 200 for the admin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] member: no sandbox section or tab",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] member API: providers / update / instances / policy read+write / test all 403",
+      "ok": true,
+      "detail": "403,403,403,403,403,403"
+    },
+    {
+      "name": "[real] admin: section, 3 cards, secret storage available",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] capabilities unverified + isolation text before any test",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] loopback endpoint without allowPrivateNetwork: UI shows a plain message, API 400 blocked_address",
+      "ok": true,
+      "detail": "400 127.0.0.1 指向内网/保留地址；如确为自托管内网服务，需由管理员勾选“允许内网地址”，并由服务器运维将其加入实例允许列表"
+    },
+    {
+      "name": "[real] allowPrivateNetwork ticked but host not on the operator allowlist: 400",
+      "ok": true,
+      "detail": "400 blocked_address"
+    },
+    {
+      "name": "[real] saved key shown only as 已保存 ••••<last4>",
+      "ok": true,
+      "detail": "已保存 ••••7788"
+    },
+    {
+      "name": "[real] key string absent from page HTML, input values, API responses (all browser-seen responses scanned)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] cleared key: apiKeySet false, empty field shown again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] E2B: UI blocks enabling without acknowledgement",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] E2B and Daytona: server refuses enabling without acknowledgement (400 egress_ack_required)",
+      "ok": true,
+      "detail": "egress_ack_required/egress_ack_required"
+    },
+    {
+      "name": "[real] E2B enables once acknowledged",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "[real] opensandbox enabled (loopback allowed by both switches) and set as org default",
+      "ok": true,
+      "detail": "200/200"
+    },
+    {
+      "name": "[real] unreachable endpoint → plain failure; default still OpenSandbox; unhealthy banner (no fallback)",
+      "ok": true,
+      "detail": "连通性 完整测试 完整测试会临时创建一个沙箱，只使用合成数据，结束后立即销毁。 失败 连通性 · 11/11 00:22 · 用时 2 毫秒 适配器未安装"
+    },
+    {
+      "name": "[real] key still absent from every response after tests",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] instances: API {instances: []} and empty state in the page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] 390px: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] project override hidden when the org does not allow it; PUT refused (403)",
+      "ok": true,
+      "detail": "PUT 403"
+    },
+    {
+      "name": "[real] allowed: owner sees the picker, choosing OpenSandbox is saved and read back",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] 跟随组织默认 clears the override (provider null)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[real] non-member: GET 404, PUT refused, no picker",
+      "ok": true,
+      "detail": "404/403"
     }
   ]
 }
