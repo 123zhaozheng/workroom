@@ -59,6 +59,17 @@ await register(page, base, { email: "owner-r8q2@example.com", name: "管理员" 
 	await btn.focus();
 	await page.keyboard.press("Enter");
 	await page.waitForSelector('[data-testid="env-popover"]');
+	await sleep(600); // after the open animation
+	const op = await page.locator('[data-testid="env-popover"]').evaluate((el) => {
+		let o = 1;
+		for (let e = el; e; e = e.parentElement) o *= Number(getComputedStyle(e).opacity);
+		const bg = getComputedStyle(el).backgroundColor;
+		const m = bg.match(/rgba?\(([^)]+)\)/);
+		const alpha = m ? (m[1].split(",")[3] === undefined ? 1 : Number(m[1].split(",")[3])) : 0;
+		return { o, alpha };
+	});
+	check("A popover is fully opaque after its animation (opacity 1, solid background)", op.o === 1 && op.alpha === 1, JSON.stringify(op));
+	check("A popover: plain one-sentence isolation; the technical note is folded", /只能读写本对话的工作文件|工作文件会同步|发送到厂商/.test(await page.locator('[data-testid="env-isolation"]').innerText()) && !(await page.locator('[data-testid="env-isolation"]').innerText()).includes("pivot_root"));
 	const t = await page.locator('[data-testid="env-popover"]').innerText();
 	check("A popover: current environment, location badge 本服务器, network, state, options", t.includes("当前执行环境") && (await page.locator('[data-testid="env-location"]').innerText()).includes("本服务器") && /可联网|不联网/.test(await page.locator('[data-testid="env-network"]').innerText()) && (await page.locator('[data-testid="env-state"]').count()) === 1 && (await page.locator('[data-testid="env-options"] li').count()) >= 1, t.replace(/\s+/g, " ").slice(0, 200));
 	check("A popover: exactly one option is current; personal space cannot choose and says why", (await page.locator('[data-testid="env-options"] li[data-current="true"]').count()) === 1 && (await page.locator('[data-testid="env-choose-hint"]').innerText()).includes("组织") && (await page.locator('[data-testid^="env-switch-"]').count()) === 0);

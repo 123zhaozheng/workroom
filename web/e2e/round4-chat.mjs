@@ -451,10 +451,12 @@ try {
 	await page.waitForSelector('[data-testid="settings-tab-models"]');
 	await sleep(600);
 	const offSection = await page.locator('[data-testid="personal-keys-section"]').count();
-	await page.request.put(`${base}/api/admin/model-settings`, { data: { personalProviders: true } });
+	const putKeys = await page.request.put(`${base}/api/admin/model-settings`, { data: { personalProviders: true } });
+	// The page reads the flag once from GET /models: reload only after the API reports the new policy (avoids a reload racing the save).
+	for (let i = 0; i < 50 && !(await (await page.request.get(`${base}/api/models`)).json()).personalProviders; i++) await sleep(100);
 	await page.reload();
 	await page.waitForSelector('[data-testid="personal-keys-section"]', { timeout: 10000 }).catch(() => {});
-	check("settings: 我的模型密钥 section appears only when the admin policy enables personal keys", offSection === 0 && (await page.locator('[data-testid="personal-keys-section"]').count()) === 1 && (await page.locator('[data-testid="personal-keys"]').count()) === 1, `off=${offSection}`);
+	check("settings: 我的模型密钥 section appears only when the admin policy enables personal keys", offSection === 0 && (await page.locator('[data-testid="personal-keys-section"]').count()) === 1 && (await page.locator('[data-testid="personal-keys"]').count()) === 1, `off=${offSection} put=${putKeys.status()} on=${await page.locator('[data-testid="personal-keys-section"]').count()}/${await page.locator('[data-testid="personal-keys"]').count()} ${(await putKeys.text()).slice(0, 120)}`);
 	await page.request.put(`${base}/api/admin/model-settings`, { data: { personalProviders: false } });
 	await page.goto(`${base}/`);
 	await page.waitForSelector('[data-testid="dot-matrix"]');
