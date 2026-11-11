@@ -243,3 +243,37 @@ export interface SandboxInstanceDTO {
 	readonly expiresAt?: string;
 	readonly lastError?: string;
 }
+
+// ---------------- round 8: execution environment of a conversation (integrator-owned contract) ----------------
+/** GET /api/conversations/:spaceId/:conversationId/environment — what runs this conversation's commands. Never creates anything. */
+export interface ConversationEnvironmentDTO {
+	/** "local": a sandbox driver on the Workroom server (nothing to prepare); "remote": a provider sandbox that may need creating/restoring. */
+	readonly kind: "local" | "remote" | "none";
+	/** Driver / provider id actually in effect for this space ("namespaces" | "docker" | "opensandbox" | "e2b" | "daytona" | "none"). */
+	readonly id: string;
+	/** Plain label, e.g. "本机沙箱（Docker）", "OpenSandbox（自托管）". */
+	readonly label: string;
+	readonly location: "this_server" | "self_hosted" | "vendor_cloud";
+	/** One plain sentence on isolation (honest, from the driver/provider notes). */
+	readonly isolation: string;
+	readonly network: "none" | "allowed";
+	/**
+	 * none      = no remote sandbox exists for this conversation yet (created on first need — not by opening this panel)
+	 * preparing = being created / reconnected / restored right now
+	 * ready     = exists and was verified on last use
+	 * failed    = last prepare failed (see error); a retry is possible
+	 * lost      = it expired or was removed; the next command recreates it and restores saved files
+	 * For kind "local" the state is always "ready" (or "failed" when the driver is unavailable).
+	 */
+	readonly state: "none" | "preparing" | "ready" | "failed" | "lost";
+	readonly error?: string;
+	readonly updatedAt?: string;
+	/** Execution environments configured AND permitted for this space (read-only list unless canChoose). */
+	readonly options: readonly { readonly id: string; readonly label: string; readonly current: boolean; readonly enabled: boolean }[];
+	/** True only when the caller may switch this space's environment (project override allowed + project.manage). */
+	readonly canChoose: boolean;
+	/** Why it cannot be chosen here (plain), e.g. "由组织管理员统一设置". */
+	readonly chooseHint?: string;
+	/** True when an explicit prepare/retry is possible (remote, write access). */
+	readonly canPrepare: boolean;
+}
