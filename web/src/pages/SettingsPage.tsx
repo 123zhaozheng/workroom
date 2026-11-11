@@ -16,6 +16,8 @@ import type { ModelOption } from "@/features/chat/ModelPicker";
 import { MyPermissionsSection } from "@/features/admin/MyPermissions";
 import { Section } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
+import { CredentialsSection } from "@/features/settings/Credentials";
+import { EnvVarsEditor } from "@/features/settings/EnvVars";
 
 // models group's component; lazy so the admin model code is not part of the settings chunk until needed
 const PersonalProviders = lazy(() => import("@/features/admin/models/ModelsAdmin").then((m) => ({ default: m.PersonalProviders })));
@@ -78,6 +80,11 @@ export default function SettingsPage() {
 							)}
 						</Loadable>
 					</Group>
+					<CredentialsSection />
+					<Section title="环境变量" testId="my-env-vars">
+						<p className="mb-2 text-xs text-fg-muted">只对你自己的工作区命令生效；项目和组织也可以设置同名变量。</p>
+						{me ? <EnvVarsEditor scope="user" scopeRef={me.userId} editable testId="env-vars-user" /> : null}
+					</Section>
 					<MyPermissionsSection />
 					<SessionsGroup />
 				</Page>

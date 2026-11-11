@@ -114,6 +114,16 @@ export function describeTool(call: Pick<ToolCallDTO, "name" | "arguments">, extr
 			return { kind: "skill", title: `读取技能资料${quote(str(a.name))}`, running: "正在读取技能资料" };
 		case "skill_list":
 			return { kind: "skill", title: "查看可用技能", running: "正在查看可用技能" };
+		case "credential_request": {
+			const svc = str(a.service);
+			return { kind: "other", title: `请求凭据${quote(svc)}`, running: "正在等待你提供凭据" };
+		}
+		case "credential_http": {
+			const host = hostOf(str(a.url));
+			return { kind: "web", title: `用凭据访问${host ? ` ${host}` : "外部服务"}`, running: "正在用凭据访问外部服务" };
+		}
+		case "credential_list":
+			return { kind: "other", title: "查看可用凭据", running: "正在查看可用凭据" };
 		case "job_start":
 			return { kind: "job", title: "启动后台任务", running: "正在启动后台任务" };
 		case "job_status":

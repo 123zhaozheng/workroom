@@ -10,6 +10,7 @@ import { AssistantAvatar } from "@/components/shell/BrandMark";
 import type { WorkTab } from "@/components/shell/panel";
 import { Markdown } from "@/features/markdown/Markdown";
 import { Citations, ErrorNote, FileCard } from "./Cards";
+import { CredentialOutcome, credentialSteps } from "./CredentialRequestCard";
 import { RefTile } from "@/components/file/FileTile";
 import { MessageAttachment } from "./Attachments";
 import { turnMarkdown, type AssistantTurn } from "./model";
@@ -173,6 +174,9 @@ export function AssistantMessage({
 					</div>
 				) : null}
 				<StepChain turn={turn} onOpenWork={onOpenWork} />
+				{credentialSteps(turn).map((s) => (
+					<CredentialOutcome key={s.key} step={s} />
+				))}
 				{turn.answer ? <Markdown text={turn.answer} streaming={turn.streaming} /> : turn.streaming && !turn.steps.length ? <TypingDots /> : null}
 				{turn.artifacts.length ? (
 					<div className="mt-3 flex flex-col gap-2">

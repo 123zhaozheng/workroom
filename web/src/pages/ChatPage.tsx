@@ -17,10 +17,11 @@ import { DotMatrix } from "@/components/DotMatrix";
 import { modelName, type ModelInfo } from "@/features/composer/models";
 import { Composer, type ComposerSubmit } from "@/features/chat/Composer";
 import { ApprovalCard, CitationStatusContext, ReconcileCard } from "@/features/chat/Cards";
+import { PendingCredentialRequests } from "@/features/chat/CredentialRequestCard";
 import { SkillDraftResult, skillDraftOf } from "@/features/chat/SkillDraftCard";
 import type { ConversationCitationStatus } from "@shared/knowledge";
 import { AssistantMessage, BranchPointSwitcher, UserMessage } from "@/features/chat/Messages";
-import { buildTurns, type Turn } from "@/features/chat/model";
+import { buildTurns, type AssistantTurn, type Turn } from "@/features/chat/model";
 import { RUN_LABEL, RunIcon, reasonText, steerChip } from "@/features/chat/status";
 import { cleanErrorText, cleanTestText } from "@/features/chat/testText";
 import { useConversationDetail, useConversationStream, useEarlierEntries, useSubmissionTracker } from "@/features/chat/useConversation";
@@ -223,6 +224,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const decidedDrafts = (state?.approvals ?? []).filter((a) => a.status !== "pending" && skillDraftOf(a.detail));
 	const reconcile = (state?.effects ?? []).filter((e) => e.status === "needs_reconciliation");
 	const avatar = runStatus === "running" ? "working" : runStatus === "waiting_approval" ? "waiting" : runStatus === "failed" || runStatus === "interrupted" ? "failed" : "idle";
+	const assistantTurns = turns.filter((t): t is AssistantTurn => t.kind === "assistant");
 	const lastAssistantIdx = turns.map((t) => t.kind).lastIndexOf("assistant");
 	const parent = detail?.parent ?? conv?.parent;
 	const panelOpen = !!panel;
@@ -392,6 +394,9 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						</div>
 					) : null}
 
+					<div className="mt-5 flex flex-col gap-3 empty:hidden sm:pl-[38px]">
+						<PendingCredentialRequests spaceId={spaceId} conversationId={id} turns={assistantTurns} readOnly={readOnly} />
+					</div>
 					{pendingApprovals.length || reconcile.length || decidedDrafts.length ? (
 						<div className="mt-5 flex flex-col gap-3 sm:pl-[38px]">
 							{decidedDrafts.map((a) => (

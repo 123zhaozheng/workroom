@@ -15,6 +15,8 @@ import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuTrigger, Tip } 
 import { InfoPop } from "@/components/shell/InfoPop";
 import { FileCard } from "@/features/chat/Cards";
 import { LoadState, Notice } from "./states";
+import { WorkspaceSaveStatus } from "./WorkspaceSaveStatus";
+import { ConversationEnv } from "@/features/settings/EnvVars";
 
 const base = (spaceId: string) => `/sandbox/${spaceId}`;
 
@@ -204,6 +206,17 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 					</section>
 				) : null}
 			</LoadState>
+
+			<WorkspaceSaveStatus spaceId={spaceId} conversationId={conversationId} canWrite={canWrite} />
+			<details data-testid="ws-env" className="group rounded-xl border border-border bg-surface">
+				<summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+					<ChevronRight aria-hidden className="size-4 transition-transform group-open:rotate-90" />
+					环境变量
+				</summary>
+				<div className="border-t border-border p-3">
+					<ConversationEnv spaceId={spaceId} conversationId={conversationId} canWrite={canWrite} />
+				</div>
+			</details>
 
 			<Dialog open={!!confirmDel} onOpenChange={(o) => !o && setConfirmDel(null)}>
 				{confirmDel ? (
