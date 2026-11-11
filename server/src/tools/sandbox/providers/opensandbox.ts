@@ -31,8 +31,8 @@ export const OPENSANDBOX_CAPABILITIES: ProviderCapabilities = {
 	cancel: "supported", // verified: aborting the request stopped `sleep 40` inside the container (ps found nothing)
 	commandTimeout: "supported", // verified: server-side timeoutSeconds kills the whole process group (exit -1, "signal: killed")
 	files: "supported", // verified: write (20 MB), read (+range), list (symlink/other typed, never followed), mkdir, delete, odd names
-	networkOff: "unverified", // networkPolicy deny works in egress mode dns+nft, BUT the sidecar's upstream resolver IP stayed reachable on any port (see docs)
-	networkOn: "supported", // verified: sandboxes created without networkPolicy can reach the network
+	networkOff: "unverified", // NOT USED by Workroom (round 9): create() never sends a networkPolicy. (Earlier finding: a deny policy still left the sidecar's upstream resolver reachable.)
+	networkOn: "supported", // verified earlier on a local server: sandboxes created without networkPolicy can reach the network (the server's own network config decides)
 	resourceLimits: "unverified", // `resource` is forwarded (cpu/memory); container limits were not independently confirmed by cgroup readout here
 	reconnect: "supported", // verified: Sandbox.connect(id) after the creating object was dropped; unknown id → 404
 	services: "unsupported",
@@ -41,7 +41,7 @@ export const OPENSANDBOX_CAPABILITIES: ProviderCapabilities = {
 	snapshot: "unsupported",
 	pauseResume: "unsupported",
 	skills: "upload_readonly",
-	isolation: "Container started by the OpenSandbox server (Docker or Kubernetes runtime; self-hosted). Shares the host kernel unless the operator configured a microVM/gVisor runtime. Egress is filtered by the OpenSandbox egress sidecar when network is off.",
+	isolation: "Container started by the OpenSandbox server (Docker or Kubernetes runtime; self-hosted). Shares the host kernel unless the operator configured a microVM/gVisor runtime. Outbound network follows the OpenSandbox server's own configuration (Workroom sends no network policy).",
 	location: "self_hosted",
 };
 
@@ -281,9 +281,7 @@ export function createProvider(conn: ProviderConnection): RemoteProvider & { clo
 					metadata: { ...o.metadata },
 					...(o.env ? { env: { ...o.env } } : {}),
 					...(Object.keys(resource).length ? { resource } : {}),
-					// Network off = default-deny egress policy (needs the server's egress sidecar: docker.network_mode=bridge + [egress].image).
-					// If the server cannot attach the sidecar the create FAILS (HTTP 500/400) — it never silently runs with network.
-					...(o.network ? {} : { networkPolicy: { defaultAction: "deny" } }),
+					// Round 9: NO networkPolicy — Workroom neither restricts nor requests egress; the OpenSandbox server's defaults/config apply.
 					readyTimeoutSeconds: Math.max(10, Math.ceil(o.createTimeoutMs / 1000)),
 					signal: o.signal,
 				});
@@ -291,7 +289,6 @@ export function createProvider(conn: ProviderConnection): RemoteProvider & { clo
 			} catch (e: any) {
 				if (e instanceof HttpError) throw e;
 				const m = clean(msgOf(e), key);
-				if (!o.network && /egress|network ?policy/i.test(m)) throw new UnsupportedError(ID, `无网络沙箱（该 OpenSandbox 服务无法附加出口过滤 sidecar：${m}）`);
 				throw new Error(`OpenSandbox 创建沙箱失败：${m}`);
 			}
 		},

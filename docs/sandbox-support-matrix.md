@@ -13,8 +13,8 @@
 
 | 驱动 | 状态 | 文件 | 说明 |
 |---|---|---|---|
-| `namespaces` | 已实现 | `sandbox/namespaces.ts` | Linux 下的 user/mount/pid/net/ipc/uts 命名空间，用 pivot_root 进入只读系统镜像，只有 `/work` 可写。用宿主机自带的 python3 和 node，rlimit 是按进程而不是按整个沙箱限制。`capabilities.network = false`，无法联网。 |
-| `docker` | 已实现 | `sandbox/docker.ts` | 每次运行一个容器：根文件系统只读、非 root、丢弃全部 capabilities、默认 seccomp、`--network none`（管理员可放开）、cgroup 限制 CPU/内存/进程数，容器打标签，`reapStale` 清理遗留容器。真实 Docker 测试见 `server/test/tools-sandbox-docker.test.ts`。 |
+| `namespaces` | 已实现 | `sandbox/namespaces.ts` | Linux 下的 user/mount/pid/net/ipc/uts 命名空间，用 pivot_root 进入只读系统镜像，只有 `/work` 可写。用宿主机自带的 python3 和 node，rlimit 是按进程而不是按整个沙箱限制。`capabilities.network = false`：无法联网，这是技术限制而不是策略（非特权用户命名空间不能自行出网；去掉 `--net` 会共享宿主网络栈，不可接受），环境面板如实写“无网络（本机命名空间驱动的技术限制）”。 |
+| `docker` | 已实现 | `sandbox/docker.ts` | 每次运行一个容器：根文件系统只读、非 root、丢弃全部 capabilities、默认 seccomp、网络由部署决定（第 9 轮起默认 Docker 桥接网络 `bridge`，环境变量 `WORKROOM_DOCKER_NETWORK` 可设为 `none` 或自建网络，没有面向用户的开关；见 `docs/r9-network.md`）、cgroup 限制 CPU/内存/进程数，容器打标签，`reapStale` 清理遗留容器。真实 Docker 测试见 `server/test/tools-sandbox-docker.test.ts`。 |
 | `none` | 已实现 | `sandbox/none.ts` | 不执行任何代码，每次调用都返回明确的启用说明。 |
 | 选择方式 | 已实现 | `sandbox/registry.ts` | `auto`、`namespaces`、`docker`、`none` 四种，**整个实例共用一套设置**，表 `tool_sandbox_settings`；也可用环境变量 `WORKROOM_SANDBOX_DRIVER` 指定。 |
 
@@ -28,7 +28,7 @@
 | 工作区文件（读、写、列表、上传、删除、预览、发布） | 已实现 | 已实现 | 由宿主机目录 `<dataDir>/…/c<会话>` 承担，绑定挂载到 `/work`；见 `sandbox/workspace.ts`、`sandbox-routes.ts` |
 | 只读挂载（技能） | 已实现 | 已实现 | 内核级只读绑定挂载；物化目录在 `<dataDir>/sandbox-mounts`（`sandbox.ts #collectMounts`） |
 | 长驻进程（沙箱内的 MCP stdio 服务） | 已实现 | 已实现 | `sandbox/services.ts`：只在内存中登记，带空闲和寿命上限；服务重启后需要重新拉起 |
-| 网络开关 | 不支持联网 | 已实现 | docker 默认 `--network none` |
+| 出站网络 | 无网络（技术限制） | 默认可联网（桥接） | 第 9 轮起 Workroom 没有自己的“无网络”开关或策略；docker 用 `WORKROOM_DOCKER_NETWORK`（部署级，默认 `bridge`，可设 `none` 或自建网络）；内部文档渲染（`execIsolated`）仍固定断网 |
 | 资源限制 | rlimit | cgroup | — |
 | PTY、预览 URL、快照、暂停/恢复 | 未实现 | 未实现 | 代码中没有 |
 | 持久化与恢复 | 运行记录 `tool_sandbox_runs` | 同左，另有容器标签 | 沙箱本身每次运行即用即毁，没有长期存在的沙箱实例需要持久化。后台作业重启后按 `rerun` 或 `fail` 策略处理（`jobs.ts`）。 |
@@ -65,7 +65,7 @@
 | 能力 | 状态 |
 |---|---|
 | exec、输出流、取消、命令超时、文件、联网、重连 | 联调通过 |
-| 断网 | **未验证**：在 dns 模式下仍可直连 IP；在 dns+nft 模式下 DNS 上游仍可达，存在 DNS 隧道风险。<br>因此管理员策略为“无网络”时，运行会被拒绝；策略为“允许联网”时，运行按“可联网”执行，并在输出中写明。 |
+| 出站网络 | 第 9 轮起 Workroom **不再要求提供方断网，也不再拒绝运行**：创建沙箱时不传任何网络参数（无 `networkPolicy`），由 OpenSandbox 服务自身配置决定。早先的实测：不带策略创建的沙箱可联网；带 deny 策略时 DNS 上游仍可达（存在隧道风险），此项 `networkOff` 现在不被 Workroom 使用。第 9 轮的联网实测结果见 `docs/r9-network.md`。 |
 | 资源限制 | 未验证：参数已下发，但嵌套 Docker 环境中无法回读 cgroup 确认是否生效 |
 | 长驻服务（沙箱内 MCP stdio）、PTY、预览、快照、暂停/恢复 | 不支持（501） |
 | 技能 | 哈希校验后受控上传，再用 `chmod a-w` 设为只读。这不是内核级只读挂载；每次运行前会重新校验哈希 |

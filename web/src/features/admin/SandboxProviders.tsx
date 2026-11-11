@@ -20,8 +20,7 @@ const CAPS: { key: keyof SandboxProviderConfigDTO["capabilities"]; label: string
 	{ key: "cancel", label: "中途停止" },
 	{ key: "commandTimeout", label: "命令超时" },
 	{ key: "files", label: "文件读写" },
-	{ key: "networkOff", label: "禁止联网" },
-	{ key: "networkOn", label: "允许联网" },
+	{ key: "networkOn", label: "出站网络（由提供方决定）" },
 	{ key: "resourceLimits", label: "资源限制" },
 	{ key: "reconnect", label: "断线重连" },
 	{ key: "services", label: "后台服务" },
@@ -275,11 +274,9 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 				</Button>
 				{dirty ? <Button size="sm" onClick={() => { setD(base); setReplacing(false); }}>放弃修改</Button> : null}
 			</div>
-			{p.capabilities.networkOff !== "supported" ? (
-				<p data-testid={id("net-warning")} className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-					「禁止联网」{p.capabilities.networkOff === "unverified" ? "尚未验证" : "不受支持"}，请不要依赖它隔离网络。
-				</p>
-			) : null}
+			<p data-testid={id("net-note")} className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-fg-muted">
+				沙箱能否联网由提供方{p.capabilities.networkOn === "supported" ? "决定（已验证默认可联网）" : "决定（本系统尚未验证）"}：Workroom 创建沙箱时不要求也不阻止联网，不修改提供方的网络设置。沙箱内的联网不受本平台的 URL 策略约束。
+			</p>
 			<div className="mt-4 border-t border-border pt-3" data-testid={id("test")}>
 				<div className="flex flex-wrap items-center gap-2">
 					<Button size="sm" disabled={!!testing || dirty} onClick={() => void runTest("health")} data-testid={id("test-health")}>

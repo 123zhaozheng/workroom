@@ -40,6 +40,12 @@ export const STATE_TEXT: Record<ConversationEnvironmentDTO["state"], string> = {
 	lost: "已过期或被移除：下次运行时会自动重建，并恢复已保存的文件",
 };
 
+/** Round 9: the environment's actual network (from the driver / provider, never a Workroom switch): short text in the badge, the full statement as its tooltip. */
+function networkShort(env: { network: string; networkText?: string }): string {
+	if (env.networkText) return env.networkText.split("（")[0]!;
+	return env.network === "allowed" ? "可联网" : "无网络";
+}
+
 /** One plain sentence per environment type; the driver's full (technical) isolation note stays under 详细说明. */
 function plainIsolation(env: { id: string; location: string }): string {
 	switch (env.id) {
@@ -121,7 +127,7 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 							</p>
 							<div className="mt-1.5 flex flex-wrap gap-1.5">
 								<Badge data-testid="env-location" tone={LOCATION_TEXT[env.location].tone}>{LOCATION_TEXT[env.location].label}</Badge>
-								<Badge data-testid="env-network">{env.network === "allowed" ? "可联网" : "不联网"}</Badge>
+								<Badge data-testid="env-network" title={env.networkText}>{networkShort(env)}</Badge>
 							</div>
 							<p data-testid="env-isolation" className="mt-1.5 text-xs leading-relaxed text-fg-muted">{plainIsolation(env)}</p>
 							{env.isolation && env.id !== "none" ? (

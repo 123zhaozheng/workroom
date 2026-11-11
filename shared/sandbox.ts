@@ -47,7 +47,14 @@ export interface SandboxDriverAdminDTO {
 	readonly effective: SandboxDriverId;
 	/** Why `effective` was chosen (or why nothing is available). */
 	readonly reason: string;
+	/** @deprecated Round 9: no Workroom network policy. Read-only mirror of what the active driver can do ("allowed" = it can reach a network); use `networkText`. */
 	readonly network: "none" | "allowed";
+	/** Round 9: what the active driver / provider actually gives, in plain words (a capability or a deployment setting, never a Workroom switch). */
+	readonly networkText?: string;
+	/** Round 9: the Docker network of sandbox containers, set by the DEPLOYMENT (env WORKROOM_DOCKER_NETWORK; "bridge" = Docker default). Not editable here. */
+	readonly dockerNetwork?: { readonly name: string; readonly source: "default" | "env" | "invalid"; readonly warning?: string };
+	/** Round 9: removed settings still present (old row / env) and ignored; also lists a `network` field sent to PUT. */
+	readonly deprecations?: readonly string[];
 	readonly docker: SandboxDockerSettingsDTO;
 	readonly drivers: readonly SandboxDriverStatusDTO[];
 	readonly prepare?: SandboxPrepareDTO;
@@ -60,6 +67,7 @@ export interface SandboxDriverAdminDTO {
 /** PUT /api/sandbox/driver */
 export interface SandboxDriverUpdate {
 	readonly driver?: SandboxDriverSetting;
+	/** @deprecated Round 9: accepted and ignored (the response says so in `deprecations`). */
 	readonly network?: "none" | "allowed";
 	readonly docker?: Partial<SandboxDockerSettingsDTO>;
 	readonly maxConcurrent?: number;
@@ -70,7 +78,7 @@ export interface SandboxInfoDTO {
 	readonly spaceId: string;
 	readonly isolation: "namespaces" | "docker" | "unavailable";
 	readonly isolationDetail: string;
-	readonly driver: { readonly id: SandboxDriverId; readonly label: string; readonly state: SandboxDriverState; readonly summary: string; readonly howToEnable?: string; readonly network: "none" | "allowed" };
+	readonly driver: { readonly id: SandboxDriverId; readonly label: string; readonly state: SandboxDriverState; readonly summary: string; readonly howToEnable?: string; /** @deprecated mirror of the driver's capability; use `networkText`. */ readonly network: "none" | "allowed"; readonly networkText?: string };
 	readonly limits: SandboxLimitsDTO;
 	readonly retentionHours: number;
 	readonly usedBytes: number;
@@ -146,7 +154,9 @@ export interface SandboxProviderCapabilitiesDTO {
 	readonly cancel: CapabilitySupport;
 	readonly commandTimeout: CapabilitySupport;
 	readonly files: CapabilitySupport;
+	/** @deprecated Round 9: not used by Workroom (it never asks a provider to deny network). Kept for older clients. */
 	readonly networkOff: CapabilitySupport;
+	/** Whether a sandbox of this provider could be verified to reach the network with the provider's defaults (informational; the provider decides). */
 	readonly networkOn: CapabilitySupport;
 	readonly resourceLimits: CapabilitySupport;
 	readonly reconnect: CapabilitySupport;
@@ -256,7 +266,10 @@ export interface ConversationEnvironmentDTO {
 	readonly location: "this_server" | "self_hosted" | "vendor_cloud";
 	/** One plain sentence on isolation (honest, from the driver/provider notes). */
 	readonly isolation: string;
+	/** @deprecated Round 9: capability mirror ("allowed" = the driver/provider may reach a network); show `networkText`. */
 	readonly network: "none" | "allowed";
+	/** Round 9: plain text: "可联网" / "无网络（本机命名空间驱动的技术限制）" / "由提供方决定…". Never a Workroom policy. */
+	readonly networkText?: string;
 	/**
 	 * none      = no remote sandbox exists for this conversation yet (created on first need — not by opening this panel)
 	 * preparing = being created / reconnected / restored right now

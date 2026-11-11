@@ -16,6 +16,7 @@ import { providerConfigsFor } from "./provider-config.ts";
 import { PROVIDER_IDS, type ProviderId } from "./provider.ts";
 import { workspaceKeyOf } from "./persist.ts";
 import { requirePermission } from "./perm.ts";
+import { NETWORK_TEXT_PROVIDER, networkText } from "./network.ts";
 
 type Option = ConversationEnvironmentDTO["options"][number];
 type State = ConversationEnvironmentDTO["state"];
@@ -66,17 +67,18 @@ export class ConversationEnvironments {
 	}
 
 	/** Local driver as resolved now (cached probe). */
-	async #local(): Promise<{ id: string; label: string; usable: boolean; reason: string; isolation: string; network: boolean }> {
+	async #local(): Promise<{ id: string; label: string; usable: boolean; reason: string; isolation: string; network: boolean; networkText: string }> {
 		const r = await this.#sandbox.drivers.resolve();
-		const settings = this.#sandbox.drivers.settings();
-		if (r.effective === "none") return { id: "none", label: "未启用本机沙箱", usable: false, reason: r.reason, isolation: "没有可用的执行环境", network: false };
+		if (r.effective === "none") return { id: "none", label: "未启用本机沙箱", usable: false, reason: r.reason, isolation: "没有可用的执行环境", network: false, networkText: "无网络（没有可用的沙箱驱动）" };
 		return {
 			id: r.effective,
 			label: `本机沙箱（${r.driver.label}）`,
 			usable: true,
 			reason: "",
 			isolation: isolationText(r.driver.notes),
-			network: settings.network === "allowed" && r.driver.capabilities.network,
+			// Round 9: the driver's actual capability (docker: deployment network; namespaces: none, a technical limit), not a Workroom policy.
+			network: r.driver.capabilities.network,
+			networkText: networkText(r.driver),
 		};
 	}
 
@@ -151,6 +153,7 @@ export class ConversationEnvironments {
 				location: "this_server",
 				isolation: local.isolation,
 				network: local.network ? "allowed" : "none",
+				networkText: local.networkText,
 				state: local.usable ? "ready" : "failed",
 				...(local.usable ? {} : { error: NO_DRIVER }),
 				options,
@@ -167,8 +170,8 @@ export class ConversationEnvironments {
 		const caps = this.#sandbox.remote.drivers().find((x) => x.id === provider && x.orgId === space.orgId)?.provider.capabilities ?? d.capabilities; // live provider's own answer when a driver exists, else the last connection test / placeholder
 		const vendor = caps.location === "vendor_cloud" || (caps.location === "configurable" && !d.allowPrivateNetwork);
 		const notes = this.#sandbox.remote.notesFor(provider);
-		const netSetting = this.#sandbox.drivers.settings().network === "allowed";
-		const network = netSetting && caps.networkOn !== "unsupported" ? "allowed" : "none";
+		// Round 9: whether a sandbox can reach the network is the provider's own business (Workroom neither requests nor denies it).
+		const network = caps.networkOn !== "unsupported" ? "allowed" : "none";
 		let state: ConversationEnvironmentDTO["state"];
 		let error: string | undefined;
 		let updatedAt: string | undefined;
@@ -176,12 +179,6 @@ export class ConversationEnvironments {
 			// Misconfigured (disabled / unconfigured / no key): say so plainly; the long text stays for admins in the run error.
 			state = "failed";
 			error = `${NO_DRIVER}（${d.label} ${!d.enabled ? "已停用或未启用" : !d.apiKeySet ? "缺少密钥" : "尚未配置"}）`;
-		} else if (!netSetting && caps.networkOff !== "supported") {
-			// A run would be refused (network-off cannot be guaranteed by this provider): do not pretend it is ready.
-			const r = this.#remoteState(space, wk, provider, d.createTimeoutSec);
-			state = r.state === "preparing" ? "preparing" : "failed";
-			error = state === "failed" ? "该执行环境无法保证断网，而组织设置为“不联网”，运行会被拒绝：请管理员允许沙箱联网，或改用本机沙箱" : undefined;
-			updatedAt = r.updatedAt;
 		} else {
 			const r = this.#remoteState(space, wk, provider, d.createTimeoutSec);
 			state = r.state;
@@ -195,6 +192,7 @@ export class ConversationEnvironments {
 			location: vendor ? "vendor_cloud" : "self_hosted",
 			isolation: isolationText(notes),
 			network,
+			networkText: NETWORK_TEXT_PROVIDER,
 			state,
 			...(error ? { error } : {}),
 			...(updatedAt ? { updatedAt } : {}),
@@ -219,7 +217,7 @@ export class ConversationEnvironments {
 		try {
 			await this.#sandbox.prepare({ principal: p, space, conversationId, signal });
 		} catch (e: any) {
-			// The driver already left a marker for failures while creating/syncing; failures before it (provider unusable, network refusal, workspace restore) get one here.
+			// The driver already left a marker for failures while creating/syncing; failures before it (provider unusable, workspace restore) get one here.
 			if (!signal?.aborted) remoteActivity.fail(key, tidy(e instanceof Error ? e.message : String(e)));
 		}
 		return this.get(p, space, conversationId);

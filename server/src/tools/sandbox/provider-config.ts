@@ -12,7 +12,7 @@
 //  * The endpoint is re-validated at save, at connection test and before EVERY provider construction (`connection()`).
 //    Residual risk: the vendor SDKs perform their own DNS resolution and fetch, so a DNS-rebinding answer between our check and the SDK's
 //    connect cannot be pinned from here. Mitigations: validation at every use, the instance allowlist, https + certificate checks.
-//  * Connection tests only ever create a throwaway sandbox with the network OFF holding a synthetic file; the sandbox is always destroyed.
+//  * Connection tests only ever create a throwaway sandbox (provider defaults, no network option) holding a synthetic file; the sandbox is always destroyed.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isIP } from "node:net";
@@ -525,10 +525,10 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 				const h = await prov.health(AbortSignal.timeout(20_000));
 				if (!h.ok) return this.#finish(p, provider, done(false, h.detail), caps);
 				if (kind === "health") return this.#finish(p, provider, done(true, h.detail, h.version), caps);
-				// Roundtrip with a throwaway sandbox: network OFF, short lifetime, synthetic data only.
+				// Roundtrip with a throwaway sandbox: provider defaults, short lifetime, synthetic data only.
 				let sessionId: string | undefined;
 				try {
-					const session = await timed("create", (signal) => prov.create({ ...(conn.template ? { template: conn.template } : {}), metadata: { workroom: "1", purpose: "connection-test" }, lifetimeMs: 300_000, createTimeoutMs: lc.createTimeoutSec * 1000, network: false, signal }), lc.createTimeoutSec * 1000 + 5000);
+					const session = await timed("create", (signal) => prov.create({ ...(conn.template ? { template: conn.template } : {}), metadata: { workroom: "1", purpose: "connection-test" }, lifetimeMs: 300_000, createTimeoutMs: lc.createTimeoutSec * 1000, signal }), lc.createTimeoutSec * 1000 + 5000);
 					sessionId = session.id;
 					const exec = await timed("exec", async (signal) => {
 						const r = await session.exec({ command: "echo workroom-ok", cwd: "/tmp", timeoutMs: 20_000, signal });

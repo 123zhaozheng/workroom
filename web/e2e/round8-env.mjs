@@ -71,7 +71,7 @@ await register(page, base, { email: "owner-r8q2@example.com", name: "管理员" 
 	check("A popover is fully opaque after its animation (opacity 1, solid background)", op.o === 1 && op.alpha === 1, JSON.stringify(op));
 	check("A popover: plain one-sentence isolation; the technical note is folded", /只能读写本对话的工作文件|工作文件会同步|发送到厂商/.test(await page.locator('[data-testid="env-isolation"]').innerText()) && !(await page.locator('[data-testid="env-isolation"]').innerText()).includes("pivot_root"));
 	const t = await page.locator('[data-testid="env-popover"]').innerText();
-	check("A popover: current environment, location badge 本服务器, network, state, options", t.includes("当前执行环境") && (await page.locator('[data-testid="env-location"]').innerText()).includes("本服务器") && /可联网|不联网/.test(await page.locator('[data-testid="env-network"]').innerText()) && (await page.locator('[data-testid="env-state"]').count()) === 1 && (await page.locator('[data-testid="env-options"] li').count()) >= 1, t.replace(/\s+/g, " ").slice(0, 200));
+	check("A popover: current environment, location badge 本服务器, network, state, options", t.includes("当前执行环境") && (await page.locator('[data-testid="env-location"]').innerText()).includes("本服务器") && /可联网|无网络/.test(await page.locator('[data-testid="env-network"]').innerText()) && (await page.locator('[data-testid="env-state"]').count()) === 1 && (await page.locator('[data-testid="env-options"] li').count()) >= 1, t.replace(/\s+/g, " ").slice(0, 200));
 	check("A popover: exactly one option is current; personal space cannot choose and says why", (await page.locator('[data-testid="env-options"] li[data-current="true"]').count()) === 1 && (await page.locator('[data-testid="env-choose-hint"]').innerText()).includes("组织") && (await page.locator('[data-testid^="env-switch-"]').count()) === 0);
 	check("A popover: no 现在准备 / 重试 for a local environment (nothing to prepare)", (await page.locator('[data-testid="env-prepare"]').count()) === 0);
 	check("A popover: admin sees 管理执行环境 → admin 运行环境 tab", (await page.locator('[data-testid="env-admin-link"]').getAttribute("href")) === "/admin?tab=sandbox");
@@ -125,6 +125,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 // ================================================================== B. remote provider configured, endpoint unreachable (real failure path)
 {
 	const ok = async (p, path, data) => (await p.request.put(`${base}${path}`, { data })).status();
+	// round 9: the removed `network` field is still accepted (and ignored): no network switch exists any more
 	const s1 = await ok(page, "/api/sandbox/driver", { network: "allowed" });
 	const s2 = await ok(page, "/api/sandbox/providers/opensandbox", { enabled: true, endpoint: "http://127.0.0.1:9", apiKey: "sk-e2e-unreachable-0123456789", allowPrivateNetwork: true, egressAcknowledged: true });
 	const s3 = await ok(page, "/api/sandbox/provider-policy", { orgDefault: "opensandbox", allowProjectOverride: false });
@@ -138,7 +139,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	check("B remote: just opening the conversation did not connect or create anything (state none, no status line, no POST)", (await btn.getAttribute("data-env-state")) === "none" && (await page.locator('[data-testid="env-status"]').count()) === 0 && !reqLog.some((l) => l.startsWith("POST")) && (await instances(page)).length === 0);
 	await btn.click();
 	await page.waitForSelector('[data-testid="env-popover"]');
-	check("B popover: 自托管 badge, network 可联网, state line says it is created on first need, 现在准备 offered", (await page.locator('[data-testid="env-location"]').innerText()).includes("自托管") && (await page.locator('[data-testid="env-network"]').innerText()).includes("可联网") && (await page.locator('[data-testid="env-state"]').innerText()).includes("第一次需要运行代码时") && (await page.locator('[data-testid="env-prepare"]').innerText()).includes("现在准备"));
+	check("B popover: 自托管 badge, network 由提供方决定 (round 9: no Workroom policy), state line says it is created on first need, 现在准备 offered", (await page.locator('[data-testid="env-location"]').innerText()).includes("自托管") && (await page.locator('[data-testid="env-network"]').innerText()).includes("由提供方决定") && (await page.locator('[data-testid="env-state"]').innerText()).includes("第一次需要运行代码时") && (await page.locator('[data-testid="env-prepare"]').innerText()).includes("现在准备"));
 	await shotR(page, "popover-remote-none-1440");
 	await page.locator('[data-testid="env-prepare"]').click();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-state"]')?.getAttribute("data-state") === "failed", null, { timeout: 60000 });
@@ -180,7 +181,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 
 // ================================================================== C. intercepted state sequences
 {
-	const dto = (over = {}) => ({ kind: "remote", id: "opensandbox", label: "OpenSandbox（自托管）", location: "self_hosted", isolation: "代码在远端沙箱中执行。未隔离/限制：无网络依赖提供方。", network: "allowed", state: "none", options: [{ id: "opensandbox", label: "OpenSandbox（自托管）", current: true, enabled: true }], canChoose: false, chooseHint: "由组织管理员统一设置", canPrepare: true, ...over });
+	const dto = (over = {}) => ({ kind: "remote", id: "opensandbox", label: "OpenSandbox（自托管）", location: "self_hosted", isolation: "代码在远端沙箱中执行。未隔离/限制：网络由提供方决定。", network: "allowed", networkText: "由提供方决定（Workroom 不限制，也不修改提供方的网络设置）", state: "none", options: [{ id: "opensandbox", label: "OpenSandbox（自托管）", current: true, enabled: true }], canChoose: false, chooseHint: "由组织管理员统一设置", canPrepare: true, ...over });
 	// the intercepted UI sequence runs a real (local) sandbox call to keep the turn busy: back to the local driver for this part
 	await page.request.put(`${base}/api/sandbox/provider-policy`, { data: { orgDefault: "local", allowProjectOverride: false } });
 	const ic = await newCtx();

@@ -15,6 +15,7 @@ import { SandboxDrivers } from "../src/tools/sandbox/registry.ts";
 import { DockerDriver } from "../src/tools/sandbox/docker.ts";
 import { serviceTransport } from "../src/tools/sandbox/mcp-transport.ts";
 import type { DriverStatus, SandboxDriver } from "../src/tools/sandbox/driver.ts";
+import { EGRESS_PROBE_PY, probeLine } from "./helpers/egress-probe.ts";
 
 // WORKROOM_TEST_DOCKER=1 → these tests must run for real and FAIL if Docker is missing; =0 → always skip; unset → run when a daemon
 // is reachable and the small public images are present locally, otherwise skip with the reason (never pass vacuously, never fail on a
@@ -75,7 +76,7 @@ async function setup(dataDir?: string, fullImage = false) {
 	return { t, sb, principal, space };
 }
 
-test("docker (real): container isolation, persistence in /work, no network, read-only root, non-root", { timeout: 180_000 }, async (t0) => {
+test("docker (real): container isolation, persistence in /work, default bridge network (round 9), read-only root, non-root", { timeout: 180_000 }, async (t0) => {
 	if (await guard(t0)) return;
 	const { t, sb, principal, space } = await setup();
 	try {
@@ -91,9 +92,7 @@ open("/tmp/x", "w").write("tmpfs ok"); print("tmp", open("/tmp/x").read())
 for p in ("/usr/evil", "/etc/evil", "/code/evil"):
     try: open(p, "w"); print("write", p, "ALLOWED")
     except OSError as e: print("ro", p, e.errno)
-s = socket.socket(); s.settimeout(3)
-try: print("net", s.connect_ex(("1.1.1.1", 80)))
-except Exception as e: print("net", type(e).__name__)
+print("ifaces", sorted(l.split(":")[0].strip() for l in open("/proc/net/dev").read().splitlines()[2:]))
 print("exists", os.path.exists("/home/user/workroom"), os.path.exists(${JSON.stringify(join(t.dataDir, "app.sqlite"))}), os.path.exists(${JSON.stringify(t.dataDir)}))
 `,
 		});
@@ -105,7 +104,7 @@ print("exists", os.path.exists("/home/user/workroom"), os.path.exists(${JSON.str
 		assert.doesNotMatch(py.stdout, /ALLOWED/);
 		assert.match(py.stdout, /ro \/usr\/evil 30/);
 		assert.match(py.stdout, /ro \/code\/evil 30/);
-		assert.doesNotMatch(py.stdout, /net 0\b/);
+		assert.match(py.stdout, /ifaces \['eth0', 'lo'\]/, "round 9: Docker's default bridge network (an eth0 interface), not --network none");
 		assert.doesNotMatch(py.stdout, /workroom|app\.sqlite|'orgs'|'blobs'/);
 		assert.match(py.stdout, /exists False False False/);
 		assert.equal((py as any).driver, "docker");
@@ -124,6 +123,32 @@ print("exists", os.path.exists("/home/user/workroom"), os.path.exists(${JSON.str
 		assert.deepEqual([bad.status, bad.exitCode], ["error", 7]);
 		assert.deepEqual(containers(), [], "every container was removed");
 	} finally {
+		await t.dispose();
+	}
+});
+
+test("docker (real): WORKROOM_DOCKER_NETWORK=none gives a loopback-only container; LIVE egress probe to a public HTTPS host is reported (default bridge)", { timeout: 240_000 }, async (t0) => {
+	if (await guard(t0)) return;
+	const { t, sb, principal, space } = await setup();
+	const prev = process.env.WORKROOM_DOCKER_NETWORK;
+	try {
+		const ifaces = `print("ifaces", sorted(l.split(":")[0].strip() for l in open("/proc/net/dev").read().splitlines()[2:]))`;
+		process.env.WORKROOM_DOCKER_NETWORK = "none";
+		const off = await sb.run({ principal, space, conversationId: 3, language: "python", code: ifaces });
+		assert.equal(off.status, "ok", off.stderr);
+		assert.match(off.stdout, /ifaces \['lo'\]/, "operator-chosen none: loopback only");
+		assert.equal((await sb.capabilities()).network.supported, false);
+		delete process.env.WORKROOM_DOCKER_NETWORK;
+		// The real answer for this machine, never faked: DNS + HTTPS to example.com from inside a default-bridge container.
+		const probe = await sb.run({ principal, space, conversationId: 3, language: "python", timeoutMs: 60_000, code: `${ifaces}\n${EGRESS_PROBE_PY}` });
+		assert.equal(probe.status, "ok", probe.stderr);
+		assert.match(probe.stdout, /ifaces \['eth0', 'lo'\]/);
+		console.log(probeLine("docker default bridge", probe.stdout, probe.stderr));
+		if (process.env.WORKROOM_TEST_REQUIRE_EGRESS === "1") assert.match(probe.stdout, /^https 200$/m);
+		assert.deepEqual(containers(), []);
+	} finally {
+		if (prev === undefined) delete process.env.WORKROOM_DOCKER_NETWORK;
+		else process.env.WORKROOM_DOCKER_NETWORK = prev;
 		await t.dispose();
 	}
 });

@@ -40,7 +40,6 @@ async function setup(opts: { remote?: boolean } = {}) {
 		const svc = providerConfigsFor(ctx);
 		svc.resolver = PUBLIC_DNS;
 		svc.factory = async () => ((factoryCalls.n++, fake));
-		await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "allowed" } });
 		await t.json("PUT", "/api/sandbox/providers/opensandbox", { token: owner.token, json: { enabled: true, endpoint: "https://os.example.test", apiKey: "sk-fake-env-0123456789", allowPrivateNetwork: false, egressAcknowledged: true } });
 		await t.json("PUT", "/api/sandbox/provider-policy", { token: owner.token, json: { orgDefault: "opensandbox", allowProjectOverride: false } });
 	}
@@ -61,6 +60,7 @@ test("FAKE · local driver: GET reports this server, nothing to prepare, never t
 		assert.equal(e.options.filter((o) => o.current).length, 1);
 		assert.equal(e.options.find((o) => o.current)!.id, "local");
 		if (e.kind === "local") assert.equal(e.state, "ready");
+		if (e.kind === "local") assert.match(e.networkText ?? "", /^(可联网|无网络（)/, "round 9: the driver's actual capability, e.g. 无网络（本机命名空间驱动的技术限制）");
 		// admin turns the sandbox off → plain, actionable failure (no raw driver text)
 		await h.t.json("PUT", "/api/sandbox/driver", { token: h.owner.token, json: { driver: "none" } });
 		const off = await h.get(h.owner.token);
@@ -86,7 +86,9 @@ test("FAKE · remote GET: honest labels, no sandbox is created or connected by r
 			assert.equal(e.label, "OpenSandbox（自托管）");
 			assert.equal(e.location, "self_hosted");
 			assert.equal(e.network, "allowed");
-			assert.equal(e.state, "none");
+			assert.match(e.networkText ?? "", /^由提供方决定/, "round 9: the provider decides; Workroom states no policy");
+			assert.equal(e.state, "none", "an unverified network-off no longer turns the environment into 'failed'");
+			assert.equal(e.error, undefined);
 			assert.equal(e.canPrepare, true);
 			assert.match(e.isolation, /远端沙箱/);
 			assert.ok(!JSON.stringify(e).includes("sk-fake-env"), "no secrets");
@@ -315,7 +317,6 @@ test("LIVE OpenSandbox · GET creates nothing; prepare creates and verifies a re
 	const h = await setup({ remote: false });
 	const provider = await createRemoteProvider({ provider: "opensandbox", endpoint: URL_, apiKey: KEY });
 	try {
-		await h.t.json("PUT", "/api/sandbox/driver", { token: h.owner.token, json: { network: "allowed" } });
 		await h.t.json("PUT", "/api/sandbox/providers/opensandbox", { token: h.owner.token, json: { enabled: true, endpoint: URL_, apiKey: KEY, allowPrivateNetwork: true, egressAcknowledged: true } });
 		await h.t.json("PUT", "/api/sandbox/provider-policy", { token: h.owner.token, json: { orgDefault: "opensandbox", allowProjectOverride: false } });
 		const conv = 4242;

@@ -72,10 +72,11 @@ test("namespaces: read-only mounts at /skills/<slug>, mount rules, providers, en
 		assert.equal((await sb.run({ principal, space, conversationId: 1, language: "shell", code: "ls /opt/p1 >/dev/null", mounts: [{ hostPath: extra, target: "/opt/p1", readOnly: true }] })).status, "ok");
 		// Env names are validated.
 		await assert.rejects(sb.run({ principal, space, conversationId: 1, language: "shell", code: "true", env: { "BAD-NAME": "x" } }), /invalid environment variable name/);
-		// Network: namespaces can never provide it; the admin switch alone is not enough.
-		await assert.rejects(sb.run({ principal, space, conversationId: 1, language: "shell", code: "true", network: true }), (e: any) => e.code === "network_disabled");
-		sb.drivers.update(principal, { network: "allowed" });
-		await assert.rejects(sb.run({ principal, space, conversationId: 1, language: "shell", code: "true", network: true }), (e: any) => e.code === "network_unsupported");
+		// Round 9: no network refusal. The namespace driver simply has no network (a technical limit, reported as a capability), whatever a caller requests.
+		for (const network of [true, undefined]) assert.equal((await sb.run({ principal, space, conversationId: 1, language: "shell", code: "true", network })).status, "ok");
+		const probe = await sb.run({ principal, space, conversationId: 1, language: "python", code: "import socket\ntry:\n    socket.create_connection(('1.1.1.1', 443), timeout=3); print('connected')\nexcept OSError as e:\n    print('offline')" });
+		assert.match(probe.stdout, /offline/, "namespaces: empty network namespace");
+		assert.equal((await sb.info(space)).driver.networkText, "无网络（本机命名空间驱动的技术限制）");
 		const cap = await sb.capabilities();
 		assert.deepEqual([cap.driver, cap.state, cap.network, cap.services, cap.mounts], ["namespaces", "ready", { supported: false, allowed: false }, true, true]);
 		// Concurrency cap: with 1 slot two runs are serialised.

@@ -656,7 +656,8 @@ export class Skills {
 		const usesTool = (t: string) => tools.includes(t);
 		if (usesTool("sandbox_exec") || r.kind === "executable") add("声明 sandbox.exec", perms.includes("sandbox.exec"));
 		if (usesTool("file_create") || usesTool("file_revise")) add("声明 file.write", perms.includes("file.write"));
-		if (perms.includes("network")) add("网络权限可满足", false, "沙箱未开放网络，声明 network 的技能无法运行");
+		// Round 9: a declared `network` permission stays a user grant item; whether the sandbox can reach a network depends on its driver / provider (no Workroom switch).
+		if (perms.includes("network")) add("联网权限已声明", true, "使用者需单独授权；沙箱能否联网取决于所用的执行环境");
 		const sample = r.sample ? JSON.parse(r.sample) : { input: "" };
 		if (r.kind === "executable") {
 			const resources: Resource[] = JSON.parse(r.resources);
@@ -865,7 +866,6 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 		const have = s.granted(version.id, actor.principal.userId);
 		const missing = need.filter((x) => !have.includes(x));
 		if (missing.length) deny(`技能「${skill.name}」v${version.version_no} 需要用户授权：${missing.join(", ")}（加载技能文本不等于授权）`);
-		if (need.includes("network")) deny("沙箱未开放网络，无法运行需要 network 权限的技能");
 		await ctx.services.get("acl").require(actor.principal, "write", { kind: "space", id: actor.space.id });
 		const out = await s.execute(actor.principal, actor.space, skill, version, input ?? "", { conversationId: actor.conversationId, taskId: actor.taskId, callId: actor.callId, script });
 		s.recordRun({ skill, version, mode: "run", userId: actor.principal.userId, actor, status: out.status === "ok" ? "ok" : "error", detail: `${out.status} exit=${out.exitCode} run=${out.runId}` });

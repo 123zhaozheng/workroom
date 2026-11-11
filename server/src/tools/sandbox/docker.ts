@@ -3,8 +3,8 @@
 // and docker contexts are honoured because we only ever exec the CLI).
 //
 // Per container: pinned image (python3 + node + data libs, see server/sandbox/Dockerfile; public slim images as fallback),
-// `--network none` unless the admin allows network, memory/CPU/pids limits (cgroups), read-only root fs, non-root user, all capabilities
-// dropped + no-new-privileges, `/work` = the conversation workspace (bind), `/tmp` = tmpfs, `/code` (and extra mounts) read-only.
+// the network chosen by the DEPLOYMENT (env WORKROOM_DOCKER_NETWORK, default Docker's own `bridge`; there is no per-user or per-admin switch),
+// memory/CPU/pids limits (cgroups), read-only root fs, non-root user, all capabilities dropped + no-new-privileges, `/work` = the conversation workspace (bind), `/tmp` = tmpfs, `/code` (and extra mounts) read-only.
 // The container is always removed (explicit `rm -f` after every run, a startup reaper for orphans labelled `workroom.sandbox=1`).
 import { spawn, type ChildProcess } from "node:child_process";
 import { chownSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -35,19 +35,38 @@ export interface DockerSettings {
 	autoPull: boolean;
 }
 
+/**
+ * Deployment-level network of the sandbox containers. Round 9: Workroom no longer has a "no network" policy of its own; containers join
+ * Docker's default `bridge` network (internet reachable) unless the operator sets WORKROOM_DOCKER_NETWORK to `none` (really offline) or to the
+ * name of a user-defined Docker network (e.g. one whose egress the operator restricts with firewall rules). Read at call time (no restart for tests).
+ * `host` (shares the server's network stack, including its loopback services) and `container:*` are refused: an invalid value fails closed to `none`.
+ */
+export interface DockerNetworkChoice {
+	readonly name: string;
+	readonly source: "default" | "env" | "invalid";
+	readonly warning?: string;
+}
+export function dockerNetworkChoice(env: NodeJS.ProcessEnv = process.env): DockerNetworkChoice {
+	const raw = (env.WORKROOM_DOCKER_NETWORK ?? "").trim();
+	if (!raw) return { name: "bridge", source: "default" };
+	if (raw === "host" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(raw))
+		return { name: "none", source: "invalid", warning: `WORKROOM_DOCKER_NETWORK=${raw.slice(0, 40)} 无效或不允许（host 与 container:* 会共享服务器网络栈）：已按 none（无网络）处理，请修正部署配置` };
+	return { name: raw, source: "env" };
+}
+
 export const DEFAULT_DOCKER_SETTINGS: DockerSettings = { image: DEFAULT_IMAGE, pythonImage: FALLBACK_PYTHON_IMAGE, nodeImage: FALLBACK_NODE_IMAGE, cpus: 1, autoPull: true };
 
 export const DOCKER_NOTES: IsolationNotes = {
 	isolates: [
 		"每次运行一个独立容器（独立 pid/mount/net/ipc/uts 命名空间 + cgroup）：根文件系统只读，非 root 用户，丢弃全部 capabilities，no-new-privileges，Docker 默认 seccomp 配置",
 		"仅 /work（本会话工作目录，绑定挂载）可写，/tmp 为内存盘；技能等额外挂载为只读；看不到数据目录、源码、宿主其他文件",
-		"默认 --network none（无网络）；只有管理员开启“允许沙箱联网”且调用方声明需要时才使用默认桥接网络",
+		"容器有自己的网络命名空间（看不到宿主机 127.0.0.1 上的服务）；网络由部署方通过环境变量 WORKROOM_DOCKER_NETWORK 决定：默认 Docker 桥接网络（可访问互联网），也可设为 none 或自建网络。没有面向用户或管理页面的联网开关",
 		"内存、CPU、进程数是 cgroup 总量限制；另有单文件大小、打开文件数、CPU 秒 rlimit；超时或取消 → 终止并删除容器",
 		"使用固定版本的镜像（python3 + node + 常用数据分析库），不依赖宿主机安装的运行时",
 	],
 	doesNotIsolate: [
 		"容器与宿主（Windows/macOS 上是 Docker Desktop 的 Linux 虚拟机）共享内核，内核/运行时漏洞可逃逸；不是每个任务一台虚拟机",
-		"开启沙箱联网后，容器可访问默认桥接网络上的地址（包括宿主所在局域网与云元数据地址）；本平台的 URL 策略不作用于沙箱内的联网",
+		"桥接网络下容器可访问互联网，也可能访问网桥网关、宿主所在局域网与云元数据地址（169.254.169.254）；本平台的 URL 策略不作用于沙箱内的联网，Workroom 不代为配置防火墙。需要限制出口时，部署方应使用带出口规则的自建 Docker 网络并设置 WORKROOM_DOCKER_NETWORK，或设为 none",
 		"没有磁盘配额：工作目录总量是运行前后检查的软配额；容器内 /tmp 内存盘占用计入容器内存",
 		"能访问 Docker 守护进程的人本来就拥有宿主机管理权限：Workroom 服务账号应只用于运行 Workroom",
 		"Windows/macOS 上绑定挂载经过文件共享层（WSL2/VirtioFS），写入性能低于原生，权限位不完全等同于 Linux",
@@ -83,7 +102,10 @@ const instructionsInstall = (image: string) =>
 export class DockerDriver implements SandboxDriver {
 	readonly id = "docker" as const;
 	readonly label = "Docker 容器";
-	readonly capabilities = { network: true, services: true, mounts: true, cgroupLimits: true, hostRuntimes: false };
+	/** `network` reports the deployment's choice (WORKROOM_DOCKER_NETWORK): false only when the operator set `none`. */
+	get capabilities() {
+		return { network: dockerNetworkChoice().name !== "none", services: true, mounts: true, cgroupLimits: true, hostRuntimes: false };
+	}
 	readonly notes = DOCKER_NOTES;
 	readonly #settings: () => DockerSettings;
 	readonly #instanceKey: string;
@@ -165,7 +187,9 @@ export class DockerDriver implements SandboxDriver {
 		const has = async (img: string) => (await this.#cli(["image", "inspect", "--format", "{{.Id}}", img], { timeoutMs: 10_000 })).code === 0;
 		const [primary, python, node] = await Promise.all([has(settings.image), has(settings.pythonImage), has(settings.nodeImage)]);
 		this.#facts = { bin, serverVersion, os, arch, rootless, desktop, operatingSystem, images: { primary, python, node } };
-		const details = [`docker CLI: ${bin}`, `Docker ${serverVersion}（${operatingSystem || "linux"}/${arch}${rootless ? "，rootless" : ""}）`, `镜像 ${settings.image}: ${primary ? "已就绪" : "未找到"}`, `镜像 ${settings.pythonImage}: ${python ? "已就绪" : "未找到"}`, `镜像 ${settings.nodeImage}: ${node ? "已就绪" : "未找到"}`];
+		const net = dockerNetworkChoice();
+		const details = [`docker CLI: ${bin}`, `Docker ${serverVersion}（${operatingSystem || "linux"}/${arch}${rootless ? "，rootless" : ""}）`, `镜像 ${settings.image}: ${primary ? "已就绪" : "未找到"}`, `镜像 ${settings.pythonImage}: ${python ? "已就绪" : "未找到"}`, `镜像 ${settings.nodeImage}: ${node ? "已就绪" : "未找到"}`, `容器网络：${net.name}${net.source === "default" ? "（默认，Docker 桥接网络）" : net.source === "env" ? "（部署配置 WORKROOM_DOCKER_NETWORK）" : ""}`];
+		if (net.warning) details.push(net.warning);
 		if (this.#prepare?.state === "running") details.push(`正在准备镜像（${this.#prepare.mode}）…`);
 		const ready = primary || (python && node);
 		if (ready) return set({ id: "docker", state: "ready", summary: `Docker ${serverVersion} 可用（${primary ? settings.image : "公共 slim 镜像"}）`, details, checkedAt });
@@ -269,7 +293,8 @@ export class DockerDriver implements SandboxDriver {
 		return [
 			"run", "--name", name, "--label", "workroom.sandbox=1", "--label", `workroom.instance=${this.#instanceKey}`, "--label", `workroom.run=${id}`,
 			"--pull", "never", "--init", "--entrypoint", "",
-			"--network", o.network ? "bridge" : "none",
+			// o.network=false only for server-internal isolated jobs (execIsolated); everything a user/model runs gets the deployment's network.
+			"--network", o.network ? dockerNetworkChoice().name : "none",
 			"--memory", mem, "--memory-swap", mem, "--cpus", String(s.cpus), "--pids-limit", String(Math.max(16, l.maxProcesses)),
 			"--ulimit", "core=0", "--ulimit", "nofile=1024:1024", "--ulimit", `fsize=${l.maxFileBytes}:${l.maxFileBytes}`, "--ulimit", `cpu=${l.cpuSeconds}:${l.cpuSeconds + 2}`,
 			"--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",

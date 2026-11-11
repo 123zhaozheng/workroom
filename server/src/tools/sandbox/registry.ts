@@ -14,7 +14,6 @@ import type { SandboxDriverSetting, SandboxDriverUpdate } from "../../../../shar
 
 export interface SandboxSettings {
 	driver: SandboxDriverSetting;
-	network: "none" | "allowed";
 	docker: DockerSettings;
 	maxConcurrent: number;
 }
@@ -34,6 +33,8 @@ export class SandboxDrivers {
 	readonly docker: DockerDriver;
 	#settings: SandboxSettings;
 	#fromEnv = true;
+	/** Round 9: legacy network policy inputs that are read but ignored (old settings row, env WORKROOM_SANDBOX_NETWORK). Shown to admins as deprecation notes. */
+	#legacy: string[] = [];
 	#last: Resolution | undefined;
 	#resolving: Promise<Resolution> | undefined;
 
@@ -59,7 +60,6 @@ export class SandboxDrivers {
 		const cpus = Number(e.WORKROOM_SANDBOX_CPUS ?? DEFAULT_DOCKER_SETTINGS.cpus);
 		return {
 			driver: drv,
-			network: e.WORKROOM_SANDBOX_NETWORK === "allowed" ? "allowed" : "none",
 			maxConcurrent: Math.max(1, Math.min(64, Number(e.WORKROOM_SANDBOX_MAX_CONCURRENT ?? 8) || 8)),
 			docker: {
 				bin: e.WORKROOM_DOCKER_BIN || undefined,
@@ -74,11 +74,14 @@ export class SandboxDrivers {
 	}
 	#load(): SandboxSettings {
 		const base = this.#envDefaults();
+		this.#legacy = process.env.WORKROOM_SANDBOX_NETWORK ? ["环境变量 WORKROOM_SANDBOX_NETWORK 已停用，被忽略：沙箱网络不再由 Workroom 控制（本机 Docker 用 WORKROOM_DOCKER_NETWORK，第三方沙箱遵循提供方）"] : [];
 		const row = this.#ctx.db.get<{ value: string }>("SELECT value FROM tool_sandbox_settings WHERE key = 'driver'");
 		if (!row) return base;
 		this.#fromEnv = false;
 		try {
-			const saved = JSON.parse(row.value) as Partial<SandboxSettings>;
+			// Old rows may carry `network: "none" | "allowed"` (removed in round 9): read harmlessly, never applied, dropped on the next save.
+			const { network: legacyNetwork, ...saved } = JSON.parse(row.value) as Partial<SandboxSettings> & { network?: unknown };
+			if (legacyNetwork !== undefined) this.#legacy.push("已保存的“沙箱联网”设置已停用，被忽略（下次保存设置时移除）");
 			return { ...base, ...saved, docker: { ...base.docker, ...(saved.docker ?? {}) } };
 		} catch {
 			return base;
@@ -92,6 +95,10 @@ export class SandboxDrivers {
 	settings(): SandboxSettings {
 		return this.#settings;
 	}
+	/** Notes about removed settings that are still present (old row / env var) and therefore ignored. */
+	legacyNotes(): readonly string[] {
+		return this.#legacy;
+	}
 	fromEnvironment(): boolean {
 		return this.#fromEnv;
 	}
@@ -102,10 +109,7 @@ export class SandboxDrivers {
 			if (!DRIVER_SETTINGS.includes(patch.driver)) throw new HttpError(400, "invalid", "driver 必须是 auto、namespaces、docker 或 none");
 			s.driver = patch.driver;
 		}
-		if (patch.network !== undefined) {
-			if (patch.network !== "none" && patch.network !== "allowed") throw new HttpError(400, "invalid", "network 必须是 none 或 allowed");
-			s.network = patch.network;
-		}
+		// `patch.network` (round 8 and earlier) is accepted and ignored: there is no Workroom network policy any more (see docs/r9-network.md).
 		if (patch.maxConcurrent !== undefined) {
 			if (!Number.isInteger(patch.maxConcurrent) || patch.maxConcurrent < 1 || patch.maxConcurrent > 64) throw new HttpError(400, "invalid", "maxConcurrent 必须是 1–64 的整数");
 			s.maxConcurrent = patch.maxConcurrent;
@@ -140,6 +144,7 @@ export class SandboxDrivers {
 		}
 		this.#settings = s;
 		this.#fromEnv = false;
+		this.#legacy = this.#legacy.filter((x) => !x.startsWith("已保存的"));
 		this.docker.invalidate();
 		this.#last = undefined;
 		return s;

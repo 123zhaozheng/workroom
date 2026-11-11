@@ -41,7 +41,7 @@ function scrub(text: string): string {
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Isolation statement (honest, per provider capabilities)
 // ---------------------------------------------------------------------------------------------------------------------------------
-export function remoteNotes(label: string, caps?: { isolation: string; location: "self_hosted" | "vendor_cloud" | "configurable"; skills: string; networkOff: string }): IsolationNotes {
+export function remoteNotes(label: string, caps?: { isolation: string; location: "self_hosted" | "vendor_cloud" | "configurable"; skills: string; networkOn?: string }): IsolationNotes {
 	const where = !caps ? "由所选沙箱提供方运行" : caps.location === "vendor_cloud" ? "在第三方云服务上运行（工作区文件和命令离开本组织）" : caps.location === "self_hosted" ? "在管理员自建的沙箱服务上运行" : "在管理员配置的沙箱服务上运行";
 	return {
 		isolates: [
@@ -54,7 +54,7 @@ export function remoteNotes(label: string, caps?: { isolation: string; location:
 		doesNotIsolate: [
 			"技能目录的只读由文件权限（chmod）实现，不是内核级只读挂载；每次运行前会校验其哈希，被篡改则重新上传",
 			"远端沙箱内的内存、进程与临时文件不会随 pi-durable 检查点保存；沙箱丢失后只能从宿主机工作区重新同步",
-			caps?.networkOff === "supported" ? "沙箱无网络时由提供方强制" : "“无网络”依赖提供方的出口过滤，其严格程度取决于提供方的配置，详见管理员页面的能力说明",
+			"沙箱的出站网络由提供方（及其账户/服务配置）决定：Workroom 不要求也不阻止联网，不修改提供方的网络设置；沙箱内的联网不受本平台的 URL 策略约束，是否能访问互联网请以提供方的实际行为为准",
 			"不支持常驻服务（MCP stdio 等）、终端、预览端口与快照：这些操作会被拒绝（501），不会在本机执行",
 			"符号链接与特殊文件（设备、管道）不会同步回宿主机；超过单文件上限或配额的文件不同步",
 		],
@@ -293,10 +293,11 @@ export class RemoteDriver implements SandboxDriver {
 	async #acquire(spec: DriverRunSpec, notes: string[]): Promise<{ row: InstanceRow; session: RemoteSession; fresh: boolean }> {
 		const t = spec.tenant!;
 		let row = this.#row(t);
-		const want = spec.network ? 1 : 0;
-		if (row && row.network !== want) {
-			notes.push(`网络策略已变化（${row.network ? "有网络" : "无网络"} → ${want ? "有网络" : "无网络"}）：重建远端沙箱并重新同步`);
-			await this.#destroyRow(row, "network policy changed");
+		// Round 9: instances created by older versions under the (removed) "no network" policy carry network=0, i.e. were created WITH a deny option.
+		// They are recreated once, lazily, without it (the workspace is re-synced from the host copy), so the vendor's own network behaviour applies.
+		if (row && row.network === 0) {
+			notes.push("该远端沙箱创建于旧版本的“无网络”策略下：已重建（按提供方默认网络），并从宿主机工作区重新同步");
+			await this.#destroyRow(row, "legacy network-deny instance");
 			row = undefined;
 		}
 		if (row && row.expires_at && Date.parse(row.expires_at) <= this.#now()) {
@@ -339,7 +340,7 @@ export class RemoteDriver implements SandboxDriver {
 		const at = nowIso();
 		this.#db.run(
 			"INSERT INTO tool_sandbox_instances (id, org_id, space_id, workspace_key, provider, remote_id, state, created_at, last_used_at, expires_at, manifest, network) VALUES (?, ?, ?, ?, ?, NULL, 'creating', ?, ?, ?, '{}', ?)",
-			id, t.orgId, t.spaceId, t.workspaceKey, this.id, at, at, new Date(this.#now() + lifetimeMs).toISOString(), spec.network ? 1 : 0,
+			id, t.orgId, t.spaceId, t.workspaceKey, this.id, at, at, new Date(this.#now() + lifetimeMs).toISOString(), 1,
 		);
 		let session: RemoteSession;
 		try {
@@ -348,7 +349,6 @@ export class RemoteDriver implements SandboxDriver {
 				metadata: { workroom: "1", workroom_install: this.#install, workroom_org: this.#orgTag, workroom_instance: id },
 				lifetimeMs,
 				createTimeoutMs: this.lifecycle.createTimeoutSec * 1000,
-				network: spec.network,
 				resources: { memoryMb: Math.max(64, Math.floor(spec.limits.memoryBytes / MB)) },
 				signal: spec.signal,
 			});
@@ -667,7 +667,7 @@ export class RemoteDriver implements SandboxDriver {
 	}
 
 	// ---------- run ----------
-	/** Checks shared by run() and prepare(): tenant, env, mounts, and the network policy refusal. Throws before anything is created. */
+	/** Checks shared by run() and prepare(): tenant, env, mounts. Throws before anything is created. (No network refusal any more: round 9.) */
 	#preflight(spec: DriverRunSpec): NonNullable<DriverRunSpec["tenant"]> {
 		const t = spec.tenant;
 		if (!t) throw new HttpError(500, "internal", "远端沙箱需要租户信息（org/space/workspaceKey）");
@@ -678,12 +678,6 @@ export class RemoteDriver implements SandboxDriver {
 			throw bad("bad_env", e.message);
 		}
 		for (const m of spec.mounts) if (!m.readOnly) throw new UnsupportedError(this.label, `可写挂载 ${m.target}（远端沙箱只支持只读挂载与 /work；已拒绝）`);
-		// The admin policy says "no network" but this provider's network isolation is not verified: refuse instead of running anyway.
-		if (!spec.network && this.provider.capabilities.networkOff !== "supported")
-			throw new UnsupportedError(
-				this.label,
-				"在“无网络”策略下运行：该提供方的断网能力尚未验证（例如 OpenSandbox 的出口过滤仍可能经 DNS 外传数据）。如果可以接受沙箱联网，请管理员把沙箱网络策略设为“允许联网”；否则请改用本机 Docker 沙箱",
-			);
 		return t;
 	}
 

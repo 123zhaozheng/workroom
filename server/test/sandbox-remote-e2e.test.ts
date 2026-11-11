@@ -10,6 +10,7 @@ import { startTestApp } from "./helpers/app.ts";
 import type { Sandbox } from "../src/tools/sandbox.ts";
 import { workspacePersistenceFor } from "../src/tools/sandbox/persist.ts";
 import { createRemoteProvider } from "../src/tools/sandbox/providers/index.ts";
+import { EGRESS_PROBE_PY, probeLine } from "./helpers/egress-probe.ts";
 
 const URL_ = process.env.WORKROOM_TEST_OPENSANDBOX_URL;
 const KEY = process.env.WORKROOM_TEST_OPENSANDBOX_KEY;
@@ -22,8 +23,7 @@ test("LIVE OpenSandbox through the app: admin config → org default → run wit
 	try {
 		const owner = await t.user(`live-${Date.now()}@example.com`);
 		const ctx = t.app.ctx;
-		// Admin: allow sandbox network (OpenSandbox cannot guarantee "no network" here — the run says so), configure + enable + default.
-		await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "allowed" } });
+		// Round 9: there is no network switch. Admin: configure + enable + default.
 		await t.json("PUT", "/api/sandbox/providers/opensandbox", { token: owner.token, json: { enabled: true, endpoint: URL_, apiKey: KEY, allowPrivateNetwork: true, egressAcknowledged: true } });
 		await t.json("PUT", "/api/sandbox/provider-policy", { token: owner.token, json: { orgDefault: "opensandbox", allowProjectOverride: false } });
 		const listed = await t.json("GET", "/api/sandbox/providers", { token: owner.token });
@@ -40,7 +40,7 @@ test("LIVE OpenSandbox through the app: admin config → org default → run wit
 		const r1 = await sb.run({ principal, space, conversationId: 7, language: "shell", code: 'echo "$GREETING" > note.txt && echo done' });
 		assert.equal(r1.exitCode, 0, r1.stderr);
 		assert.equal(r1.driver, "opensandbox");
-		assert.match(r1.stderr, /按“可联网”处理/);
+		assert.doesNotMatch(r1.stderr, /按“可联网”处理|无法保证断网/, "round 9: the old no-network note is gone");
 		const persist = workspacePersistenceFor(ctx);
 		const st1 = await persist.status(principal, space, "c7");
 		assert.equal(st1.state, "saved");
@@ -62,9 +62,19 @@ test("LIVE OpenSandbox through the app: admin config → org default → run wit
 		const row2 = ctx.db.get<{ remote_id: string }>("SELECT remote_id FROM tool_sandbox_instances WHERE space_id = ? AND workspace_key = 'c7' AND state = 'ready'", space.id)!;
 		assert.notEqual(row2.remote_id, row.remote_id, "a new remote sandbox was created");
 
-		// Admin turns sandbox network off: the unverified provider is refused instead of running "offline" on trust.
-		await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "none" } });
-		await assert.rejects(sb.run({ principal, space, conversationId: 7, language: "shell", code: "echo x" }), (e: any) => e.status === 501);
+		// Round 9: the legacy `network` field of PUT /sandbox/driver is accepted and ignored (with a note); runs are never refused because of it.
+		const legacy = await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "none" } });
+		assert.ok((legacy.deprecations as string[]).some((x) => /network/.test(x)), "the response says the field is ignored");
+		const r3 = await sb.run({ principal, space, conversationId: 7, language: "shell", code: "echo still-runs" });
+		assert.equal(r3.exitCode, 0, r3.stderr);
+
+		// LIVE egress probe (report, do not fake): what this OpenSandbox sandbox really reaches. The server's own network config / this
+		// environment's proxy may limit it; Workroom sent no network option.
+		const probe = await sb.run({ principal, space, conversationId: 7, language: "python", code: EGRESS_PROBE_PY });
+		console.log(probeLine("opensandbox via the app", probe.stdout, probe.stderr));
+		if (process.env.WORKROOM_TEST_REQUIRE_EGRESS === "1") assert.match(probe.stdout, /^https 200$/m);
+		const row3 = ctx.db.get<{ remote_id: string }>("SELECT remote_id FROM tool_sandbox_instances WHERE space_id = ? AND workspace_key = 'c7' AND state = 'ready'", space.id)!;
+		assert.equal(row3.remote_id, row2.remote_id, "the ignored legacy field did not recreate the sandbox");
 		await provider.destroy(row2.remote_id);
 	} finally {
 		await t.dispose();

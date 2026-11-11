@@ -25,9 +25,9 @@ export interface ProviderCapabilities {
 	readonly commandTimeout: Support;
 	/** Read / write / list / remove files and directories. */
 	readonly files: Support;
-	/** Network for the sandbox can be turned off at creation (required when the admin policy is "none"). */
+	/** @deprecated Round 9: NOT USED by Workroom (it never asks a provider to deny network). Kept so stored capability snapshots / older clients stay valid. */
 	readonly networkOff: Support;
-	/** Network can be turned on (only used when the admin policy allows it). */
+	/** Informational: sandboxes of this provider were seen to reach the network with the provider's own defaults. Workroom neither requests nor restricts it. */
 	readonly networkOn: Support;
 	/** CPU / memory limits at creation. */
 	readonly resourceLimits: Support;
@@ -58,8 +58,7 @@ export interface CreateOptions {
 	readonly lifetimeMs: number;
 	/** Deadline for creation (distinct from command timeout). */
 	readonly createTimeoutMs: number;
-	/** Admin policy already applied; if the provider cannot honour `false`, create() must throw UnsupportedError. */
-	readonly network: boolean;
+	// Round 9: no `network` option. Adapters must NOT pass any network-deny/allow option to the provider; vendor defaults apply.
 	readonly resources?: { readonly cpus?: number; readonly memoryMb?: number };
 	readonly signal?: AbortSignal;
 }

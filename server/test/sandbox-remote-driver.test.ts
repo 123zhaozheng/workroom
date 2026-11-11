@@ -38,14 +38,18 @@ function setup(opts: { lifecycle?: { createTimeoutSec: number; idleTimeoutSec: n
 }
 const read = (p: string) => readFileSync(p, "utf8");
 
-test("policy 'no network' with a provider whose network-off is unverified → 501 UNSUPPORTED, nothing created or run", async () => {
+test("round 9: no network refusal - an unverified provider runs with either spec.network value, and create() receives no network option at all", async () => {
 	const provider = new FakeRemoteProvider();
-	provider.capabilities = { ...FAKE_CAPS, networkOff: "unverified" };
+	provider.capabilities = { ...FAKE_CAPS, networkOff: "unverified", networkOn: "unverified" };
 	const { driver, spec } = setup({ provider });
-	await assert.rejects(driver.run(spec("echo no")), (e: any) => e.status === 501 && e.code === "UNSUPPORTED");
-	assert.equal(provider.created, 0);
-	const ok = await driver.run({ ...spec("echo yes"), network: true });
-	assert.equal(ok.exitCode, 0);
+	const a = await driver.run(spec("echo no-flag"));
+	assert.equal(a.exitCode, 0, "formerly refused with 501 UNSUPPORTED");
+	assert.equal(provider.created, 1);
+	const opts = [...provider.boxes.values()][0]!.createOptions;
+	for (const k of Object.keys(opts)) assert.doesNotMatch(k, /network|internet|egress|block|deny/i, `create option ${k}`);
+	const b = await driver.run({ ...spec("echo yes"), network: true });
+	assert.equal(b.exitCode, 0);
+	assert.equal(provider.created, 1, "same sandbox, no recreation");
 });
 
 test("run: exit code, stdout/stderr, file roundtrip host → remote → host, manifest persisted, one instance row", async () => {
@@ -261,14 +265,23 @@ test("lost sandbox (destroyed externally): marked lost, recreated, fully re-sync
 	assert.equal(t.provider.created, 2);
 });
 
-test("network policy change recreates the remote sandbox with the right policy", async () => {
+test("round 9: a changed network flag never recreates the sandbox; a legacy row created under the removed no-network policy (network=0) is recreated once, lazily", async () => {
 	const t = setup();
 	await t.driver.run(t.spec("echo a"));
-	assert.equal(t.box().network, false);
 	await t.driver.run(t.spec("echo b", { network: true }));
-	assert.equal(t.provider.created, 2);
-	assert.equal(t.box().network, true);
+	await t.driver.run(t.spec("echo c", { network: false }));
+	assert.equal(t.provider.created, 1, "flag changes do not matter");
 	assert.equal(instancesFor(t.db, "org1").filter((x) => x.state === "ready").length, 1);
+	assert.equal((t.db.get<{ network: number }>("SELECT network FROM tool_sandbox_instances WHERE state = 'ready'"))!.network, 1, "new rows are written as 'no deny option'");
+	// simulate an instance created by the previous version under policy "none" (created WITH a deny option)
+	t.db.run("UPDATE tool_sandbox_instances SET network = 0 WHERE state = 'ready'");
+	const r = await t.driver.run(t.spec("echo d"));
+	assert.equal(r.exitCode, 0);
+	assert.match(r.stderr, /旧版本的“无网络”策略/);
+	assert.equal(t.provider.created, 2);
+	assert.equal(instancesFor(t.db, "org1").filter((x) => x.state === "ready").length, 1);
+	await t.driver.run(t.spec("echo e"));
+	assert.equal(t.provider.created, 2, "recreated only once");
 });
 
 test("timeout and cancel map to statuses and the fake process really stops", async () => {
@@ -337,9 +350,9 @@ test("reapStale: orphans with our install label are destroyed; other installs, y
 	const lbl = tracked.metadata;
 	const { FakeBox } = await import("./helpers/fake-remote-provider.ts");
 	const old = new Date(Date.now() - 3600_000).toISOString();
-	const orphan = new FakeBox("orphan-1", { workroom: "1", workroom_install: lbl.workroom_install!, workroom_org: lbl.workroom_org!, workroom_instance: "sbi_gone" }, false, old);
-	const foreign = new FakeBox("foreign-1", { workroom: "1", workroom_install: "someone-else", workroom_org: lbl.workroom_org! }, false, old);
-	const young = new FakeBox("young-1", { workroom: "1", workroom_install: lbl.workroom_install!, workroom_org: lbl.workroom_org!, workroom_instance: "sbi_new" }, false);
+	const orphan = new FakeBox("orphan-1", { workroom: "1", workroom_install: lbl.workroom_install!, workroom_org: lbl.workroom_org!, workroom_instance: "sbi_gone" }, {}, old);
+	const foreign = new FakeBox("foreign-1", { workroom: "1", workroom_install: "someone-else", workroom_org: lbl.workroom_org! }, {}, old);
+	const young = new FakeBox("young-1", { workroom: "1", workroom_install: lbl.workroom_install!, workroom_org: lbl.workroom_org!, workroom_instance: "sbi_new" }, {});
 	for (const b of [orphan, foreign, young]) t.provider.boxes.set(b.id, b);
 	const n = await t.driver.reapStale();
 	assert.equal(n, 1);

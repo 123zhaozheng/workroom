@@ -19,6 +19,7 @@ import { namespaceDriver } from "../src/tools/sandbox/namespaces.ts";
 import { UnsupportedError, type LifecyclePolicy, type ProviderConnection, type RemoteProvider } from "../src/tools/sandbox/provider.ts";
 import { createRemoteProvider } from "../src/tools/sandbox/providers/index.ts";
 import { RemoteDriver, instancesFor } from "../src/tools/sandbox/remote-driver.ts";
+import { EGRESS_PROBE_PY, probeLine } from "./helpers/egress-probe.ts";
 
 const env = process.env;
 const REQUIRE = new Set((env.WORKROOM_TEST_REQUIRE ?? "").split(",").map((s) => s.trim()).filter(Boolean));
@@ -150,9 +151,8 @@ function ctxFor(t: Target, label: string): Ctx {
 				limits: { ...DEFAULT_LIMITS, timeoutMs: 60_000 },
 				mounts: [],
 				env: {},
-				// Remote providers whose network-off is not verified refuse "no network" runs (see the refusal case below), so ordinary
-				// contract runs use network:true there; local drivers keep the strict default.
-				network: !!t.remote && t.remote.provider.capabilities.networkOff !== "supported",
+				// Round 9: no Workroom network policy; the driver's / provider's own network applies (namespaces: none; docker: WORKROOM_DOCKER_NETWORK).
+				network: true,
 				...rest,
 			};
 		},
@@ -192,7 +192,7 @@ contract("exit code, stdout and stderr", async (t, c) => {
 
 contract("streaming: chunks arrive while the command is still running", async (t, c) => {
 	const p = t.remote!.provider;
-	const s = await p.create({ metadata: { workroom: "1", workroom_instance: "contract-stream" }, lifetimeMs: 600_000, createTimeoutMs: 180_000, network: false });
+	const s = await p.create({ metadata: { workroom: "1", workroom_instance: "contract-stream" }, lifetimeMs: 600_000, createTimeoutMs: 180_000 });
 	try {
 		const stamps: number[] = [];
 		const got: string[] = [];
@@ -390,8 +390,8 @@ contract("idle reaping and orphan reaping", async (t, c) => {
 	void probeLabels;
 	const inst = t.remote!.db.get<{ value: string }>("SELECT value FROM tool_sandbox_settings WHERE key = 'install_id'")!.value;
 	const org = (await import("node:crypto")).createHash("sha256").update("org-contract").digest("hex").slice(0, 16);
-	const orphan = await t.remote!.provider.create({ metadata: { workroom: "1", workroom_install: inst, workroom_org: org, workroom_instance: "sbi_orphan_contract" }, lifetimeMs: 600_000, createTimeoutMs: 180_000, network: false });
-	const foreign = await t.remote!.provider.create({ metadata: { workroom: "1", workroom_install: "another-install", workroom_org: org, workroom_instance: "sbi_foreign" }, lifetimeMs: 600_000, createTimeoutMs: 180_000, network: false });
+	const orphan = await t.remote!.provider.create({ metadata: { workroom: "1", workroom_install: inst, workroom_org: org, workroom_instance: "sbi_orphan_contract" }, lifetimeMs: 600_000, createTimeoutMs: 180_000 });
+	const foreign = await t.remote!.provider.create({ metadata: { workroom: "1", workroom_install: "another-install", workroom_org: org, workroom_instance: "sbi_foreign" }, lifetimeMs: 600_000, createTimeoutMs: 180_000 });
 	try {
 		assert.ok((await d.reapStale()) >= 1);
 		assert.equal(await t.remote!.provider.connect(orphan.id), null, "orphan destroyed");
@@ -416,10 +416,26 @@ contract("replay idempotency: the same run twice does not corrupt the manifest o
 	assert.equal(read(join(c.wd, "once.txt")), "once");
 }, "remote");
 
-contract("policy 'no network' is refused (501 UNSUPPORTED) when the provider's network-off is not verified — never run anyway", async (t, c) => {
-	if (t.remote!.provider.capabilities.networkOff === "supported") return;
-	await assert.rejects(t.driver!.run(c.spec("echo should-not-run", { network: false })), (e: any) => e instanceof UnsupportedError && e.status === 501);
+contract("round 9: no refusal tied to network: a run with either spec.network value is executed (never a 501/403 'no network' refusal)", async (t, c) => {
+	for (const network of [false, true]) {
+		const r = await t.driver!.run(c.spec(`echo net-${network}`, { network, key: `net-${network}` }));
+		assert.equal(r.status, "ok", r.stderr);
+		assert.match(r.stdout, new RegExp(`net-${network}`));
+	}
 }, "remote");
+
+// LIVE egress probe. Workroom neither requests nor denies network; this only REPORTS what the sandbox really gets (the environment's own
+// proxy/firewall may limit it). Reachability is asserted only for namespaces (must be offline: technical limit) and when
+// WORKROOM_TEST_REQUIRE_EGRESS=1 is set; otherwise the real outcome is printed as a test diagnostic and in the test output - never faked.
+contract("network: reachability of a public HTTPS host from inside the sandbox is reported (python urllib; DNS + TCP + TLS)", async (t, c) => {
+	const r = await t.driver!.run(c.spec(`python3 - <<'PY'\n${EGRESS_PROBE_PY}PY`, { limits: { ...DEFAULT_LIMITS, timeoutMs: 60_000 } }));
+	const reachable = /^https 200$/m.test(r.stdout);
+	const line = probeLine(t.name, r.stdout, r.stderr);
+	console.log(line);
+	if (t.name === "namespaces") assert.doesNotMatch(r.stdout, /tcp-connect ok/, "the namespace driver has no network (technical limit)");
+	else if (env.WORKROOM_TEST_REQUIRE_EGRESS === "1") assert.equal(reachable, true, line);
+	assert.ok(r.status === "ok" || r.status === "error", `the probe itself ran: ${r.status}`);
+});
 
 contract("services and pty are refused with UnsupportedError (501), never run on the host", async (t, c) => {
 	await assert.rejects(t.driver!.startService({ serviceId: "svc_x", scratchBase: c.root, workdir: c.wd, argv: ["sleep", "1"], runtime: "shell", limits: DEFAULT_LIMITS, mounts: [], env: {}, network: false }), (e: any) => e instanceof UnsupportedError && e.status === 501 && e.code === "UNSUPPORTED");

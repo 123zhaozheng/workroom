@@ -20,12 +20,13 @@ export class FakeBox {
 	alive = true;
 	readonly id: string;
 	readonly metadata: Record<string, string>;
-	readonly network: boolean;
+	/** Every option the adapter layer passed to create() (round 9: tests assert it carries no network deny/allow option). */
+	readonly createOptions: Readonly<Record<string, unknown>>;
 	readonly createdAt: string;
-	constructor(id: string, metadata: Record<string, string>, network: boolean, createdAt = new Date().toISOString()) {
+	constructor(id: string, metadata: Record<string, string>, createOptions: Readonly<Record<string, unknown>> = {}, createdAt = new Date().toISOString()) {
 		this.id = id;
 		this.metadata = metadata;
-		this.network = network;
+		this.createOptions = createOptions;
 		this.createdAt = createdAt;
 	}
 	put(path: string, text: string | Uint8Array) {
@@ -43,7 +44,7 @@ export class FakeBox {
 }
 
 export const FAKE_CAPS: ProviderCapabilities = {
-	exec: "unverified", streamOutput: "unverified", cancel: "unverified", commandTimeout: "unverified", files: "unverified", networkOff: "supported", networkOn: "unverified", // networkOff "supported" here = the double honours it; the refusal path for unverified providers has its own test
+	exec: "unverified", streamOutput: "unverified", cancel: "unverified", commandTimeout: "unverified", files: "unverified", networkOff: "unverified", networkOn: "unverified", // round 9: network capability bits are informational only, Workroom never refuses on them
 	resourceLimits: "unverified", reconnect: "unverified", services: "unsupported", pty: "unsupported", preview: "unsupported", snapshot: "unsupported", pauseResume: "unsupported",
 	skills: "upload_readonly", isolation: "in-memory test double", location: "self_hosted",
 };
@@ -66,7 +67,7 @@ export class FakeRemoteProvider implements RemoteProvider {
 	async create(o: CreateOptions): Promise<RemoteSession> {
 		if (this.failCreate) throw this.failCreate;
 		const id = `fake-${++this.#n}`;
-		const box = new FakeBox(id, { ...o.metadata }, o.network);
+		const box = new FakeBox(id, { ...o.metadata }, { ...o });
 		this.boxes.set(id, box);
 		this.created++;
 		return this.#session(box);

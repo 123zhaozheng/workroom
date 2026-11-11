@@ -84,7 +84,7 @@
 | 项 | 需要的条件 | 验收命令 |
 |---|---|---|
 | OpenSandbox（本机） | Docker；PyPI 能访问 | `scripts/opensandbox-local.sh`，然后执行：<br>`WORKROOM_TEST_OPENSANDBOX_URL=http://127.0.0.1:8080 WORKROOM_TEST_OPENSANDBOX_KEY=$(cat <key文件>) node --disable-warning=ExperimentalWarning --test server/test/sandbox-contract.test.ts server/test/sandbox-remote-e2e.test.ts` |
-| E2B（官方或兼容端点） | API key；兼容服务另需 endpoint 和 domain | `WORKROOM_TEST_E2B_API_KEY=… [WORKROOM_TEST_E2B_ENDPOINT=… WORKROOM_TEST_E2B_DOMAIN=…] node --disable-warning=ExperimentalWarning --test server/test/sandbox-providers-unit.test.ts server/test/sandbox-contract.test.ts`。测试会创建断网的临时沙箱，只使用合成数据。 |
+| E2B（官方或兼容端点） | API key；兼容服务另需 endpoint 和 domain | `WORKROOM_TEST_E2B_API_KEY=… [WORKROOM_TEST_E2B_ENDPOINT=… WORKROOM_TEST_E2B_DOMAIN=…] node --disable-warning=ExperimentalWarning --test server/test/sandbox-providers-unit.test.ts server/test/sandbox-contract.test.ts`。测试会创建临时沙箱（第 9 轮起不再传任何网络参数，按提供方默认），只使用合成数据。 |
 | Daytona | API key | `WORKROOM_TEST_DAYTONA_API_KEY=… node --disable-warning=ExperimentalWarning --test server/test/sandbox-providers-unit.test.ts server/test/sandbox-contract.test.ts` |
 | Vault/OpenBao Transit | 服务地址、token、transit key | `WORKROOM_SECRET_STORE=vault-transit` 加上 `docs/credentials.md` 中列出的变量，然后运行 `server/test/credentials.test.ts` |
 
@@ -92,7 +92,7 @@
 
 ## 6. 已知缺陷与后续工作
 
-- **OpenSandbox 断网未验证**：存在 DNS 隧道风险，所以“无网络”策略下会拒绝运行。这需要提供方修复，或者改用 Docker 驱动。
+- **（第 9 轮已调整）沙箱网络**：Workroom 不再有自己的“无网络”策略，也不再因提供方断网未验证而拒绝运行；创建沙箱时不传网络参数，出站网络由提供方决定。第三方沙箱内的联网不受平台 URL 策略约束。详见 `docs/r9-network.md`。
 - **远端沙箱冷启动慢**：首次运行需要 5–10 秒。每次运行都要对整个工作区计算哈希，工作区很大时会变慢。
 - **远端技能的只读保护较弱**：用的是 `chmod` 加每次运行前的哈希复核，不是内核级只读。
 - **长驻服务（沙箱内 MCP stdio）在远端提供方上不可用**，会返回 501。

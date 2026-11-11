@@ -19,6 +19,7 @@ import { createProvider as createE2b, scrubSecrets as scrubE2b } from "../src/to
 import type { E2bModule } from "../src/tools/sandbox/providers/e2b.ts";
 import { buildShellLine, createProvider as createDaytona } from "../src/tools/sandbox/providers/daytona.ts";
 import type { DaytonaModule } from "../src/tools/sandbox/providers/daytona.ts";
+import { createProvider as createOpenSandbox, setOpenSandboxSdkLoaderForTests } from "../src/tools/sandbox/providers/opensandbox.ts";
 
 const KEY = "e2b_0123456789abcdef0123456789abcdef";
 const DKEY = "dtn_secretsecretsecret1234";
@@ -27,8 +28,10 @@ const baseCreate: CreateOptions = {
 	metadata: { workroom: "1", instance: "i-1" },
 	lifetimeMs: 4 * 3600_000,
 	createTimeoutMs: 90_000,
-	network: true,
 };
+/** Round 9: option names that would make a provider deny (or force) network. None may ever reach a vendor SDK. */
+const NETWORK_OPTION = /network|internet|egress|block|deny|firewall/i;
+const noNetworkOptions = (o: Record<string, unknown>) => Object.keys(o).filter((k) => NETWORK_OPTION.test(k));
 
 function named(name: string, message: string, extra: Record<string, unknown> = {}): Error {
 	const e = new Error(message);
@@ -120,7 +123,7 @@ describe("e2b adapter (SDK test double)", () => {
 		assert.equal(o.apiKey, KEY);
 		assert.equal(o.apiUrl, "https://api.e2b.example");
 		assert.equal(o.domain, "sbx.example");
-		assert.equal(o.allowInternetAccess, true);
+		assert.equal("allowInternetAccess" in o, false, "round 9: no network option reaches the SDK");
 		const s2 = await p.create({ ...baseCreate, template: "tpl-explicit" });
 		assert.equal(f.calls.create[1]!.template, "tpl-explicit");
 		assert.ok(s2);
@@ -134,10 +137,13 @@ describe("e2b adapter (SDK test double)", () => {
 		assert.equal("template" in f.calls.create[0]!, false);
 	});
 
-	it("network=false becomes allowInternetAccess:false (never a silent networked sandbox)", async () => {
+	it("round 9: create passes NO network option to the E2B SDK (no allowInternetAccess, true or false, no network block): the vendor default applies", async () => {
 		const f = fakeE2b();
-		await createE2b({ provider: "e2b", apiKey: KEY }, { loadSdk: async () => f.mod }).create({ ...baseCreate, network: false });
-		assert.equal(f.calls.create[0]!.allowInternetAccess, false);
+		const p = createE2b({ provider: "e2b", apiKey: KEY, template: "tpl" }, { loadSdk: async () => f.mod });
+		await p.create(baseCreate);
+		await p.create({ ...baseCreate, network: false } as never); // a stale caller still passing the removed flag must not turn it into an SDK option
+		for (const c of f.calls.create) assert.deepEqual(noNetworkOptions(c), []);
+		assert.equal("allowInternetAccess" in f.calls.create[0]!, false);
 	});
 
 	it("resource limits at create are refused with UnsupportedError", async () => {
@@ -357,7 +363,7 @@ describe("daytona adapter (SDK test double)", () => {
 		assert.deepEqual(f.ctor[0], { apiKey: DKEY, apiUrl: "https://daytona.example/api", target: "eu" });
 	});
 
-	it("create maps labels/env/snapshot/lifetime/timeout; network=true leaves the SDK default, network=false blocks all", async () => {
+	it("create maps labels/env/snapshot/lifetime/timeout; round 9: never sets networkBlockAll or any network option (Daytona organisation defaults apply)", async () => {
 		const f = fakeDaytona();
 		const p = createDaytona({ provider: "daytona", apiKey: DKEY, template: "snap-default" }, { loadSdk: async () => f.mod });
 		await p.create({ ...baseCreate, env: { A: "1" } });
@@ -369,8 +375,9 @@ describe("daytona adapter (SDK test double)", () => {
 		assert.equal(c.autoStopInterval, 240);
 		assert.equal("networkBlockAll" in c, false);
 		assert.equal(f.createOptions[0]!.timeout, 90);
-		await p.create({ ...baseCreate, network: false, template: "snap-x" });
-		assert.equal(f.created[1]!.networkBlockAll, true);
+		await p.create({ ...baseCreate, network: false, template: "snap-x" } as never);
+		assert.equal("networkBlockAll" in f.created[1]!, false);
+		assert.deepEqual(noNetworkOptions(f.created[1]!), []);
 		assert.equal(f.created[1]!.snapshot, "snap-x");
 	});
 
@@ -501,6 +508,45 @@ describe("daytona adapter (SDK test double)", () => {
 // ---------------------------------------------------------------------------------------------------------------------------
 // Missing SDK: run in a child process whose module resolution refuses e2b / @daytonaio/sdk, whether or not they are installed here.
 // ---------------------------------------------------------------------------------------------------------------------------
+describe("opensandbox adapter (SDK test double)", () => {
+	function fakeOpenSandbox() {
+		const created: Record<string, unknown>[] = [];
+		const sb = { id: "osb-1", commands: { run: async () => ({ logs: { stdout: [], stderr: [] } }), interrupt: async () => {} }, files: {}, getInfo: async () => ({ status: { state: "Running" } }), renew: async () => ({}), close: async () => {} };
+		const mod = {
+			ConnectionConfig: class {
+				constructor(_o: Record<string, unknown>) {}
+			},
+			Sandbox: { create: async (o: Record<string, unknown>) => (created.push(o), sb), connect: async () => sb },
+			SandboxManager: { create: () => ({ listSandboxInfos: async () => ({ items: [] }), killSandbox: async () => {}, close: async () => {} }) },
+		};
+		return { created, mod };
+	}
+
+	it("round 9: create sends NO networkPolicy / egress option (server defaults apply); a stale caller's `network` flag is not forwarded", async () => {
+		const f = fakeOpenSandbox();
+		setOpenSandboxSdkLoaderForTests(async () => f.mod as never);
+		try {
+			const p = createOpenSandbox({ provider: "opensandbox", apiKey: "sk-os-0123456789abcdef", endpoint: "http://127.0.0.1:8080" } as never);
+			await p.create({ ...baseCreate, resources: { memoryMb: 512 } });
+			await p.create({ ...baseCreate, network: false } as never);
+			assert.equal(f.created.length, 2);
+			for (const c of f.created) {
+				assert.deepEqual(noNetworkOptions(c), [], "no network-related create option at all");
+				assert.equal("networkPolicy" in c, false);
+			}
+			assert.deepEqual(f.created[0]!.resource, { memory: "512Mi" });
+		} finally {
+			setOpenSandboxSdkLoaderForTests(null);
+		}
+	});
+
+	it("round 9: capability bits: networkOff is not something Workroom relies on (never 'supported' by assumption); networkOn matches the earlier live verification", async () => {
+		const p = createOpenSandbox({ provider: "opensandbox", apiKey: "sk-os-0123456789abcdef", endpoint: "http://127.0.0.1:8080" } as never);
+		assert.notEqual(p.capabilities.networkOff, "supported");
+		assert.equal(p.capabilities.networkOn, "supported");
+	});
+});
+
 describe("missing optional SDK", () => {
 	it("create throws UnsupportedError and health reports it, for both providers; nothing throws at import time", () => {
 		const dir = mkdtempSync(join(tmpdir(), "wr-nosdk-"));
@@ -523,7 +569,7 @@ for (const [name, make] of [["e2b", e2b], ["daytona", dt]] as const) {
   const p = make({ provider: name, apiKey: "k-secret-123456" } as never);
   const h = await p.health();
   let err: unknown;
-  try { await p.create({ metadata: {}, lifetimeMs: 60000, createTimeoutMs: 1000, network: false }); } catch (e) { err = e; }
+  try { await p.create({ metadata: {}, lifetimeMs: 60000, createTimeoutMs: 1000 }); } catch (e) { err = e; }
   out[name] = { healthOk: h.ok, healthDetail: h.detail, unsupported: err instanceof UnsupportedError, status: (err as { status?: number })?.status };
 }
 console.log(JSON.stringify(out));
@@ -551,7 +597,7 @@ async function liveRoundtrip(p: ReturnType<typeof createE2b>, root: string): Pro
 	const h = await p.health();
 	assert.equal(h.ok, true, h.detail);
 	const meta = { workroom: "1", "wr-test": `live-${Date.now()}` };
-	const s = await p.create({ metadata: meta, lifetimeMs: 10 * 60_000, createTimeoutMs: 120_000, network: false });
+	const s = await p.create({ metadata: meta, lifetimeMs: 10 * 60_000, createTimeoutMs: 120_000 });
 	try {
 		await s.mkdir(`${root}/sub`);
 		await s.writeFile(`${root}/sub/a.txt`, new TextEncoder().encode("hello"));
@@ -572,8 +618,9 @@ async function liveRoundtrip(p: ReturnType<typeof createE2b>, root: string): Pro
 		const ac = new AbortController();
 		setTimeout(() => ac.abort(), 1500);
 		assert.equal((await s.exec({ command: "sleep 60", cwd: root, timeoutMs: 60_000, signal: ac.signal })).status, "killed");
-		const net = await s.exec({ command: "curl -sS -m 5 -o /dev/null https://example.com; echo rc=$?", cwd: root, timeoutMs: 20_000 });
-		assert.doesNotMatch(net.stdout, /rc=0/, "network=false must block outbound traffic");
+		// Round 9: informational only. Workroom does not ask for or against network; what the vendor's defaults give is reported, never asserted.
+		const net = await s.exec({ command: "curl -sS -m 5 -o /dev/null -w %{http_code} https://example.com; echo rc=$?", cwd: root, timeoutMs: 20_000 });
+		console.log(`[live ${p.id}] outbound https://example.com from the sandbox: ${net.stdout.trim()} ${net.stderr.trim().slice(0, 120)}`);
 		const found = await p.list(meta);
 		assert.ok(found.some((x) => x.id === s.id));
 		assert.equal((await p.connect(s.id))?.id, s.id);
@@ -588,7 +635,7 @@ const e2bKey = process.env.WORKROOM_TEST_E2B_API_KEY;
 const daytonaKey = process.env.WORKROOM_TEST_DAYTONA_API_KEY;
 
 describe("LIVE e2b (real service)", { skip: e2bKey ? false : "WORKROOM_TEST_E2B_API_KEY is not set — live E2B path implemented but not connected" }, () => {
-	it("full roundtrip: health, create(network off), files, exec, symlink listing, timeout/abort kill, list, connect, destroy", { timeout: 300_000 }, async () => {
+	it("full roundtrip: health, create(vendor defaults), files, exec, symlink listing, timeout/abort kill, list, connect, destroy", { timeout: 300_000 }, async () => {
 		const p = createE2b({
 			provider: "e2b",
 			apiKey: e2bKey!,
@@ -600,7 +647,7 @@ describe("LIVE e2b (real service)", { skip: e2bKey ? false : "WORKROOM_TEST_E2B_
 });
 
 describe("LIVE daytona (real service)", { skip: daytonaKey ? false : "WORKROOM_TEST_DAYTONA_API_KEY is not set — live Daytona path implemented but not connected" }, () => {
-	it("full roundtrip: health, create(network blocked), files, exec, symlink listing, timeout/abort kill, list, connect, destroy", { timeout: 300_000 }, async () => {
+	it("full roundtrip: health, create(vendor defaults), files, exec, symlink listing, timeout/abort kill, list, connect, destroy", { timeout: 300_000 }, async () => {
 		const p = createDaytona({
 			provider: "daytona",
 			apiKey: daytonaKey!,

@@ -72,8 +72,8 @@ export const E2B_CAPABILITIES: ProviderCapabilities = {
 	cancel: "unverified",
 	commandTimeout: "unverified",
 	files: "unverified",
-	networkOff: "unverified",
-	networkOn: "unverified",
+	networkOff: "unverified", // NOT USED by Workroom (round 9): create() never passes allowInternetAccess
+	networkOn: "unverified", // not verified here (no credentials); the E2B template/account defaults decide
 	// CPU/memory are properties of the E2B template, not of a create call.
 	resourceLimits: "unsupported",
 	reconnect: "unverified",
@@ -199,8 +199,7 @@ class E2bProvider implements RemoteProvider {
 			metadata: { ...o.metadata },
 			timeoutMs: o.lifetimeMs,
 			requestTimeoutMs: o.createTimeoutMs,
-			// network=false MUST translate to the SDK's deny switch; it exists in e2b 2.63.0 (SandboxOpts.allowInternetAccess).
-			allowInternetAccess: o.network,
+			// Round 9: no allowInternetAccess option at all (neither false nor true) — the SDK/vendor default applies.
 			...(o.template ? { template: o.template } : this.#conn.template ? { template: this.#conn.template } : {}),
 			...(o.env && Object.keys(o.env).length ? { envs: { ...o.env } } : {}),
 			...(o.signal ? { signal: o.signal } : {}),

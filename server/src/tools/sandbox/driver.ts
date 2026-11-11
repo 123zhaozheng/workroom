@@ -66,7 +66,11 @@ export interface DriverRunSpec {
 	readonly limits: SandboxLimitsDTO;
 	readonly mounts: readonly SandboxMount[];
 	readonly env: Readonly<Record<string, string>>;
-	/** Already authorised by the Sandbox service (admin setting + driver capability). */
+	/**
+	 * Round 9: no Workroom policy any more. `true` = the driver's own network applies (docker: WORKROOM_DOCKER_NETWORK, default bridge; remote:
+	 * whatever the provider gives; namespaces: none, technical limit). `false` is used ONLY by server-internal isolated jobs (execIsolated:
+	 * rendering untrusted documents), which stay offline.
+	 */
 	readonly network: boolean;
 	readonly signal?: AbortSignal;
 	readonly onSpawn?: (ref: ProcessRef) => void;
@@ -100,7 +104,7 @@ export interface DriverServiceProcess {
 }
 
 export interface DriverCapabilities {
-	/** Can give a run/service network access when the admin allows it. */
+	/** The driver can give a run/service network access (a technical capability, not a policy; docker: false only if the operator set WORKROOM_DOCKER_NETWORK=none). */
 	readonly network: boolean;
 	/** Supports startService(). */
 	readonly services: boolean;

@@ -233,10 +233,16 @@ test("driver admin API: status for everyone, settings only for admins; disabling
 		assert.ok(["namespaces", "docker", "none"].includes(st.effective));
 		assert.deepEqual(st.drivers.map((d: any) => d.id), ["namespaces", "docker", "none"]);
 		for (const d of st.drivers) assert.ok(d.isolates.length && d.doesNotIsolate.length && d.summary, `driver ${d.id} documents what it isolates and what it does not`);
-		assert.equal(st.network, "none");
+		// Round 9: no network policy; the DTO only describes what the active driver gives (and the deployment's Docker network for admins).
+		assert.equal(typeof st.networkText, "string");
+		assert.ok(st.networkText.length > 0);
+		assert.equal(st.dockerNetwork.name, "bridge");
+		assert.ok(Array.isArray(st.deprecations));
 		assert.equal(st.docker.pythonImage.startsWith("python:3.12-slim@sha256:"), true);
 		const mem = await t.json("GET", "/api/sandbox/driver", { token: viewer.token });
 		assert.equal(mem.canManage, false);
+		assert.equal(mem.dockerNetwork, undefined, "deployment network detail is for managers only");
+		assert.equal(mem.deprecations, undefined);
 		assert.ok(mem.drivers.every((d: any) => d.details.length === 0), "diagnostic details are admin-only");
 		await t.json("PUT", "/api/sandbox/driver", { token: viewer.token, json: { driver: "none" }, expect: 403 });
 		await t.json("POST", "/api/sandbox/driver/prepare", { token: viewer.token, json: {}, expect: 403 });
@@ -244,7 +250,8 @@ test("driver admin API: status for everyone, settings only for admins; disabling
 		const off = await t.json("PUT", "/api/sandbox/driver", { token: a.token, json: { driver: "none", network: "allowed" } });
 		assert.equal(off.effective, "none");
 		assert.equal(off.setting, "none");
-		assert.equal(off.network, "allowed");
+		assert.equal(off.network, "none", "effective driver none: nothing can reach a network; the legacy field was ignored, not stored");
+		assert.ok(off.deprecations.some((x: string) => /network/.test(x) && /忽略/.test(x)), "the response says the removed field is ignored");
 		assert.equal(off.fromEnvironment, false);
 		const info = await t.json("GET", `/api/sandbox/${sp}`, { token: viewer.token });
 		assert.equal(info.info.isolation, "unavailable");
@@ -340,11 +347,15 @@ test("RBAC: the 访客 role (no sandbox.use / sandbox.browser) is refused by san
 		const jt = createJobsExtension(ctx, { resolveActor: fixedActor(ctx, guest.me.userId, guest.me.orgId, sp) }).tools!.find((x: any) => x.name === "job_start")!;
 		await assert.rejects(jt.execute({ kind: "sandbox", sandbox: { language: "shell", code: "true" } } as any, fakeApi({ conversationId: 1, taskId: 2, callId: "j" }), context), /sandbox\.use/);
 
-		// Network egress needs sandbox.network on top of the admin switch: a member has sandbox.use but not sandbox.network.
+		// Round 9: `sandbox.network` is retired (kept in the catalog as a no-op): a member with sandbox.use but without it is NOT refused any more,
+		// whatever the deprecated `network` flag says. Only the sandbox's own availability can fail the call.
 		const sb = ctx.services.get("sandbox") as Sandbox;
 		const space = ctx.services.get("identity").space(sp)!;
-		await assert.rejects(sb.run({ principal: await pr(member), space, conversationId: 1, language: "shell", code: "true", network: true }), (e: any) => e.status === 403 && /sandbox\.network/.test(e.message));
-		await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "none" } });
+		for (const network of [true, false, undefined]) {
+			const res: any = await sb.run({ principal: await pr(member), space, conversationId: 1, language: "shell", code: "true", network }).then(() => "ok", (e) => e);
+			assert.ok(res === "ok" || (res.status === 503 && res.code === "sandbox_unavailable"), `no permission/network refusal (network=${network}): ${res?.message ?? res}`);
+		}
+		await t.json("PUT", "/api/sandbox/driver", { token: owner.token, json: { network: "none" } }); // accepted and ignored
 	} finally {
 		await cm.close();
 		await t.dispose();

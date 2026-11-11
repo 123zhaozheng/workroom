@@ -130,7 +130,7 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 #### Docker 驱动：保证与不保证
 
 容器：固定镜像（`workroom/sandbox:1`，由 `server/sandbox/Dockerfile` 构建，含 python3 + node + numpy/pandas/scipy/matplotlib/openpyxl/python-docx/python-pptx/pypdf/pillow + 中文字体；不存在时回退公共 slim 镜像 `python:3.12-slim` / `node:22-slim`，均按摘要固定，缺失时首次运行自动 `docker pull`；说明见 `server/sandbox/README.md`）。每次运行：`--network none`（管理员允许且调用方声明才用 `bridge`）、`--memory`（含 swap 同值）/`--cpus`/`--pids-limit`、`--ulimit`（单文件、文件描述符、CPU 秒、core=0）、`--read-only`、`--tmpfs /tmp`（64 MB）、`--cap-drop ALL`、`no-new-privileges`、Docker 默认 seccomp、非 root（uid 10001；Linux 上若服务本身非 root 则用服务的 uid，rootless Docker 用容器 root=宿主普通用户）、`--init`、`--pull never`。`/work` 绑定挂载会话工作目录，`/code`（脚本）与技能等额外挂载只读；用户环境变量走 `--env-file`（不出现在进程列表）。超时/取消：**轮询到容器存在后 `rm -f`**（容器创建中时单次 kill 会落空，且 `docker rm -f` 对不存在的名字静默成功——此竞态已在真实 Docker 上复现并修复），之后再等 CLI 退出；每次运行结束必 `rm -f`；启动时按标签 `workroom.sandbox=1` + `workroom.instance=<数据目录哈希>` 清理上次崩溃遗留的容器，且在清理完成前不开始新运行。OOM 通过 `inspect` 识别并报告“超过内存限制”。Windows：数据目录路径转换（盘符大写、`\\?\` 前缀、`WORKROOM_SANDBOX_PATH_MAP`）、`--mount` CSV 引号、`MSYS_NO_PATHCONV=1`。
-不保证：与宿主（Windows/macOS 上是 Docker Desktop 的虚拟机）共享内核；开启沙箱联网后可达桥接网络上的任何地址（含局域网/元数据），平台 URL 策略不作用于沙箱内；无磁盘配额；能访问 Docker 的账号即宿主管理员；Windows/macOS 绑定挂载经文件共享层，较慢且权限位不同。
+不保证：与宿主（Windows/macOS 上是 Docker Desktop 的虚拟机）共享内核；默认桥接网络下容器可达互联网及桥接网络上的其他地址（含局域网/元数据；第 9 轮起，运维可用 `WORKROOM_DOCKER_NETWORK` 改成 none 或自建网络，见 `docs/r9-network.md`），平台 URL 策略不作用于沙箱内；无磁盘配额；能访问 Docker 的账号即宿主管理员；Windows/macOS 绑定挂载经文件共享层，较慢且权限位不同。
 
 #### 挂载、常驻服务、并发（给技能与 MCP 的契约，详见 `docs/requests/sandbox.md`）
 
@@ -144,7 +144,7 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 
 **路由**（空间 ACL）：`GET /sandbox/:spaceId`（驱动、隔离说明、限额、用量）、`GET /sandbox/:spaceId/files?conversationId=`（`entries` + `usage` + `canWrite`）、`GET …/preview?path=`、`GET …/file?path=[&inline=1]`（下载；仅图片可内联，均带 `CSP: sandbox`、`nosniff`）、`PUT …/file?path=`（原始请求体上传）、`POST …/mkdir`、`DELETE …/file?path=`、`POST …/move`、`GET …/runs`、`GET …/runs/:runId`、`POST …/publish`。
 
-**环境变量**：`WORKROOM_SANDBOX_DRIVER`、`WORKROOM_SANDBOX_NETWORK`、`WORKROOM_SANDBOX_MAX_CONCURRENT`、`WORKROOM_SANDBOX_MAX_SERVICES`、`WORKROOM_SANDBOX_QUOTA_MB`、`WORKROOM_SANDBOX_RETENTION_HOURS`、`WORKROOM_DOCKER_BIN`、`WORKROOM_DOCKER_HOST`、`WORKROOM_SANDBOX_IMAGE`/`_PYTHON_IMAGE`/`_NODE_IMAGE`、`WORKROOM_SANDBOX_CPUS`、`WORKROOM_SANDBOX_AUTOPULL`、`WORKROOM_SANDBOX_PATH_MAP`、`WORKROOM_CHROME_PATH`、`WORKROOM_PLAYWRIGHT_PATH`/`_ROOT`、`WORKROOM_SOFFICE`。
+**环境变量**：`WORKROOM_SANDBOX_DRIVER`、`WORKROOM_DOCKER_NETWORK`（第 9 轮起；`WORKROOM_SANDBOX_NETWORK` 已停用）、`WORKROOM_SANDBOX_MAX_CONCURRENT`、`WORKROOM_SANDBOX_MAX_SERVICES`、`WORKROOM_SANDBOX_QUOTA_MB`、`WORKROOM_SANDBOX_RETENTION_HOURS`、`WORKROOM_DOCKER_BIN`、`WORKROOM_DOCKER_HOST`、`WORKROOM_SANDBOX_IMAGE`/`_PYTHON_IMAGE`/`_NODE_IMAGE`、`WORKROOM_SANDBOX_CPUS`、`WORKROOM_SANDBOX_AUTOPULL`、`WORKROOM_SANDBOX_PATH_MAP`、`WORKROOM_CHROME_PATH`、`WORKROOM_PLAYWRIGHT_PATH`/`_ROOT`、`WORKROOM_SOFFICE`。
 
 **验证状态**：命名空间驱动与全部工作区文件 API 在本环境真实运行测试；Docker 驱动对一个**真实的 Docker 守护进程**测试（`server/test/tools-sandbox-docker.test.ts`，本环境为 vfs 存储驱动、无桥接网络；没有 Docker 时该文件自动跳过并写明原因），命令行构造另有假 docker CLI 测试（`tools-sandbox-drivers.test.ts`）。**未在真实 Windows/macOS + Docker Desktop 上验证。**
 

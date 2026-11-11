@@ -20,7 +20,7 @@ import { credentialsFor } from "./credentials/store.ts";
 import { UnsupportedError } from "./sandbox/provider.ts";
 import { SandboxService, type SandboxServiceInfo } from "./sandbox/services.ts";
 import * as ws from "./sandbox/workspace.ts";
-import { requirePermission } from "./sandbox/perm.ts";
+import { networkText } from "./sandbox/network.ts";
 
 export type { Language, RunResult, SandboxMount, SandboxService };
 export { SandboxDrivers };
@@ -159,6 +159,7 @@ export interface RunInput {
 	language: Language;
 	code: string;
 	timeoutMs?: number;
+	/** @deprecated Round 9: ignored. Sandbox network is the driver's / provider's own (no Workroom policy, no per-run request). */
 	network?: boolean;
 	signal?: AbortSignal;
 	maxTimeoutMs?: number;
@@ -177,6 +178,7 @@ export interface StartServiceInput {
 	cwd?: string;
 	env?: Readonly<Record<string, string>>;
 	mounts?: readonly SandboxMount[];
+	/** @deprecated Round 9: ignored (see RunInput.network). */
 	network?: boolean;
 	idleTimeoutMs?: number;
 	maxLifetimeMs?: number;
@@ -249,13 +251,13 @@ export class Sandbox {
 	async capabilities(): Promise<SandboxCapabilities> {
 		const r = await this.drivers.resolve();
 		const st = r.effective === "none" ? await r.driver.detect() : r.statuses[r.effective];
-		const net = this.drivers.settings().network === "allowed";
 		return {
 			driver: r.effective,
 			state: r.effective === "none" ? "unavailable" : st.state,
 			label: r.driver.label,
 			detail: r.reason,
-			network: { supported: r.driver.capabilities.network, allowed: net && r.driver.capabilities.network },
+			// Round 9: `allowed` mirrors `supported` (no Workroom policy any more; kept for callers that read it, e.g. the MCP market).
+			network: { supported: r.driver.capabilities.network, allowed: r.driver.capabilities.network },
 			services: r.driver.capabilities.services,
 			mounts: r.driver.capabilities.mounts,
 			runtimes: r.effective === "none" ? [] : ["shell", "python", "node"],
@@ -266,7 +268,6 @@ export class Sandbox {
 		const rd = await this.remote.forSpace(space).catch((e: Error) => e);
 		if (rd) {
 			// A remote provider is selected for this space: report it honestly (an unusable provider is "unavailable", never the local driver).
-			const net = this.drivers.settings().network;
 			const st = rd instanceof Error ? undefined : await rd.detect();
 			const id = rd instanceof Error ? "none" : rd.id;
 			const ok = st?.state === "ready";
@@ -274,8 +275,8 @@ export class Sandbox {
 				spaceId: space.id,
 				isolation: (ok ? id : "unavailable") as SandboxInfoDTO["isolation"],
 				isolationDetail: rd instanceof Error ? rd.message : `${rd.label}：${isolationText(rd.notes)}`,
-				driver: { id: id as DriverId as SandboxInfoDTO["driver"]["id"], label: rd instanceof Error ? "远端沙箱" : rd.label, state: ok ? "ready" : "unavailable", summary: rd instanceof Error ? rd.message : st!.summary, network: net },
-				limits: { ...DEFAULT_LIMITS, network: ok && net === "allowed" && !(rd instanceof Error) && rd.capabilities.network },
+				driver: { id: id as DriverId as SandboxInfoDTO["driver"]["id"], label: rd instanceof Error ? "远端沙箱" : rd.label, state: ok ? "ready" : "unavailable", summary: rd instanceof Error ? rd.message : st!.summary, network: !(rd instanceof Error) && rd.capabilities.network ? "allowed" : "none", networkText: rd instanceof Error ? "由提供方决定" : networkText(rd) },
+				limits: { ...DEFAULT_LIMITS, network: ok && !(rd instanceof Error) && rd.capabilities.network },
 				retentionHours: RETENTION_HOURS,
 				usedBytes: ws.dirSize(this.root(space)).bytes,
 				quotaBytes: quotaBytes(),
@@ -284,13 +285,12 @@ export class Sandbox {
 		const r = await this.drivers.resolve();
 		const st: DriverStatus = r.effective === "none" ? await r.driver.detect() : r.statuses[r.effective];
 		const ok = r.effective !== "none";
-		const net = this.drivers.settings().network;
 		return {
 			spaceId: space.id,
 			isolation: ok ? (r.effective as "namespaces" | "docker") : "unavailable",
 			isolationDetail: ok ? `${r.driver.label}：${isolationText(r.driver.notes)}` : r.reason,
-			driver: { id: r.effective, label: r.driver.label, state: ok ? st.state : "unavailable", summary: ok ? st.summary : r.reason, howToEnable: ok ? undefined : st.howToEnable, network: net },
-			limits: { ...DEFAULT_LIMITS, network: ok && net === "allowed" && r.driver.capabilities.network },
+			driver: { id: r.effective, label: r.driver.label, state: ok ? st.state : "unavailable", summary: ok ? st.summary : r.reason, howToEnable: ok ? undefined : st.howToEnable, network: ok && r.driver.capabilities.network ? "allowed" : "none", networkText: ok ? networkText(r.driver) : "无网络（没有可用的沙箱驱动）" },
+			limits: { ...DEFAULT_LIMITS, network: ok && r.driver.capabilities.network },
 			retentionHours: RETENTION_HOURS,
 			usedBytes: ws.dirSize(this.root(space)).bytes,
 			quotaBytes: quotaBytes(),
@@ -350,43 +350,16 @@ export class Sandbox {
 		return out;
 	}
 
-	async #networkAllowed(driver: SandboxDriver, want: boolean | undefined, p?: Principal): Promise<boolean> {
-		if (!want) {
-			// A remote provider that cannot guarantee "no network": never pretend. If the admin allows sandbox network (and the user may use it),
-			// the run is honestly treated as networked (run output says so); otherwise it is refused (RemoteDriver also refuses network:false).
-			if (driver instanceof RemoteDriver && driver.provider.capabilities.networkOff !== "supported") {
-				const allowed = this.drivers.settings().network === "allowed" && (!p || (await this.#mayUseNetwork(p)));
-				if (!allowed)
-					throw new UnsupportedError(driver.label, "在“无网络”策略下运行：该提供方的断网能力尚未验证。如果可以接受沙箱联网，请管理员开启“允许沙箱联网”；否则请改用本机 Docker 沙箱");
-				return true;
-			}
-			return false;
-		}
-		if (p) await requirePermission(this.#ctx, p, "sandbox.network");
-		if (this.drivers.settings().network !== "allowed") throw new HttpError(403, "network_disabled", "沙箱默认不允许联网；管理员未开启“允许沙箱联网”");
-		if (!driver.capabilities.network) throw new HttpError(403, "network_unsupported", `当前沙箱驱动（${driver.label}）无法提供网络；请使用 Docker 驱动`);
-		return true;
-	}
-
-	async #mayUseNetwork(p: Principal): Promise<boolean> {
-		try {
-			await requirePermission(this.#ctx, p, "sandbox.network");
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
 	// ---------- prepare (round 8) ----------
 	/**
-	 * Explicit "prepare / retry" of the REMOTE sandbox of one conversation: everything run() does before the program starts (provider + network policy checks,
+	 * Explicit "prepare / retry" of the REMOTE sandbox of one conversation: everything run() does before the program starts (provider checks,
 	 * workspace restore from the last saved version, get-or-create/reconnect, /work and mounts sync), without running a program and without a run record.
 	 * Returns false when the space uses a local driver (nothing to prepare). Sending a message never calls this; only the environment panel's retry does.
 	 */
 	async prepare(input: { principal: Principal; space: Space; conversationId: number; signal?: AbortSignal }): Promise<boolean> {
 		const driver = await this.#driverFor(input.space);
 		if (!(driver instanceof RemoteDriver)) return false;
-		const network = await this.#networkAllowed(driver, undefined, input.principal);
+		const network = driver.capabilities.network;
 		const wsKey = workspaceKeyOf(input.conversationId);
 		const ready = await workspacePersistenceFor(this.#ctx).ensureReady(input.principal, input.space, wsKey);
 		if ((ready.state === "failed" || ready.state === "conflict") && !existsSync(join(this.root(input.space), `c${input.conversationId}`)))
@@ -403,7 +376,8 @@ export class Sandbox {
 	async run(input: RunInput): Promise<SandboxRunDTO> {
 		if (!["shell", "python", "node"].includes(input.language)) throw new HttpError(400, "bad_language", "language 必须是 shell、python 或 node");
 		const driver = await this.#driverFor(input.space);
-		const network = await this.#networkAllowed(driver, input.network, input.principal);
+		// Round 9: no Workroom network policy. The driver's own network applies (`input.network` is deprecated and ignored).
+		const network = driver.capabilities.network;
 		const timeoutMs = Math.min(Math.max(input.timeoutMs ?? DEFAULT_LIMITS.timeoutMs, 1000), input.maxTimeoutMs ?? MAX_TIMEOUT_MS);
 		const cpuSeconds = Math.max(1, Math.min(input.cpuSeconds ?? Math.ceil(timeoutMs / 1000), Math.ceil(timeoutMs / 1000)));
 		const limits: SandboxLimitsDTO = { ...DEFAULT_LIMITS, timeoutMs, cpuSeconds, network };
@@ -449,7 +423,6 @@ export class Sandbox {
 			// Save point: after every run (also failed/timed-out ones), after the remote sync-back. Failures are recorded in the workspace status, never thrown.
 			if (persistable) await persist.commit(input.principal, input.space, wsKey, "run_end").catch((e) => console.error("[sandbox] workspace commit failed", e));
 		}
-		if (network && !input.network) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}[网络] 该远端沙箱无法保证断网，本次运行按“可联网”处理（管理员已允许沙箱联网）` };
 		if (cred.names.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}[凭据] 本次运行注入了环境变量：${cred.names.join("、")}（进程及其子进程可读取）` };
 		if (mountNotes.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}${mountNotes.join("\n")}` };
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
@@ -490,7 +463,7 @@ export class Sandbox {
 		if (!["node", "python", "shell"].includes(input.runtime)) throw new HttpError(400, "invalid", "runtime 必须是 node、python 或 shell");
 		const maxServices = Number(process.env.WORKROOM_SANDBOX_MAX_SERVICES ?? 16);
 		if ([...this.#services.values()].filter((s) => s.running).length >= maxServices) throw new HttpError(429, "too_many_services", `常驻沙箱服务已达上限 ${maxServices}`);
-		const network = await this.#networkAllowed(driver, input.network, input.principal);
+		const network = driver.capabilities.network;
 		const mounts = await this.#collectMounts(input, input.mounts);
 		await this.#reaped;
 		const id = newId("svc");

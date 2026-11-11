@@ -70,7 +70,8 @@ test("sandbox: confined filesystem, no network, timeout kills the process tree, 
 		assert.equal((await t.req("GET", `/api/sandbox/${project.spaceId}/runs`, { token: outsider.token })).status, 403);
 		const info = await t.json("GET", `/api/sandbox/${project.spaceId}`, { token: a.token });
 		assert.equal(info.info.isolation, "namespaces");
-		assert.equal(info.info.limits.network, false);
+		assert.equal(info.info.limits.network, false, "namespaces: no network is a technical limit");
+		assert.equal(info.info.driver.networkText, "无网络（本机命名空间驱动的技术限制）");
 		await t.json("POST", `/api/sandbox/${project.spaceId}/publish`, { token: viewer.token, json: { conversationId: conv, path: "result.csv" }, expect: 403 });
 
 		// Viewer's agent cannot execute code in the project's sandbox.

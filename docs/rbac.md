@@ -111,7 +111,7 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | `mcp.connector.review` | 审核连接器 | 组织/部门 | 敏感 | ● | ● |  |  |  | ● |  |  |
 | **沙箱** | | | |||||||||
 | `sandbox.use` | 使用沙箱 | 组织 |  | ● | ● |  |  |  |  | ● |  |
-| `sandbox.network` | 沙箱联网 | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
+| `sandbox.network` | 沙箱联网（已停用，不再检查） | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
 | `sandbox.browser` | 浏览器工具 | 组织 |  | ● | ● |  |  |  |  | ● |  |
 | `sandbox.policy.manage` | 管理沙箱与工具策略 | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
 | **自动化** | | | |||||||||

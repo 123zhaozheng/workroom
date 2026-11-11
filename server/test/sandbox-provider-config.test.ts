@@ -288,7 +288,7 @@ function fakeProvider(opts: { failExec?: boolean; failHealth?: boolean; leakKeyI
 			return opts.failHealth ? { ok: false, detail: "unreachable" } : { ok: true, detail: "ok", version: "9.9.9" };
 		},
 		async create(o) {
-			log.push(`create:net=${o.network}:meta=${JSON.stringify(o.metadata)}:life=${o.lifetimeMs}`);
+			log.push(`create:net=${"network" in o ? "present" : "absent"}:meta=${JSON.stringify(o.metadata)}:life=${o.lifetimeMs}`);
 			return session;
 		},
 		async connect() {
@@ -323,7 +323,7 @@ test("connection test: health + roundtrip steps, throwaway sandbox always destro
 		assert.equal(rt.ok, true, JSON.stringify(rt));
 		assert.deepEqual(rt.steps.map((s: any) => s.step), ["create", "exec", "file", "destroy"]);
 		assert.ok(rt.steps.every((s: any) => s.ok && typeof s.ms === "number"));
-		assert.match(fake.log.find((l) => l.startsWith("create"))!, /net=false.*"workroom":"1".*"purpose":"connection-test"/);
+		assert.match(fake.log.find((l) => l.startsWith("create"))!, /net=absent.*"workroom":"1".*"purpose":"connection-test"/);
 		assert.equal(fake.log.at(-1), "destroy:sbx-test-1");
 		// Stored lastTest + capabilities from the provider; key not in them.
 		const dto = h.svc.dto(h.owner.me, "e2b");

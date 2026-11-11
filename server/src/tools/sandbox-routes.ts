@@ -14,6 +14,8 @@ import { DEFAULT_LIMITS, type Sandbox } from "./sandbox.ts";
 import { requirePermission } from "./sandbox/perm.ts";
 import { isInlineImage } from "./sandbox/workspace.ts";
 import { noneDriver } from "./sandbox/none.ts";
+import { dockerNetworkChoice } from "./sandbox/docker.ts";
+import { networkText } from "./sandbox/network.ts";
 import type { DriverStatus, SandboxDriver } from "./sandbox/driver.ts";
 
 /** Read a request body with a hard cap (works for chunked uploads without Content-Length). */
@@ -73,7 +75,7 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 		isolates: d.notes.isolates,
 		doesNotIsolate: d.notes.doesNotIsolate,
 	});
-	async function driverDTO(p: Principal, force = false): Promise<SandboxDriverAdminDTO> {
+	async function driverDTO(p: Principal, force = false, extraDeprecations: readonly string[] = []): Promise<SandboxDriverAdminDTO> {
 		const r = await sb.drivers.resolve(force);
 		const manage = await canManage(p);
 		const s = sb.drivers.settings();
@@ -84,7 +86,10 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 			setting: s.driver,
 			effective: r.effective,
 			reason: r.reason,
-			network: s.network,
+			// Round 9: no Workroom network policy. `network` is a read-only mirror of the active driver's capability (deprecated).
+			network: r.effective !== "none" && r.driver.capabilities.network ? "allowed" : "none",
+			networkText: networkText(r.driver),
+			...(manage ? { dockerNetwork: dockerNetworkChoice(), deprecations: [...sb.drivers.legacyNotes(), ...extraDeprecations] } : {}),
 			docker: { image: s.docker.image, pythonImage: s.docker.pythonImage, nodeImage: s.docker.nodeImage, cpus: s.docker.cpus, autoPull: s.docker.autoPull, ...(manage ? { bin: s.docker.bin, host: s.docker.host } : {}) },
 			drivers: [statusDTO(sb.drivers.namespaces, r.statuses.namespaces, manage), statusDTO(sb.drivers.docker, r.statuses.docker, manage), statusDTO(none, settingNone, manage)],
 			prepare: prep ? { mode: prep.mode, state: prep.state, startedAt: prep.startedAt, finishedAt: prep.finishedAt, log: manage ? prep.log.slice(-40) : [] } : undefined,
@@ -98,9 +103,11 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 	api.put("/sandbox/driver", async (c) => {
 		const p = principalOf(c);
 		await requireManage(p);
-		sb.drivers.update(p, await jsonBody<SandboxDriverUpdate>(c));
+		const patch = await jsonBody<SandboxDriverUpdate>(c);
+		sb.drivers.update(p, patch);
 		sb.applySettings();
-		return c.json(await driverDTO(p, true));
+		// `network` (round 8 and earlier) is accepted and ignored: Workroom has no sandbox network policy any more.
+		return c.json(await driverDTO(p, true, patch.network !== undefined ? ["请求里的 network 字段已停用，被忽略：沙箱网络不再由 Workroom 控制（本机 Docker 由部署配置 WORKROOM_DOCKER_NETWORK 决定，第三方沙箱遵循提供方）"] : []));
 	});
 	api.post("/sandbox/driver/detect", async (c) => {
 		const p = principalOf(c);

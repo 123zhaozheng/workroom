@@ -12,7 +12,8 @@ import { SandboxDrivers } from "../src/tools/sandbox/registry.ts";
 import { normalizeTarget, type DriverStatus, type SandboxDriver } from "../src/tools/sandbox/driver.ts";
 import { bindMountArg, findExecutable, findSoffice, parsePathMap, toDockerHostPath } from "../src/tools/sandbox/paths.ts";
 import { cleanPath } from "../src/tools/sandbox/workspace.ts";
-import { FALLBACK_NODE_IMAGE, FALLBACK_PYTHON_IMAGE } from "../src/tools/sandbox/docker.ts";
+import { FALLBACK_NODE_IMAGE, FALLBACK_PYTHON_IMAGE, dockerNetworkChoice } from "../src/tools/sandbox/docker.ts";
+import { networkText } from "../src/tools/sandbox/network.ts";
 
 const SHIM = fileURLToPath(new URL("./fixtures/docker-shim.mjs", import.meta.url));
 
@@ -133,7 +134,7 @@ test("docker detection reports why it is not usable: missing CLI, daemon down, W
 	}
 });
 
-test("docker driver: the container is started with network none, read-only root, non-root user, dropped caps, limits, work/code mounts; always removed", async () => {
+test("docker driver: the container is started with the default bridge network (round 9), read-only root, non-root user, dropped caps, limits, work/code mounts; always removed", async () => {
 	const t = await startTestApp();
 	const shim = makeShim({ SHIM_IMAGES: "workroom/sandbox:1" });
 	try {
@@ -148,7 +149,7 @@ test("docker driver: the container is started with network none, read-only root,
 		const runCall = calls.find((c) => c.cmd === "run")!;
 		const a = runCall.args;
 		const has = (...seq: string[]) => a.some((_, i) => seq.every((s, j) => a[i + j] === s));
-		assert.ok(has("--network", "none"), "no network by default");
+		assert.ok(has("--network", "bridge"), "round 9: Docker's default bridge network (internet reachable), not --network none");
 		assert.ok(a.includes("--read-only"));
 		assert.ok(has("--cap-drop", "ALL"));
 		assert.ok(has("--security-opt", "no-new-privileges"));
@@ -216,7 +217,7 @@ test("docker driver: timeout and cancellation kill then remove the container; OO
 	}
 });
 
-test("docker driver: a missing image is pulled once (autoPull), fallback public images are used per language; network needs admin opt-in and a capable driver", async () => {
+test("docker driver: a missing image is pulled once (autoPull), fallback public images are used per language; round 9: network is the driver's own, never refused", async () => {
 	const t = await startTestApp();
 	const shim = makeShim({ SHIM_IMAGES: "" });
 	try {
@@ -232,14 +233,13 @@ test("docker driver: a missing image is pulled once (autoPull), fallback public 
 		assert.ok(run2.includes(FALLBACK_PYTHON_IMAGE));
 		assert.equal(shim.calls().filter((c) => c.cmd === "pull").length, 2, "no second pull");
 
-		// Network: refused unless the admin allows it; then `--network bridge`.
-		await assert.rejects(sb.run({ principal, space, conversationId: 2, language: "shell", code: "curl x", network: true }), (e: any) => e.status === 403 && e.code === "network_disabled");
-		sb.drivers.update(principal, { network: "allowed" });
+		// Round 9: no admin switch, no refusal, no per-run request: the deployment's Docker network (default bridge) applies to every run.
 		await sb.run({ principal, space, conversationId: 2, language: "shell", code: "curl x", network: true });
-		const net = shim.calls().filter((c) => c.cmd === "run").at(-1)!.args;
-		assert.equal(net[net.indexOf("--network") + 1], "bridge");
+		await sb.run({ principal, space, conversationId: 2, language: "shell", code: "curl y" });
+		for (const call of shim.calls().filter((c) => c.cmd === "run").slice(-2)) assert.equal(call.args[call.args.indexOf("--network") + 1], "bridge");
+		await sb.drivers.resolve(true); // the cached pre-pull status is stale now
 		const cap = await sb.capabilities();
-		assert.deepEqual([cap.driver, cap.state, cap.network.allowed, cap.services, cap.mounts], ["docker", "ready", true, true, true]);
+		assert.deepEqual([cap.driver, cap.state, cap.network.supported, cap.network.allowed, cap.services, cap.mounts], ["docker", "ready", true, true, true, true]);
 	} finally {
 		shim.cleanup();
 		await t.dispose();
@@ -338,5 +338,102 @@ test("runHost: no shell, clean environment, timeout kills the whole process tree
 		assert.equal((await runHost([process.execPath, "-e", "setInterval(()=>{},1000)"], { signal: ac.signal })).status, "killed");
 	} finally {
 		delete process.env.WR_SECRET_FOR_TEST;
+	}
+});
+
+/** Run `fn` with WORKROOM_DOCKER_NETWORK / WORKROOM_SANDBOX_NETWORK set (restored afterwards). */
+async function withEnv(vars: Record<string, string | undefined>, fn: () => Promise<void>) {
+	const prev = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+	for (const [k, v] of Object.entries(vars)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+	try {
+		await fn();
+	} finally {
+		for (const [k, v] of Object.entries(prev)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+	}
+}
+
+test("round 9: WORKROOM_DOCKER_NETWORK (deployment-level) selects the container network: default bridge, none, a named network; invalid values and host fail closed to none", async () => {
+	const t = await startTestApp();
+	const shim = makeShim({ SHIM_IMAGES: "workroom/sandbox:1" });
+	try {
+		const { sb, principal, space } = await windowsLikeSandbox(t, shim);
+		const netOfLastRun = () => {
+			const a = shim.calls().filter((c) => c.cmd === "run").at(-1)!.args;
+			return a[a.indexOf("--network") + 1];
+		};
+		let n = 0;
+		const run = () => sb.run({ principal, space, conversationId: 40 + ++n, language: "shell", code: "true" });
+		await withEnv({ WORKROOM_DOCKER_NETWORK: undefined }, async () => {
+			await run();
+			assert.equal(netOfLastRun(), "bridge");
+			assert.equal(dockerNetworkChoice().source, "default");
+		});
+		await withEnv({ WORKROOM_DOCKER_NETWORK: "wr-egress-limited" }, async () => {
+			await run();
+			assert.equal(netOfLastRun(), "wr-egress-limited");
+			assert.equal((await sb.capabilities()).network.supported, true);
+			assert.match(networkText(sb.drivers.docker), /wr-egress-limited/);
+		});
+		await withEnv({ WORKROOM_DOCKER_NETWORK: "none" }, async () => {
+			const r = await run();
+			assert.equal(r.status, "ok", "operator-chosen none is not a refusal");
+			assert.equal(netOfLastRun(), "none");
+			const cap = await sb.capabilities();
+			assert.deepEqual([cap.network.supported, cap.network.allowed], [false, false]);
+			assert.equal((await sb.info(space)).limits.network, false);
+			assert.match(networkText(sb.drivers.docker), /无网络（部署配置 WORKROOM_DOCKER_NETWORK=none）/);
+		});
+		for (const bad of ["host", "container:abc", "a b", "-x", "x".repeat(80)]) {
+			await withEnv({ WORKROOM_DOCKER_NETWORK: bad }, async () => {
+				await run();
+				assert.equal(netOfLastRun(), "none", `${bad} must fail closed`);
+				assert.equal(dockerNetworkChoice().source, "invalid");
+				assert.match(dockerNetworkChoice().warning ?? "", /无效或不允许/);
+			});
+		}
+		// internal isolated jobs (untrusted document rendering) stay offline whatever the deployment network is
+		await withEnv({ WORKROOM_DOCKER_NETWORK: undefined }, async () => {
+			const dir = join(t.app.ctx.config.dataDir, "iso-work");
+			await sb.execIsolated(dir, "shell", "true");
+			assert.equal(netOfLastRun(), "none", "execIsolated is always offline");
+		});
+	} finally {
+		shim.cleanup();
+		await t.dispose();
+	}
+});
+
+test("round 9: old network settings are ignored: a saved row / env WORKROOM_SANDBOX_NETWORK=none|allowed changes nothing; PUT {network} is accepted and ignored with a note; the next save drops the field", async () => {
+	const t = await startTestApp();
+	const shim = makeShim({ SHIM_IMAGES: "workroom/sandbox:1" });
+	try {
+		const ctx = t.app.ctx;
+		const a = await t.user(`legacy${Math.random().toString(36).slice(2, 8)}@example.com`);
+		const principal = (await ctx.services.get("identity").principalFor(a.me.userId, a.me.orgId))!;
+		const space = ctx.services.get("identity").personalSpace(a.me.userId, a.me.orgId);
+		// a settings row exactly as round 8 wrote it
+		ctx.db.run("INSERT INTO tool_sandbox_settings (key, value, updated_by, updated_at) VALUES ('driver', ?, 'u', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", JSON.stringify({ driver: "auto", network: "none", docker: { bin: shim.bin, image: "workroom/sandbox:1" }, maxConcurrent: 3 }), new Date().toISOString());
+		for (const envNet of ["none", "allowed", undefined]) {
+			await withEnv({ WORKROOM_SANDBOX_NETWORK: envNet, WORKROOM_DOCKER_NETWORK: undefined }, async () => {
+				const sb = new Sandbox(ctx, { drivers: new SandboxDrivers(ctx, { namespaces: unavailableNs }) });
+				assert.equal("network" in sb.drivers.settings(), false, "the setting no longer exists");
+				assert.equal(sb.drivers.settings().maxConcurrent, 3, "the rest of the old row still applies");
+				assert.ok(sb.drivers.legacyNotes().some((x) => /已保存的“沙箱联网”设置已停用/.test(x)));
+				if (envNet) assert.ok(sb.drivers.legacyNotes().some((x) => /WORKROOM_SANDBOX_NETWORK/.test(x)));
+				const r = await sb.run({ principal, space, conversationId: 60, language: "shell", code: "true" });
+				assert.equal(r.status, "ok", r.stderr);
+				const call = shim.calls().filter((c) => c.cmd === "run").at(-1)!.args;
+				assert.equal(call[call.indexOf("--network") + 1], "bridge", `old policy (row none, env ${envNet}) does not apply`);
+				// PUT-style update with the removed field: accepted, ignored, and the stored JSON no longer carries it
+				sb.drivers.update(principal, { network: "none", maxConcurrent: 4 } as never);
+				const saved = JSON.parse(ctx.db.get<{ value: string }>("SELECT value FROM tool_sandbox_settings WHERE key = 'driver'")!.value);
+				assert.equal("network" in saved, false);
+				assert.equal(saved.maxConcurrent, 4);
+				ctx.db.run("UPDATE tool_sandbox_settings SET value = ? WHERE key = 'driver'", JSON.stringify({ driver: "auto", network: "none", docker: { bin: shim.bin, image: "workroom/sandbox:1" }, maxConcurrent: 3 }));
+			});
+		}
+	} finally {
+		shim.cleanup();
+		await t.dispose();
 	}
 });

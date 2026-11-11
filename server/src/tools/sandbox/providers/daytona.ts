@@ -61,8 +61,8 @@ export const DAYTONA_CAPABILITIES: ProviderCapabilities = {
 	// Enforced by us (client deadline + session delete); the remote side has no per-command kill primitive besides session deletion.
 	commandTimeout: "unverified",
 	files: "unverified",
-	networkOff: "unverified", // networkBlockAll
-	networkOn: "unverified",
+	networkOff: "unverified", // NOT USED by Workroom (round 9): create() never sets networkBlockAll
+	networkOn: "unverified", // not verified here (no credentials); the Daytona organisation's own network settings decide
 	// Resources can only be set when creating from an image (not from a snapshot), which this adapter does not do yet.
 	resourceLimits: "unsupported",
 	reconnect: "unverified",
@@ -215,8 +215,7 @@ class DaytonaProvider implements RemoteProvider {
 			// Hard maximum age (wall clock) and an inactivity stop, both from the Workroom lifetime.
 			ttlMinutes: lifetimeMin,
 			autoStopInterval: lifetimeMin,
-			// network=false MUST map to the SDK's block switch (networkBlockAll exists in 0.231.1). Network on = SDK default, left unset.
-			...(o.network ? {} : { networkBlockAll: true }),
+			// Round 9: no networkBlockAll / allow-list — the Daytona organisation's / sandbox defaults decide (Workroom does not change vendor settings).
 		};
 		try {
 			const create = client.create(params, { timeout: Math.max(1, Math.ceil(o.createTimeoutMs / 1000)) });

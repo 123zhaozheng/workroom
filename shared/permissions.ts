@@ -36,7 +36,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
 	{ id: "share", label: "外部分享", description: "创建公开只读链接与治理他人创建的链接" },
 	{ id: "skill", label: "技能", description: "使用、上传、发布、审核技能与管理市场" },
 	{ id: "mcp", label: "MCP 与连接器", description: "添加个人/组织连接器，审核连接器" },
-	{ id: "sandbox", label: "沙箱", description: "沙箱执行、联网与浏览器" },
+	{ id: "sandbox", label: "沙箱", description: "沙箱执行与浏览器" },
 	{ id: "automation", label: "自动化", description: "创建自动化，以及以他人身份运行" },
 	{ id: "project", label: "项目", description: "创建项目与管理项目" },
 	{ id: "assistant", label: "助手", description: "发布组织级助手" },
@@ -116,9 +116,9 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	p("mcp.connector.review", "mcp", "审核连接器", "审批或驳回连接器与工具策略变更", OD, "sensitive"),
 	// ---- 沙箱
 	p("sandbox.use", "sandbox", "使用沙箱", "在云端沙箱执行代码与命令"),
-	p("sandbox.network", "sandbox", "沙箱联网", "允许沙箱访问外部网络", O, "sensitive"),
+	p("sandbox.network", "sandbox", "沙箱联网（已停用）", "已停用：沙箱网络不再由 Workroom 控制，运行代码不再检查此权限（保留一版以兼容已有角色授权，之后移除）", O, "sensitive"),
 	p("sandbox.browser", "sandbox", "浏览器工具", "使用云端浏览器工具访问网页"),
-	p("sandbox.policy.manage", "sandbox", "管理沙箱与工具策略", "修改组织的沙箱、网络与工具策略", O, "sensitive"),
+	p("sandbox.policy.manage", "sandbox", "管理沙箱与工具策略", "修改组织的沙箱与工具策略", O, "sensitive"),
 	// ---- 自动化
 	p("automation.create", "automation", "创建自动化", "创建定时/事件触发的自动化"),
 	p("automation.run_as_others", "automation", "以他人身份运行自动化", "管理他人的自动化，并让自动化以其负责人以外的身份运行", O, "critical"),
