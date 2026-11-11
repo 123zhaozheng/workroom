@@ -351,11 +351,30 @@ export class Sandbox {
 	}
 
 	async #networkAllowed(driver: SandboxDriver, want: boolean | undefined, p?: Principal): Promise<boolean> {
-		if (!want) return false;
+		if (!want) {
+			// A remote provider that cannot guarantee "no network": never pretend. If the admin allows sandbox network (and the user may use it),
+			// the run is honestly treated as networked (run output says so); otherwise it is refused (RemoteDriver also refuses network:false).
+			if (driver instanceof RemoteDriver && driver.provider.capabilities.networkOff !== "supported") {
+				const allowed = this.drivers.settings().network === "allowed" && (!p || (await this.#mayUseNetwork(p)));
+				if (!allowed)
+					throw new UnsupportedError(driver.label, "在“无网络”策略下运行：该提供方的断网能力尚未验证。如果可以接受沙箱联网，请管理员开启“允许沙箱联网”；否则请改用本机 Docker 沙箱");
+				return true;
+			}
+			return false;
+		}
 		if (p) await requirePermission(this.#ctx, p, "sandbox.network");
 		if (this.drivers.settings().network !== "allowed") throw new HttpError(403, "network_disabled", "沙箱默认不允许联网；管理员未开启“允许沙箱联网”");
 		if (!driver.capabilities.network) throw new HttpError(403, "network_unsupported", `当前沙箱驱动（${driver.label}）无法提供网络；请使用 Docker 驱动`);
 		return true;
+	}
+
+	async #mayUseNetwork(p: Principal): Promise<boolean> {
+		try {
+			await requirePermission(this.#ctx, p, "sandbox.network");
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	// ---------- run ----------
@@ -407,6 +426,7 @@ export class Sandbox {
 			// Save point: after every run (also failed/timed-out ones), after the remote sync-back. Failures are recorded in the workspace status, never thrown.
 			await persist.commit(input.principal, input.space, wsKey, "run_end").catch((e) => console.error("[sandbox] workspace commit failed", e));
 		}
+		if (network && !input.network) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}[网络] 该远端沙箱无法保证断网，本次运行按“可联网”处理（管理员已允许沙箱联网）` };
 		if (cred.names.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}[凭据] 本次运行注入了环境变量：${cred.names.join("、")}（进程及其子进程可读取）` };
 		if (mountNotes.length) r = { ...r, stderr: `${r.stderr ? `${r.stderr}\n` : ""}${mountNotes.join("\n")}` };
 		this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = ?, exit_code = ?, stdout = ?, stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", r.status, r.exitCode, r.stdout, r.stderr, Date.now() - started, nowIso(), id);
