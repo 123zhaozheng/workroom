@@ -14,7 +14,7 @@ rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
 const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", "server/src/main.ts"], {
 	cwd: ROOT,
-	env: { ...process.env, WORKROOM_DATA_DIR: dataDir, PORT: String(PORT), WORKROOM_WEB_DIST: process.env.RBAC_WEB_DIST ?? join(ROOT, "web/dist"), WORKROOM_FIXTURE_TOOLS: "1" },
+	env: { ...process.env, WORKROOM_ONBOARDING: "off", WORKROOM_DATA_DIR: dataDir, PORT: String(PORT), WORKROOM_WEB_DIST: process.env.RBAC_WEB_DIST ?? join(ROOT, "web/dist"), WORKROOM_FIXTURE_TOOLS: "1" },
 	stdio: ["ignore", "pipe", "pipe"],
 });
 let serverLog = "";

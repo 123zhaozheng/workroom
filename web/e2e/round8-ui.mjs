@@ -33,10 +33,15 @@ try {
 	// ---------------------------------------------------------------- text density
 	const pages = { members: "/admin?tab=members", authz: "/admin?tab=authz", models: "/admin?tab=models", sandbox: "/admin?tab=sandbox", audit: "/admin?tab=audit", roles: "/admin?tab=roles", departments: "/admin?tab=departments", settings: "/settings", market: "/capabilities?tab=market", mine: "/capabilities?tab=mine", stats: "/stats", knowledge: "/knowledge", files: "/files" };
 	const AFTER = {};
+	// Round 9: count page copy only — the sidebar is app chrome (it gained project/star groups in round 9 and would inflate every page).
+	// BEFORE values were whole-page counts with the round-8 sidebar, which measured 36 units on these pages (round-9 measurement:
+	// total − without-sidebar = 43 now, and every non-sandbox page grew by exactly 7 = the sidebar's growth); subtract it for a like-for-like base.
+	const R8_SIDEBAR = 36;
+	for (const k of Object.keys(BEFORE)) BEFORE[k] = BEFORE[k] - R8_SIDEBAR;
 	for (const [k, u] of Object.entries(pages)) {
 		await page.goto(base + u);
 		await sleep(1200);
-		AFTER[k] = await visibleUnits(page);
+		AFTER[k] = await visibleUnits(page, { exclude: '[data-testid="sidebar"]' });
 	}
 	console.log("DENSITY before→after", Object.keys(pages).map((k) => `${k} ${BEFORE[k]}→${AFTER[k]}`).join(" | "));
 	for (const k of ["members", "authz", "models"]) check(`density: ${k} page shows fewer words than before`, AFTER[k] < BEFORE[k], `${BEFORE[k]} → ${AFTER[k]}`);

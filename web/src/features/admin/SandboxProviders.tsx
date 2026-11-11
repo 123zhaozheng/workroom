@@ -274,8 +274,9 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 				</Button>
 				{dirty ? <Button size="sm" onClick={() => { setD(base); setReplacing(false); }}>放弃修改</Button> : null}
 			</div>
-			<p data-testid={id("net-note")} className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-fg-muted">
-				沙箱能否联网由提供方{p.capabilities.networkOn === "supported" ? "决定（已验证默认可联网）" : "决定（本系统尚未验证）"}：Workroom 创建沙箱时不要求也不阻止联网，不修改提供方的网络设置。沙箱内的联网不受本平台的 URL 策略约束。
+			<p data-testid={id("net-note")} className="mt-3 flex items-center gap-1 text-sm text-fg-muted">
+				联网：由提供方决定{p.capabilities.networkOn === "supported" ? "（已验证可联网）" : "（未验证）"}
+				<Help label="联网说明">Workroom 创建沙箱时不要求也不阻止联网，也不修改提供方的网络设置。沙箱内的联网不受本平台的网址策略约束。</Help>
 			</p>
 			<div className="mt-4 border-t border-border pt-3" data-testid={id("test")}>
 				<div className="flex flex-wrap items-center gap-2">

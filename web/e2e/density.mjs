@@ -1,12 +1,14 @@
 // Visible-text density helper (round 8): counts what a person can actually read on a page — CJK characters plus latin/number
 // words — skipping hidden nodes, <option>, scripts/styles and the input values. Used to compare before/after copy cleanup.
-export async function visibleUnits(page) {
-	return page.evaluate(() => {
+/** `opts.exclude`: a CSS selector whose subtree is not counted (e.g. the app sidebar, which is chrome, not page copy). */
+export async function visibleUnits(page, opts = {}) {
+	return page.evaluate((exclude) => {
 		const skip = new Set(["SCRIPT", "STYLE", "OPTION", "NOSCRIPT", "TEXTAREA"]);
 		let n = 0;
 		const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
 		const re = /[㐀-鿿＀-￯]|[A-Za-z0-9]+(?:[._'-][A-Za-z0-9]+)*/g;
 		const hidden = (el) => {
+			if (exclude && el.closest(exclude)) return true;
 			for (let e = el; e && e !== document.body; e = e.parentElement) {
 				if (skip.has(e.tagName) || e.getAttribute("aria-hidden") === "true" || e.classList.contains("sr-only")) return true;
 				const cs = getComputedStyle(e);
@@ -29,8 +31,9 @@ export async function visibleUnits(page) {
 		for (const sel of document.querySelectorAll("select")) {
 			const cs = getComputedStyle(sel);
 			if (cs.display === "none" || cs.visibility === "hidden" || sel.getBoundingClientRect().width === 0) continue;
+			if (exclude && sel.closest(exclude)) continue;
 			n += (sel.selectedOptions[0]?.textContent?.match(re) ?? []).length;
 		}
 		return n;
-	});
+	}, opts.exclude ?? null);
 }

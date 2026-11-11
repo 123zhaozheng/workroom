@@ -30,7 +30,7 @@ try {
 let out = "";
 const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", "server/src/main.ts"], {
 	cwd: ROOT,
-	env: { ...process.env, WORKROOM_DATA_DIR: DATA, PORT: String(PORT), WORKROOM_WEB_DIST: DIST, WORKROOM_FIXTURE_TOOLS: "1", WORKROOM_SECRET_KEY: "e2e-stats-secret-key-not-for-production" },
+	env: { ...process.env, WORKROOM_ONBOARDING: "off", WORKROOM_DATA_DIR: DATA, PORT: String(PORT), WORKROOM_WEB_DIST: DIST, WORKROOM_FIXTURE_TOOLS: "1", WORKROOM_SECRET_KEY: "e2e-stats-secret-key-not-for-production" },
 	stdio: ["ignore", "pipe", "pipe"],
 });
 child.stdout.on("data", (d) => (out += d));

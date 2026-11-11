@@ -13,7 +13,7 @@ rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
 const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", "server/src/main.ts"], {
 	cwd: ROOT,
-	env: { ...process.env, WORKROOM_DATA_DIR: dataDir, PORT: String(PORT), WORKROOM_FIXTURE_TOOLS: "1", WORKROOM_SANDBOX_DRIVER: process.env.WORKROOM_SANDBOX_DRIVER ?? "auto" },
+	env: { ...process.env, WORKROOM_ONBOARDING: "off", WORKROOM_DATA_DIR: dataDir, PORT: String(PORT), WORKROOM_FIXTURE_TOOLS: "1", WORKROOM_SANDBOX_DRIVER: process.env.WORKROOM_SANDBOX_DRIVER ?? "auto" },
 	stdio: ["ignore", "pipe", "pipe"],
 });
 let log = "";
