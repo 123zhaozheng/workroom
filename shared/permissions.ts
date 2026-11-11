@@ -40,6 +40,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
 	{ id: "automation", label: "自动化", description: "创建自动化，以及以他人身份运行" },
 	{ id: "project", label: "项目", description: "创建项目与管理项目" },
 	{ id: "assistant", label: "助手", description: "发布组织级助手" },
+	{ id: "credential", label: "凭据", description: "项目/组织级凭据的保存、使用与撤销（任何人都读不到明文）" },
 ];
 
 const O: readonly PermissionScopeKind[] = ["org"];
@@ -126,6 +127,10 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	p("project.manage", "project", "管理项目", "管理项目设置与成员（不含查看项目内容）；项目所有者默认拥有", OP, "sensitive"),
 	// ---- 助手
 	p("assistant.publish.org", "assistant", "发布组织助手", "创建、修改和删除组织级助手", O, "sensitive"),
+	// ---- 凭据（round 7b，增量）
+	p("credential.manage.project", "credential", "管理项目凭据", "把凭据保存为项目级、轮换并撤销项目级凭据；项目成员可通过代理使用，没有任何接口返回明文", OP, "sensitive"),
+	p("credential.manage.org", "credential", "管理组织凭据", "保存、轮换并撤销组织级凭据，撤销或停用组织内任何人的凭据（看不到明文）", O, "critical"),
+	p("credential.use.org", "credential", "使用组织凭据", "通过代理（或按同意注入环境变量）使用组织级凭据；默认只有所有者/管理员，其他角色按组织策略授予", O, "sensitive"),
 ];
 
 export const PERMISSION_IDS: readonly string[] = PERMISSIONS.map((x) => x.id);
