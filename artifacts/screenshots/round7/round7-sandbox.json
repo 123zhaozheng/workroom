@@ -1,0 +1,85 @@
+{
+  "at": "2026-11-11T00:19:35.372Z",
+  "results": [
+    {
+      "name": "[intercepted] admin sees 运行环境 tab and the 执行位置 section",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] one card per provider (3) with location badges",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] org default select: only enabled providers selectable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] key shown as 已保存 ••••1234, never an input value",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] 更换 opens an EMPTY write-only field",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] domain only for E2B",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] egress acknowledgement only on vendor-cloud cards",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] SDK line, lifecycle units (秒/分钟/小时)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] last test: result, steps, time",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] capability table: 支持 / 已实现，未联调 / 不支持 + isolation sentence",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] no unsaved-change test hint conflict: 完整测试 explains temporary sandbox",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] instances table lists provider, space, state, error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] secretStorage=false → explicit state, key field disabled with reason",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] unhealthy default shown, says no silent fallback, selection unchanged",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] empty instances → empty state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] 390px: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

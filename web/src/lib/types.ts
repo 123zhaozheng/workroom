@@ -30,6 +30,8 @@ export interface Project {
 	role: ProjectRole;
 	spaceId: string;
 	createdAt?: string;
+	/** Remote execution location chosen for this project (null/absent = follow the organisation default). */
+	sandboxProvider?: string | null;
 }
 
 export interface ProjectMember {

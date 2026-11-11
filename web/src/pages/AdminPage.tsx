@@ -16,6 +16,7 @@ import { Roles } from "@/features/admin/RolesTab";
 import { Authorizations } from "@/features/admin/AuthzTab";
 import { Sessions } from "@/features/admin/SessionsTab";
 import { ModelsAdmin } from "@/features/admin/models/ModelsAdmin";
+import { SandboxProviders } from "@/features/admin/SandboxProviders";
 import { Budgets } from "@/features/admin/BudgetsTab";
 import { Audit } from "@/features/admin/AuditTab";
 import { Trace } from "@/features/admin/TraceTab";
@@ -52,6 +53,7 @@ const GROUPS: NavGroup[] = [
 		],
 	},
 	{ label: "模型", items: [{ value: "models", label: "模型服务", any: ["model.manage", "model.provider.manage"] }] },
+	{ label: "工作区运行", items: [{ value: "sandbox", label: "运行环境", any: ["sandbox.policy.manage"] }] },
 	{ label: "技能与连接", items: [{ value: "market-review", label: "技能与连接审核", any: ["skill.review", "mcp.connector.review"], href: "/capabilities?tab=review" }] },
 	{ label: "用量与预算", items: [{ value: "budgets", label: "预算", any: ["budget.view", "budget.manage"] }] },
 	{
@@ -131,6 +133,7 @@ export default function AdminPage() {
 							{tab === "roles" ? <Roles /> : null}
 							{tab === "authz" ? <Authorizations /> : null}
 							{tab === "models" ? <ModelsAdmin /> : null}
+							{tab === "sandbox" ? <SandboxProviders /> : null}
 							{tab === "budgets" ? <Budgets /> : null}
 							{tab === "audit" ? <Audit /> : null}
 							{tab === "trace" ? <Trace /> : null}
