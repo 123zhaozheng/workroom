@@ -1,7 +1,7 @@
 // The small cloud button next to the composer's "+": which execution environment runs this conversation's code, and its state.
 // Opening it only READS (GET .../environment); it never creates or connects a sandbox. The only action that does is the explicit
 // 重试 / 现在准备 button. Switching goes through the project override API (the server enforces policy); without that right the reason is shown.
-import { Check, Cloud, HardDrive, Loader2, RotateCcw, TriangleAlert } from "lucide-react";
+import { Check, Cloud, Loader2, RotateCcw, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { ConversationEnvironmentDTO } from "@shared/sandbox";
@@ -40,10 +40,23 @@ export const STATE_TEXT: Record<ConversationEnvironmentDTO["state"], string> = {
 	lost: "已过期或被移除：下次运行时会自动重建，并恢复已保存的文件",
 };
 
-/** First sentence of the (long) isolation note: what is isolated. The full text stays one click away. */
-function firstLine(text: string): string {
-	const cut = text.indexOf("未隔离/限制");
-	return (cut > 0 ? text.slice(0, cut) : text).replace(/[；。]\s*$/, "").slice(0, 160);
+/** One plain sentence per environment type; the driver's full (technical) isolation note stays under 详细说明. */
+function plainIsolation(env: { id: string; location: string }): string {
+	switch (env.id) {
+		case "namespaces":
+			return "在本服务器的隔离环境中运行，只能读写本对话的工作文件。";
+		case "docker":
+			return "在本服务器的独立容器中运行，只能读写本对话的工作文件。";
+		case "opensandbox":
+			return "在组织自托管的 OpenSandbox 中运行，工作文件会同步到那里。";
+		case "e2b":
+		case "daytona":
+			return "在厂商的云端沙箱中运行，工作文件和命令会发送到厂商。";
+		case "none":
+			return "当前没有可用的执行环境。";
+		default:
+			return env.location === "vendor_cloud" ? "在厂商的云端沙箱中运行。" : "在隔离环境中运行。";
+	}
 }
 
 export function EnvironmentButton({ spaceId, conversationId, active, side = "top", disabled, className }: EnvironmentButtonProps) {
@@ -57,7 +70,7 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 	if (!spaceId || unavailable || (error && !env)) return null;
 
 	const remote = env?.kind === "remote";
-	const Icon = remote ? Cloud : HardDrive;
+	const Icon = Cloud; // one recognisable "execution environment" icon; the popover says where it really runs
 	const failed = env?.state === "failed";
 	const preparing = env?.state === "preparing";
 	const canManage = !!me?.permissionsAnywhere?.includes("sandbox.policy.manage") || isOrgAdmin;
@@ -110,11 +123,11 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 								<Badge data-testid="env-location" tone={LOCATION_TEXT[env.location].tone}>{LOCATION_TEXT[env.location].label}</Badge>
 								<Badge data-testid="env-network">{env.network === "allowed" ? "可联网" : "不联网"}</Badge>
 							</div>
-							<p data-testid="env-isolation" className="mt-1.5 text-xs leading-relaxed text-fg-muted">{firstLine(env.isolation)}</p>
-							{env.isolation.includes("未隔离/限制") ? (
+							<p data-testid="env-isolation" className="mt-1.5 text-xs leading-relaxed text-fg-muted">{plainIsolation(env)}</p>
+							{env.isolation && env.id !== "none" ? (
 								<details className="mt-1 text-xs text-fg-muted">
 									<summary className="cursor-pointer rounded text-fg-subtle hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">详细说明</summary>
-									<p data-testid="env-isolation-full" className="mt-1 leading-relaxed">{env.isolation}</p>
+									<p data-testid="env-isolation-full" className="mt-1 max-h-40 overflow-auto leading-relaxed">{env.isolation}</p>
 								</details>
 							) : null}
 						</div>
