@@ -189,7 +189,7 @@ export class StatsService {
 				r.label = `组织：${orgName}`;
 				break;
 			case "project": {
-				const pr = this.#db.get<{ name: string }>("SELECT name FROM id_projects WHERE id = ? AND org_id = ?", scope.projectId, p.orgId);
+				const pr = this.#db.get<{ name: string }>("SELECT name FROM id_projects WHERE id = ? AND org_id = ? AND kind = 'space'", scope.projectId, p.orgId);
 				if (!pr) throw new HttpError(404, "project_not_found", "项目不存在");
 				r.label = `项目：${pr.name}`;
 				r.projectSpaceId = id.projectSpace(scope.projectId)?.id;
@@ -238,7 +238,7 @@ export class StatsService {
 		const scopes: StatsScopeOption[] = [{ key: "personal", kind: "personal", label: "个人" }];
 		if (await this.#canView(p, { kind: "org" })) scopes.push({ key: "org", kind: "org", label: `组织：${orgName}` });
 		for (const d of this.#db.all<{ id: string; name: string }>("SELECT id, name FROM id_departments WHERE org_id = ? AND archived_at IS NULL ORDER BY name", p.orgId)) if (await this.#canView(p, { kind: "department", departmentId: d.id })) scopes.push({ key: `department:${d.id}`, kind: "department", label: `部门：${d.name}` });
-		for (const pr of this.#db.all<{ id: string; name: string }>("SELECT id, name FROM id_projects WHERE org_id = ? AND archived_at IS NULL ORDER BY name", p.orgId)) if (await this.#canView(p, { kind: "project", projectId: pr.id })) scopes.push({ key: `project:${pr.id}`, kind: "project", label: `项目：${pr.name}` });
+		for (const pr of this.#db.all<{ id: string; name: string }>("SELECT id, name FROM id_projects WHERE org_id = ? AND kind = 'space' AND archived_at IS NULL ORDER BY name", p.orgId)) if (await this.#canView(p, { kind: "project", projectId: pr.id })) scopes.push({ key: `project:${pr.id}`, kind: "project", label: `项目：${pr.name}` });
 		return { orgId: p.orgId, orgName, demo: this.isDemoOrg(p.orgId), scopes, exportable: scopes.length > 0 };
 	}
 

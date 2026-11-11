@@ -134,7 +134,7 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 	const budgetDto = (b: any) => {
 		const st = usage.budgetState(b);
 		let name: string | undefined;
-		if (b.scope_kind === "project") name = db.get<any>("SELECT name FROM id_projects WHERE id = ?", b.scope_id)?.name;
+		if (b.scope_kind === "project") name = db.get<any>("SELECT name FROM id_projects WHERE id = ? AND kind = 'space'", b.scope_id)?.name;
 		else if (b.scope_kind === "department") name = db.get<any>("SELECT name FROM id_departments WHERE id = ?", b.scope_id)?.name;
 		else if (b.scope_kind === "user") name = db.get<any>("SELECT name FROM id_users WHERE id = ?", b.scope_id)?.name;
 		else name = db.get<any>("SELECT name FROM id_orgs WHERE id = ?", b.scope_id)?.name;
@@ -162,7 +162,7 @@ export function registerOpsRoutes(api: Hono<AppEnv>, ctx: AppContext, s: OpsStat
 		const ok =
 			b.scope.kind === "org" ||
 			(b.scope.kind === "department" && db.get("SELECT 1 FROM id_departments WHERE id = ? AND org_id = ?", sid, p.orgId)) ||
-			(b.scope.kind === "project" && db.get("SELECT 1 FROM id_projects WHERE id = ? AND org_id = ?", sid, p.orgId)) ||
+			(b.scope.kind === "project" && db.get("SELECT 1 FROM id_projects WHERE id = ? AND org_id = ? AND kind = 'space'", sid, p.orgId)) ||
 			(b.scope.kind === "user" && db.get("SELECT 1 FROM id_org_members WHERE user_id = ? AND org_id = ? AND removed_at IS NULL", sid, p.orgId));
 		if (!ok) throw new HttpError(404, "scope_not_found", "预算范围对象不存在");
 		return sid as string;

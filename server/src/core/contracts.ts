@@ -79,6 +79,24 @@ export interface IdentityService {
 	projectSpace(projectId: string): Space | null;
 	/** The given departments plus all their ancestors (archived/foreign-org ones excluded). A department-scoped item applies to a member of any department whose ancestry contains the item's department (subtree rule, as in authz). */
 	departmentScopeIds(orgId: string, departmentIds: readonly string[]): string[];
+	// ---- Round 9: lightweight ("container") projects and read-only shares. Conversations stay in their creator's space; a project is a catalog relation.
+	/** A live container project (no space, no members), or null (also for legacy "space" projects). */
+	containerProject(projectId: string): ContainerProjectInfo | null;
+	/** Is the user granted READ on this container project right now (same org, owner still active)? */
+	hasProjectShare(userId: string, orgId: string, projectId: string): boolean;
+	/** Ids of the container projects shared with the user (live shares only). */
+	sharedProjectIds(userId: string, orgId: string): string[];
+	/** Runtime → identity: which project a conversation belongs to (null = none/deleted). Used to extend READ to share grantees. */
+	setConversationProjectResolver(fn: (spaceId: string, conversationId: number) => Promise<string | null>): void;
+}
+
+export interface ContainerProjectInfo {
+	readonly id: string;
+	readonly orgId: string;
+	readonly name: string;
+	readonly ownerId: string;
+	readonly createdAt: string;
+	readonly updatedAt: string;
 }
 
 // ---------- runtime (group A, server/src/runtime) ----------

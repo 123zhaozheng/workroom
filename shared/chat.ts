@@ -13,6 +13,10 @@ export interface ConversationSummary {
 	readonly title: string;
 	readonly kind: ConversationKind;
 	readonly projectId?: string;
+	/** Round 9: display name of the project (container or legacy). */
+	readonly projectName?: string;
+	/** Round 9: how the viewer reaches it: "own" = in my personal space; "member" = legacy project space; "shared" = read-only through a project share. */
+	readonly access?: "own" | "member" | "shared";
 	readonly createdBy: string;
 	readonly createdAt: string;
 	readonly updatedAt: string;

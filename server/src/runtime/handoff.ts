@@ -8,6 +8,7 @@ import { HttpError, nowIso } from "../core/http.ts";
 import type { ApprovalDTO, AssistantEntryDTO, ConversationHandoff, EffectDTO, HandoffDeliverable, HandoffParticipant, HandoffRun, ProjectHandoff, ProjectHandoffConversation, RunStatus, UserEntryDTO } from "../../../shared/chat.ts";
 import { liveDTO, queueDTO } from "./dto.ts";
 import { cid, type CatalogRow, type Runtime } from "./service.ts";
+import { liveConversations } from "../identity/projects.ts";
 
 const MAX_ENTRIES = 2000;
 const excerpt = (t: string | undefined, n = 300) => (t ? (t.length > n ? `${t.slice(0, n - 1)}…` : t) : undefined);
@@ -151,7 +152,7 @@ export class Handoff {
 		const pr = this.#rt.ctx.db.get<{ id: string; name: string; description: string }>("SELECT id, name, description FROM id_projects WHERE id = ?", projectId);
 		if (!space || !pr) throw new HttpError(404, "project_not_found", "项目不存在");
 		const harness = await this.#rt.manager.get(space.id);
-		const rows = this.#rt.ctx.db.all<CatalogRow>("SELECT * FROM rt_conversations WHERE space_id = ? AND archived = 0 ORDER BY updated_at DESC LIMIT 200", space.id);
+		const rows = this.#rt.ctx.db.all<CatalogRow>(`SELECT * FROM rt_conversations WHERE space_id = ? AND archived = 0${liveConversations(this.#rt.ctx.db)} ORDER BY updated_at DESC LIMIT 200`, space.id);
 		const del = await this.deliverables(p, { projectId });
 		const conversations: ProjectHandoffConversation[] = [];
 		for (const r of rows) {

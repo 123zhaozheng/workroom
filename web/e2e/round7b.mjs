@@ -453,7 +453,7 @@ const memberOrgGet = await page.evaluate(async () => (await fetch("/api/sandbox-
 check("C a plain member cannot read/write the org scope (server refuses)", memberOrgGet === 403 || memberOrgGet === 404, String(memberOrgGet));
 
 // project scope: owner edits, a member only reads
-const proj = (await (await admin.request.post(`${base}/api/projects`, { data: { name: "环境变量项目" } })).json()).project;
+const proj = (await (await admin.request.post(`${base}/api/projects`, { data: { kind: "space", name: "环境变量项目" } })).json()).project;
 await admin.request.put(`${base}/api/projects/${proj.id}/members`, { data: { email: alice.email, role: "editor" } });
 await admin.goto(`${base}/projects/${proj.id}`);
 const penvAdmin = admin.locator('[data-testid="env-vars-project"]');

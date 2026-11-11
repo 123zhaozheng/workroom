@@ -191,7 +191,7 @@ try {
 	await shot(page, "1440-knowledge-debug-eval");
 
 	// ---------------------------------------------------------------- project roles: editor handoff vs viewer read-only
-	const proj = (await (await page.request.post(`${base}/api/projects`, { data: { name: "发布会筹备" } })).json()).project;
+	const proj = (await (await page.request.post(`${base}/api/projects`, { data: { kind: "space", name: "发布会筹备" } })).json()).project;
 	const invite = async () => (await (await page.request.post(`${base}/api/admin/invites`, { data: { role: "member", ttlHours: 24 } })).json()).invite.code;
 	const join = async (name, role) => {
 		const c = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });

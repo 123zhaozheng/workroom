@@ -180,7 +180,7 @@ test("personal providers (个人自带密钥): policy-gated, owner-only, SSRF-gu
 		assert.equal(up.requests.filter((r) => r.method === "POST").at(-1)!.headers.authorization, `Bearer ${PERSONAL_KEY}`);
 
 		// 2b. A collaborator who continues the owner's personal-key conversation in a shared project cannot spend that key
-		const { project } = await t.json("POST", "/api/projects", { token: dev.token, json: { name: "共享项目" } });
+		const { project } = await t.json("POST", "/api/projects", { token: dev.token, json: { kind: "space", name: "共享项目" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: dev.token, json: { email: "other@a.example", role: "editor" } });
 		const { conversation: shared } = await t.json("POST", "/api/conversations", { token: dev.token, json: { projectId: project.id, modelId: `${mine.id}/mock-chat` } });
 		const postsBefore = up.requests.filter((r) => r.method === "POST").length;

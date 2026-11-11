@@ -270,7 +270,7 @@ test("X-ISO: another user gets 403 (SSE included); removed project member is blo
 		const { invite } = await t.json("POST", "/api/admin/invites", { token: a.token, json: { role: "member" } });
 		const b = await t.user("iso-b@example.com", { inviteCode: invite.code });
 		assert.equal(b.me.orgId, a.me.orgId);
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "协作项目" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "协作项目" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "iso-b@example.com", role: "editor" } });
 		const { conversation: pc } = await t.json("POST", "/api/conversations", { token: b.token, json: { projectId: project.id } });
 		assert.equal(pc.spaceId, project.spaceId);

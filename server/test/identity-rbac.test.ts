@@ -90,8 +90,8 @@ test("built-in roles: each role's effective permissions match its definition (in
 		await t.json("GET", "/api/admin/audit", { token: users.member!.token, expect: 403 });
 		await t.json("GET", "/api/admin/audit", { token: users.reviewer!.token, expect: 403 });
 		// Guest cannot create projects or external share links; member can.
-		await t.json("POST", "/api/projects", { token: users.guest!.token, json: { name: "g" }, expect: 403 });
-		await t.json("POST", "/api/projects", { token: users.member!.token, json: { name: "m" } });
+		await t.json("POST", "/api/projects", { token: users.guest!.token, json: { kind: "space", name: "g" }, expect: 403 });
+		await t.json("POST", "/api/projects", { token: users.member!.token, json: { kind: "space", name: "m" } });
 		// Admin keeps every legacy admin power.
 		await t.json("PATCH", "/api/org", { token: users.admin!.token, json: { name: "Renamed" } });
 		const mine = await t.json("GET", "/api/me/permissions", { token: users.guest!.token });
@@ -536,7 +536,7 @@ test("cross-tenant: roles, assignments, grants, groups and scopes never cross or
 		const bm = await t.user("bm@b.example", { inviteCode: bInv.invite.code, name: "BM" });
 		const az = authzOf(t);
 		const aDept = await dept(t, a.owner, "A部");
-		const aProject = (await t.json("POST", "/api/projects", { token: a.owner.token, json: { name: "A项目" } })).project.id as string;
+		const aProject = (await t.json("POST", "/api/projects", { token: a.owner.token, json: { kind: "space", name: "A项目" } })).project.id as string;
 		const { role: aRole } = await t.json("POST", "/api/admin/roles", { token: a.owner.token, json: { name: "A角色", permissions: ["audit.view"] } });
 		const { group: aGroup } = await t.json("POST", "/api/admin/groups", { token: a.owner.token, json: { name: "A组" } });
 		// B's owner cannot see or use A's role / department / project / group / users.

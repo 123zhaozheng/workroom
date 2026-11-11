@@ -18,7 +18,7 @@ async function world(t: TestApp) {
 	const a = await t.user("wsowner@example.com");
 	const viewer = await orgMember(t, a, "wsview@example.com");
 	const outsider = await t.user("wsout@example.com");
-	const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "Workspace" } });
+	const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "Workspace" } });
 	await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "wsview@example.com", role: "viewer" } });
 	const sp = project.spaceId as string;
 	const url = (path: string, q = "") => `/api/sandbox/${sp}/${path}${path.includes("?") ? "&" : "?"}conversationId=1${q}`;
@@ -295,7 +295,7 @@ test("RBAC: the 访客 role (no sandbox.use / sandbox.browser) is refused by san
 		};
 		const guest = await mk("rbacguest@example.com", "builtin:guest");
 		const member = await mk("rbacmember@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { name: "RBAC" } });
+		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { kind: "space", name: "RBAC" } });
 		for (const e of ["rbacguest@example.com", "rbacmember@example.com"]) await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: e, role: "editor" } });
 		const sp = project.spaceId as string;
 		const ctx = t.app.ctx;

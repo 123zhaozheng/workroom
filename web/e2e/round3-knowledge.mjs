@@ -35,7 +35,7 @@ try {
 	await register(a, base, { email: `ka-${Date.now()}@example.com`, name: "知识管理员" });
 	const me = await (await a.request.get(`${base}/api/me`)).json();
 	const sp = me.personalSpaceId;
-	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { name: "华东项目" } })).json()).project;
+	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { kind: "space", name: "华东项目" } })).json()).project;
 	const dept = (await (await a.request.post(`${base}/api/admin/departments`, { data: { name: "市场部" } })).json()).department;
 	await a.request.put(`${base}/api/admin/departments/${dept.id}/members`, { data: { userId: me.me.userId, role: "manager" } });
 	const code = (await (await a.request.post(`${base}/api/admin/invites`, { data: { role: "member", ttlHours: 24 } })).json()).invite.code;

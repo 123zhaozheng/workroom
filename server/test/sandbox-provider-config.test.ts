@@ -197,7 +197,7 @@ test("selection policy, project override and effectiveFor matrix", async () => {
 	const h = await harness();
 	try {
 		const orgId = h.owner.me.orgId;
-		const proj = await h.t.json("POST", "/api/projects", { token: h.member.token, json: { name: "mgr-proj" } }); // member creates → project owner
+		const proj = await h.t.json("POST", "/api/projects", { token: h.member.token, json: { kind: "space", name: "mgr-proj" } }); // member creates → project owner
 		const projectId = proj.project.id as string;
 		const personal = h.t.app.ctx.services.get("identity").personalSpace(h.member.me.userId, orgId) as Space;
 		const pspace = h.t.app.ctx.services.get("identity").projectSpace(projectId) as Space;

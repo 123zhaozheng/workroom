@@ -13,6 +13,7 @@ import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
 import type { AssistantStore } from "./assistants.ts";
+import { liveConversations, tableHasColumn } from "../identity/projects.ts";
 
 export interface CatalogRow {
 	space_id: string;
@@ -24,6 +25,8 @@ export interface CatalogRow {
 	archived: number;
 	created_at: string;
 	updated_at: string;
+	/** Round 9 (runtime migration by the meta module): set = soft-deleted; every list/access path treats the conversation as gone. */
+	deleted_at?: string | null;
 }
 
 const DEFAULT_TITLE = "新对话";
@@ -53,6 +56,30 @@ export class Runtime implements RuntimeService {
 	constructor(ctx: AppContext, manager: HarnessManager) {
 		this.ctx = ctx;
 		this.manager = manager;
+		// Round 9: identity extends READ on a conversation to the grantees of its container project; it asks us which project that is.
+		if (ctx.services.has("identity")) ctx.services.get("identity").setConversationProjectResolver((spaceId, conversationId) => this.projectOfConversation(spaceId, conversationId));
+		try {
+			ctx.db.run("CREATE INDEX IF NOT EXISTS rt_conversations_project ON rt_conversations (project_id)");
+		} catch {
+			/* catalog table not there (unit tests without migrations) */
+		}
+	}
+
+	/**
+	 * The container/legacy project a conversation belongs to, or null (none / soft-deleted). Subagent child conversations have no catalog
+	 * row: they resolve through their owner chain to the root conversation.
+	 */
+	async projectOfConversation(spaceId: string, conversationId: number): Promise<string | null> {
+		let id = conversationId;
+		for (let depth = 0; depth < 8; depth++) {
+			const row = this.row(spaceId, id);
+			if (row) return row.deleted_at ? null : row.project_id;
+			const harness = await this.manager.get(spaceId);
+			const rec = await harness.commit((tx) => tx.conversation(cid(id)), BACKGROUND_CONTEXT);
+			if (!rec?.owner) return null;
+			id = rec.owner.conversationId as number;
+		}
+		return null;
 	}
 
 	get acl(): AccessControl {
@@ -74,6 +101,12 @@ export class Runtime implements RuntimeService {
 	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: Context): Promise<{ conversationId: number; notice?: string }> {
 		const space = this.manager.space(spaceId);
 		await this.acl.require(principal, "write", { kind: "space", id: spaceId });
+		// Round 9: a project id on a personal-space conversation must be the caller's own container project (never somebody else's, never another org's).
+		if (options.projectId && !space.projectId) {
+			const cp = this.ctx.services.get("identity").containerProject(options.projectId);
+			if (!cp || cp.orgId !== principal.orgId) throw new HttpError(404, "project_not_found", "项目不存在");
+			if (cp.ownerId !== principal.userId || space.ownerUserId !== principal.userId) throw new HttpError(403, "forbidden", "只能把对话放进自己的项目", { reason: "not_project_owner" });
+		}
 		const assistant = options.assistantId ? this.assistants?.get(principal, options.assistantId) : undefined;
 		if (options.assistantId && !assistant) throw new HttpError(404, "assistant_not_found", "助手不存在或无权使用");
 		// The assistant's default model is re-checked for THIS principal; when it is not allowed or blocked the
@@ -247,11 +280,40 @@ export class Runtime implements RuntimeService {
 		if (!conv) throw new HttpError(404, "not_found", "会话不存在");
 		const record = (await harness.commit((tx) => tx.conversation(cid(conversationId)), context))!;
 		if (!row && !record.owner) throw new HttpError(404, "not_found", "会话不存在");
+		// Soft-deleted conversations are gone for everybody (a task-owned child follows its root conversation).
+		if (row?.deleted_at) throw new HttpError(404, "not_found", "会话不存在");
+		if (!row && record.owner && (await this.projectOfConversationDeleted(spaceId, conversationId))) throw new HttpError(404, "not_found", "会话不存在");
 		if (row && action === "write" && row.archived) throw new HttpError(409, "archived", "会话已归档");
 		return { harness, conv, row, record };
 	}
 
-	summary(spaceId: string, conversationId: number, row: CatalogRow | undefined, record?: ConversationRecord, status?: ConversationSummary["status"]): ConversationSummary {
+	/** Is the root of a task-owned child conversation soft-deleted? */
+	async projectOfConversationDeleted(spaceId: string, conversationId: number): Promise<boolean> {
+		if (!tableHasColumn(this.ctx.db, "rt_conversations", "deleted_at")) return false;
+		let id = conversationId;
+		for (let depth = 0; depth < 8; depth++) {
+			const row = this.row(spaceId, id);
+			if (row) return !!row.deleted_at;
+			const harness = await this.manager.get(spaceId);
+			const rec = await harness.commit((tx) => tx.conversation(cid(id)), BACKGROUND_CONTEXT);
+			if (!rec?.owner) return false;
+			id = rec.owner.conversationId as number;
+		}
+		return false;
+	}
+
+	/** How `viewer` reaches a conversation of `spaceId`: own personal space, legacy project space (member), or through a project share. */
+	accessOf(viewer: string, spaceId: string): "own" | "member" | "shared" | undefined {
+		const sp = this.ctx.db.get<{ kind: string; owner_user_id: string | null }>("SELECT kind, owner_user_id FROM id_spaces WHERE id = ?", spaceId);
+		if (!sp) return undefined;
+		if (sp.kind === "project") return "member";
+		return sp.owner_user_id === viewer ? "own" : "shared";
+	}
+
+	/** `viewer` (user id) adds the viewer-relative `access` field; the project name is always resolved. */
+	summary(spaceId: string, conversationId: number, row: CatalogRow | undefined, record?: ConversationRecord, status?: ConversationSummary["status"], viewer?: string): ConversationSummary {
+		const projectName = row?.project_id ? this.ctx.db.get<{ name: string }>("SELECT name FROM id_projects WHERE id = ?", row.project_id)?.name : undefined;
+		const access = viewer ? this.accessOf(viewer, spaceId) : undefined;
 		const base: ConversationSummary = row
 			? {
 					spaceId,
@@ -259,12 +321,14 @@ export class Runtime implements RuntimeService {
 					title: row.title,
 					kind: row.kind,
 					...(row.project_id ? { projectId: row.project_id } : {}),
+					...(projectName ? { projectName } : {}),
+					...(access ? { access } : {}),
 					createdBy: row.created_by,
 					createdAt: row.created_at,
 					updatedAt: row.updated_at,
 					archived: !!row.archived,
 				}
-			: { spaceId, conversationId, title: `子任务会话 #${conversationId}`, kind: "subagent", createdBy: "", createdAt: "", updatedAt: "", archived: false };
+			: { spaceId, conversationId, title: `子任务会话 #${conversationId}`, kind: "subagent", ...(access ? { access } : {}), createdBy: "", createdAt: "", updatedAt: "", archived: false };
 		return {
 			...base,
 			...(record?.parent ? { parent: { conversationId: record.parent.conversationId as number, entryId: record.parent.at as number } } : {}),
@@ -273,21 +337,40 @@ export class Runtime implements RuntimeService {
 		};
 	}
 
+	/**
+	 * Conversations the caller can see. Without `projectId`: own personal space + legacy project spaces (conversations shared with me through a
+	 * container project are NOT mixed into recents; they are listed under their project). With a container `projectId`: the owner's conversations
+	 * in it (owner: own; grantee: read-only, access "shared"); unknown / other-org / unshared projects are a plain 404. Soft-deleted rows never appear.
+	 */
 	async list(p: Principal, q: { spaceId?: string; projectId?: string; q?: string; limit?: number; archived?: boolean }, context: Context): Promise<ConversationSummary[]> {
 		const identity = this.ctx.services.get("identity");
-		let spaces = await this.acl.readableSpaces(p);
-		if (q.spaceId) spaces = spaces.filter((s) => s.id === q.spaceId);
-		if (q.projectId) {
-			const ps = identity.projectSpace(q.projectId);
-			spaces = spaces.filter((s) => s.id === ps?.id);
-		}
-		if (spaces.length === 0) {
-			if (q.spaceId || q.projectId) throw new HttpError(403, "forbidden", "无权访问该空间");
-			return [];
-		}
 		const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
-		const params: any[] = spaces.map((s) => s.id);
-		let sql = `SELECT * FROM rt_conversations WHERE space_id IN (${spaces.map(() => "?").join(",")}) AND archived = ?`;
+		const live = liveConversations(this.ctx.db);
+		const params: any[] = [];
+		let where: string;
+		if (q.projectId && identity.containerProject(q.projectId)) {
+			const cp = identity.containerProject(q.projectId)!;
+			const isOwner = cp.orgId === p.orgId && cp.ownerId === p.userId;
+			if (cp.orgId !== p.orgId || (!isOwner && !identity.hasProjectShare(p.userId, p.orgId, cp.id))) throw new HttpError(404, "project_not_found", "项目不存在");
+			const ownerSpace = identity.personalSpace(cp.ownerId, cp.orgId);
+			if (q.spaceId && q.spaceId !== ownerSpace.id) return [];
+			where = "space_id = ? AND project_id = ?";
+			params.push(ownerSpace.id, cp.id);
+		} else {
+			let spaces = await this.acl.readableSpaces(p);
+			if (q.spaceId) spaces = spaces.filter((s) => s.id === q.spaceId);
+			if (q.projectId) {
+				const ps = identity.projectSpace(q.projectId);
+				spaces = spaces.filter((s) => s.id === ps?.id);
+			}
+			if (spaces.length === 0) {
+				if (q.spaceId || q.projectId) throw new HttpError(403, "forbidden", "无权访问该空间");
+				return [];
+			}
+			where = `space_id IN (${spaces.map(() => "?").join(",")})`;
+			params.push(...spaces.map((s) => s.id));
+		}
+		let sql = `SELECT * FROM rt_conversations WHERE ${where} AND archived = ?${live}`;
 		params.push(q.archived ? 1 : 0);
 		if (q.q?.trim()) {
 			sql += " AND title LIKE ? ESCAPE '\\'";
@@ -300,15 +383,15 @@ export class Runtime implements RuntimeService {
 		for (const r of rows) {
 			const h = this.manager.openHarness(r.space_id);
 			if (!h) {
-				out.push(this.summary(r.space_id, r.conversation_id, r));
+				out.push(this.summary(r.space_id, r.conversation_id, r, undefined, undefined, p.userId));
 				continue;
 			}
 			try {
 				const record = await h.commit((tx) => tx.conversation(cid(r.conversation_id)), context);
 				const live = await h.snapshot(LiveDoc, cid(r.conversation_id), context);
-				out.push(this.summary(r.space_id, r.conversation_id, r, record, live?.run ? "running" : undefined));
+				out.push(this.summary(r.space_id, r.conversation_id, r, record, live?.run ? "running" : undefined, p.userId));
 			} catch {
-				out.push(this.summary(r.space_id, r.conversation_id, r));
+				out.push(this.summary(r.space_id, r.conversation_id, r, undefined, undefined, p.userId));
 			}
 		}
 		return out;
@@ -321,7 +404,7 @@ export class Runtime implements RuntimeService {
 	async patch(p: Principal, spaceId: string, conversationId: number, body: { title?: string; archived?: boolean; modelId?: string; thinkingLevel?: string }, context: Context): Promise<ConversationSummary> {
 		await this.require(p, "write", spaceId, conversationId);
 		const row = this.row(spaceId, conversationId);
-		if (!row) throw new HttpError(404, "not_found", "会话不存在");
+		if (!row || row.deleted_at) throw new HttpError(404, "not_found", "会话不存在");
 		// Validate and apply the model switch first: a refused switch must not leave a half-applied PATCH (title/archived).
 		if (body.modelId !== undefined || body.thinkingLevel !== undefined) {
 			if (body.modelId === undefined) throw new HttpError(400, "invalid_model", "切换思考强度需要同时给出 modelId");
@@ -334,7 +417,42 @@ export class Runtime implements RuntimeService {
 		}
 		if (body.archived !== undefined) this.ctx.db.run("UPDATE rt_conversations SET archived = ?, updated_at = ? WHERE space_id = ? AND conversation_id = ?", body.archived ? 1 : 0, nowIso(), spaceId, conversationId);
 		const { record } = await this.access(p, "read", spaceId, conversationId, context);
-		return this.summary(spaceId, conversationId, this.row(spaceId, conversationId), record);
+		return this.summary(spaceId, conversationId, this.row(spaceId, conversationId), record, undefined, p.userId);
+	}
+
+	/**
+	 * Round 9: put a conversation into one of the caller's container projects, or take it out (projectId null). A conversation never changes space:
+	 * only the catalog relation changes (nothing durable, no files, no workspace, no usage moves). Only the creator, only conversations in the
+	 * caller's personal space (legacy project-space conversations are refused), only the caller's own container project. Idempotent.
+	 */
+	async moveToProject(p: Principal, spaceId: string, conversationId: number, projectId: string | null, context: Context): Promise<{ conversation: ConversationSummary; visibleTo: number }> {
+		if (projectId !== null && (typeof projectId !== "string" || !projectId)) throw new HttpError(400, "invalid", "projectId 必须是项目 id 或 null");
+		const { record, row } = await this.access(p, "read", spaceId, conversationId, context);
+		if (!row) throw new HttpError(409, "read_only", "子任务会话不能移动");
+		const identity = this.ctx.services.get("identity");
+		const space = identity.space(spaceId);
+		if (!space) throw new HttpError(404, "not_found", "会话不存在");
+		if (space.kind === "project") throw new HttpError(409, "legacy_project_conversation", "旧版项目里的对话不能移动");
+		if (space.ownerUserId !== p.userId || row.created_by !== p.userId) throw new HttpError(403, "forbidden", "只有对话的创建者可以移动对话", { reason: "not_creator" });
+		if (row.kind !== "chat" && row.kind !== "branch") throw new HttpError(409, "not_movable", "该类对话不能移动");
+		let target: { id: string; name: string } | undefined;
+		if (projectId !== null) {
+			const cp = identity.containerProject(projectId);
+			if (!cp || cp.orgId !== p.orgId) throw new HttpError(404, "project_not_found", "项目不存在");
+			if (cp.ownerId !== p.userId) throw new HttpError(403, "forbidden", "只能把对话放进自己的项目", { reason: "not_project_owner" });
+			target = cp;
+		}
+		const from = row.project_id;
+		if ((from ?? null) !== (target?.id ?? null)) {
+			const at = nowIso();
+			this.ctx.db.tx(() => {
+				this.ctx.db.run("UPDATE rt_conversations SET project_id = ? WHERE space_id = ? AND conversation_id = ?", target?.id ?? null, spaceId, conversationId);
+				for (const pid of [from, target?.id]) if (pid) this.ctx.db.run("UPDATE id_projects SET updated_at = ? WHERE id = ? AND kind = 'container'", at, pid);
+			});
+			if (this.ctx.services.has("audit")) (this.ctx.services.get("audit") as { record(i: unknown): string }).record({ orgId: p.orgId, actorUserId: p.userId, action: "conversation.project.move", target: `${spaceId}/${conversationId}`, detail: { from, to: target?.id ?? null } });
+		}
+		const visibleTo = target ? (this.ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM id_project_shares WHERE project_id = ?", target.id)?.n ?? 0) : 0;
+		return { conversation: this.summary(spaceId, conversationId, this.row(spaceId, conversationId), record, undefined, p.userId), visibleTo };
 	}
 
 	// ------------------------------------------------------------------ models
@@ -571,7 +689,7 @@ export class Runtime implements RuntimeService {
 			now,
 		);
 		const record = await harness.commit((tx) => tx.conversation(fork.id), context);
-		return { conv: fork, summary: this.summary(spaceId, fork.id as number, this.row(spaceId, fork.id as number), record) };
+		return { conv: fork, summary: this.summary(spaceId, fork.id as number, this.row(spaceId, fork.id as number), record, undefined, p.userId) };
 	}
 
 	async #visibleEntry(conv: Conversation, entryId: number, context: Context): Promise<EntryRecord> {
@@ -838,12 +956,13 @@ export class Runtime implements RuntimeService {
 			const recs = await harness.commit((tx) => Promise.all(branchRows.map((r) => tx.conversation(cid(r.conversation_id)))), context);
 			branchRows.forEach((r, i) => {
 				const rec = recs[i];
-				if (rec?.parent && (rec.parent.conversationId as number) === conversationId) branches.push(this.summary(spaceId, r.conversation_id, r, rec));
+				// A read-only viewer only sees branches that are in the same project (the others are not readable by them).
+				if (rec?.parent && (rec.parent.conversationId as number) === conversationId && !r.deleted_at && (this.accessOf(p.userId, spaceId) !== "shared" || r.project_id === row?.project_id)) branches.push(this.summary(spaceId, r.conversation_id, r, rec, undefined, p.userId));
 			});
 		}
 		const live = await harness.snapshot(LiveDoc, conv.id, context);
 		return {
-			conversation: this.summary(spaceId, conversationId, row, record, live?.run ? "running" : undefined),
+			conversation: this.summary(spaceId, conversationId, row, record, live?.run ? "running" : undefined, p.userId),
 			...(record.parent ? { parent: { conversationId: record.parent.conversationId as number, entryId: record.parent.at as number } } : {}),
 			branches,
 			agent: await this.agentDTO(harness, conv, context),
@@ -866,14 +985,14 @@ export class Runtime implements RuntimeService {
 	}
 
 	/** Build the full ConversationState from a view value (watch) plus our own documents. */
-	async state(spaceId: string, harness: Harness, conv: Conversation, view: { entries: readonly EntryRecord[]; before?: EntryId; docs: Record<string, any>; conversation: ConversationRecord }, revision: number, context: Context): Promise<ConversationState> {
+	async state(spaceId: string, harness: Harness, conv: Conversation, view: { entries: readonly EntryRecord[]; before?: EntryId; docs: Record<string, any>; conversation: ConversationRecord }, revision: number, context: Context, viewer?: string): Promise<ConversationState> {
 		const conversationId = conv.id as number;
 		const { approvals, effects, subagents } = await this.docs(harness, conversationId, context);
 		const live = view.docs[LiveDoc.definition.kind];
 		const hasAnswer = view.before !== undefined || view.entries.some((e) => e.kind === "pi.assistant");
 		const ld = liveDTO(live, approvals, hasAnswer);
 		return {
-			conversation: this.summary(spaceId, conversationId, this.row(spaceId, conversationId), view.conversation, ld.status),
+			conversation: this.summary(spaceId, conversationId, this.row(spaceId, conversationId), view.conversation, ld.status, viewer),
 			entries: await this.toDTOs(harness, view.entries, context),
 			hasEarlier: view.before !== undefined,
 			live: ld,

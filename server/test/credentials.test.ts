@@ -654,7 +654,7 @@ test("ACL: other users and other orgs cannot use, list or read someone's credent
 		assert.equal((await t.req("GET", `/api/credentials/${org.credentialId}`, { token: eve.token })).status, 404);
 
 		// project scope: members of the project use it; non-members don't; plain members can't save it
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Alpha" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Alpha" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { userId: bob.me.userId, role: "editor" } });
 		const pc = await newConv(t, alice.token, project.id);
 		const proj = await mkCred(t, alice, pc.sp, pc.cid, { persist: "save", scope: "project" });

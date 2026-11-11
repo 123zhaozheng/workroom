@@ -112,7 +112,7 @@ test("online backup of a live data volume → verify → restore into an empty d
 	try {
 		if (!t.app.ctx.services.has("runtime")) return tt.skip("runtime module not loaded");
 		const a = await t.user("a@a.example");
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "备份项目" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "备份项目" } });
 		const { conversation } = await t.json("POST", "/api/conversations", { token: a.token, json: { projectId: project.id, title: "备份会话" } });
 		const sent = await t.json("POST", `/api/conversations/${conversation.spaceId}/${conversation.conversationId}/messages`, { token: a.token, json: { text: "[[reply 备份前的回答]]", requestId: "bk1" } });
 		await waitFor(async () => (await t.json("GET", `/api/conversations/${conversation.spaceId}/${conversation.conversationId}/submissions/${sent.submissionId}`, { token: a.token })).status === "done");
@@ -131,7 +131,7 @@ test("online backup of a live data volume → verify → restore into an empty d
 		assert.equal(verifyBackup(tampered).ok, false);
 		assert.throws(() => restoreBackup(tampered, join(restored, "x")), /verification/);
 		// Writes after the backup are not in it.
-		await t.json("POST", "/api/projects", { token: a.token, json: { name: "备份之后" } });
+		await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "备份之后" } });
 		await t.stop();
 		const target = join(restored, "data");
 		restoreBackup(dest, target);

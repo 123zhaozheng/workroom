@@ -112,7 +112,7 @@ test("model switch: a project viewer cannot switch; an editor can; a branch keep
 			const inv = await t.json("POST", "/api/admin/invites", { token: owner.token, json: { role: "member" } });
 			return t.user("viewer@sw.example", { inviteCode: inv.invite.code, name: "Viewer" });
 		})();
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "切换项目" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "切换项目" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "viewer@sw.example", role: "viewer" } });
 		const { conversation } = await t.json("POST", "/api/conversations", { token: alice.token, json: { projectId: project.id, modelId: fast.pm.id } });
 		const c: C = conversation;

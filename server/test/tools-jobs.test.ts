@@ -52,7 +52,7 @@ test("jobs: background sandbox job, chat stays usable, results published, cancel
 	try {
 		const u = await t.user("jobs@example.com");
 		const viewer = await orgMember(t, u, "jobs-viewer@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: u.token, json: { name: "Jobs" } });
+		const { project } = await t.json("POST", "/api/projects", { token: u.token, json: { kind: "space", name: "Jobs" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: u.token, json: { email: "jobs-viewer@example.com", role: "viewer" } });
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: u.token, json: { spaceId: project.spaceId, title: "后台任务" } })).conversation;
 

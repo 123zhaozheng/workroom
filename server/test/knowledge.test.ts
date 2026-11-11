@@ -30,7 +30,7 @@ test("ACL: project/personal/department/org scopes are enforced inside retrieval;
 	try {
 		const { alice, bob, orgId } = await orgWithTwo(t);
 		const outsider = await t.user("eve@other.com");
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Apollo" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Apollo" } });
 
 		const proj = await kbWithDoc(t, alice.token, { name: "Apollo 资料", scope: "project", projectId: project.id }, { name: "apollo-plan.md", mime: MIME.md, bytes: "# 计划\n\n阿波罗项目的发射窗口是十一月二十日。" });
 		const personal = await kbWithDoc(t, alice.token, { name: "我的笔记", scope: "personal" }, { name: "notes.txt", mime: MIME.txt, bytes: "Alice private note: the vault combination is 4417." });
@@ -200,8 +200,8 @@ test("same-named file in two projects stays isolated", async () => {
 	const t = await startTestApp();
 	try {
 		const { alice, bob } = await orgWithTwo(t);
-		const { project: pa } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "A" } });
-		const { project: pb } = await t.json("POST", "/api/projects", { token: bob.token, json: { name: "B" } });
+		const { project: pa } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "A" } });
+		const { project: pb } = await t.json("POST", "/api/projects", { token: bob.token, json: { kind: "space", name: "B" } });
 		const a = await kbWithDoc(t, alice.token, { name: "资料", scope: "project", projectId: pa.id }, { name: "plan.md", mime: MIME.md, bytes: "# plan\n\nBudget for project A is 100 units of saffron." });
 		const b = await kbWithDoc(t, bob.token, { name: "资料", scope: "project", projectId: pb.id }, { name: "plan.md", mime: MIME.md, bytes: "# plan\n\nBudget for project B is 900 units of cardamom." });
 		assert.notEqual(a.file.fileId, b.file.fileId);
@@ -424,8 +424,8 @@ test("retrieval debug explains per KB why it was searched or excluded (scope, me
 	const t = await startTestApp();
 	try {
 		const { alice, bob, orgId } = await orgWithTwo(t);
-		const { project: p } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "P" } });
-		const { project: q } = await t.json("POST", "/api/projects", { token: bob.token, json: { name: "Q" } });
+		const { project: p } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "P" } });
+		const { project: q } = await t.json("POST", "/api/projects", { token: bob.token, json: { kind: "space", name: "Q" } });
 		await t.json("PUT", `/api/projects/${p.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "viewer" } });
 		const dep = addDepartment(t, orgId, "法务", [alice.me.userId]);
 		const pk = await kbWithDoc(t, alice.token, { name: "P 资料", scope: "project", projectId: p.id }, { name: "p.md", mime: MIME.md, bytes: "# P\n\nThe heron milestone is in May." });

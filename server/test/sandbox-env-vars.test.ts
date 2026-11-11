@@ -33,7 +33,7 @@ async function harness(): Promise<H> {
 	const other = await t.user("oth@w.example");
 	const ctx = t.app.ctx;
 	if (!ctx.db.get("SELECT 1 AS x FROM sqlite_master WHERE name = 'sandbox_env_vars'")) ctx.db.migrate("tools-v-test", ENV_MIGRATIONS);
-	const proj = (await t.json("POST", "/api/projects", { token: member.token, json: { name: "P" } })).project;
+	const proj = (await t.json("POST", "/api/projects", { token: member.token, json: { kind: "space", name: "P" } })).project;
 	await t.json("PUT", `/api/projects/${proj.id}/members`, { token: member.token, json: { userId: viewer.me.userId, role: "viewer" } });
 	const convP = (await t.json("POST", "/api/conversations", { token: member.token, json: { projectId: proj.id } })).conversation;
 	const convPersonal = (await t.json("POST", "/api/conversations", { token: member.token, json: {} })).conversation;

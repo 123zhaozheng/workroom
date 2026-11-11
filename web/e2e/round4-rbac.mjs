@@ -289,7 +289,7 @@ try {
 	check("我的权限: model use is granted", (await sp.locator('[data-testid="my-effective"] [data-perm="model.use"]').getAttribute("data-allow")) === "1");
 	await sp.locator('[data-testid="my-permissions"]').scrollIntoViewIfNeeded();
 	await shot(sp, "1440-rbac-my-permissions");
-	const shareTry = await sun.api.post(`${base}/api/projects`, { data: { name: "x" } });
+	const shareTry = await sun.api.post(`${base}/api/projects`, { data: { kind: "space", name: "x" } });
 	check("guest: creating a project → 403", shareTry.status() === 403);
 
 	// ------------------------------------------------------------------ viewports: 1366 / 1440 / 390

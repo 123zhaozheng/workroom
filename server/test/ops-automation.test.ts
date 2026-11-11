@@ -189,7 +189,7 @@ test("concurrency limit skips, cancel stops the run, timeout recorded, re-run en
 		// Removed from the project space ⇒ refused too (no_access), even though the user is active.
 		await t.json("POST", `/api/admin/members/${m.me.userId}/enable`, { token: admin.token });
 		const m2 = await t.json("POST", "/api/auth/login", { json: { email: "m@a.example", password: "password123" } });
-		const { project } = await t.json("POST", "/api/projects", { token: admin.token, json: { name: "P" } });
+		const { project } = await t.json("POST", "/api/projects", { token: admin.token, json: { kind: "space", name: "P" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: admin.token, json: { email: "m@a.example", role: "editor" } });
 		const { automation: inProj } = await t.json("POST", "/api/automations", { token: m2.token, json: { name: "项目任务", prompt: "[[reply x]]", trigger: { kind: "manual" }, timezone: "UTC", projectId: project.id } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: admin.token, json: { email: "m@a.example", role: "viewer" } });

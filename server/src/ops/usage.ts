@@ -393,7 +393,7 @@ export class UsageService implements BudgetGate {
 			}
 			case "project": {
 				await id.require(p, "admin", { kind: "project", id: scope.projectId }).catch(async (e) => {
-					if ((await id.check(p, "admin", { kind: "org", id: p.orgId })).allow && id.db.get("SELECT 1 FROM id_projects WHERE id = ? AND org_id = ?", scope.projectId, p.orgId)) return;
+					if ((await id.check(p, "admin", { kind: "org", id: p.orgId })).allow && id.db.get("SELECT 1 FROM id_projects WHERE id = ? AND org_id = ? AND kind = 'space'", scope.projectId, p.orgId)) return;
 					throw e;
 				});
 				const sp = id.projectSpace(scope.projectId)!;

@@ -115,7 +115,7 @@ test("file_revise creates v2 with change note (v1 untouched); file_read reads te
 	try {
 		const a = await t.user("rev@example.com");
 		const v = await orgMember(t, a, "view@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "Docs" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "Docs" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "view@example.com", role: "viewer" } });
 		const ctx = t.app.ctx;
 		const tools = createFileTools(ctx, { resolveActor: fixedActor(ctx, a.me.userId, a.me.orgId, project.spaceId) });

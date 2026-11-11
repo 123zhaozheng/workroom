@@ -136,7 +136,7 @@ async function main() {
 	for (const [i, pn] of ["季度报告", "客户知识库整理", "产品调研"].entries()) {
 		let pr = q("SELECT p.id, s.id AS space_id FROM id_projects p JOIN id_spaces s ON s.project_id = p.id WHERE p.org_id = ? AND p.name = ?", orgId, pn)[0];
 		if (!pr) {
-			const created = (await api("POST", "/projects", { token: admin.token, json: { name: pn } })).project;
+			const created = (await api("POST", "/projects", { token: admin.token, json: { name: pn, kind: "space" } })).project;
 			pr = { id: created.id, space_id: created.spaceId };
 			for (const m of people.slice(1).filter((_, j) => j % 3 === i || j % 2 === 0)) await api("PUT", `/projects/${created.id}/members`, { token: admin.token, json: { email: m.email, role: "editor" } }).catch(() => {});
 		}

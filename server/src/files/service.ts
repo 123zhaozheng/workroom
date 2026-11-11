@@ -134,7 +134,15 @@ export class Files implements FileService {
 		const f = this.fileRow(fileId);
 		if (!f) return { allow: false, reason: "not_found" };
 		const spaceAction = action === "delete" ? "write" : action === "share" ? "admin" : (action as "read" | "write" | "admin" | "use");
-		return this.#acl.check(p, spaceAction, { kind: "space", id: f.space_id });
+		const d = await this.#acl.check(p, spaceAction, { kind: "space", id: f.space_id });
+		if (d.allow || action !== "read") return d;
+		// Round 9: READ (only) of a deliverable produced in a conversation the caller may read through a project share. Everything else stays space-level.
+		const convs = this.#ctx.db.all<{ conversation_id: number }>("SELECT DISTINCT conversation_id FROM file_versions WHERE file_id = ? AND space_id = ? AND conversation_id IS NOT NULL LIMIT 50", fileId, f.space_id);
+		for (const c of convs) {
+			const cd = await this.#acl.check(p, "read", { kind: "conversation", id: String(c.conversation_id), spaceId: f.space_id });
+			if (cd.allow) return { allow: true, reason: cd.reason === "project_share" ? "project_share" : cd.reason };
+		}
+		return d;
 	}
 
 	async requireFile(p: Principal, action: "read" | "write", fileId: string): Promise<FileRow> {
@@ -314,6 +322,11 @@ export class Files implements FileService {
 		if (opts.spaceId) spaces = spaces.filter((s) => s.id === opts.spaceId);
 		if (opts.projectId) spaces = spaces.filter((s) => s.projectId === opts.projectId);
 		if (opts.spaceId && spaces.length === 0) {
+			// Round 9: a project-share grantee lists the deliverables of ONE readable conversation (read-only), never the owner's whole space.
+			if (opts.conversationId !== undefined && (await this.#acl.check(p, "read", { kind: "conversation", id: String(opts.conversationId), spaceId: opts.spaceId })).allow) {
+				const rows = this.#ctx.db.all<FileRow>("SELECT * FROM file_files WHERE deleted_at IS NULL AND space_id = ? AND id IN (SELECT file_id FROM file_versions WHERE space_id = ? AND conversation_id = ?) ORDER BY updated_at DESC LIMIT ?", opts.spaceId, opts.spaceId, opts.conversationId, Math.min(Math.max(opts.limit ?? 100, 1), 500));
+				return rows.map((r) => this.fileDTO(r, false));
+			}
 			await this.#acl.require(p, "read", { kind: "space", id: opts.spaceId });
 			return [];
 		}

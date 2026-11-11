@@ -42,8 +42,8 @@ test("X-LOOP: goal → knowledge citation → approval → file v1 → v2 → re
 	const dataDir = t.dataDir;
 	try {
 		const alice = await t.user("alice@acme.test");
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "季度复盘" } });
-		const { project: other } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "另一个项目" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "季度复盘" } });
+		const { project: other } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "另一个项目" } });
 
 		// 1. Source material, explicitly added to a project knowledge base.
 		const src = await upload(t, alice.token, project.id, "销售数据说明.md", "# 销售数据说明\n\n华东区第三季度回款率为 87.5%，主要风险是账期延长。\n");

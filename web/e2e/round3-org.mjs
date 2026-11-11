@@ -96,7 +96,7 @@ try {
 	await shot(a, "1440-skill-kinds");
 
 	// ---------------------------------------------------------------- M11-B: viewer watches, cannot take over
-	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { name: "竞品调研" } })).json()).project;
+	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { kind: "space", name: "竞品调研" } })).json()).project;
 	await a.request.put(`${base}/api/projects/${proj.id}/members`, { data: { email: member.email, role: "viewer" } });
 	await a.goto(`${base}/projects/${proj.id}`);
 	await sendMessage(a, `[[call browser_open {"url":"http://127.0.0.1:${PAGE_PORT}/"}]]`);

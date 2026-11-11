@@ -276,7 +276,7 @@ test("install scopes (me / project / org), effective versions follow approvals; 
 		assert.equal((await approve((await submit(1)).id)).state, "published");
 
 		// Install for me and for a project (project write access needed); org-wide only by the market manager.
-		const { project } = await t.json("POST", "/api/projects", { token: author.token, json: { name: "上线项目" } });
+		const { project } = await t.json("POST", "/api/projects", { token: author.token, json: { kind: "space", name: "上线项目" } });
 		await t.json("POST", `/api/market/skills/${id}/install`, { token: author.token, json: { target: "me" } });
 		await t.json("POST", `/api/market/skills/${id}/install`, { token: author.token, json: { target: "project", scopeRef: project.id } });
 		await t.json("POST", `/api/market/skills/${id}/install`, { token: other.token, json: { target: "project", scopeRef: project.id }, expect: 403 });

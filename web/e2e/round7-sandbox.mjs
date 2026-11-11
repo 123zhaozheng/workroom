@@ -235,7 +235,7 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await pctx.close();
 
 	// project override
-	const projRes = await (await admin.request.post(`${base}/api/projects`, { data: { name: "运行位置项目" } })).json();
+	const projRes = await (await admin.request.post(`${base}/api/projects`, { data: { kind: "space", name: "运行位置项目" } })).json();
 	const pid = projRes.project?.id ?? projRes.id;
 	const gp = async (pg) => j(await pg.request.get(`${base}/api/projects/${pid}/sandbox-provider`));
 	await admin.request.put(`${base}/api/sandbox/provider-policy`, { data: { allowProjectOverride: false } });

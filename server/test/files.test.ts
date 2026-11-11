@@ -61,7 +61,7 @@ test("ACL: other org user 403; project viewer reads but cannot write; removed me
 		const outsider = await t.user("out@example.com");
 		const viewer = await orgMember(t, owner, "viewer@example.com");
 		const editor = await orgMember(t, owner, "editor@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { name: "P" } });
+		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { kind: "space", name: "P" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "viewer@example.com", role: "viewer" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "editor@example.com", role: "editor" } });
 
@@ -107,8 +107,8 @@ test("same file name in two projects stays isolated", async () => {
 	try {
 		const a = await t.user("a@example.com");
 		const b = await orgMember(t, a, "b@example.com");
-		const { project: p1 } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "One" } });
-		const { project: p2 } = await t.json("POST", "/api/projects", { token: b.token, json: { name: "Two" } });
+		const { project: p1 } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "One" } });
+		const { project: p2 } = await t.json("POST", "/api/projects", { token: b.token, json: { kind: "space", name: "Two" } });
 		const f1 = await (await upload(t, a.token, "/files", "方案.md", "project one", { projectId: p1.id })).json();
 		const f2 = await (await upload(t, b.token, "/files", "方案.md", "project two", { projectId: p2.id })).json();
 		assert.notEqual(f1.file.id, f2.file.id);

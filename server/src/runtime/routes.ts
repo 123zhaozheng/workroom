@@ -43,9 +43,18 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		let spaceId = b.spaceId;
 		if (b.projectId) {
 			const s = identity.projectSpace(b.projectId);
-			if (!s) throw new HttpError(404, "project_not_found", "项目不存在");
-			if (spaceId && spaceId !== s.id) throw new HttpError(400, "space_mismatch", "spaceId 与 projectId 不一致");
-			spaceId = s.id;
+			if (s) {
+				if (spaceId && spaceId !== s.id) throw new HttpError(400, "space_mismatch", "spaceId 与 projectId 不一致");
+				spaceId = s.id;
+			} else {
+				// Round 9: a container project has no space — the conversation is created in the caller's personal space and attached.
+				const cp = identity.containerProject(b.projectId);
+				if (!cp || cp.orgId !== p.orgId) throw new HttpError(404, "project_not_found", "项目不存在");
+				if (cp.ownerId !== p.userId) throw new HttpError(403, "forbidden", "只能把对话放进自己的项目", { reason: "not_project_owner" });
+				const own = identity.personalSpace(p.userId, p.orgId).id;
+				if (spaceId && spaceId !== own) throw new HttpError(400, "space_mismatch", "spaceId 与 projectId 不一致");
+				spaceId = own;
+			}
 		}
 		spaceId ??= identity.personalSpace(p.userId, p.orgId).id;
 		const model = await rt.resolveModel(p, b.modelId, b.thinkingLevel);
@@ -69,6 +78,15 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		return c.json({ conversation, ...(b.modelId !== undefined ? { agent: (await rt.detail(p, spaceId, id, ctx0)).agent } : {}) });
 	});
 
+	/** Round 9: move a conversation into one of my container projects / out of it (projectId null). Relation only; the conversation never leaves its space. */
+	api.put("/conversations/:spaceId/:id/project", async (c) => {
+		const p = principalOf(c);
+		const b = await jsonBody<{ projectId?: string | null }>(c);
+		if (b.projectId === undefined) throw new HttpError(400, "invalid", "需要 projectId（项目 id 或 null）");
+		const r = await rt.moveToProject(p, c.req.param("spaceId"), convId(c.req.param("id")), b.projectId, ctx0);
+		return c.json(r);
+	});
+
 	api.get("/conversations/:spaceId/:id/entries", async (c) => {
 		const p = principalOf(c);
 		return c.json(await rt.entries(p, c.req.param("spaceId"), convId(c.req.param("id")), { before: Number(c.req.query("before")) || undefined, limit: Number(c.req.query("limit")) || undefined }, ctx0));
@@ -82,7 +100,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		const { harness, conv } = await rt.access(p, "read", spaceId, id, ctx0);
 		const watch = await conv.watch(ctx0, { min: Math.min(Math.max(Number(c.req.query("limit")) || 50, 1), 100) });
 		try {
-			return c.json(await rt.state(spaceId, harness, conv, watch.value as any, 0, ctx0));
+			return c.json(await rt.state(spaceId, harness, conv, watch.value as any, 0, ctx0, p.userId));
 		} finally {
 			await watch.stop();
 		}
@@ -142,7 +160,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 				dirty = false;
 				try {
 					void attachJobs();
-					const state: ConversationState = await rt.state(spaceId, harness, conv, view as any, ++revision, context);
+					const state: ConversationState = await rt.state(spaceId, harness, conv, view as any, ++revision, context, p.userId);
 					workPrint = JSON.stringify(state.work ?? null);
 					if (!closed) await stream.writeSSE({ event, data: JSON.stringify(state), id: String(revision) });
 				} catch (err: any) {

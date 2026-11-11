@@ -190,7 +190,7 @@ test("budgets block submit (runtime API 402 + automation gate), fixture usage co
 		const mine = await t.json("GET", "/api/budgets", { token: m.token });
 		assert.ok(mine.budgets.some((b: any) => b.scope.kind === "user" && b.state === "ok"));
 		// Project budget blocks inside that project only.
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "P" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "P" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "member@a.example", role: "editor" } });
 		await t.json("POST", "/api/admin/budgets", { token: a.token, json: { scope: { kind: "project", id: project.id }, period: "total", limitTokens: 0 } });
 		const { conversation: cp } = await t.json("POST", "/api/conversations", { token: m.token, json: { modelId: pm.id, projectId: project.id } });

@@ -36,7 +36,7 @@ async function world(): Promise<World> {
 	const owner = await t.user("pown@p.example");
 	const member = await orgMember(t, owner, "pmem@p.example");
 	const outsider = await t.user("pout@o.example");
-	const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { name: "Persist" } });
+	const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { kind: "space", name: "Persist" } });
 	await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "pmem@p.example", role: "viewer" } });
 	const space = ctx.services.get("identity").space(project.spaceId as string)!;
 	const p = async (u: { me: any }) => (await ctx.services.get("identity").principalFor(u.me.userId, u.me.orgId))!;

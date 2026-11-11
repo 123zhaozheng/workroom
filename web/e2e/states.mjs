@@ -129,7 +129,7 @@ try {
 	}
 
 	// ---------------------------------------------------------------- project page
-	const pr = await (await page.request.post(`${base}/api/projects`, { data: { name: "新品发布" } })).json();
+	const pr = await (await page.request.post(`${base}/api/projects`, { data: { kind: "space", name: "新品发布" } })).json();
 	await page.goto(`${base}/projects/${pr.project.id}`);
 	await page.waitForSelector('[data-testid="members"]');
 	await sleep(500);

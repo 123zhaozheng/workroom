@@ -24,7 +24,7 @@ test("cross-tenant sweep: org B cannot read or change org A's resources through 
 			const r = await t.req(method, path, { token: A.token, json });
 			return r.ok ? r.json() : null;
 		};
-		const { project } = await t.json("POST", "/api/projects", { token: A.token, json: { name: `${MARK} project`, description: `${MARK} desc` } });
+		const { project } = await t.json("POST", "/api/projects", { token: A.token, json: { kind: "space", name: `${MARK} project`, description: `${MARK} desc` } });
 		ids.projectId = project.id;
 		ids.spaceId = project.spaceId;
 		const { conversation } = await t.json("POST", "/api/conversations", { token: A.token, json: { projectId: project.id, title: `${MARK} conv` } });

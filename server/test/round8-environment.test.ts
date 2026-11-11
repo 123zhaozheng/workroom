@@ -103,7 +103,7 @@ test("FAKE · remote GET: honest labels, no sandbox is created or connected by r
 test("FAKE · options and canChoose follow policy (project override allowed + project.manage)", async () => {
 	const h = await setup();
 	try {
-		const { project } = await h.t.json("POST", "/api/projects", { token: h.owner.token, json: { name: "P" } });
+		const { project } = await h.t.json("POST", "/api/projects", { token: h.owner.token, json: { kind: "space", name: "P" } });
 		await h.t.json("PUT", `/api/projects/${project.id}/members`, { token: h.owner.token, json: { email: "mem@env.example", role: "editor" } });
 		// override not allowed: only the environment in effect is listed, nobody can choose
 		let e = await h.get(h.owner.token, project.spaceId);
@@ -252,7 +252,7 @@ test("FAKE · permissions: other org 404, same-org non-member 403, GET needs rea
 		assert.equal((await h.t.req("GET", envPath(h.space.id, 7))).status, 401);
 		assert.equal((await h.t.req("GET", envPath(h.space.id, -1), { token: h.owner.token })).status, 400);
 		// a project viewer can read but not prepare
-		const { project } = await h.t.json("POST", "/api/projects", { token: h.owner.token, json: { name: "V" } });
+		const { project } = await h.t.json("POST", "/api/projects", { token: h.owner.token, json: { kind: "space", name: "V" } });
 		await h.t.json("PUT", `/api/projects/${project.id}/members`, { token: h.owner.token, json: { email: "mem@env.example", role: "viewer" } });
 		const v = await h.t.json<ConversationEnvironmentDTO>("GET", envPath(project.spaceId, 1), { token: h.member.token });
 		assert.equal(v.canPrepare, false);

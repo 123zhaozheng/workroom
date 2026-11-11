@@ -19,7 +19,7 @@ test("disable member → existing sessions 401 everywhere, login refused; enable
 		const { owner, m1 } = await orgWithMembers(t);
 		assert.equal(m1.me.orgId, owner.me.orgId);
 		assert.equal(m1.me.orgRole, "member");
-		const { project } = await t.json("POST", "/api/projects", { token: m1.token, json: { name: "M1 project" } });
+		const { project } = await t.json("POST", "/api/projects", { token: m1.token, json: { kind: "space", name: "M1 project" } });
 		await t.json("GET", "/api/me", { token: m1.token });
 		const r = await t.json("POST", `/api/admin/members/${m1.me.userId}/disable`, { token: owner.token });
 		assert.ok(r.revokedSessions >= 1);
@@ -45,7 +45,7 @@ test("remove org member → sessions revoked, project memberships and share link
 	const t = await startTestApp();
 	try {
 		const { owner, m1 } = await orgWithMembers(t);
-		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { name: "Shared" } });
+		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { kind: "space", name: "Shared" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "m1@a.example", role: "editor" } });
 		const share = await t.json("POST", "/api/shares", { token: m1.token, json: { kind: "project", id: project.id } });
 		await t.json("GET", `/api/shared/${share.share.token}`);
@@ -67,7 +67,7 @@ test("project roles: viewer read-only, removal → 403 on project resources, sha
 	const t = await startTestApp();
 	try {
 		const { owner, m1, admin } = await orgWithMembers(t);
-		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { name: "Roles" } });
+		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { kind: "space", name: "Roles" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "m1@a.example", role: "viewer" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "admin@a.example", role: "editor" } });
 		await t.json("GET", `/api/projects/${project.id}`, { token: m1.token });
@@ -110,7 +110,7 @@ test("cross-tenant: org B admin cannot read or change anything of org A via any 
 		const { owner: a, m1 } = await orgWithMembers(t);
 		const b = await t.user("b@b.example");
 		assert.notEqual(a.me.orgId, b.me.orgId);
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "Secret A" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "Secret A" } });
 		const dep = await t.json("POST", "/api/admin/departments", { token: a.token, json: { name: "Sales A" } });
 		const share = await t.json("POST", "/api/shares", { token: a.token, json: { kind: "project", id: project.id } });
 		const aSessions = await t.json("GET", "/api/me/sessions", { token: a.token });
@@ -238,7 +238,7 @@ test("external share links: read-only, token not a session, revocable, expiring"
 	const t = await startTestApp();
 	try {
 		const a = await t.user("a@a.example");
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "Public brief", description: "desc" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "Public brief", description: "desc" } });
 		const s = await t.json("POST", "/api/shares", { token: a.token, json: { kind: "project", id: project.id, expiresInHours: 2 } });
 		assert.equal(s.share.permission, "read");
 		assert.match(s.share.url, /^\/s\//);

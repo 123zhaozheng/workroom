@@ -135,7 +135,7 @@ test("create a skill from a successful task: draft preview, validation with a sa
 
 		// A conversation without sandbox runs becomes a context skill, validated on the fixture model.
 		// (Separate space: each test harness numbers its conversations from scratch, as each space's storage does.)
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "纪要" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "纪要" } });
 		const h2 = await toolHarness([createFilesExtension(ctx, { resolveActor: fixedActor(ctx, a.me.userId, a.me.orgId, project.spaceId) })], [call("file_create", { name: "纪要", format: "docx", content: "会议纪要" }, "u1"), answer("ok")]);
 		await h2.run("写会议纪要");
 		await h2.close();

@@ -49,7 +49,7 @@ test("kb_search tool: numbered citations + details, project-scope default, knowl
 	try {
 		const alice = await t.user("alice@example.com", { name: "Alice" });
 		const bob = await joinOrg(t, alice.me.orgId, "bob@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Apollo" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Apollo" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "editor" } });
 		const proj = await kbWithDoc(t, alice.token, { name: "Apollo 资料", scope: "project", projectId: project.id }, { name: "apollo-plan.md", mime: MIME.md, bytes: "# 计划\n\n## 发射\n\nThe launch window opens on November 20." });
 		const mine = await kbWithDoc(t, alice.token, { name: "我的笔记", scope: "personal" }, { name: "vault.txt", mime: MIME.txt, bytes: "Personal: the vault combination is 4417." });
@@ -102,7 +102,7 @@ test("memory section + memory_save: private memory only in the owner's personal 
 	try {
 		const alice = await t.user("alice@example.com", { name: "Alice" });
 		const bob = await joinOrg(t, alice.me.orgId, "bob@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Apollo" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Apollo" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "editor" } });
 		await t.json("POST", "/api/memory", { token: alice.token, json: { content: "PRIVATE-MEM 我的体检在周五", scope: "private" } });
 		const pm = (await t.json("POST", "/api/memory", { token: alice.token, json: { content: "PROJECT-MEM 交付物统一用中文", scope: "project", projectId: project.id, kind: "constraint" } })).memory;
@@ -247,7 +247,7 @@ test("conversation citation status (M06-C 失效提示): every kb_search citatio
 	try {
 		const alice = await t.user("alice@example.com", { name: "Alice" });
 		const bob = await joinOrg(t, alice.me.orgId, "bob@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Apollo" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Apollo" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "editor" } });
 		const a = await kbWithDoc(t, alice.token, { name: "Apollo 资料", scope: "project", projectId: project.id }, { name: "plan.md", mime: MIME.md, bytes: "# 计划\n\nThe launch window opens November 20." });
 		const b = await kbWithDoc(t, alice.token, { name: "Apollo 风险", scope: "project", projectId: project.id }, { name: "risk.md", mime: MIME.md, bytes: "# 风险\n\nThe weather risk is moderate." });

@@ -27,7 +27,7 @@ test("browser session: agent opens, member takes over and clicks/types/navigates
 		const editor = await orgMember(t, owner, "bs-editor@example.com");
 		const viewer = await orgMember(t, owner, "bs-viewer@example.com");
 		const outsider = await t.user("bs-out@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { name: "Browse" } });
+		const { project } = await t.json("POST", "/api/projects", { token: owner.token, json: { kind: "space", name: "Browse" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "bs-editor@example.com", role: "editor" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: owner.token, json: { email: "bs-viewer@example.com", role: "viewer" } });
 		const ctx = t.app.ctx;

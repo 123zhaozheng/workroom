@@ -9,6 +9,7 @@ import { HttpError, newId, nowIso } from "../core/http.ts";
 import type { AppDb } from "../core/db.ts";
 import { SecretBox, sha256Hex } from "./secrets.ts";
 import { registerIdentityRoutes } from "./routes.ts";
+import { registerOnboarding } from "./onboarding.ts";
 import { Authz } from "./authz.ts";
 
 const MIGRATIONS: { version: number; name: string; sql: string }[] = [
@@ -108,6 +109,18 @@ CREATE TRIGGER id_om_rbac_readd AFTER UPDATE OF removed_at ON id_org_members WHE
 END;
 `,
 	},
+	{
+		version: 5,
+		name: "round 9: container projects (kind) and read-only project shares",
+		// Additive only: every existing project row becomes kind 'space' (legacy project with its own space); no row is rewritten otherwise.
+		sql: `
+ALTER TABLE id_projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'space';
+ALTER TABLE id_projects ADD COLUMN updated_at TEXT;
+CREATE INDEX id_projects_owner ON id_projects(org_id, kind, created_by);
+CREATE TABLE id_project_shares (project_id TEXT NOT NULL REFERENCES id_projects(id), org_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES id_users(id), permission TEXT NOT NULL DEFAULT 'read', granted_by TEXT NOT NULL, granted_at TEXT NOT NULL, PRIMARY KEY (project_id, user_id));
+CREATE INDEX id_project_shares_user ON id_project_shares(user_id, org_id);
+`,
+	},
 ];
 
 export function hashPassword(password: string): string {
@@ -159,6 +172,15 @@ export type ShareRenderer = (resource: { kind: string; id: string; spaceId?: str
 /** Audit service exposed as `services.get("audit")` for other modules (e.g. external write receipts). */
 export interface AuditService {
 	record(input: { orgId: string | null; actorUserId: string | null; action: string; target?: string; detail?: unknown; category?: AuditCategory; requestId?: string }): string;
+}
+
+export interface ContainerProject {
+	readonly id: string;
+	readonly orgId: string;
+	readonly name: string;
+	readonly ownerId: string;
+	readonly createdAt: string;
+	readonly updatedAt: string;
 }
 
 export interface ShareRow {
@@ -274,6 +296,56 @@ export class Identity implements IdentityService, AccessControl {
 		return this.#principal(userId, orgId);
 	}
 
+	// ------------------------------------------------------------ round 9: container projects + read shares
+	#convProject?: (spaceId: string, conversationId: number) => Promise<string | null>;
+	/** The runtime tells identity which project a conversation belongs to (catalog row; subagent children resolve through their owner chain). Null = none / deleted. */
+	setConversationProjectResolver(fn: (spaceId: string, conversationId: number) => Promise<string | null>): void {
+		this.#convProject = fn;
+	}
+
+	/** A live container project (not archived). */
+	containerProject(projectId: string): ContainerProject | null {
+		const r = this.db.get<{ id: string; org_id: string; name: string; created_by: string; created_at: string; updated_at: string | null }>("SELECT id, org_id, name, created_by, created_at, updated_at FROM id_projects WHERE id = ? AND kind = 'container' AND archived_at IS NULL", projectId);
+		return r ? { id: r.id, orgId: r.org_id, name: r.name, ownerId: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at ?? r.created_at } : null;
+	}
+
+	/** Is `userId` granted READ on this container project right now (same org, project live, owner still an active org member)? */
+	hasProjectShare(userId: string, orgId: string, projectId: string): boolean {
+		return !!this.db.get(
+			`SELECT 1 FROM id_project_shares s JOIN id_projects pr ON pr.id = s.project_id
+			 WHERE s.project_id = ? AND s.user_id = ? AND s.org_id = ? AND pr.org_id = s.org_id AND pr.kind = 'container' AND pr.archived_at IS NULL
+			   AND EXISTS (SELECT 1 FROM id_org_members om JOIN id_users ou ON ou.id = om.user_id WHERE om.org_id = pr.org_id AND om.user_id = pr.created_by AND om.removed_at IS NULL AND om.disabled_at IS NULL AND ou.disabled_at IS NULL)`,
+			projectId,
+			userId,
+			orgId,
+		);
+	}
+
+	/** Ids of the container projects shared with `userId` (live shares only). */
+	sharedProjectIds(userId: string, orgId: string): string[] {
+		return this.db
+			.all<{ project_id: string }>(
+				`SELECT s.project_id FROM id_project_shares s JOIN id_projects pr ON pr.id = s.project_id
+				 WHERE s.user_id = ? AND s.org_id = ? AND pr.org_id = s.org_id AND pr.kind = 'container' AND pr.archived_at IS NULL
+				   AND EXISTS (SELECT 1 FROM id_org_members om JOIN id_users ou ON ou.id = om.user_id WHERE om.org_id = pr.org_id AND om.user_id = pr.created_by AND om.removed_at IS NULL AND om.disabled_at IS NULL AND ou.disabled_at IS NULL)`,
+				userId,
+				orgId,
+			)
+			.map((r) => r.project_id);
+	}
+
+	async #sharedConversationRead(live: Principal, space: Space, conversationId: string): Promise<Decision | null> {
+		const cid = Number(conversationId);
+		if (!Number.isInteger(cid) || cid <= 0 || !this.#convProject) return null;
+		if (!this.db.get("SELECT 1 FROM id_project_shares WHERE user_id = ? AND org_id = ? LIMIT 1", live.userId, live.orgId)) return null;
+		const projectId = await this.#convProject(space.id, cid).catch(() => null);
+		if (!projectId || !this.hasProjectShare(live.userId, live.orgId, projectId)) return null;
+		// The conversation must live in the personal space of the project's owner (only the owner can put conversations in).
+		const pr = this.containerProject(projectId);
+		if (!pr || pr.ownerId !== space.ownerUserId) return null;
+		return { allow: true, reason: "project_share" };
+	}
+
 	projectRole(userId: string, projectId: string): ProjectRole | null {
 		const r = this.db.get<{ role: string }>("SELECT pm.role FROM id_project_members pm JOIN id_projects p ON p.id = pm.project_id WHERE pm.project_id = ? AND pm.user_id = ? AND pm.removed_at IS NULL AND p.archived_at IS NULL", projectId, userId);
 		return (r?.role as ProjectRole) ?? null;
@@ -315,12 +387,20 @@ export class Identity implements IdentityService, AccessControl {
 				return this.authz.hasSync(live, "org.settings.manage") ? { allow: true, reason: live.orgRole === "member" ? "rbac" : live.orgRole } : { allow: false, reason: "not_admin" };
 			case "space":
 				return this.spaceDecision(live, action, this.space(resource.id));
-			case "conversation":
-				return this.spaceDecision(live, action, this.space(resource.spaceId));
+			case "conversation": {
+				const space = this.space(resource.spaceId);
+				const d = this.spaceDecision(live, action, space);
+				// Round 9: READ (never anything else) through a read share of the container project the conversation belongs to.
+				if (d.allow || action !== "read" || !space || space.kind !== "personal" || space.orgId !== live.orgId) return d;
+				return (await this.#sharedConversationRead(live, space, resource.id)) ?? d;
+			}
 			case "project": {
-				const pr = this.db.get<{ org_id: string }>("SELECT org_id FROM id_projects WHERE id = ?", resource.id);
+				const pr = this.db.get<{ org_id: string; kind: string }>("SELECT org_id, kind FROM id_projects WHERE id = ?", resource.id);
 				if (!pr) return { allow: false, reason: "not_found" };
 				if (pr.org_id !== live.orgId) return { allow: false, reason: "other_org" };
+				// Container projects have no space, members or settings: other modules (sandbox, env, budget, stats, handoff) never get access
+				// through this generic check. Their own routes (identity/projects.ts) decide owner / shared-read themselves.
+				if (pr.kind === "container") return { allow: false, reason: "container_project" };
 				const dec = this.spaceDecision(live, action, this.projectSpace(resource.id));
 				// RBAC: a role assigned AT this project with project.manage lets a non-member administer the project (settings and
 				// members) — never read its content. Org-wide holders (组织管理员) deliberately do not enter project spaces.
@@ -491,6 +571,7 @@ export const identityModule: WorkroomModule = {
 		});
 	},
 	routes(api, ctx) {
+		registerOnboarding(api, ctx); // round 9: first-login onboarding flag (identity/onboarding.ts)
 		registerIdentityRoutes(api, ctx, ctx.services.get("identity") as Identity);
 	},
 };

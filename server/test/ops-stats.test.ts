@@ -99,7 +99,7 @@ async function world(): Promise<World> {
 	const other = await t.user("admin@other.example");
 	const aSpace = (await t.json("GET", "/api/me", { token: a.token })).personalSpaceId;
 	const mSpace = (await t.json("GET", "/api/me", { token: m.token })).personalSpaceId;
-	const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "项目一" } });
+	const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "项目一" } });
 	await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "member@a.example", role: "editor" } });
 	await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "viewer@a.example", role: "viewer" } });
 	const dep = await t.json("POST", "/api/admin/departments", { token: a.token, json: { name: "研发部" } });

@@ -79,7 +79,7 @@ try {
 	const outsider = await newUser(a, "外部成员");
 
 	// A project conversation (so a viewer can look at it): the agent writes files and runs a failing script.
-	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { name: "数据分析" } })).json()).project;
+	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { kind: "space", name: "数据分析" } })).json()).project;
 	await a.request.put(`${base}/api/projects/${proj.id}/members`, { data: { email: viewer.email, role: "viewer" } });
 	await a.goto(`${base}/projects/${proj.id}`);
 	await sendMessage(a, `整理数据 ${directive("sandbox_exec", { language: "python", code: pyWrite })} ${directive("sandbox_exec", { language: "python", code: pyFail })}`);

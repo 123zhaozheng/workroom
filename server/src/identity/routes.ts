@@ -9,6 +9,7 @@ import { audit, hashPassword, shareResourceRef, verifyPassword, type Identity, t
 import { newTotpSecret, otpauthUrl, verifyTotp } from "./totp.ts";
 import { toCsv } from "./csv.ts";
 import { registerOidcRoutes } from "./oidc.ts";
+import { registerProjectRoutes } from "./projects.ts";
 import { registerRbacRoutes, setBaseRole } from "./rbac-routes.ts";
 import { policyAuthorized, registerPolicyMiddleware } from "./policy.ts";
 import { BASE_ROLE_IDS, builtinRole, permissionDef } from "../../../shared/permissions.ts";
@@ -395,7 +396,9 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 			db.run("UPDATE id_department_members SET removed_at = ? WHERE user_id = ? AND removed_at IS NULL AND department_id IN (SELECT id FROM id_departments WHERE org_id = ?)", at, target.user_id, p.orgId);
 			const sessions = id.revokeSessions(target.user_id, p.orgId, "member_removed");
 			const shares = id.revokeSharesCreatedBy(target.user_id, p.orgId, null, "creator_removed");
-			return { projects, sessions, shares };
+			// Round 9: read shares they hold, and shares on the container projects they own, end with their membership.
+			const projectShares = db.run("DELETE FROM id_project_shares WHERE org_id = ? AND (user_id = ? OR project_id IN (SELECT id FROM id_projects WHERE org_id = ? AND created_by = ? AND kind = 'container'))", p.orgId, target.user_id, p.orgId, target.user_id).changes;
+			return { projects, sessions, shares, projectShares };
 		});
 		audit(db, p.orgId, p.userId, "member.remove", target.user_id, out, { requestId: rid(c) });
 		return c.json({ ok: true, ...out });
@@ -601,48 +604,8 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 		return c.body(toCsv(["at", "category", "action", "actorUserId", "actorName", "target", "detail", "requestId"], items as any));
 	});
 
-	// ---------------------------------------------------------------- projects (each project = its own space)
-	api.get("/projects", async (c) => {
-		const p = principalOf(c);
-		const rows = db.all<any>("SELECT pr.*, pm.role, s.id AS space_id FROM id_projects pr JOIN id_project_members pm ON pm.project_id = pr.id AND pm.user_id = ? AND pm.removed_at IS NULL JOIN id_spaces s ON s.project_id = pr.id WHERE pr.org_id = ? AND pr.archived_at IS NULL ORDER BY pr.created_at DESC", p.userId, p.orgId);
-		return c.json({ projects: rows.map((r) => ({ id: r.id, name: r.name, description: r.description, role: r.role, spaceId: r.space_id, createdAt: r.created_at })) });
-	});
-	api.post("/projects", async (c) => {
-		const p = principalOf(c);
-		await id.authz.require(p, "project.create");
-		const b = await jsonBody<{ name: string; description?: string }>(c);
-		if (!b.name?.trim()) throw new HttpError(400, "invalid", "项目名称必填");
-		const projectId = newId("prj");
-		const spaceId = newId("sp");
-		db.tx(() => {
-			db.run("INSERT INTO id_projects (id, org_id, name, description, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", projectId, p.orgId, b.name.trim(), b.description ?? "", p.userId, nowIso());
-			db.run("INSERT INTO id_project_members (project_id, user_id, role, added_by, created_at) VALUES (?, ?, 'owner', ?, ?)", projectId, p.userId, p.userId, nowIso());
-			db.run("INSERT INTO id_spaces (id, org_id, kind, project_id, created_at) VALUES (?, ?, 'project', ?, ?)", spaceId, p.orgId, projectId, nowIso());
-			audit(db, p.orgId, p.userId, "project.create", projectId, undefined, { requestId: rid(c) });
-		});
-		return c.json({ project: { id: projectId, name: b.name.trim(), description: b.description ?? "", role: "owner", spaceId } });
-	});
-	api.get("/projects/:id", async (c) => {
-		const p = principalOf(c);
-		await id.require(p, "read", { kind: "project", id: c.req.param("id") });
-		const r = db.get<any>("SELECT pr.*, s.id AS space_id FROM id_projects pr JOIN id_spaces s ON s.project_id = pr.id WHERE pr.id = ?", c.req.param("id"));
-		return c.json({ project: { id: r.id, name: r.name, description: r.description, role: id.projectRole(p.userId, r.id), spaceId: r.space_id, createdAt: r.created_at } });
-	});
-	api.patch("/projects/:id", async (c) => {
-		const p = principalOf(c);
-		await id.require(p, "admin", { kind: "project", id: c.req.param("id") });
-		const b = await jsonBody<{ name?: string; description?: string }>(c);
-		db.run("UPDATE id_projects SET name = COALESCE(?, name), description = COALESCE(?, description) WHERE id = ?", b.name?.trim() || null, b.description ?? null, c.req.param("id"));
-		audit(db, p.orgId, p.userId, "project.update", c.req.param("id"), b, { requestId: rid(c) });
-		return c.json({ ok: true });
-	});
-	api.delete("/projects/:id", async (c) => {
-		const p = principalOf(c);
-		await id.require(p, "admin", { kind: "project", id: c.req.param("id") });
-		db.run("UPDATE id_projects SET archived_at = ? WHERE id = ?", nowIso(), c.req.param("id"));
-		audit(db, p.orgId, p.userId, "project.archive", c.req.param("id"), undefined, { requestId: rid(c) });
-		return c.json({ ok: true });
-	});
+	// ---------------------------------------------------------------- projects (container + legacy space projects: identity/projects.ts)
+	registerProjectRoutes(api, ctx, id);
 	api.get("/projects/:id/members", async (c) => {
 		const p = principalOf(c);
 		await id.require(p, "read", { kind: "project", id: c.req.param("id") });

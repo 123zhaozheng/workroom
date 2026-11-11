@@ -28,7 +28,7 @@ test("M09-B handoff: editor takes over (reads handoff, approves, continues); vie
 		const inv = async () => (await t.json("POST", "/api/admin/invites", { token: a.token, json: { role: "member" } })).invite.code;
 		const b = await t.user("ho-b@example.com", { inviteCode: await inv(), name: "Bob" });
 		const v = await t.user("ho-c@example.com", { inviteCode: await inv(), name: "Carol" });
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "交接项目" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "交接项目" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "ho-b@example.com", role: "editor" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "ho-c@example.com", role: "viewer" } });
 		const { conversation: c } = await t.json("POST", "/api/conversations", { token: a.token, json: { projectId: project.id, title: "客户方案" } });

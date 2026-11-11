@@ -262,7 +262,7 @@ test("runtime M09-B / M13-C: a project member takes over — sees the same state
 		const { invite } = await t.json("POST", "/api/admin/invites", { token: a.token, json: { role: "member" } });
 		const b = await t.user("rt-hand-b@example.com", { inviteCode: invite.code });
 		const v = await t.user("rt-hand-v@example.com", { inviteCode: (await t.json("POST", "/api/admin/invites", { token: a.token, json: { role: "member" } })).invite.code });
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "交接" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "交接" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "rt-hand-b@example.com", role: "editor" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "rt-hand-v@example.com", role: "viewer" } });
 		const c = await newChat(t, a.token, { projectId: project.id });

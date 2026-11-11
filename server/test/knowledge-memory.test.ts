@@ -9,7 +9,7 @@ test("memory CRUD: scope + source labels, permissions per scope, history", async
 	try {
 		const alice = await t.user("alice@example.com", { name: "Alice" });
 		const bob = await joinOrg(t, alice.me.orgId, "bob@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Apollo" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Apollo" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "viewer" } });
 
 		const priv = (await t.json("POST", "/api/memory", { token: alice.token, json: { content: "我喜欢简洁的要点式回答", scope: "private", kind: "preference" } })).memory;
@@ -57,8 +57,8 @@ test("memory isolation: private memory never enters project context; switching s
 		const bob = await joinOrg(t, alice.me.orgId, "bob@example.com");
 		const me = await t.json("GET", "/api/me", { token: alice.token });
 		const bobMe = await t.json("GET", "/api/me", { token: bob.token });
-		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Apollo" } });
-		const { project: other } = await t.json("POST", "/api/projects", { token: alice.token, json: { name: "Zeus" } });
+		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Apollo" } });
+		const { project: other } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Zeus" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "editor" } });
 
 		await t.json("POST", "/api/memory", { token: alice.token, json: { content: "ALICE-PRIVATE: 我的体检报告在周五", scope: "private" } });

@@ -22,7 +22,7 @@ test("sandbox: confined filesystem, no network, timeout kills the process tree, 
 		const a = await t.user("sb@example.com");
 		const viewer = await orgMember(t, a, "sbview@example.com");
 		const outsider = await t.user("sbout@example.com");
-		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "Exec" } });
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { kind: "space", name: "Exec" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: a.token, json: { email: "sbview@example.com", role: "viewer" } });
 		const ctx = t.app.ctx;
 		const ext = createSandboxExtension(ctx, { resolveActor: fixedActor(ctx, a.me.userId, a.me.orgId, project.spaceId) });
