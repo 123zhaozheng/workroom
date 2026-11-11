@@ -6,6 +6,8 @@ import { ToolCallLog, TOOL_CALL_MIGRATIONS } from "./calls.ts";
 import { BLOCKED_CONNECTORS, createToolSearch, McpManager, MCP_MIGRATIONS } from "./mcp.ts";
 import { Sandbox, SANDBOX_MIGRATIONS } from "./sandbox.ts";
 import { registerSandboxRoutes } from "./sandbox-routes.ts";
+import { PROVIDER_CONFIG_MIGRATIONS } from "./sandbox/provider-config.ts"; // round 7: remote sandbox providers
+import { registerSandboxProviderRoutes } from "./sandbox/provider-routes.ts";
 import { pdfFontStatus } from "../files/generate.ts";
 import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
@@ -66,6 +68,7 @@ export const toolsModule: WorkroomModule = {
 		...MARKET_MIGRATIONS.map((m) => ({ ...m, version: m.version + 600 })), // marketplace group
 		...MCP_MARKET_MIGRATIONS.map((m) => ({ ...m, version: m.version + 700 })), // marketplace group
 		...SKILL_DRAFT_MIGRATIONS.map((m) => ({ ...m, version: m.version + 800 })), // skill drafts (round 6)
+		...PROVIDER_CONFIG_MIGRATIONS.map((m) => ({ ...m, version: m.version + 900 })), // sandbox provider configs (round 7)
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -138,6 +141,7 @@ export const toolsModule: WorkroomModule = {
 		});
 
 		// ---- sandbox: driver status/settings, workspace file API, runs, publish (server/src/tools/sandbox-routes.ts) ----
+		registerSandboxProviderRoutes(api, ctx); // before /sandbox/:spaceId so /sandbox/providers etc. are not captured
 		registerSandboxRoutes(api, ctx);
 
 		// ---- default toolset policy (per org; enforced per call in a beforeTool hook) ----
