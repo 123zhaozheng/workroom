@@ -750,7 +750,7 @@ export function renderSkillIndex(entries: readonly { name: string; slug: string;
 	if (!entries.length) return undefined;
 	const shown = entries.slice(0, SKILL_PROMPT_MAX_LINES);
 	const lines = [
-		"可用技能（按需使用：用 skill 工具 action=load 读取说明，action=read 读取技能包文件，action=run 运行可执行技能；不要凭记忆假设技能内容）：",
+		"可用技能（按需使用：用 skill 工具 action=load 读取说明，action=read 读取技能包文件，action=run 运行可执行技能；不要凭记忆假设技能内容。要修改已安装的技能：skill_manage action=checkout 取出当前文件 → 在 /work 里编辑并提高 version → skill_manage action=submit_draft，用户确认后保存为新版本；不要用 sandbox_exec 复制 /skills/）：",
 		...shown.map((e) => `- ${oneLine(e.name, 60)} (${oneLine(e.slug, 80)}) — ${oneLine(e.description, 120) || "（无描述）"}`),
 	];
 	if (entries.length > shown.length) lines.push(`另有 ${entries.length - shown.length} 个技能未列出，用 skill 工具 action=search 查找`);

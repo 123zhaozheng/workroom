@@ -272,6 +272,18 @@ export interface RestoredInputDTO {
 	readonly knowledgeRefs?: readonly KnowledgeRef[];
 }
 
+/**
+ * POST …/abort (停止). Queued inputs are withdrawn by pi-durable's abort (an inherent semantic: a stopped conversation keeps no queue);
+ * the server hands every one of them back here so the client can put them into the composer. They are also kept as display-only
+ * 「未送达」 markers in the transcript. The input that was already APPLIED (placed in the context) is never in `unsent`: it stays.
+ */
+export interface AbortResponse {
+	readonly ok: true;
+	readonly unsent: readonly (RestoredInputDTO & { readonly submissionId: number })[];
+	/** Approvals that were waiting for a decision and were cancelled together with the stopped run. */
+	readonly cancelledApprovals: number;
+}
+
 /** POST …/submissions/:id/withdraw. already_placed = it was applied before the withdraw reached it: nothing is restored. */
 export interface WithdrawResponse {
 	readonly result: "aborted" | "already_placed" | "settled" | "not_found";
@@ -323,7 +335,8 @@ export interface BranchResponse {
 
 // ---------------------------------------------------------------- approvals & effects
 
-export type ApprovalStatus = "pending" | "approved" | "rejected";
+/** cancelled = the run was stopped (停止) while the approval was pending: the tool call was aborted, nothing was executed, nobody decided. */
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export interface ApprovalDTO {
 	readonly approvalId: string;

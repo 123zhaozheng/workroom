@@ -288,8 +288,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 	api.post("/conversations/:spaceId/:id/abort", async (c) => {
 		const p = principalOf(c);
 		const b = (await c.req.json().catch(() => ({}))) as { background?: boolean };
-		await rt.abort(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0);
-		return c.json({ ok: true });
+		return c.json(await rt.abort(p, c.req.param("spaceId"), convId(c.req.param("id")), b, ctx0));
 	});
 	api.post("/conversations/:spaceId/:id/continue", async (c) => {
 		const p = principalOf(c);

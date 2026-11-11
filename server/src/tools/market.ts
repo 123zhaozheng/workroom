@@ -509,6 +509,15 @@ export class Market {
 			return [];
 		}
 	}
+	/** Predicts `submit` for a version at `target`/`ref` (same publish-right rule) without side effects, so callers can refuse before asking the user. */
+	async canSubmitTo(p: Principal, target: MarketScope, ref: string | null): Promise<boolean> {
+		try {
+			await this.#requirePublishRight(p, target, ref);
+			return true;
+		} catch {
+			return false;
+		}
+	}
 	/** Who may put something at a scope: org/department → skill.publish there; project → write access to the project space. */
 	async #requirePublishRight(p: Principal, target: MarketScope, ref: string | null): Promise<void> {
 		if (target === "personal") return;

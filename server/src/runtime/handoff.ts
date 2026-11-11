@@ -110,7 +110,7 @@ export class Handoff {
 			});
 		}
 		const decisions = approvals
-			.filter((a) => a.status !== "pending")
+			.filter((a) => a.status === "approved" || a.status === "rejected") // pending = open, cancelled = stopped with the run: neither is a decision
 			.map((a) => {
 				if (a.decidedBy) bump(a.decidedBy, "decisions");
 				return { approvalId: a.approvalId, conversationId: a.conversationId, title: a.title, summary: a.summary, ...(a.toolName ? { toolName: a.toolName } : {}), decision: a.status as "approved" | "rejected", decidedBy: a.decidedBy ?? "", decidedByName: a.decidedBy ? this.#rt.userName(a.decidedBy) : undefined, decidedAt: a.decidedAt ?? "", ...(a.note ? { note: a.note } : {}) };

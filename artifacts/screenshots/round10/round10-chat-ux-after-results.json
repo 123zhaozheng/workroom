@@ -1,0 +1,275 @@
+{
+  "at": "2026-11-11T08:31:17.874Z",
+  "results": [
+    {
+      "name": "A medium 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A credential 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A mcp 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skill 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skillBlocked 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A medium 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A credential 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A mcp 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skill 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skillBlocked 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A medium 390: decision buttons are on screen without scrolling, and so is the top of the card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A medium 390: the risk is a small badge (名称 + 等级), the title and the one-line summary are visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A medium 390: compact (card ≤ 170px high)",
+      "ok": true,
+      "detail": "112px"
+    },
+    {
+      "name": "A medium 390: 查看详情 is collapsed by default and says so (aria-expanded=false)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A medium 390: folded — 请求人 / 风险说明 / 技术详情 are not on the face",
+      "ok": true,
+      "detail": "需要你确认： 对外发送周报 中风险 将《项目周报》v1 发送到 team@example.com 拒绝 允许 查看详情 添加说明"
+    },
+    {
+      "name": "A medium 390: buttons are 拒绝 / 允许 / 查看详情 / 添加说明, nothing focused on open",
+      "ok": true,
+      "detail": "拒绝|允许|查看详情|添加说明"
+    },
+    {
+      "name": "A medium 390: 查看详情 opens everything that was folded (请求人 / 代你执行 / 风险说明)",
+      "ok": true,
+      "detail": "需要你确认： 对外发送周报 中风险 将《项目周报》v1 发送到 team@example.com 拒绝 允许 收起详情 添加说明 风险 会对外部系统产生变化，请核对内容。 请求人 助手（代你执行） · 刚刚"
+    },
+    {
+      "name": "A medium 390 (details open): no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A medium 390: 收起 hides them again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A high 390: 高风险 badge + the 无法撤销 warning are on the face; 允许 still needs a second explicit click",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A high 390: the confirmation keeps 返回 (focused) / 确认允许 and fits the screen",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A mcp 390: long summary stays short on the face (card ≤ 210px) and the buttons are on screen",
+      "ok": true,
+      "detail": "154px"
+    },
+    {
+      "name": "A mcp 390: the cut summary is two lines and offers 展开全文",
+      "ok": true,
+      "detail": "40px"
+    },
+    {
+      "name": "A mcp 390: 展开全文 shows the whole summary",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A mcp 390: the scope (收件人 / 标题), who asked and the raw arguments are in 查看详情 (nothing dropped)",
+      "ok": true,
+      "detail": "需要你确认： 确认外部操作：飞书 / 发送消息 中风险 将向飞书群「项目组」发送一条消息，内容是本周进展汇总：已完成需求评审、接口联调，下周开始灰度发布。消息发出后所有群成员都能看到，无法撤回。 收起 拒绝 允许 收起详情 添加说明 收件人 项目组 标题 本周进展汇总 风险 会对外部系统产生变化，请核对内容。 请求人 助手（代你执行） · 刚刚 技术详情"
+    },
+    {
+      "name": "A skill 390: the draft card is compact (≤ 230px) with 保存 / 不保存 on screen",
+      "ok": true,
+      "detail": "190px"
+    },
+    {
+      "name": "A skill 390: face = title, name, 用途, a files/permissions line and a 检查 count; the long file list / sentence are folded",
+      "ok": true,
+      "detail": "需要你确认： 保存为个人技能 中风险 周报助手 周报助手weekly-report版本 1.0.0 把本周的工作记录整理成一页周报，按项目分组，并在末尾列出下周计划和需要协调的事项。 3 个文件（含 1 个可执行脚本） · 权限：运行代码、联网 · 2 条提醒 不保存 保存 查看详情 添加说明"
+    },
+    {
+      "name": "A skill 390: 查看详情 shows every file, the 可执行脚本 mark, permissions, each finding and the 仅你可用 sentence",
+      "ok": true,
+      "detail": "需要你确认： 保存为个人技能 中风险 周报助手 周报助手weekly-report版本 1.0.0 把本周的工作记录整理成一页周报，按项目分组，并在末尾列出下周计划和需要协调的事项。 3 个文件（含 1 个可执行脚本） · 权限：运行代码、"
+    },
+    {
+      "name": "A skill 390 (details open): no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A blocked 390: 必须修复 + its message are on the face (not folded), 保存 disabled, 不保存 enabled",
+      "ok": true,
+      "detail": "需要你确认： 保存为个人技能 中风险 周报助手 周报助手weekly-report版本 1.0.0 把本周的工作记录整理成一页周报，按项目分组，并在末尾列出下周计划和需要协调的事项。 3 个文件（含 1 个可执行脚本） · 权限：运行代码、联网 · 2 条提醒 必须修复，暂时不能保存：脚本里写死了一个看起来像密钥的字符"
+    },
+    {
+      "name": "A credential 390: 提交 / 拒绝 are on screen without scrolling; the service, purpose and target hosts are on the face",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A credential 390: 允许的操作 / 有效期 are folded",
+      "ok": true,
+      "detail": "助手想使用「GitHub」的密钥 用途：读取你的项目列表，用来汇总进度 等待你填写 只会发往这些网站 api.github.com 不要在聊天里粘贴密钥；请只在此处填写。 密钥 保存方式 仅本次使用 保存供以后使用 用完即弃，不会出现在「我的凭据」里。 提交 拒绝 查看详情"
+    },
+    {
+      "name": "A credential 390: 查看详情 shows 允许的操作 (GET, POST), 使用方式 and 有效期, and the tech details are one more level in",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A credential 390: the paste warning stays on the face",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B skill saved: one slim line (≤ 40px high at 1440) that still says 已保存, the skill and where to find it",
+      "ok": true,
+      "detail": "25px · 已保存 「r10-skill」已保存为你的个人技能（v1）。 在「能力 › 我的技能」查看"
+    },
+    {
+      "name": "B skill saved: is not a card (no border box) and does not sit above the conversation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B skill saved 390: fits, no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B setup: org default = a remote OpenSandbox whose endpoint is unreachable",
+      "ok": true,
+      "detail": "200/200"
+    },
+    {
+      "name": "B sandbox failure 390: same — one inline copy, no horizontal scroll",
+      "ok": true,
+      "detail": "[\"运行代码（命令行）失败：沙箱提供方 OpenSandbox 创建沙箱失败：OpenSandbox 创建沙箱失败：fetc\"]"
+    },
+    {
+      "name": "B sandbox failure: the reason is shown once, inline where it happened (≤ 1 visible copy outside the model's answer and folded details)",
+      "ok": true,
+      "detail": "[\"运行代码（命令行）失败：沙箱提供方 OpenSandbox 创建沙箱失败：OpenSandbox 创建沙箱失败：fetc\"]"
+    },
+    {
+      "name": "B sandbox failure: no 工作环境没有准备好 banner repeating it above the composer (the environment button carries a dot instead)",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "B sandbox failure: the failure is still visible without opening anything — one 失败 line under the step summary",
+      "ok": true,
+      "detail": "[20]"
+    },
+    {
+      "name": "B sandbox failure: nothing but the composer sits below the conversation (no notice rows above it)",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "B sandbox failure: 详情 opens the step with 技术详情 (tool / arguments / error) — nothing was dropped",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B sandbox failure: the environment popover shows 准备失败 and offers 重试",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B env failure alone: still shown (nothing else explains it) but as one compact line with 重试",
+      "ok": true,
+      "detail": "40px"
+    },
+    {
+      "name": "B run failure: the message shows the reason once (模型调用出错 + 这一轮没有完成), with 技术详情 folded in the same line",
+      "ok": true,
+      "detail": "模型调用出错，这一轮没有完成。 技术详情"
+    },
+    {
+      "name": "B run failure: the bar above the composer is only the status + 重试 (one slim line, no repeated reason, no second 技术详情)",
+      "ok": true,
+      "detail": "36px · 失败 · 还没有完成的步骤 说明 重试"
+    },
+    {
+      "name": "B run failure: the error note is one compact line (≤ 48px)",
+      "ok": true,
+      "detail": "33px"
+    },
+    {
+      "name": "B run failure: 重试 still calls the continue route",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B run failure 390 dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B stale citations: one short line (≤ 32px) that says how many; the explanation is behind 详情",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B stale citations: 详情 shows the full explanation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no uncaught page errors",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

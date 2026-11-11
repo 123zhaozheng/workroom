@@ -7,7 +7,7 @@ import { configure, ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, Usage
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, PromoteResponse, SubagentDTO, SubmissionDTO, TasksResponse, WithdrawResponse } from "../../../shared/chat.ts";
+import type { AbortResponse, AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, PromoteResponse, SubagentDTO, SubmissionDTO, TasksResponse, WithdrawResponse } from "../../../shared/chat.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
@@ -740,13 +740,60 @@ export class Runtime implements RuntimeService {
 		return { conversation: summary, submissionId: sub.id as number };
 	}
 
-	async abort(p: Principal, spaceId: string, conversationId: number, body: { background?: boolean }, context: Context): Promise<void> {
+	/**
+	 * 停止. pi-durable's abort ends the run and withdraws the inputs still QUEUED behind it (a stopped conversation keeps no queue);
+	 * everything already in the conversation stays: the applied user input, every completed step and tool result, and the error
+	 * results of the calls the stop cut off. Nothing the person already sent is removed. The withdrawn queued inputs are returned
+	 * (and kept as display-only 「未送达」 markers) so the client can put them back into the composer instead of discarding them.
+	 * An approval that was still waiting belongs to a call that was just aborted: it is cancelled so it cannot be "approved" for nothing.
+	 */
+	async abort(p: Principal, spaceId: string, conversationId: number, body: { background?: boolean }, context: Context): Promise<AbortResponse> {
 		const { harness, conv } = await this.access(p, "write", spaceId, conversationId, context);
 		const queued = ((await harness.snapshot(InboxDoc, conv.id, context))?.items ?? []).filter((i) => i.mode !== "write").map((i) => ({ id: i.id as number, entry: (i as any).entry }));
 		await conv.abort(context, body.background ? { background: true } : undefined);
-		await this.recordUnplaced(harness, conv, queued, context);
+		const unsent = await this.recordUnplaced(harness, conv, queued, context);
+		const cancelledApprovals = await this.#cancelPendingApprovals(harness, conv.id, context);
+		await this.#flagCutOffEffects(harness, conv.id, context);
 		// A run aborted during a tool call made no model request: tell the usage ledger (group E) to re-import.
 		if (this.ctx.services.has("usage")) (this.ctx.services.get("usage") as { markDirty?: (s: string, c: number) => void }).markDirty?.(spaceId, conversationId);
+		return { ok: true, unsent, cancelledApprovals };
+	}
+
+	/**
+	 * An external write the stop cut off while it was being sent (status "dispatching") may or may not have reached its target. The
+	 * aborted tool never got to record that, so it is surfaced as 待核对 now (the person verifies; nothing is re-run on its own).
+	 */
+	async #flagCutOffEffects(harness: Harness, conversationId: ConversationId, context: Context): Promise<void> {
+		const cut = Object.values((await harness.snapshot(EffectsDoc, conversationId, context))?.items ?? {}).filter((e) => e.status === "dispatching");
+		if (!cut.length) return;
+		await harness.commit(async (tx) => {
+			const d = await tx.doc(EffectsDoc, conversationId);
+			for (const it of Object.values(d.items)) {
+				if (it.status !== "dispatching") continue;
+				it.status = "needs_reconciliation";
+				it.error = `外部写入结果未知（发送过程中被「停止」中断）：${it.target} · ${it.summary}`;
+				it.updatedAt = nowIso();
+				it.history = [...(it.history ?? []), "stopped"];
+			}
+		}, context);
+	}
+
+	/** After a stop no tool call of this conversation is waiting any more: its pending approvals are settled as cancelled (no decider, nothing executed). */
+	async #cancelPendingApprovals(harness: Harness, conversationId: ConversationId, context: Context): Promise<number> {
+		const pending = Object.values((await harness.snapshot(ApprovalsDoc, conversationId, context))?.items ?? {}).filter((a) => a.status === "pending");
+		if (!pending.length) return 0;
+		return harness.commit(async (tx) => {
+			const d = await tx.doc(ApprovalsDoc, conversationId);
+			let n = 0;
+			for (const it of Object.values(d.items)) {
+				if (it.status !== "pending") continue;
+				it.status = "cancelled";
+				it.decidedAt = nowIso();
+				it.note = "已随「停止」取消：这一步没有执行";
+				n++;
+			}
+			return n;
+		}, context);
 	}
 
 	async continue(p: Principal, spaceId: string, conversationId: number, body: { requestId?: string }, context: Context): Promise<SubmissionDTO> {
@@ -796,14 +843,18 @@ export class Runtime implements RuntimeService {
 	 * Inputs settled without ever being placed (withdrawn, or dropped by an abort) leave no entry in pi. Append a
 	 * display-only `wr.input-unplaced` write (never seen by the model) so the message and its outcome survive reload.
 	 */
-	async recordUnplaced(harness: Harness, conv: Conversation, items: readonly { id: number; entry?: any }[], context: Context): Promise<void> {
+	async recordUnplaced(harness: Harness, conv: Conversation, items: readonly { id: number; entry?: any }[], context: Context): Promise<AbortResponse["unsent"]> {
+		const recorded: AbortResponse["unsent"][number][] = [];
 		for (const it of items) {
 			const sub = await harness.submission(it.id as SubmissionId, context);
 			const rec = sub ? await sub.status(context) : undefined;
 			if (!rec || rec.type !== "input" || rec.status !== "unanswered" || rec.entry !== undefined) continue;
+			const d = (it.entry?.data ?? {}) as InputEntryData;
 			const data = { ...((it.entry?.data as object) ?? {}), ...(rec.requestId ? { requestId: rec.requestId } : {}), submissionId: it.id, reason: rec.reason };
 			await conv.submit({ type: "write", requestId: `unplaced:${it.id}`, entry: { kind: UnplacedInputEntry.kind, data: data as any } }, context);
+			recorded.push({ submissionId: it.id, text: d.text ?? "", ...(d.attachments?.length ? { attachments: d.attachments } : {}), ...(d.knowledgeRefs?.length ? { knowledgeRefs: d.knowledgeRefs } : {}) });
 		}
+		return recorded;
 	}
 
 	/**

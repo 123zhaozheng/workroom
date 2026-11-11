@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:12:00.942Z",
+  "at": "2026-11-11T08:27:23.307Z",
   "results": [
     {
       "name": "setup: knowledge base created through C's API",
@@ -39,7 +39,7 @@
     {
       "name": "state: failed shown with reason + 重试/继续",
       "ok": true,
-      "detail": "失败 · 模型出错 重试 技术详情"
+      "detail": "失败 · 还没有完成的步骤 说明 重试"
     },
     {
       "name": "cross-device: phone shows the same running state",

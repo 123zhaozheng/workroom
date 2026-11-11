@@ -29,10 +29,22 @@ export interface AssistantTurn {
 	startedAt?: number;
 	endedAt?: number;
 }
+/** What happened after a user message, for its outcome line: how many steps completed, and whether an answer eventually followed. */
+export interface UserRun {
+	/** Tool steps that finished successfully after this message (before the next message). */
+	doneSteps: number;
+	/** Tool steps the stop / a crash cut off (their result is pi-durable's "aborted" / "interrupted" error). */
+	cutOffSteps: number;
+	/** A final text answer exists after this message (a 继续 after a stop produces it). */
+	answered: boolean;
+	/** An assistant turn after this message already shows the failure inline (its error note): the outcome line must not repeat the reason. */
+	errorShown: boolean;
+}
 export interface UserTurn {
 	kind: "user";
 	key: string;
 	entry: UserEntryDTO;
+	run?: UserRun;
 }
 export interface MarkerTurn {
 	kind: "marker";
@@ -67,6 +79,15 @@ export function browseOf(details: unknown): BrowseResultDTO | null {
 	return typeof b.finalUrl === "string" && typeof b.title === "string" ? (b as unknown as BrowseResultDTO) : null;
 }
 
+/**
+ * A tool result pi-durable wrote for a call it did not run to the end: the run was stopped ("Tool x was aborted") or the process
+ * died ("Tool x was interrupted …"). Not a failure of the tool; the model is told exactly this and decides what to do next.
+ */
+export function isCutOffResult(r: Pick<ToolResultEntryDTO, "isError" | "text" | "details"> | undefined): boolean {
+	if ((r?.details as { status?: string } | undefined)?.status === "needs_reconciliation") return false; // an external write of unknown outcome has its own 待核对 card
+	return !!r?.isError && /Tool .+ was (aborted|interrupted)\b/.test(r.text.slice(0, 300));
+}
+
 const modelLabel = (e: AssistantEntryDTO) => `${e.model.provider}/${e.model.modelId}`;
 
 export function buildTurns(entries: readonly EntryDTO[], state?: Pick<ConversationState, "live" | "approvals"> & Partial<Pick<ConversationState, "subagents">>): Turn[] {
@@ -96,7 +117,9 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 	for (const e of entries) {
 		switch (e.kind) {
 			case "user":
-				close();
+				// A 未送达 marker (never placed, e.g. withdrawn by 停止) is display-only: it must not cut the assistant's turn in two,
+				// or the answer a later 继续 produces would be separated from the steps before it.
+				if (e.placed !== false) close();
 				turns.push({ kind: "user", key: `u${e.id}`, entry: e });
 				break;
 			case "assistant": {
@@ -163,6 +186,26 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 		}
 	}
 	close();
+	// Per message: what its run did (for 「已停止（已完成 N 步）」 and the like).
+	for (let i = 0; i < turns.length; i++) {
+		const u = turns[i]!;
+		if (u.kind !== "user") continue;
+		const run: UserRun = { doneSteps: 0, cutOffSteps: 0, answered: false, errorShown: false };
+		if (u.entry.placed === false) continue;
+		for (let j = i + 1; j < turns.length; j++) {
+			const t = turns[j]!;
+			if (t.kind === "user" && t.entry.placed !== false) break;
+			if (t.kind !== "assistant") continue;
+			for (const st of t.steps) {
+				if (st.kind !== "tool" || !st.result) continue;
+				if (isCutOffResult(st.result)) run.cutOffSteps++;
+				else if (!st.result.isError) run.doneSteps++;
+			}
+			if (t.answer && !t.error && !t.streaming) run.answered = true;
+			if (t.error) run.errorShown = true;
+		}
+		u.run = run;
+	}
 	return turns;
 }
 

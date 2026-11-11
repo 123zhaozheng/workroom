@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:13:21.086Z",
+  "at": "2026-11-11T08:25:53.970Z",
   "results": [
     {
       "name": "M01-A: plain chat, attachment and knowledge chip sent from the same composer, no workflow choice",
@@ -17,9 +17,9 @@
       "detail": ""
     },
     {
-      "name": "per-message outcome survives reload on the exact message (未应用/已取消)",
+      "name": "per-message outcome survives reload on the exact message (已停止 — the message was applied, then stopped; round 10 reworded 未应用/没有得到回复)",
       "ok": true,
-      "detail": "这条消息没有得到回复：未应用（已被取消）"
+      "detail": "已停止（还没有完成的步骤） · 这条消息和已完成的步骤都保留在对话里"
     },
     {
       "name": "待核对: unknown external write shown for verification, resolved by the user (no blind retry)",
@@ -74,7 +74,7 @@
     {
       "name": "handoff (editor): decisions, progress and deliverables of the task, and may continue",
       "ok": true,
-      "detail": "已完成 · 整理发布会清单 你可以接手继续 待处理 · 0 没有待处理事项 已做的决定 · 1 批准「预订场地」：向场地方提交 12 月 1 日的预订 · 负责人 · 2026/11/11 07:13:14 进展 · 2 负责人：整理发布会"
+      "detail": "已完成 · 整理发布会清单 你可以接手继续 待处理 · 0 没有待处理事项 已做的决定 · 1 批准「预订场地」：向场地方提交 12 月 1 日的预订 · 负责人 · 2026/11/11 08:25:46 进展 · 2 负责人：整理发布会"
     },
     {
       "name": "viewer: no composer, no edit/regenerate/fork actions in the conversation",

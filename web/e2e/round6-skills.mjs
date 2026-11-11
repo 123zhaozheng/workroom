@@ -115,9 +115,14 @@ try {
 	check("A card: permissions in plain words (运行代码、联网), not codes", (await card.locator('[data-testid="skill-draft-perms"]').innerText()).trim() === "运行代码、联网");
 	const risk = await card.locator('[data-testid="skill-draft-risk"]').innerText();
 	check("A card: risk line shows the warning in Chinese without the code", risk.includes("请留意") && risk.includes("联网请求") && !risk.includes("script.network"));
-	check("A card: the fixed sentence about 仅你可用 / 不会自动运行 / 不会发布", txt.includes("保存后仅你可用；不会自动运行，也不会发布到商城。发布需在「能力 › 我的技能」另行提交审核。"));
+	// round 10: files / permissions / findings / the fixed sentence are behind 查看详情 (the face keeps name, 用途, a one-line summary and the buttons)
+	check("A card: the face shows the file count, permissions and warning count; the file list and the fixed sentence are folded", txt.includes("2 个文件") && txt.includes("运行代码、联网") && txt.includes("1 条提醒") && !txt.includes("scripts/run.py") && !txt.includes("仅你可用"));
+	await card.locator('[data-testid="approval-details-toggle"]').click();
+	const txtOpen = await card.innerText();
+	await card.locator('[data-testid="approval-details-toggle"]').click();
+	check("A card: the fixed sentence about 仅你可用 / 不会自动运行 / 不会发布", txtOpen.includes("保存后仅你可用；不会自动运行，也不会发布到商城。发布需在「能力 › 我的技能」另行提交审核。"));
 	check("A card: package hash and codes only inside 技术详情", !txt.includes("c0ffee") && !txt.includes("sha256") && (await card.locator('[data-testid="tech-details"]').innerHTML()).includes("packageSha256"));
-	check("A card: buttons are 不保存 / 保存 (+ 添加说明), nothing focused on open", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "不保存|保存|添加说明" && !["approve", "approve-confirm"].includes(await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "")));
+	check("A card: buttons are 不保存 / 保存 (+ 添加说明), nothing focused on open", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "不保存|保存|查看详情|添加说明" && !["approve", "approve-confirm"].includes(await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "")));
 	await shot(page, "round6/draft-card-1440-light");
 	await page.locator('[data-testid="approval-card"]').scrollIntoViewIfNeeded();
 	// keyboard: Tab → 不保存, Tab → 保存
@@ -187,11 +192,14 @@ try {
 	await sleep(400);
 	const c1 = page.locator('[data-testid="approval-card"]');
 	const t1 = await c1.innerText();
-	check("B card: shows name, 用途, files and 可执行脚本", t1.includes("first-skill") && (await c1.locator('[data-testid="skill-draft-desc"]').innerText()).includes("问候") && t1.includes("SKILL.md") && t1.includes("scripts/run.py") && t1.includes("可执行脚本"));
+	await c1.locator('[data-testid="approval-details-toggle"]').click();
+	const t1o = await c1.innerText();
+	await c1.locator('[data-testid="approval-details-toggle"]').click();
+	check("B card: shows name, 用途, files and 可执行脚本", t1.includes("first-skill") && (await c1.locator('[data-testid="skill-draft-desc"]').innerText()).includes("问候") && t1o.includes("SKILL.md") && t1o.includes("scripts/run.py") && t1o.includes("可执行脚本") && t1.includes("可执行脚本"));
 	check("B card: a risk/检查结果 line is present", (await c1.locator('[data-testid="skill-draft-risk"]').innerText()).trim().length > 0);
 	const bubbles = (await page.locator('[data-testid="user-bubble"]').allInnerTexts()).join("\n");
 	check("B display: test directives and file contents are not shown as user text", !bubbles.includes("[[") && !bubbles.includes("sandbox_write_file") && !bubbles.includes("hello from skill") && bubbles.includes("帮我创建一个技能"));
-	check("B display: the approval mentions no raw tool names", !t1.includes("skill_manage") && !t1.includes("submit_draft"));
+	check("B display: the approval mentions no raw tool names", !t1o.includes("skill_manage") && !t1o.includes("submit_draft"));
 	await shot(page, "round6/draft-card-real-1440-light");
 	await page.locator('[data-testid="reject"]').click();
 	await page.waitForSelector('[data-testid="skill-draft-result"][data-state="rejected"]', { timeout: 30000 });

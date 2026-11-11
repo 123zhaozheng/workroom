@@ -127,7 +127,7 @@ try {
 	await a.goto(`${base}/`);
 	await sendMessage(a, "[[fail]] 模型这次会出错");
 	await a.waitForSelector('[data-testid="run-bar"][data-status="failed"]', { timeout: 60000 });
-	check("M07-C: model errors are reported as model errors (not as missing evidence)", (await a.locator('[data-testid="run-bar"]').innerText()).includes("模型出错"));
+	check("M07-C: model errors are reported as model errors (not as missing evidence)", (await a.locator('[data-testid="error-note"]').last().innerText()).includes("模型调用出错") && !/没有找到相关证据/.test(await a.locator('[data-testid="run-bar"]').innerText())); // round 10: the reason is shown once, inline in the message; the bar above the input is only 失败 + 重试
 
 	// ---------------------------------------------------------------- M06-B: PDF page + version on citation chips
 	const notes = created["个人笔记"];

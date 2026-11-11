@@ -1,0 +1,201 @@
+{
+  "card.medium-1440-light": {
+    "h": 206,
+    "units": 64,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.high-1440-light": {
+    "h": 206,
+    "units": 78,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.credential-1440-light": {
+    "h": 578,
+    "units": 181,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.mcp-1440-light": {
+    "h": 303,
+    "units": 142,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skill-1440-light": {
+    "h": 443,
+    "units": 246,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skillBlocked-1440-light": {
+    "h": 485,
+    "units": 288,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.medium-1440-dark": {
+    "h": 206,
+    "units": 64,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.high-1440-dark": {
+    "h": 206,
+    "units": 78,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.credential-1440-dark": {
+    "h": 578,
+    "units": 181,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.mcp-1440-dark": {
+    "h": 303,
+    "units": 142,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skill-1440-dark": {
+    "h": 443,
+    "units": 246,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skillBlocked-1440-dark": {
+    "h": 485,
+    "units": 288,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.medium-390-light": {
+    "h": 226,
+    "units": 64,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.high-390-light": {
+    "h": 226,
+    "units": 78,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.credential-390-light": {
+    "h": 636,
+    "units": 181,
+    "actionsOnScreen": false,
+    "cardTopOnScreen": true
+  },
+  "card.mcp-390-light": {
+    "h": 343,
+    "units": 142,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skill-390-light": {
+    "h": 591,
+    "units": 246,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skillBlocked-390-light": {
+    "h": 673,
+    "units": 288,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": false
+  },
+  "card.medium-390-dark": {
+    "h": 226,
+    "units": 64,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.high-390-dark": {
+    "h": 226,
+    "units": 78,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.credential-390-dark": {
+    "h": 636,
+    "units": 181,
+    "actionsOnScreen": false,
+    "cardTopOnScreen": true
+  },
+  "card.mcp-390-dark": {
+    "h": 343,
+    "units": 142,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skill-390-dark": {
+    "h": 591,
+    "units": 246,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": true
+  },
+  "card.skillBlocked-390-dark": {
+    "h": 673,
+    "units": 288,
+    "actionsOnScreen": true,
+    "cardTopOnScreen": false
+  },
+  "saved.1440": {
+    "h": 46,
+    "text": "已保存 「r10-skill」已保存为你的个人技能（v1）。 在「能力 › 我的技能」查看",
+    "units": 26
+  },
+  "saved.390": {
+    "h": 94
+  },
+  "failure.sandbox.1440": {
+    "errorCopies": 1,
+    "copiesText": [
+      "工作环境没有准备好：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行）"
+    ],
+    "envStatus": [
+      68
+    ],
+    "runBar": [],
+    "errorNote": [],
+    "stepFailure": [],
+    "stepNote": 1,
+    "aboveComposerPx": 76
+  },
+  "failure.sandbox.1440.pageUnits": 138,
+  "failure.sandbox.390": {
+    "errorCopies": 1,
+    "copiesText": [
+      "工作环境没有准备好：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行）"
+    ],
+    "envStatus": [
+      108
+    ],
+    "runBar": [],
+    "errorNote": [],
+    "stepFailure": [],
+    "stepNote": 1,
+    "aboveComposerPx": 116
+  },
+  "failure.envOnly.1440": {
+    "h": 68
+  },
+  "failure.run.1440": {
+    "runBar": [
+      59
+    ],
+    "errorNote": [
+      61
+    ],
+    "techDetails": 2,
+    "aboveComposerPx": 67
+  },
+  "failure.run.1440.pageUnits": 78,
+  "stale.1440": {
+    "h": 36,
+    "units": 47
+  }
+}

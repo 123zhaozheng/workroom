@@ -7,7 +7,7 @@ export const RUN_LABEL: Record<RunStatus, string> = {
 	running: "运行中",
 	waiting_approval: "等待你确认",
 	done: "已完成",
-	aborted: "已取消",
+	aborted: "已停止",
 	timeout: "已超时",
 	failed: "失败",
 	interrupted: "已中断",
@@ -61,12 +61,12 @@ export const SUBMISSION_LABEL: Record<SubmissionStatus, string> = {
 	queued: "排队中",
 	applied: "已应用",
 	done: "已回复",
-	unanswered: "未应用",
+	unanswered: "未完成",
 	withdrawn: "已撤回",
 };
 
 export const REASON_LABEL: Record<string, string> = {
-	aborted: "已被取消",
+	aborted: "已停止",
 	model_error: "模型出错",
 	turn_limit: "达到轮数上限",
 	reset: "上下文已重置",

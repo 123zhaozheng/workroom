@@ -90,8 +90,13 @@ try {
 	const card = page.locator('[data-testid="approval-card"]');
 	const cardText = await card.innerText();
 	check("approval: shows the operation (title + the backend's summary)", cardText.includes("对外发送周报") && cardText.includes("将《项目周报》v1 发送到 team@example.com"));
-	check("approval: shows risk level with a label, and the requester", (await card.locator('[data-testid="approval-risk"]').innerText()).includes("中风险") && cardText.includes("风险") && cardText.includes("请求人") && cardText.includes("代你执行"));
-	check("approval: only 允许 / 拒绝 (+ an optional note) are offered", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "拒绝|允许|添加说明");
+	// round 10: the face is title + risk badge + summary + buttons; who asked / the risk explained are behind 查看详情 (nothing removed)
+	check("approval: the risk level is a labelled badge on the face; requester and risk note are folded", (await card.locator('[data-testid="approval-risk"]').innerText()).includes("中风险") && !cardText.includes("请求人") && !cardText.includes("代你执行"));
+	await card.locator('[data-testid="approval-details-toggle"]').click();
+	const openText = await card.innerText();
+	check("approval: 查看详情 shows the risk note and the requester", openText.includes("风险") && openText.includes("请求人") && openText.includes("代你执行"));
+	await card.locator('[data-testid="approval-details-toggle"]').click();
+	check("approval: only 允许 / 拒绝 (+ 查看详情 and an optional note) are offered", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "拒绝|允许|查看详情|添加说明");
 	const focused = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName);
 	check("approval: default focus is not on 允许", focused !== "approve" && focused !== "approve-confirm", String(focused));
 	check("approval: no run bar above the input; the card itself is the place to act", (await page.locator('[data-testid="run-bar"]').count()) === 0 && (await card.isVisible()));
@@ -176,13 +181,15 @@ try {
 	await sleep(400);
 	const rb = page.locator('[data-testid="run-bar"]');
 	const rbText = await rb.innerText();
-	check("failure: one human reason line + 重试 (no raw [[fail]])", rbText.includes("模型出错") && rbText.includes("重试") && !rbText.includes("[["), rbText.replace(/\s+/g, " "));
-	const det = rb.locator('[data-testid="tech-details"] p');
-	check("failure: technical detail stays collapsed", !(await det.isVisible()));
-	await rb.locator('[data-testid="tech-details"] summary').click();
-	check("failure: 技术详情 opens to the raw reason, still without directives", (await det.isVisible()) && !(await det.innerText()).includes("[["));
+	// round 10: the reason and 技术详情 are shown once, inline in the message (error-note); the bar above the input is only the status + 重试
+	check("failure: the bar is just the status + 重试 (no raw [[fail]], no second copy of the reason)", rbText.includes("重试") && !rbText.includes("[[") && !rbText.includes("模型出错"), rbText.replace(/\s+/g, " "));
+	check("failure: no second 技术详情 in the bar", (await rb.locator('[data-testid="tech-details"]').count()) === 0);
 	const note = await lastAssistant(page).locator('[data-testid="error-note"]').innerText();
 	check("failure: the message shows one plain line, not the provider text", note.includes("这一轮没有完成") && !note.includes("simulated"), note.replace(/\s+/g, " "));
+	const det = lastAssistant(page).locator('[data-testid="error-note"] pre');
+	check("failure: technical detail stays collapsed", !(await det.isVisible()));
+	await lastAssistant(page).locator('[data-testid="error-note"] summary').click();
+	check("failure: 技术详情 opens to the raw reason, still without directives", (await det.isVisible()) && !(await det.innerText()).includes("[["));
 	await shot(page, "round5/after/g2-e2e-failure");
 	const req = page.waitForRequest((r) => r.url().endsWith("/continue") && r.method() === "POST", { timeout: 10000 });
 	await page.click('[data-testid="continue"]');

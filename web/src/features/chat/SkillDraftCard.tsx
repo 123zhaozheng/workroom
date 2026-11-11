@@ -9,8 +9,10 @@ import { ApiError, get } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
 import { Badge } from "@/components/ui/misc";
 import { permShort } from "@/features/market/common";
+import { ClampText } from "./Disclosure";
 
 export const SKILL_DRAFT_NOTE = "保存后仅你可用；不会自动运行，也不会发布到商城。发布需在「能力 › 我的技能」另行提交审核。";
+const SKILL_DRAFT_NOTE_MARKET = "不会自动运行。新版本会提交审核，通过之前使用该技能的人仍用旧版本。";
 
 /** The approval's detail when it is a skill draft; undefined for every other approval. */
 export function skillDraftOf(detail: unknown): SkillDraftApprovalDetail | undefined {
@@ -26,30 +28,59 @@ export function permissionWords(d: SkillDraftApprovalDetail): string {
 
 export const hasBlockingFinding = (d: SkillDraftApprovalDetail): boolean => d.findings.some((f) => f.severity === "error");
 
-export function SkillDraftBody({ d }: { d: SkillDraftApprovalDetail }) {
-	const risky = d.findings.filter((f) => f.severity !== "info");
+/** Heading of the card: a new skill or a new version of one the person already has (the 目标 comes from the server). */
+export const skillDraftHeading = (d: SkillDraftApprovalDetail): string => (d.target?.mode === "update" ? "更新技能" : "保存为个人技能");
+
+/** What changes the decision, on the face of the card: which skill, what it is for, how big, what it may do, how the check went. */
+export function SkillDraftFace({ d }: { d: SkillDraftApprovalDetail }) {
+	const warns = d.findings.filter((f) => f.severity === "warn");
+	const errors = d.findings.filter((f) => f.severity === "error");
 	const exec = d.files.filter((f) => f.executable).length;
+	const target = d.target?.text ?? (d.updatesSkill ? `为你的技能「${d.updatesSkill.name}」添加新版本${d.updatesSkill.fromVersion ? `（当前 ${d.updatesSkill.fromVersion}）` : ""}` : undefined);
 	return (
-		<div data-testid="skill-draft" className="mt-1">
-			<h3 className="text-[15px] font-medium">保存为个人技能</h3>
-			<p className="mt-1 text-sm">
+		<div data-testid="skill-draft" className="mt-1 text-[13px] leading-5">
+			<p>
 				<span data-testid="skill-draft-title" className="font-medium">
 					{d.title || d.name}
 				</span>
 				{d.title && d.title !== d.name ? <span className="ml-1.5 font-mono text-xs text-fg-subtle">{d.name}</span> : null}
 				<span className="ml-1.5 text-xs text-fg-muted">版本 {d.version}</span>
 			</p>
-			<dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
-				<dt className="text-fg-muted">用途</dt>
-				<dd data-testid="skill-draft-desc" className="min-w-0 break-words">
-					{d.description || "（没有填写）"}
-				</dd>
-				{d.updatesSkill ? (
-					<>
-						<dt className="text-fg-muted">保存方式</dt>
-						<dd>为你的技能「{d.updatesSkill.name}」添加新版本{d.updatesSkill.fromVersion ? `（当前 ${d.updatesSkill.fromVersion}）` : ""}</dd>
-					</>
-				) : null}
+			{target ? (
+				<p data-testid="skill-draft-target" className="text-fg-muted">
+					{target}
+				</p>
+			) : null}
+			<ClampText testId="skill-draft-desc" className="mt-0.5">
+				{d.description || "（没有填写）"}
+			</ClampText>
+			<p data-testid="skill-draft-glance" className="mt-1 text-xs text-fg-muted">
+				{d.files.length} 个文件{exec ? `（含 ${exec} 个可执行脚本）` : ""} · 权限：{permissionWords(d)} · {warns.length ? `${warns.length} 条提醒` : errors.length ? "检查未通过" : "自动检查通过"}
+			</p>
+			{errors.length ? (
+				<ul data-testid="skill-draft-blocking" className="mt-1.5 space-y-0.5">
+					{errors.map((f, i) => (
+						<li key={i} data-severity="error" className="flex items-start gap-1.5 text-danger">
+							<CircleX aria-hidden className="mt-0.5 size-4 shrink-0" />
+							<span className="break-words">
+								<span className="font-medium">必须修复，暂时不能保存：</span>
+								{f.message}
+							</span>
+						</li>
+					))}
+				</ul>
+			) : null}
+		</div>
+	);
+}
+
+/** Everything else about the draft, behind 查看详情: the file list, permissions, every finding and the fixed sentence about what saving means. */
+export function SkillDraftDetails({ d }: { d: SkillDraftApprovalDetail }) {
+	const risky = d.findings.filter((f) => f.severity !== "info");
+	const exec = d.files.filter((f) => f.executable).length;
+	return (
+		<>
+			<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
 				<dt className="text-fg-muted">文件</dt>
 				<dd className="min-w-0">
 					<ul data-testid="skill-draft-files" className="space-y-0.5">
@@ -87,11 +118,11 @@ export function SkillDraftBody({ d }: { d: SkillDraftApprovalDetail }) {
 					)}
 				</dd>
 			</dl>
-			<p data-testid="skill-draft-note" className="mt-3 flex items-start gap-1.5 text-xs text-fg-muted">
+			<p data-testid="skill-draft-note" className="mt-2 flex items-start gap-1.5 text-xs text-fg-muted">
 				<Info aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-				{SKILL_DRAFT_NOTE}
+				{d.target?.scope === "market" ? SKILL_DRAFT_NOTE_MARKET : SKILL_DRAFT_NOTE}
 			</p>
-		</div>
+		</>
 	);
 }
 
@@ -116,6 +147,14 @@ export function skillDraftTech(d: SkillDraftApprovalDetail): string {
 	);
 }
 
+/** Result wording that matches what really happened (a market skill's new version is submitted for review, not usable yet). */
+function savedText(d: SkillDraftApprovalDetail, draft: SkillDraftDTO | null): string {
+	const v = draft?.versionNo ? `（v${draft.versionNo}）` : "";
+	if (d.target?.scope === "market") return draft ? `已保存新版本${v}。${draft.error ?? "已提交审核，通过之前使用者仍用旧版本。"}` : "已保存新版本。";
+	if (d.target?.mode === "update") return `已为你的个人技能保存新版本${v}。`;
+	return `已保存为你的个人技能${v}。`;
+}
+
 /** After the decision: 已保存 (link to 我的技能) / 未保存. The draft route may be absent; the approval status alone is then enough. */
 export function SkillDraftResult({ approval, d }: { approval: ApprovalDTO; d: SkillDraftApprovalDetail }) {
 	const approved = approval.status === "approved";
@@ -135,11 +174,11 @@ export function SkillDraftResult({ approval, d }: { approval: ApprovalDTO; d: Sk
 	const failed = approved && draft?.state === "failed";
 	const saved = approved && !failed;
 	return (
-		<div data-testid="skill-draft-result" data-state={failed ? "failed" : saved ? "saved" : "rejected"} role="status" className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border bg-surface px-4 py-3 text-sm">
+		<div data-testid="skill-draft-result" data-state={failed ? "failed" : saved ? "saved" : "rejected"} role="status" className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px] ${failed ? "rounded-lg bg-danger-soft px-3 py-1.5" : "px-1 py-0.5"}`}>
 			{saved ? <CheckCircle2 aria-hidden className="size-4 text-success" /> : <CircleX aria-hidden className={failed ? "size-4 text-danger" : "size-4 text-fg-subtle"} />}
 			<span className="font-medium">{failed ? "保存失败" : saved ? "已保存" : "未保存"}</span>
 			<span className="min-w-0 break-words text-fg-muted">
-				「{d.title || d.name}」{failed ? draft?.error ?? "" : saved ? `已保存为你的个人技能${draft?.versionNo ? `（v${draft.versionNo}）` : ""}。` : "没有保存。"}
+				「{d.title || d.name}」{failed ? draft?.error ?? "" : saved ? savedText(d, draft) : "没有保存。"}
 			</span>
 			{saved ? (
 				<Link to="/capabilities" className="text-info underline-offset-2 hover:underline" data-testid="skill-draft-open">

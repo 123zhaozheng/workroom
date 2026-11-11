@@ -1,7 +1,7 @@
 import { BookOpen, Check, ChevronLeft, ChevronRight, Copy, Download, FlaskConical, GitBranch, Pencil, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { FIXTURE_LABEL, type ConversationSummary, type UserEntryDTO } from "@shared/chat";
-import { copyText, cn, downloadText, isSimulatedUsage, SIMULATED_USAGE } from "@/lib/utils";
+import { copyText, downloadText, isSimulatedUsage, SIMULATED_USAGE } from "@/lib/utils";
 import { reasonText, SUBMISSION_LABEL } from "./status";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { Citations, ErrorNote, FileCard } from "./Cards";
 import { CredentialOutcome, credentialSteps } from "./CredentialRequestCard";
 import { RefTile } from "@/components/file/FileTile";
 import { MessageAttachment } from "./Attachments";
-import { turnMarkdown, type AssistantTurn } from "./model";
+import { turnMarkdown, type AssistantTurn, type UserRun } from "./model";
 import { cleanErrorText, userTextOf } from "./testText";
 import { StepChain } from "./Steps";
 import { JobChip } from "@/features/work/live";
@@ -44,7 +44,7 @@ function CopyAction({ text }: { text: string }) {
 	);
 }
 
-export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEntryDTO; onEdit: (text: string) => Promise<void>; onFork: () => void; readOnly?: boolean }) {
+export function UserMessage({ entry, run, onEdit, onFork, onRestore, readOnly }: { entry: UserEntryDTO; run?: UserRun; onEdit: (text: string) => Promise<void>; onFork: () => void; onRestore?: () => void; readOnly?: boolean }) {
 	const [editing, setEditing] = useState(false);
 	// Show what the person wrote; test-model directives are not message content (a small 测试 badge says they were there).
 	const shown = userTextOf(entry);
@@ -101,7 +101,7 @@ export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEn
 							测试
 						</span>
 					) : null}
-					<MessageOutcome entry={entry} />
+					<MessageOutcome entry={entry} run={run} onRestore={readOnly ? undefined : onRestore} />
 					<div className="mt-1 flex h-7 items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
 						{via ? <span className="mr-1 text-xs text-fg-subtle">{via}</span> : null}
 						{entry.authorName ? <span className="mr-1 text-xs text-fg-subtle">{entry.authorName}</span> : null}
@@ -123,20 +123,54 @@ export function UserMessage({ entry, onEdit, onFork, readOnly }: { entry: UserEn
 	);
 }
 
-/** Outcome of this exact message (M02-C), re-read from the server on every load; only shown when it is not simply answered. */
-function MessageOutcome({ entry }: { entry: UserEntryDTO }) {
+/**
+ * Outcome of this exact message (M02-C), re-read from the server on every load; only shown when it is not simply answered.
+ * Three honest cases, never mixed up:
+ *  - never placed (placed === false): 「未送达」 — the model has not seen it; it can go back into the composer.
+ *  - placed, then the run was stopped / ended early: the message IS in the conversation and the model sees it on 继续. Not an error.
+ *  - placed and failed: the message arrived, the run did not finish.
+ */
+function MessageOutcome({ entry, run, onRestore }: { entry: UserEntryDTO; run?: UserRun; onRestore?: () => void }) {
 	const sub = entry.submission;
 	if (entry.placed === false)
 		return (
-			<p data-testid="message-outcome" data-status={sub?.status ?? "withdrawn"} className="mt-1 text-xs text-danger">
-				未送达模型：{sub ? `${SUBMISSION_LABEL[sub.status]}${sub.reason ? `（${reasonText(sub.reason)}）` : ""}` : "已撤回"}
+			<p data-testid="message-outcome" data-kind="unsent" data-status={sub?.status ?? "withdrawn"} className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-danger">
+				<span>
+					未送达模型：{sub?.status === "unanswered" && sub.reason && sub.reason !== "aborted" ? `${reasonText(sub.reason)}，` : ""}这条消息没有进入对话，模型没有看到它
+				</span>
+				{onRestore ? (
+					<button data-testid="unsent-restore" onClick={onRestore} className="rounded px-1 font-medium text-info hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-info">
+						放回输入框
+					</button>
+				) : null}
 			</p>
 		);
 	if (!sub || sub.status === "done" || sub.status === "applied") return null;
-	const bad = sub.status === "unanswered" || sub.status === "withdrawn";
+	if (sub.status === "unanswered" || sub.status === "withdrawn") {
+		const steps = run ? (run.doneSteps ? `已完成 ${run.doneSteps} 步` : "还没有完成的步骤") : "";
+		const stopped = sub.reason === "aborted";
+		if (run?.answered)
+			return (
+				<p data-testid="message-outcome" data-kind="resumed" data-status={sub.status} className="mt-1 text-xs text-fg-subtle">
+					这一轮中途{stopped ? "停止" : `中断（${reasonText(sub.reason)}）`}过，之后已继续完成
+				</p>
+			);
+		if (stopped)
+			return (
+				<p data-testid="message-outcome" data-kind="stopped" data-status={sub.status} className="mt-1 text-xs text-fg-muted">
+					已停止{steps ? `（${steps}）` : ""} · 这条消息和已完成的步骤都保留在对话里
+				</p>
+			);
+		return (
+			<p data-testid="message-outcome" data-kind="incomplete" data-status={sub.status} className="mt-1 text-xs text-danger">
+				{/* The reason is already in the answer's inline error note: say only what the note does not (steps, message kept). */}
+				{run?.errorShown ? "这一轮没有完成" : `这一轮没有完成：${reasonText(sub.reason) || SUBMISSION_LABEL[sub.status]}`}
+				{steps ? `（${steps}）` : ""} · 消息已送达模型，没有丢失
+			</p>
+		);
+	}
 	return (
-		<p data-testid="message-outcome" data-status={sub.status} className={cn("mt-1 text-xs", bad ? "text-danger" : "text-info")}>
-			{bad ? "这条消息没有得到回复：" : ""}
+		<p data-testid="message-outcome" data-status={sub.status} className="mt-1 text-xs text-info">
 			{SUBMISSION_LABEL[sub.status]}
 			{sub.reason ? `（${reasonText(sub.reason)}）` : ""}
 		</p>

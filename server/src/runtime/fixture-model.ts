@@ -265,6 +265,32 @@ export function fixtureAnswer(messages: readonly Message[]): { message: Assistan
 	return { message: fauxAssistantMessage(`${FIXTURE_LABEL} 已经回答过了。`) };
 }
 
+/** One model request as the fixture saw it (system messages left out): what the next request really contains. Test-only introspection. */
+export interface FixtureRequestMessage {
+	readonly role: string;
+	readonly text: string;
+	readonly toolName?: string;
+	readonly isError?: boolean;
+	readonly toolCalls?: readonly string[];
+}
+const requestLog: FixtureRequestMessage[][] = [];
+/** The last (up to 40) requests every fixture model in this process served, oldest first. Used by tests to prove what the model is given. */
+export const fixtureRequests = (): readonly (readonly FixtureRequestMessage[])[] => requestLog;
+export const clearFixtureRequests = (): void => void (requestLog.length = 0);
+function recordRequest(messages: readonly Message[]): void {
+	requestLog.push(
+		messages
+			.filter((m) => m.role !== "system")
+			.map((m) => ({
+				role: m.role,
+				text: textOfContent((m as { content: string | readonly { type: string; text?: string }[] }).content ?? ""),
+				...(m.role === "toolResult" ? { toolName: (m as ToolResultMessage).toolName, isError: !!(m as ToolResultMessage).isError } : {}),
+				...(m.role === "assistant" ? { toolCalls: (m as AssistantMessage).content.flatMap((c) => (c.type === "toolCall" ? [c.name] : [])) } : {}),
+			})),
+	);
+	if (requestLog.length > 40) requestLog.shift();
+}
+
 export interface FixtureModel {
 	readonly provider: Provider;
 	readonly providerName: "fixture";
@@ -284,6 +310,7 @@ export function createFixtureModel(options: { tokensPerSecond?: number } = {}): 
 	});
 	const factory: FauxResponseFactory = async (context, streamOptions) => {
 		calls++;
+		recordRequest(context.messages);
 		// Keep the faux queue topped up: every request consumes one step and adds one.
 		faux.appendResponses([factory]);
 		const { message, slowMs } = fixtureAnswer(context.messages);

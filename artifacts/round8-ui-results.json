@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:32:01.433Z",
+  "at": "2026-11-11T08:25:58.951Z",
   "results": [
     {
       "name": "density: members page shows fewer words than before",
@@ -19,7 +19,7 @@
     {
       "name": "density: sandbox providers page shows at least 25% fewer words",
       "ok": true,
-      "detail": "807 → 526"
+      "detail": "807 → 593"
     },
     {
       "name": "density: no inspected page got wordier",
@@ -74,12 +74,12 @@
     {
       "name": "select: a 30+ item list scrolls inside the popover and stays inside the viewport (1440×900)",
       "ok": true,
-      "detail": "{\"sh\":1164,\"ch\":350,\"y\":227.75140380859375,\"h\":352}"
+      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.1394500732422,\"h\":352.00001525878906}"
     },
     {
       "name": "select @390: the popover is opaque and inside the viewport",
       "ok": true,
-      "detail": "{\"x\":16,\"y\":305,\"width\":192,\"height\":352}"
+      "detail": "{\"x\":16,\"y\":304.5514221191406,\"width\":192,\"height\":351.9999694824219}"
     },
     {
       "name": "select @390: no horizontal scroll on the page",
@@ -149,7 +149,7 @@
     {
       "name": "help @390: a tap opens it, fully inside the viewport",
       "ok": true,
-      "detail": "{\"x\":54,\"y\":531,\"width\":320,\"height\":71.5}"
+      "detail": "{\"x\":54,\"y\":530.550048828125,\"width\":320,\"height\":71.5}"
     },
     {
       "name": "settings: left navigation with seven entries (round 9 added 安全) and a content column ≤ 720px",

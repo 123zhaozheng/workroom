@@ -537,3 +537,345 @@ test("get_draft via the agent, and GET /skill-drafts/:id (owner only) returns th
 		await t.dispose();
 	}
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Updating an existing skill from a conversation (the market/org "weekly-report" bug): the target is resolved BEFORE the approval.
+const principalOf = async (t: TestApp, u: { me: any }) => (await t.app.ctx.services.get("identity").principalFor(u.me.userId, u.me.orgId))!;
+const filesOf = (md: string, extra: Record<string, string> = {}) => [{ path: "SKILL.md", content: md }, ...Object.entries(extra).map(([path, content]) => ({ path, content }))];
+/** The org owner uploads a skill and publishes it org-wide (force publish, audited) → a market/org skill that owner authored. */
+async function publishOrgSkill(t: TestApp, owner: { me: any }, files: { path: string; content: string }[]) {
+	const market = t.app.ctx.services.get("market") as Market;
+	const p = await principalOf(t, owner);
+	const up = await market.upload(p, { files });
+	await market.forcePublish(p, up.skill.id, 1, "test");
+	return up.skill.id;
+}
+const ownedBy = (t: TestApp, skillId: string) => (t.app.ctx.services.get("skills") as Skills).skill(skillId)!;
+const noApprovals = (s: any) => assert.equal(s.approvals.length, 0, "no approval card was created");
+
+test("update a market/org skill the user may write: approval says update + vX → vY + review, approve → NEW VERSION of the same skill, submitted for review (old version stays live)", async () => {
+	const { t, alice } = await setup();
+	try {
+		const skillId = await publishOrgSkill(t, alice, filesOf(skillMd()));
+		assert.equal(ownedBy(t, skillId).scope, "org");
+		const { sp, cid } = await newConv(t, alice.token);
+		writeSkill(t, sp, cid, "weekly-report", { "SKILL.md": skillMd({ version: "1.1.0", body: "# 周报 v2\n加一段「亮点」。" }) });
+		await submit(t, alice.token, sp, cid, "weekly-report");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		const d = ap.detail as SkillDraftApprovalDetail;
+		assert.deepEqual({ mode: d.target?.mode, scope: d.target?.scope, marketScope: d.target?.marketScope, from: d.target?.fromVersion, to: d.target?.toVersion, review: d.target?.reviewRequired, id: d.target?.skillId }, { mode: "update", scope: "market", marketScope: "org", from: "1.0.0", to: "1.1.0", review: true, id: skillId });
+		assert.match(d.target!.text, /更新市场技能「weekly-report」：v1\.0\.0 → v1\.1\.0.*提交审核/);
+		assert.equal(ap.title, "更新市场技能：weekly-report");
+		assert.match(ap.summary, /为市场技能「weekly-report」新增版本 v1\.1\.0/);
+		assert.match(ap.summary, /通过前使用者仍用旧版本/);
+		assert.equal(count(t, "skill_versions", "skill_id = ?", skillId), 1, "nothing saved before approval");
+
+		await decide(t, alice.token, sp, cid, ap.approvalId, "approved");
+		const s = await idle(t, alice.token, sp, cid, "approved update");
+		const res = results(s, "skill_manage")[0];
+		assert.ok(!res.isError, res.text);
+		assert.match(res.text, /已为市场技能「weekly-report」保存新版本 1\.1\.0/);
+		assert.match(res.text, /已提交审核/);
+		assert.match(res.text, /仍在用旧版本/);
+		assert.equal(count(t, "skill_skills", "slug = 'weekly-report'"), 1, "no second skill");
+		const skills = t.app.ctx.services.get("skills") as Skills;
+		const v2 = skills.version(skillId, 2)!;
+		assert.equal(v2.semver, "1.1.0");
+		assert.equal(v2.package_sha256, d.packageSha256);
+		const sub = t.app.ctx.db.get<any>("SELECT * FROM market_submissions WHERE subject_id = ? AND version_no = 2", skillId);
+		assert.equal(sub.state, "pending_review");
+		assert.equal(sub.target_scope, "org");
+		const mk = t.app.ctx.services.get("market") as Market;
+		assert.equal(mk.latestUsable(ownedBy(t, skillId)), 1, "the approved v1 stays what users run until v2 is approved");
+		assert.equal(mk.versionApproved(v2.id), false);
+		assert.equal(skillDraftsFor(t.app.ctx).dto(skillDraftsFor(t.app.ctx).row(d.draftId)!).versionNo, 2);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("a market skill the user may NOT write: refused at submit time, no approval, no skill; the agent is told how to go on (<name>-custom / ask the author); a renamed copy then works", async () => {
+	const { t, alice } = await setup();
+	try {
+		const bob = await orgMember(t, alice, "bob-nw@example.com");
+		const skillId = await publishOrgSkill(t, alice, filesOf(skillMd()));
+		const { sp, cid } = await newConv(t, bob.token);
+		writeSkill(t, sp, cid, "weekly-report", { "SKILL.md": skillMd({ version: "1.1.0", body: "# bob 的改法" }) });
+		await submit(t, bob.token, sp, cid, "weekly-report");
+		let s = await idle(t, bob.token, sp, cid, "refused");
+		noApprovals(s);
+		const r = results(s, "skill_manage")[0];
+		assert.ok(r.isError);
+		assert.match(r.text, /属于市场中的技能/);
+		assert.match(r.text, /没有更新它的权限/);
+		assert.match(r.text, /weekly-report-custom/, "suggests a free personal-copy name");
+		assert.match(r.text, /作者或市场管理员/);
+		assert.match(r.text, /没有创建审批/);
+		assert.doesNotMatch(r.text, /slug_taken/, "never the late slug_taken");
+		const row = t.app.ctx.db.get<any>("SELECT * FROM skill_ws_drafts");
+		assert.equal(row.state, "failed");
+		assert.ok((JSON.parse(row.detail) as SkillDraftApprovalDetail).findings.some((f) => f.code === "name_taken_not_writable"));
+		assert.equal(count(t, "skill_versions", "skill_id = ?", skillId), 1);
+		assert.equal(count(t, "skill_skills", "slug = 'weekly-report'"), 1);
+
+		// The suggested way out: another name → ordinary new personal skill (and a taken suggestion is skipped).
+		writeSkill(t, sp, cid, "weekly-report", { "SKILL.md": skillMd({ name: "weekly-report-custom", version: "1.0.0", body: "# bob 的个人副本" }) });
+		await submit(t, bob.token, sp, cid, "weekly-report");
+		const ap = await pendingApproval(t, bob.token, sp, cid);
+		assert.equal((ap.detail as SkillDraftApprovalDetail).target?.mode, "new");
+		assert.equal(ap.title, "保存为个人技能：weekly-report-custom");
+		await decide(t, bob.token, sp, cid, ap.approvalId, "approved");
+		s = await idle(t, bob.token, sp, cid, "copy saved");
+		assert.match(results(s, "skill_manage").at(-1).text, /已保存为用户的个人技能/);
+		assert.equal(count(t, "skill_skills", "slug = 'weekly-report-custom' AND owner_user_id = ?", bob.me.userId), 1);
+
+		// Now `-custom` is taken: the next suggestion moves on.
+		const { sp: sp2, cid: cid2 } = await newConv(t, bob.token);
+		writeSkill(t, sp2, cid2, "w", { "SKILL.md": skillMd({ version: "9.0.0" }) });
+		await submit(t, bob.token, sp2, cid2, "w");
+		const s2 = await idle(t, bob.token, sp2, cid2, "refused again");
+		assert.match(results(s2, "skill_manage")[0].text, /weekly-report-custom-2/);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("update the user's own personal skill from a conversation: new version of the same skill, approval target, review policy respected", async () => {
+	const { t, alice } = await setup();
+	try {
+		const { sp, cid } = await newConv(t, alice.token);
+		writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd() });
+		await submit(t, alice.token, sp, cid, "weekly");
+		let ap = await pendingApproval(t, alice.token, sp, cid);
+		assert.equal((ap.detail as SkillDraftApprovalDetail).target?.mode, "new");
+		assert.match((ap.detail as SkillDraftApprovalDetail).target!.text, /新建个人技能 v1\.0\.0/);
+		await decide(t, alice.token, sp, cid, ap.approvalId, "approved");
+		await idle(t, alice.token, sp, cid, "v1 saved");
+		const skillId = t.app.ctx.db.get<any>("SELECT id FROM skill_skills WHERE slug = 'weekly-report'").id as string;
+
+		writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd({ version: "1.0.1", body: "# 周报\n改进后的做法。" }) });
+		await submit(t, alice.token, sp, cid, "weekly");
+		ap = await waitFor(async () => (await state(t, alice.token, sp, cid)).approvals.find((a: any) => a.status === "pending"), { what: "second approval" });
+		const d = ap.detail as SkillDraftApprovalDetail;
+		assert.equal(d.target?.mode, "update");
+		assert.equal(d.target?.scope, "personal");
+		assert.equal(d.target?.reviewRequired, false);
+		assert.equal(d.target?.text, "更新你的个人技能「weekly-report」：v1.0.0 → v1.0.1");
+		assert.equal(ap.title, "更新个人技能：weekly-report");
+		await decide(t, alice.token, sp, cid, ap.approvalId, "approved");
+		const s = await idle(t, alice.token, sp, cid, "v2 saved");
+		const res = results(s, "skill_manage").at(-1);
+		assert.ok(!res.isError, res.text);
+		assert.match(res.text, /已在用户的个人技能上新增版本 1\.0\.1（原最高版本 1\.0\.0）/);
+		assert.equal(count(t, "skill_skills", "slug = 'weekly-report'"), 1);
+		assert.equal((t.app.ctx.services.get("skills") as Skills).skill(skillId)!.latest_version_no, 2);
+
+		// Review policy: the next version is saved but not usable until reviewed; the card says so up front.
+		await t.json("PUT", "/api/market/policy", { token: alice.token, json: { personalSkill: "review" } });
+		writeSkill(t, sp, cid, "weekly", { "SKILL.md": skillMd({ version: "1.0.2", body: "# 周报\n再改一版。" }) });
+		await submit(t, alice.token, sp, cid, "weekly");
+		const ap3 = await waitFor(async () => (await state(t, alice.token, sp, cid)).approvals.find((a: any) => a.status === "pending"), { what: "third approval" });
+		const d3 = ap3.detail as SkillDraftApprovalDetail;
+		assert.equal(d3.target?.reviewRequired, true);
+		assert.match(d3.target!.text, /组织策略要求审核/);
+		await decide(t, alice.token, sp, cid, ap3.approvalId, "approved");
+		const s3 = await idle(t, alice.token, sp, cid, "v3 saved");
+		assert.match(results(s3, "skill_manage").at(-1).text, /通过审核之前它还不能使用/);
+		assert.equal(t.app.ctx.db.get<any>("SELECT state FROM market_submissions WHERE subject_id = ? AND version_no = 3", skillId)?.state, "pending_review");
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("version not raised / identical content / lower version: failed at submit time with a clear fix, no approval, nothing saved (personal and market targets)", async () => {
+	const { t, alice } = await setup();
+	try {
+		const orgSkillId = await publishOrgSkill(t, alice, filesOf(skillMd({ version: "2.0.0" })));
+		const { sp, cid } = await newConv(t, alice.token);
+		const attempt = async (md: string, extra: Record<string, string> = {}) => {
+			writeSkill(t, sp, cid, "weekly-report", { "SKILL.md": md, ...extra });
+			await submit(t, alice.token, sp, cid, "weekly-report");
+			const s = await idle(t, alice.token, sp, cid, "attempt");
+			noApprovals(s);
+			const r = results(s, "skill_manage").at(-1);
+			assert.ok(r.isError, r.text);
+			return r.text as string;
+		};
+		// identical content
+		assert.match(await attempt(skillMd({ version: "2.0.0" })), /完全相同，没有任何改动.*duplicate_content/s);
+		// same version, different content
+		const same = await attempt(skillMd({ version: "2.0.0", body: "# 变了" }));
+		assert.match(same, /版本号 2\.0\.0 已存在/);
+		assert.match(same, /version_exists/);
+		assert.match(same, /例如 2\.0\.1/);
+		// lower version
+		const lower = await attempt(skillMd({ version: "1.5.0", body: "# 更低" }));
+		assert.match(lower, /不大于技能「weekly-report」现有的最高版本 2\.0\.0/);
+		assert.match(lower, /version_not_increasing/);
+		assert.equal(count(t, "skill_versions", "skill_id = ?", orgSkillId), 1);
+		assert.equal(count(t, "skill_ws_drafts", "state = 'failed'"), 3);
+		assert.equal(count(t, "skill_ws_drafts", "state = 'pending'"), 0);
+		assert.equal(audits(t, "skill.draft.saved").length, 0);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("checkout: writes the current approved files into /work/<dir> without sandbox_exec; idempotent; refuses to overwrite edits or foreign content; unreadable skills and bad dirs refused", async () => {
+	const { t, alice } = await setup();
+	try {
+		const bob = await orgMember(t, alice, "bob-co@example.com");
+		const skillId = await publishOrgSkill(t, alice, filesOf(skillMd(), { "references/format.md": "# 格式\n三段式。\n", "scripts/run.py": "print('hi')\n" }));
+		const { sp, cid } = await newConv(t, bob.token);
+		const checkout = async (args: Record<string, unknown>) => {
+			const before = (await state(t, bob.token, sp, cid)).entries.filter((e: any) => e.kind === "tool_result" && e.toolName === "skill_manage").length;
+			await send(t, bob.token, sp, cid, `[[call skill_manage ${JSON.stringify({ action: "checkout", ...args })}]]`);
+			const s = await waitFor(async () => {
+				const st = await idle(t, bob.token, sp, cid, "checkout");
+				return results(st, "skill_manage").length > before ? st : undefined;
+			}, { what: "checkout result" });
+			return results(s, "skill_manage").at(-1);
+		};
+		const wd = workdirOf(t, sp, cid);
+		const r1 = await checkout({ name: "weekly-report" });
+		assert.ok(!r1.isError, r1.text);
+		assert.match(r1.text, /3 个文件写入 \/work\/weekly-report/);
+		assert.match(r1.text, /SKILL\.md/);
+		assert.match(r1.text, /没有更新这个市场技能（组织）的权限/, "bob may only read it: told to make a personal copy");
+		assert.match(r1.text, /weekly-report-custom/);
+		const { readFileSync, existsSync } = await import("node:fs");
+		assert.equal(readFileSync(join(wd, "weekly-report", "SKILL.md"), "utf8"), skillMd());
+		assert.equal(readFileSync(join(wd, "weekly-report", "references/format.md"), "utf8"), "# 格式\n三段式。\n");
+		assert.equal(readFileSync(join(wd, "weekly-report", "scripts/run.py"), "utf8"), "print('hi')\n");
+		assert.equal(count(t, "tool_sandbox_runs"), 0, "no sandbox execution involved");
+
+		// idempotent: the same call again leaves identical files; by skillId and a custom dir works too
+		const r2 = await checkout({ skillId, dir: "weekly-report" });
+		assert.ok(!r2.isError, r2.text);
+		assert.equal(readFileSync(join(wd, "weekly-report", "SKILL.md"), "utf8"), skillMd());
+		const r3 = await checkout({ name: "weekly-report", dir: "/work/copy-2" });
+		assert.ok(!r3.isError, r3.text);
+		assert.ok(existsSync(join(wd, "copy-2", "SKILL.md")));
+
+		// edits are never overwritten
+		writeFileSync(join(wd, "weekly-report", "SKILL.md"), skillMd({ body: "# 我改过" }));
+		const r4 = await checkout({ name: "weekly-report" });
+		assert.ok(r4.isError);
+		assert.match(r4.text, /dir_not_empty|已有内容/);
+		assert.match(r4.text, /SKILL\.md/);
+		assert.match(readFileSync(join(wd, "weekly-report", "SKILL.md"), "utf8"), /我改过/);
+		// a foreign non-empty dir is refused too
+		writeSkill(t, sp, cid, "mine", { "notes.txt": "x" });
+		const r5 = await checkout({ name: "weekly-report", dir: "mine" });
+		assert.ok(r5.isError);
+		assert.match(r5.text, /不是这个技能的检出目录/);
+		// an extra file also counts as a change
+		writeFileSync(join(wd, "copy-2", "extra.md"), "added");
+		assert.ok((await checkout({ name: "weekly-report", dir: "copy-2" })).isError);
+
+		// unknown / not readable skill, bad dir, symlink dir
+		const r6 = await checkout({ name: "no-such-skill" });
+		assert.ok(r6.isError);
+		assert.match(r6.text, /没有你可以读取的技能/);
+		assert.ok((await checkout({ name: "weekly-report", dir: "../up" })).isError);
+		symlinkSync(tmpdir(), join(wd, "linked"));
+		assert.ok((await checkout({ name: "weekly-report", dir: "linked" })).isError);
+		assert.ok((await checkout({})).isError, "name or skillId is required");
+		// a personal skill of ANOTHER user is not even visible
+		const { sp: asp, cid: acid } = await newConv(t, alice.token);
+		const mp = await principalOf(t, alice);
+		await (t.app.ctx.services.get("market") as Market).upload(mp, { files: filesOf(skillMd({ name: "alice-private" })) });
+		await send(t, bob.token, sp, cid, `[[call skill_manage {"action":"checkout","name":"alice-private"}]]`);
+		const sPriv = await idle(t, bob.token, sp, cid, "private");
+		assert.ok(results(sPriv, "skill_manage").at(-1).isError);
+		void asp;
+		void acid;
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("end to end (the user's bug): checkout the org skill → edit → bump version → submit_draft → confirm → new version; no slug_taken after approval", async () => {
+	const { t, alice } = await setup();
+	try {
+		const skillId = await publishOrgSkill(t, alice, filesOf(skillMd(), { "references/format.md": "# 格式\n三段式。\n" }));
+		const { sp, cid } = await newConv(t, alice.token);
+		await send(t, alice.token, sp, cid, `[[call skill_manage {"action":"checkout","name":"weekly-report","dir":"weekly-report"}]]`);
+		const s0 = await idle(t, alice.token, sp, cid, "checkout");
+		const co = results(s0, "skill_manage")[0];
+		assert.ok(!co.isError, co.text);
+		assert.match(co.text, /下一步.*提高到大于 1\.0\.0（例如 1\.0\.1）.*submit_draft/s);
+		assert.match(co.text, /保存为该技能的新版本并提交审核/);
+		// edit through the normal workspace tool, bump the version
+		const edited = skillMd({ version: "1.0.1", body: "# 周报\n按「本周完成 / 下周计划 / 风险」三段写，并附上数据来源。" });
+		await send(t, alice.token, sp, cid, `[[call sandbox_write_file ${JSON.stringify({ path: "weekly-report/SKILL.md", content: edited })}]]`);
+		await idle(t, alice.token, sp, cid, "edit");
+		await submit(t, alice.token, sp, cid, "weekly-report");
+		const ap = await pendingApproval(t, alice.token, sp, cid);
+		const d = ap.detail as SkillDraftApprovalDetail;
+		assert.equal(d.target?.mode, "update");
+		assert.deepEqual(d.files.map((f) => f.path).sort(), ["SKILL.md", "references/format.md"], "the checked-out reference file travels with the new version");
+		await decide(t, alice.token, sp, cid, ap.approvalId, "approved");
+		const s = await idle(t, alice.token, sp, cid, "saved");
+		const res = results(s, "skill_manage").at(-1);
+		assert.ok(!res.isError, res.text);
+		assert.doesNotMatch(res.text, /slug_taken|已被占用/);
+		const v2 = (t.app.ctx.services.get("skills") as Skills).version(skillId, 2)!;
+		assert.equal(v2.semver, "1.0.1");
+		assert.match(v2.instructions, /数据来源/);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("checkout over an UNMODIFIED earlier checkout picks up the newer approved version and drops files that no longer exist; an author without publish rights is refused before any approval", async () => {
+	const { t, alice } = await setup();
+	try {
+		const bob = await orgMember(t, alice, "bob-au@example.com");
+		const market = t.app.ctx.services.get("market") as Market;
+		const ap_ = await principalOf(t, alice);
+		const bp = await principalOf(t, bob);
+		const skillId = await publishOrgSkill(t, alice, filesOf(skillMd(), { "old.md": "to be removed\n" }));
+		const { sp, cid } = await newConv(t, alice.token);
+		const run = async (args: Record<string, unknown>, tok = alice.token, s_ = sp, c_ = cid) => {
+			const before = results(await state(t, tok, s_, c_), "skill_manage").length;
+			await send(t, tok, s_, c_, `[[call skill_manage ${JSON.stringify(args)}]]`);
+			const st = await waitFor(async () => {
+				const x = await idle(t, tok, s_, c_, "run");
+				return results(x, "skill_manage").length > before ? x : undefined;
+			}, { what: "result" });
+			return results(st, "skill_manage").at(-1);
+		};
+		const { existsSync, readFileSync } = await import("node:fs");
+		const wd = workdirOf(t, sp, cid);
+		const r1 = await run({ action: "checkout", name: "weekly-report" });
+		assert.ok(!r1.isError, r1.text);
+		assert.ok(existsSync(join(wd, "weekly-report", "old.md")));
+		// v2 (approved + published) without old.md
+		const v2 = await market.upload(ap_, { skillId, files: filesOf(skillMd({ version: "1.2.0", body: "# 新版" })) });
+		await market.forcePublish(ap_, skillId, v2.version.version_no, "test v2");
+		const r2 = await run({ action: "checkout", name: "weekly-report" });
+		assert.ok(!r2.isError, r2.text);
+		assert.match(readFileSync(join(wd, "weekly-report", "SKILL.md"), "utf8"), /新版/);
+		assert.ok(!existsSync(join(wd, "weekly-report", "old.md")), "stale file of the old checkout removed");
+		assert.match(r2.text, /已移除旧检出里不再存在的文件：old\.md/);
+		assert.match(r2.text, /1\.2\.0/);
+
+		// bob authors a skill that gets published org-wide by the owner; bob can edit it but cannot submit versions to the org scope.
+		const up = await market.upload(bp, { files: filesOf(skillMd({ name: "bobs-skill" })) });
+		await market.forcePublish(ap_, up.skill.id, 1, "publish bob's");
+		assert.equal(ownedBy(t, up.skill.id).scope, "org");
+		const b = await newConv(t, bob.token);
+		writeSkill(t, b.sp, b.cid, "bobs-skill", { "SKILL.md": skillMd({ name: "bobs-skill", version: "1.0.1", body: "# 更新" }) });
+		await submit(t, bob.token, b.sp, b.cid, "bobs-skill");
+		const sb = await idle(t, bob.token, b.sp, b.cid, "no publish right");
+		noApprovals(sb);
+		const rr = results(sb, "skill_manage")[0];
+		assert.ok(rr.isError);
+		assert.match(rr.text, /没有向它所在范围提交新版本审核的权限（skill\.publish）/);
+		assert.match(rr.text, /bobs-skill-custom/);
+		assert.equal(count(t, "skill_versions", "skill_id = ?", up.skill.id), 1);
+	} finally {
+		await t.dispose();
+	}
+});

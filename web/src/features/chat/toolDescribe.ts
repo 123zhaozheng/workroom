@@ -104,6 +104,7 @@ export function describeTool(call: Pick<ToolCallDTO, "name" | "arguments">, extr
 			const act = str(a.action);
 			if (act === "submit_draft") return { kind: "skill", title: `提交技能草稿${quote(str(a.dir))}`, running: "正在提交技能草稿" };
 			if (act === "get_draft") return { kind: "skill", title: "查看技能草稿", running: "正在查看技能草稿" };
+			if (act === "checkout") return { kind: "skill", title: `取出技能文件${quote(str(a.name) || str(a.skillId))}`, running: "正在取出技能文件" };
 			return { kind: "skill", title: "管理技能草稿", running: "正在处理技能草稿" };
 		}
 		case "skill_load":
@@ -147,10 +148,11 @@ export function describeTool(call: Pick<ToolCallDTO, "name" | "arguments">, extr
 
 /** The first line of a tool's text output, without directive noise, for an error line. */
 export function firstLine(text: string, max = 140): string {
+	// tool errors arrive wrapped as "<harness>\n[error] …\n</harness>": the sentence inside is the line worth showing
 	const line = cleanErrorText(cleanTestText(text))
 		.split("\n")
-		.map((l) => l.trim())
-		.find(Boolean);
+		.map((l) => l.trim().replace(/^\[error\]\s*/, ""))
+		.find((l) => l && !/^<\/?harness>$/.test(l));
 	if (!line) return "";
 	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }

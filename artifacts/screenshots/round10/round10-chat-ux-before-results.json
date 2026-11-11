@@ -1,0 +1,155 @@
+{
+  "at": "2026-11-11T08:11:23.433Z",
+  "results": [
+    {
+      "name": "A medium 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A credential 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A mcp 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skill 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skillBlocked 390-light: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A medium 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A credential 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A mcp 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skill 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A skillBlocked 390-dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A new behaviour (aborted)",
+      "ok": false,
+      "detail": "locator.waitFor: Timeout 20000ms exceeded."
+    },
+    {
+      "name": "B skill saved: one slim line (≤ 40px high at 1440) that still says 已保存, the skill and where to find it",
+      "ok": false,
+      "detail": "46px · 已保存 「r10-skill」已保存为你的个人技能（v1）。 在「能力 › 我的技能」查看"
+    },
+    {
+      "name": "B skill saved: is not a card (no border box) and does not sit above the conversation",
+      "ok": false,
+      "detail": ""
+    },
+    {
+      "name": "B skill saved 390: fits, no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B setup: org default = a remote OpenSandbox whose endpoint is unreachable",
+      "ok": true,
+      "detail": "200/200"
+    },
+    {
+      "name": "B sandbox failure 390: same — one inline copy, no horizontal scroll",
+      "ok": true,
+      "detail": "[\"工作环境没有准备好：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行）\"]"
+    },
+    {
+      "name": "B sandbox failure: the reason is shown once, inline where it happened (≤ 1 visible copy outside the model's answer and folded details)",
+      "ok": true,
+      "detail": "[\"工作环境没有准备好：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行）\"]"
+    },
+    {
+      "name": "B sandbox failure: no 工作环境没有准备好 banner repeating it above the composer (the environment button carries a dot instead)",
+      "ok": false,
+      "detail": "[68]"
+    },
+    {
+      "name": "B sandbox failure: the failure is still visible without opening anything — one 失败 line under the step summary",
+      "ok": false,
+      "detail": "[]"
+    },
+    {
+      "name": "B sandbox failure: nothing but the composer sits below the conversation (no notice rows above it)",
+      "ok": false,
+      "detail": "76px"
+    },
+    {
+      "name": "B sandbox failure (aborted)",
+      "ok": false,
+      "detail": "locator.click: Timeout 4000ms exceeded."
+    },
+    {
+      "name": "B env failure alone: still shown (nothing else explains it) but as one compact line with 重试",
+      "ok": false,
+      "detail": "68px"
+    },
+    {
+      "name": "B run failure: the message shows the reason once (模型出错 + 这一轮没有完成), with 技术详情 folded in the same line",
+      "ok": false,
+      "detail": "模型调用出错，这一轮没有完成。 技术详情"
+    },
+    {
+      "name": "B run failure: the bar above the composer is only the status + 重试 (one slim line, no repeated reason, no second 技术详情)",
+      "ok": false,
+      "detail": "59px · 失败 · 模型出错 重试 技术详情"
+    },
+    {
+      "name": "B run failure: the error note is one compact line (≤ 48px)",
+      "ok": false,
+      "detail": "61px"
+    },
+    {
+      "name": "B run failure: 重试 still calls the continue route",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B run failure 390 dark: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B stale citations: one short line (≤ 32px) that says how many; the explanation is behind 详情",
+      "ok": false,
+      "detail": ""
+    },
+    {
+      "name": "B stale citations (aborted)",
+      "ok": false,
+      "detail": "locator.click: Timeout 30000ms exceeded."
+    },
+    {
+      "name": "no uncaught page errors",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

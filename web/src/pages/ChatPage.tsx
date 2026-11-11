@@ -1,7 +1,7 @@
-import { ArrowDown, ChevronDown, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, TriangleAlert, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import type { AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, WithdrawResponse } from "@shared/chat";
+import type { AbortResponse, AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, UserEntryDTO, WithdrawResponse } from "@shared/chat";
 import type { ThinkingLevel } from "@shared/ops";
 import { ApiError, errorText, get, patch, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -20,7 +20,7 @@ import { PendingCredentialRequests } from "@/features/chat/CredentialRequestCard
 import { SkillDraftResult, skillDraftOf } from "@/features/chat/SkillDraftCard";
 import type { ConversationCitationStatus } from "@shared/knowledge";
 import { AssistantMessage, BranchPointSwitcher, UserMessage } from "@/features/chat/Messages";
-import { buildTurns, type AssistantTurn, type Turn } from "@/features/chat/model";
+import { buildTurns, type AssistantTurn, type Turn, type UserRun } from "@/features/chat/model";
 import { RUN_LABEL, RunIcon, reasonText } from "@/features/chat/status";
 import { cleanErrorText, userTextOf } from "@/features/chat/testText";
 import { PositionRail, railItemOf, type RailItem } from "@/features/chat/PositionRail";
@@ -29,6 +29,7 @@ import { usePrefs } from "@/lib/prefs";
 import { MessageQueue, type QueueNotice } from "@/features/composer/MessageQueue";
 import { EnvironmentButton } from "@/features/environment/EnvironmentButton";
 import { EnvironmentStatus } from "@/features/environment/EnvironmentStatus";
+import { failedSandboxTexts } from "@/features/chat/Steps";
 import { useConversationDetail, useConversationStream, useEarlierEntries } from "@/features/chat/useConversation";
 
 const ShareDialog = lazy(() => import("@/features/share/Share").then((m) => ({ default: m.ShareDialog })));
@@ -52,9 +53,12 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const earlier = useEarlierEntries(spaceId, id);
 	const { openWork, panel } = usePanel();
 	const [actionErr, setActionErr] = useState<string>();
+	const [staleOpen, setStaleOpen] = useState(false);
 	const [stopping, setStopping] = useState(false);
 	const [continuing, setContinuing] = useState(false);
 	const [restore, setRestore] = useState<{ n: number; text: string; attachments?: readonly AttachmentRef[]; knowledgeRefs?: readonly KnowledgeRef[] }>();
+	/** What 停止 did with messages still waiting in the queue (they go back to the composer, never vanish). */
+	const [stopNote, setStopNote] = useState<string>();
 	const [handoff, setHandoff] = useState(false);
 	const [routes, setRoutes] = useState(false);
 	const [share, setShare] = useState(false);
@@ -235,12 +239,20 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const stop = () =>
 		act(async () => {
 			setStopping(true);
+			setStopNote(undefined);
 			try {
-				await post(`${base}/abort`);
+				const r = await post<AbortResponse>(`${base}/abort`);
+				// pi-durable withdraws what was still queued when a run is stopped: those messages come back into the box (and stay marked 未送达 in the conversation).
+				if (r?.unsent?.length) {
+					setRestore((x) => ({ n: (x?.n ?? 0) + 1, text: r.unsent.map((u) => u.text).join("\n\n"), attachments: r.unsent.flatMap((u) => u.attachments ?? []), knowledgeRefs: r.unsent.flatMap((u) => u.knowledgeRefs ?? []) }));
+					setStopNote(`已停止。停止时还有 ${r.unsent.length} 条排队的消息没有发出，内容已放回输入框；你已经发出的那条消息和已完成的步骤都保留着。`);
+				}
 			} finally {
 				setStopping(false);
 			}
 		});
+	/** 放回输入框 on a 未送达 message: its text and attachments go back into the composer; nothing is sent. */
+	const restoreUnsent = (e: UserEntryDTO) => setRestore((x) => ({ n: (x?.n ?? 0) + 1, text: e.text, attachments: e.attachments, knowledgeRefs: e.knowledgeRefs }));
 	const cont = () =>
 		act(async () => {
 			setContinuing(true);
@@ -297,6 +309,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const avatar = runStatus === "running" ? "working" : runStatus === "waiting_approval" ? "waiting" : runStatus === "failed" || runStatus === "interrupted" ? "failed" : "idle";
 	const assistantTurns = turns.filter((t): t is AssistantTurn => t.kind === "assistant");
 	const lastAssistantIdx = turns.map((t) => t.kind).lastIndexOf("assistant");
+	/** The latest message that was actually placed (not a 未送达 marker) and what its run did: feeds 「已停止（已完成 N 步）」. */
+	const lastUserRun = [...turns].reverse().find((t): t is Extract<Turn, { kind: "user" }> => t.kind === "user" && t.entry.placed !== false && !!t.run)?.run;
 	const parent = detail?.parent ?? conv?.parent;
 	const panelOpen = !!panel;
 
@@ -418,8 +432,15 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						</div>
 					) : null}
 					{citeStatus.data?.stale ? (
-						<div data-testid="citations-stale-banner" className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-[12.5px] text-warning">
-							这个对话里有 {citeStatus.data.stale} 处引用的资料已变化（更新、删除、下架或无权访问）；旧回答保留原引用，并在对应位置标出。
+						<div data-testid="citations-stale-banner" className="mb-3 text-[12.5px] text-warning">
+							<div className="flex items-center gap-1.5">
+								<TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+								<span className="min-w-0">有 {citeStatus.data.stale} 处引用的资料已变化</span>
+								<button type="button" aria-expanded={staleOpen} onClick={() => setStaleOpen((v) => !v)} className="rounded px-1 text-xs text-fg-muted underline underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info">
+									{staleOpen ? "收起" : "详情"}
+								</button>
+							</div>
+							{staleOpen ? <p className="mt-0.5 pl-5 text-fg-muted">更新、删除、下架或无权访问的资料都算；旧回答保留原引用，并在对应位置标出。</p> : null}
 						</div>
 					) : null}
 					<CitationStatusContext.Provider value={citeStatus.data?.byChunkId}>
@@ -434,7 +455,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 										<BranchPointSwitcher key={p.entryId} options={p.options} currentId={id} onSelect={goBranch} />
 									))}
 									{t.kind === "user" ? (
-										<UserMessage entry={t.entry} readOnly={readOnly} onFork={() => fork(t.entry.id)} onEdit={(text) => edit(t.entry.id, text)} />
+										<UserMessage entry={t.entry} run={t.run} readOnly={readOnly} onFork={() => fork(t.entry.id)} onEdit={(text) => edit(t.entry.id, text)} onRestore={() => restoreUnsent(t.entry)} />
 									) : t.kind === "marker" ? (
 										<div className="flex items-center gap-3 text-xs text-fg-subtle">
 											<span className="h-px flex-1 bg-border" />
@@ -493,12 +514,15 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			</div>
 
 			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]")}>
-				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} />
-				{spaceId && id !== undefined ? <EnvironmentStatus spaceId={spaceId} conversationId={id} active={runStatus === "running"} className="mb-2" /> : null}
+				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} inlineError={!!assistantTurns.at(-1)?.error} run={lastUserRun} stopNote={stopNote} onDismissNote={() => setStopNote(undefined)} />
+				{spaceId && id !== undefined ? <EnvironmentStatus spaceId={spaceId} conversationId={id} active={runStatus === "running"} className="mb-2" explainedBy={failedSandboxTexts(assistantTurns.at(-1))} /> : null}
 				<MessageQueue items={queueItems} runStatus={runStatus} onSendNow={queueSendNow} onUndo={queueUndo} onDelete={queueDelete} readOnly={readOnly} />
 				{actionErr ? (
-					<p role="alert" className="mb-2 rounded-lg bg-danger-soft px-3 py-1.5 text-[13px] text-danger">
-						{actionErr}
+					<p role="alert" className="mb-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-1.5 text-[13px] text-danger">
+						<span className="min-w-0 flex-1 break-words">{actionErr}</span>
+						<button aria-label="关闭" onClick={() => setActionErr(undefined)} className="mt-0.5 shrink-0 text-danger/70 hover:text-danger">
+							<X className="size-3.5" />
+						</button>
 					</p>
 				) : null}
 				{modelNote ? (
@@ -562,6 +586,10 @@ function RunBar({
 	streamError,
 	onContinue,
 	continuing,
+	inlineError,
+	run,
+	stopNote,
+	onDismissNote,
 }: {
 	status: keyof typeof RUN_LABEL;
 	live?: { turns?: number; retry?: { at: number; error: string }; failure?: { reason: string; detail?: string } };
@@ -569,13 +597,29 @@ function RunBar({
 	streamError?: string;
 	onContinue: () => void;
 	continuing: boolean;
+	/** The latest answer already shows this failure inline (with its 技术详情): the bar then carries only the status and the way out. */
+	inlineError?: boolean;
+	run?: UserRun;
+	stopNote?: string;
+	onDismissNote: () => void;
 }) {
 	const canContinue = status === "failed" || status === "interrupted" || status === "aborted" || status === "timeout";
 	const show = canContinue;
 	const bad = status === "failed" || status === "interrupted";
 	const detail = cleanErrorText(live?.failure?.detail);
+	const steps = run ? (run.doneSteps ? `已完成 ${run.doneSteps} 步` : "还没有完成的步骤") : "";
+	const [hint, setHint] = useState(false);
+	const reason = inlineError && bad ? "" : live?.failure ? reasonText(live.failure.reason) : "";
 	return (
 		<div className="mb-2 flex flex-col gap-1.5 empty:hidden">
+			{stopNote ? (
+				<p data-testid="stop-note" role="status" className="flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-1.5 text-[12.5px] text-fg-muted">
+					<span className="min-w-0 flex-1">{stopNote}</span>
+					<button aria-label="关闭" onClick={onDismissNote} className="mt-0.5 text-fg-subtle hover:text-fg">
+						<X className="size-3.5" />
+					</button>
+				</p>
+			) : null}
 			{stream === "reconnecting" || stream === "offline" || streamError ? (
 				<div data-testid="stream-notice" data-stream={stream} role="status" className="flex items-center gap-2 text-[12.5px] text-warning">
 					<WifiOff aria-hidden className="size-3.5" />
@@ -591,13 +635,19 @@ function RunBar({
 					<div className="flex flex-wrap items-center gap-2">
 						<RunIcon status={status} />
 						<span className="font-medium">{RUN_LABEL[status]}</span>
-						{live?.failure ? <span className="min-w-0 flex-1">· {reasonText(live.failure.reason)}</span> : null}
-						<button data-testid="continue" onClick={onContinue} disabled={continuing} title={status === "aborted" ? "接着上次的进度继续" : "重新请求模型，接着上次的进度继续"} className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-fg hover:bg-surface focus-visible:ring-2 focus-visible:ring-info disabled:opacity-60">
+						{status === "aborted" ? <span data-testid="run-bar-steps" className="min-w-0 flex-1">{steps ? `· ${steps}` : ""}</span> : reason ? <span className="min-w-0 flex-1">· {reason}{steps ? `（${steps}）` : ""}</span> : <span className="min-w-0 flex-1">{steps ? `· ${steps}` : ""}</span>}
+						<button type="button" data-testid="run-bar-hint-toggle" aria-expanded={hint} onClick={() => setHint((v) => !v)} className="rounded px-1 text-xs text-fg-muted underline underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info">
+							{hint ? "收起说明" : "说明"}
+						</button>
+						<button data-testid="continue" onClick={onContinue} disabled={continuing} title={status === "aborted" ? "接着已有的内容继续：你的消息和已完成的步骤都在上下文里" : "重新请求模型，接着已有的内容继续"} className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-fg hover:bg-surface focus-visible:ring-2 focus-visible:ring-info disabled:opacity-60">
 							{continuing ? <Loader2 aria-hidden className="size-3.5 wr-spin" /> : <RotateCcw aria-hidden className="size-3.5" />}
 							{status === "aborted" ? "继续" : "重试"}
 						</button>
 					</div>
-					{live?.failure && detail ? (
+					<p data-testid="run-bar-hint" hidden={!hint} className="mt-1 text-[12px] text-fg-subtle">
+						你的消息和已完成的步骤都保留在对话里，没有丢失。{status === "aborted" ? "继续" : "重试"}会让模型接着这些内容往下做，不会重做已完成的步骤；被截断的那一步不会自动重做，是否再做一次由模型根据对话判断。
+					</p>
+					{live?.failure && detail && !(inlineError && bad) ? (
 						<details data-testid="tech-details" className="mt-1 text-[12px]">
 							<summary className="cursor-pointer text-fg-muted hover:text-fg">技术详情</summary>
 							<p className="mt-0.5 break-all font-mono text-fg-muted">{detail}</p>

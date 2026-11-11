@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/misc";
 import type { AssistantTurn, Step } from "./model";
+import { DetailsPanel, DetailsToggle } from "./Disclosure";
 
 type ToolStep = Extract<Step, { kind: "tool" }>;
 type Status = CredentialRequestDTO["status"];
@@ -35,6 +36,7 @@ const STATUS: Record<Status, { label: string; tone: "success" | "neutral" | "war
 
 export const NO_STORE_TEXT = "服务器未配置密钥存储，暂不能提供凭据";
 export const PASTE_WARNING = "不要在聊天里粘贴密钥；请只在此处填写";
+const PERSIST_NOTE = { once: "用完即弃，不会出现在「我的凭据」里。", save: "加密保存在服务器，可随时在「设置 → 我的凭据」撤销。" } as const;
 
 function ttlText(sec: number): string {
 	if (sec % 86400 === 0) return `${sec / 86400} 天`;
@@ -155,7 +157,7 @@ export function SecretInput({ inputRef, id, label = "密钥", disabled, testId =
 	}, [inputRef]);
 	return (
 		<div>
-			<label htmlFor={id} className="mb-1.5 block text-sm font-medium">
+			<label htmlFor={id} className="mb-1 block text-[13px] font-medium">
 				{label}
 			</label>
 			<input
@@ -189,6 +191,7 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 	const [busy, setBusy] = useState<"submit" | "decline" | null>(null);
 	const [err, setErr] = useState<string>();
 	const [status, setStatus] = useState<Status>();
+	const [open, setOpen] = useState(false);
 
 	const load = useCallback(async () => {
 		try {
@@ -272,15 +275,17 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 	const noStore = !data!.store.available;
 	const canSubmit = !readOnly && !noStore && !!data!.nonce && !busy && (!env || consent);
 
+	const detailsId = `${uid}-d`;
+	const toggle = <DetailsToggle open={open} onToggle={() => setOpen((o) => !o)} controls={detailsId} testId="credential-details-toggle" />;
 	return (
-		<section data-testid="credential-card" data-status={done ? status : "pending"} aria-label={`凭据请求：${req.service}`} className="wr-fade-in w-full max-w-[560px] rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgb(0_0_0/0.03)]">
+		<section data-testid="credential-card" data-status={done ? status : "pending"} aria-label={`凭据请求：${req.service}`} className="wr-fade-in w-full max-w-[560px] rounded-xl border border-border bg-surface p-3 shadow-[0_1px_2px_rgb(0_0_0/0.03)] sm:px-3.5">
 			<header className="flex items-start gap-2.5">
-				<span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-fg-muted">
+				<span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-fg-muted">
 					<KeyRound aria-hidden className="size-4" />
 				</span>
 				<div className="min-w-0 flex-1">
-					<h3 className="text-sm font-medium">助手想使用「{req.service}」的密钥</h3>
-					<p data-testid="credential-purpose" className="mt-0.5 text-[13px] text-fg-muted">
+					<h3 className="text-sm font-medium leading-5">助手想使用「{req.service}」的密钥</h3>
+					<p data-testid="credential-purpose" className="text-[13px] leading-5 text-fg-muted">
 						用途：{req.purpose}
 					</p>
 				</div>
@@ -289,73 +294,51 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 				</Badge>
 			</header>
 
-			<dl className="mt-3 space-y-2.5 text-[13px]">
-				<div>
-					<dt className="mb-1 text-xs text-fg-muted">只会发往这些网站</dt>
-					<dd data-testid="credential-hosts" className="flex flex-wrap gap-1.5">
-						{req.targetHosts.length ? (
-							req.targetHosts.map((h) => (
-								<span key={h} className="rounded-md border border-border-strong bg-surface-2 px-2 py-0.5 font-mono text-sm font-medium text-fg">
-									{h}
-								</span>
-							))
-						) : (
-							<span className="text-fg-muted">（未限定网站）</span>
-						)}
-					</dd>
-				</div>
-				<div>
-					<dt className="mb-1 text-xs text-fg-muted">允许的操作</dt>
-					<dd data-testid="credential-methods" className="flex flex-wrap gap-1.5">
-						{req.methods.map((m) => (
-							<Badge key={m}>{m}</Badge>
-						))}
-					</dd>
-				</div>
-				<div>
-					<dt className="mb-1 text-xs text-fg-muted">使用方式</dt>
-					<dd data-testid="credential-usage" className="text-fg">
-						{env ? (
-							<span className="flex items-start gap-1.5 rounded-lg bg-warning-soft px-2.5 py-2 text-warning">
-								<ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-								<span>
-									注入到进程环境{req.envName ? `（变量 ${req.envName}）` : ""}。{req.envConsentText ?? "运行的进程及其子进程都能读到它，也可能把它泄露出去。"}
-								</span>
+			<div className="mt-2.5 text-[13px]">
+				<div className="mb-1 text-xs text-fg-muted">只会发往这些网站</div>
+				<div data-testid="credential-hosts" className="flex flex-wrap gap-1.5">
+					{req.targetHosts.length ? (
+						req.targetHosts.map((h) => (
+							<span key={h} className="rounded-md border border-border-strong bg-surface-2 px-2 py-0.5 font-mono text-sm font-medium text-fg">
+								{h}
 							</span>
-						) : (
-							"经服务器代为调用，密钥不会进入对话。"
-						)}
-					</dd>
+						))
+					) : (
+						<span className="text-fg-muted">（未限定网站）</span>
+					)}
 				</div>
-				<div>
-					<dt className="mb-1 text-xs text-fg-muted">有效期</dt>
-					<dd data-testid="credential-validity" className="text-fg-muted">
-						请在 {fullTime(req.expiresAt)} 前回复；「仅本次使用」的凭据提供后 {ttlText(req.ttlSec)}内有效。
-					</dd>
-				</div>
-			</dl>
+				{env ? (
+					<div data-testid="credential-usage" className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning-soft px-2.5 py-2 text-warning">
+						<ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+						<span>
+							注入到进程环境{req.envName ? `（变量 ${req.envName}）` : ""}。{req.envConsentText ?? "运行的进程及其子进程都能读到它，也可能把它泄露出去。"}
+						</span>
+					</div>
+				) : null}
+			</div>
 
 			{done ? (
-				<div data-testid="credential-done" role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm">
+				<div data-testid="credential-done" role="status" className="mt-2.5 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm">
 					<st.Icon aria-hidden className={cn("size-4", st.tone === "success" ? "text-success" : "text-fg-muted")} />
 					<span className="font-medium">{st.label}</span>
 					{status === "fulfilled" ? <span className="text-fg-muted">· 密钥只保存在服务器，页面和对话里都没有它。</span> : null}
 				</div>
 			) : noStore ? (
-				<div className="mt-3 space-y-3">
+				<div className="mt-2.5 space-y-2.5">
 					<p data-testid="credential-no-store" role="alert" className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
 						{NO_STORE_TEXT}。请联系管理员，或拒绝这次请求。
 					</p>
-					<div className="flex flex-wrap items-center gap-2">
-						<Button data-testid="credential-decline" disabled={!!busy || readOnly} onClick={decline}>
+					<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+						<Button size="sm" data-testid="credential-decline" disabled={!!busy || readOnly} onClick={decline}>
 							{busy === "decline" ? <Loader2 className="wr-spin" /> : null}
 							拒绝
 						</Button>
+						{toggle}
 					</div>
 				</div>
 			) : (
 				<form
-					className="mt-3 space-y-3"
+					className="mt-2.5 space-y-2.5"
 					autoComplete="off"
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -366,23 +349,24 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 						{PASTE_WARNING}。
 					</p>
 					<SecretInput inputRef={secretRef} id={`${uid}-secret`} disabled={readOnly || !!busy} />
-					<fieldset className="space-y-1.5">
-						<legend className="mb-1 text-sm font-medium">保存方式</legend>
-						<label className="flex cursor-pointer items-start gap-2 text-sm">
-							<input type="radio" name={`${uid}-persist`} data-testid="credential-persist-once" checked={persist === "once"} onChange={() => setPersist("once")} className="mt-1 size-4 accent-[var(--accent)]" />
-							<span>
-								仅本次使用<span className="block text-xs text-fg-muted">用完即弃，不会出现在「我的凭据」里。</span>
-							</span>
-						</label>
-						<label className="flex cursor-pointer items-start gap-2 text-sm">
-							<input type="radio" name={`${uid}-persist`} data-testid="credential-persist-save" checked={persist === "save"} onChange={() => setPersist("save")} className="mt-1 size-4 accent-[var(--accent)]" />
-							<span>
-								保存供以后使用<span className="block text-xs text-fg-muted">加密保存在服务器，可随时在「设置 → 我的凭据」撤销。</span>
-							</span>
-						</label>
+					<fieldset>
+						<legend className="mb-1 text-[13px] font-medium">保存方式</legend>
+						<div className="flex flex-wrap gap-x-4 gap-y-1">
+							<label className="flex cursor-pointer items-center gap-1.5 text-[13px]">
+								<input type="radio" name={`${uid}-persist`} data-testid="credential-persist-once" checked={persist === "once"} onChange={() => setPersist("once")} className="size-4 accent-[var(--accent)]" />
+								仅本次使用
+							</label>
+							<label className="flex cursor-pointer items-center gap-1.5 text-[13px]">
+								<input type="radio" name={`${uid}-persist`} data-testid="credential-persist-save" checked={persist === "save"} onChange={() => setPersist("save")} className="size-4 accent-[var(--accent)]" />
+								保存供以后使用
+							</label>
+						</div>
+						<p data-testid="credential-persist-note" className="mt-1 text-xs text-fg-muted">
+							{persist === "once" ? PERSIST_NOTE.once : PERSIST_NOTE.save}
+						</p>
 						{persist === "save" ? (
-							<div className="flex items-center gap-2 pl-6">
-								<label htmlFor={`${uid}-scope`} className="text-sm text-fg-muted">
+							<div className="mt-1.5 flex items-center gap-2">
+								<label htmlFor={`${uid}-scope`} className="text-[13px] text-fg-muted">
 									谁可以使用
 								</label>
 								<Select id={`${uid}-scope`} data-testid="credential-scope" value={scope} onChange={(e) => setScope(e.target.value as CredentialScope)} className="h-8">
@@ -396,8 +380,8 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 						) : null}
 					</fieldset>
 					{env ? (
-						<label className="flex cursor-pointer items-start gap-2 text-sm">
-							<input type="checkbox" data-testid="credential-env-consent" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--accent)]" />
+						<label className="flex cursor-pointer items-start gap-2 text-[13px]">
+							<input type="checkbox" data-testid="credential-env-consent" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 size-4 accent-[var(--accent)]" />
 							<span>我了解：运行的进程及其子进程都能读到这个密钥，也可能把它泄露出去，我同意这样使用。</span>
 						</label>
 					) : null}
@@ -406,14 +390,15 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 							{err}
 						</p>
 					) : null}
-					<div className="flex flex-wrap items-center gap-2">
-						<Button type="submit" variant="primary" data-testid="credential-submit" disabled={!canSubmit}>
+					<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+						<Button type="submit" size="sm" variant="primary" data-testid="credential-submit" disabled={!canSubmit}>
 							{busy === "submit" ? <Loader2 className="wr-spin" /> : null}
 							提交
 						</Button>
-						<Button data-testid="credential-decline" disabled={!!busy || readOnly} onClick={decline}>
+						<Button size="sm" data-testid="credential-decline" disabled={!!busy || readOnly} onClick={decline}>
 							拒绝
 						</Button>
+						{toggle}
 						{readOnly ? <span className="text-xs text-fg-muted">只有发起这个请求的人可以填写。</span> : null}
 					</div>
 				</form>
@@ -423,13 +408,47 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 					{err}
 				</p>
 			) : null}
-			<details className="mt-3 text-xs text-fg-subtle" data-testid="credential-tech">
-				<summary className="cursor-pointer select-none hover:text-fg-muted">技术详情</summary>
-				<p className="mt-1 break-all">
-					附加方式：请求头 {req.inject.header}（{req.inject.template.replace("{secret}", "‹密钥›")}）；请求编号 {req.id}
-					{noStore && data!.store.reason ? `；${data!.store.reason}` : ""}
-				</p>
-			</details>
+			{done ? <div className="mt-1.5 flex">{toggle}</div> : null}
+			<DetailsPanel id={detailsId} open={open}>
+				<dl className="space-y-2 text-[13px]">
+					<div>
+						<dt className="mb-1 text-xs text-fg-muted">允许的操作</dt>
+						<dd data-testid="credential-methods" className="flex flex-wrap gap-1.5">
+							{req.methods.map((m) => (
+								<Badge key={m}>{m}</Badge>
+							))}
+						</dd>
+					</div>
+					{env ? null : (
+						<div>
+							<dt className="mb-1 text-xs text-fg-muted">使用方式</dt>
+							<dd data-testid="credential-usage" className="text-fg">
+								经服务器代为调用，密钥不会进入对话。
+							</dd>
+						</div>
+					)}
+					<div>
+						<dt className="mb-1 text-xs text-fg-muted">保存方式说明</dt>
+						<dd className="space-y-0.5 text-fg-muted">
+							<p>仅本次使用：{PERSIST_NOTE.once}</p>
+							<p>保存供以后使用：{PERSIST_NOTE.save}</p>
+						</dd>
+					</div>
+					<div>
+						<dt className="mb-1 text-xs text-fg-muted">有效期</dt>
+						<dd data-testid="credential-validity" className="text-fg-muted">
+							请在 {fullTime(req.expiresAt)} 前回复；「仅本次使用」的凭据提供后 {ttlText(req.ttlSec)}内有效。
+						</dd>
+					</div>
+				</dl>
+				<details className="text-xs text-fg-subtle" data-testid="credential-tech">
+					<summary className="cursor-pointer select-none hover:text-fg-muted">技术详情</summary>
+					<p className="mt-1 break-all">
+						附加方式：请求头 {req.inject.header}（{req.inject.template.replace("{secret}", "‹密钥›")}）；请求编号 {req.id}
+						{noStore && data!.store.reason ? `；${data!.store.reason}` : ""}
+					</p>
+				</details>
+			</DetailsPanel>
 		</section>
 	);
 }

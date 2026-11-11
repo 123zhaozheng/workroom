@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:29:38.115Z",
+  "at": "2026-11-11T08:24:44.702Z",
   "results": [
     {
       "name": "A card: title 保存为个人技能, name/title and 版本",
@@ -14,7 +14,7 @@
     {
       "name": "A card: files listed as path · size, the script marked 可执行脚本",
       "ok": true,
-      "detail": "SKILL.md\n· 412 B | scripts/run.py\n· 1.3 KB\n可执行脚本"
+      "detail": "SKILL.md· 412 B | scripts/run.py· 1.3 KB可执行脚本"
     },
     {
       "name": "A card: permissions in plain words (运行代码、联网), not codes",
@@ -23,6 +23,11 @@
     },
     {
       "name": "A card: risk line shows the warning in Chinese without the code",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A card: the face shows the file count, permissions and warning count; the file list and the fixed sentence are folded",
       "ok": true,
       "detail": ""
     },
@@ -44,7 +49,7 @@
     {
       "name": "A keyboard: Tab reaches 不保存 and then 保存 (after 技术详情), all reachable",
       "ok": true,
-      "detail": "SUMMARY,reject,approve,BUTTON,composer-input"
+      "detail": "reject,approve,approval-details-toggle,BUTTON,composer-input"
     },
     {
       "name": "A narrow: no horizontal page scroll at 390px",

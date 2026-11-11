@@ -55,8 +55,8 @@
 | `POST .../fork {entryId, title?}` | 新分支（kind `branch`），原会话不变 |
 | `POST .../edit {entryId, text, requestId}` | 在被编辑的用户消息之前 fork，再提交新文本 → `{conversation, submissionId}` |
 | `POST .../regenerate {entryId}` | 在该轮用户输入处 fork 再 `continue` → `{conversation, submissionId}` |
-| `POST .../abort {background?}` | 停止；`background: true` 也停后台子任务 |
-| `POST .../continue {requestId?}` | 失败/中断后无新消息继续 |
+| `POST .../abort {background?}` | 停止；`background: true` 也停后台子任务。返回 `{ok, unsent[], cancelledApprovals}`：停止时还在排队的输入（pi-durable 撤回）连同附件一并返回，客户端放回输入框；等待中的审批置 `cancelled`；发送中的外部写入转 `needs_reconciliation`。已放入对话的输入与已完成步骤不受影响（见 `docs/r10-stop-continue.md`） |
+| `POST .../continue {requestId?}` | 停止/失败/中断后不发新消息，在现有上下文上续跑（界面：「继续」/「重试」）；忙时 409 `busy` |
 | `POST .../approvals/:approvalId {decision, note?}` | 409 已处理；`approverUserIds` 限定审批人；子 Agent 的审批也可在父会话上处理 |
 | `POST .../effects/:effectId/reconcile {outcome: done\|failed, receipt?, note?}` | 人工核对 `needs_reconciliation` |
 | `GET .../tasks` | `TasksResponse`：该会话子树的 pi 任务图 + 委派（SubagentDTO） |

@@ -94,7 +94,7 @@ try {
 	await page.reload();
 	await page.waitForSelector('[data-testid="message-outcome"]', { timeout: 15000 });
 	const oc = await last(page, '[data-testid="message-outcome"]').innerText();
-	check("per-message outcome survives reload on the exact message (未应用/已取消)", /没有得到回复|未送达/.test(oc), oc);
+	check("per-message outcome survives reload on the exact message (已停止 — the message was applied, then stopped; round 10 reworded 未应用/没有得到回复)", /已停止/.test(oc) && !/未应用|没有得到回复|未送达/.test(oc), oc);
 	await last(page, '[data-testid="message-outcome"]').scrollIntoViewIfNeeded();
 	await shot(page, "1440-message-outcome");
 
