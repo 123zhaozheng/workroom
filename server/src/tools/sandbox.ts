@@ -377,6 +377,27 @@ export class Sandbox {
 		}
 	}
 
+	// ---------- prepare (round 8) ----------
+	/**
+	 * Explicit "prepare / retry" of the REMOTE sandbox of one conversation: everything run() does before the program starts (provider + network policy checks,
+	 * workspace restore from the last saved version, get-or-create/reconnect, /work and mounts sync), without running a program and without a run record.
+	 * Returns false when the space uses a local driver (nothing to prepare). Sending a message never calls this; only the environment panel's retry does.
+	 */
+	async prepare(input: { principal: Principal; space: Space; conversationId: number; signal?: AbortSignal }): Promise<boolean> {
+		const driver = await this.#driverFor(input.space);
+		if (!(driver instanceof RemoteDriver)) return false;
+		const network = await this.#networkAllowed(driver, undefined, input.principal);
+		const wsKey = workspaceKeyOf(input.conversationId);
+		const ready = await workspacePersistenceFor(this.#ctx).ensureReady(input.principal, input.space, wsKey);
+		if ((ready.state === "failed" || ready.state === "conflict") && !existsSync(join(this.root(input.space), `c${input.conversationId}`)))
+			throw new HttpError(409, "workspace_not_restored", `工作区未能恢复：${ready.failure ?? ready.state}`);
+		const wd = this.workdir(input.space, input.conversationId);
+		const mounts = await this.#collectMounts({ principal: input.principal, space: input.space, conversationId: input.conversationId, notes: [] });
+		await this.#reaped;
+		await driver.prepare({ runId: newId("prep"), tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: wsKey }, scratchBase: this.root(input.space), workdir: wd, exec: { language: "shell", code: "true" }, limits: { ...DEFAULT_LIMITS, network }, mounts, env: {}, network, signal: input.signal });
+		return true;
+	}
+
 	// ---------- run ----------
 	/** Execute code in the sandbox. Records a run row (idempotent per tool call). */
 	async run(input: RunInput): Promise<SandboxRunDTO> {

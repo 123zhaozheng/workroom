@@ -12,6 +12,7 @@ import { ENV_MIGRATIONS } from "./sandbox/env-vars.ts"; // round 7b: sandbox env
 import { registerSandboxEnvRoutes } from "./sandbox/env-routes.ts";
 import { PERSIST_MIGRATIONS, workspacePersistenceFor } from "./sandbox/persist.ts"; // round 7b: persistent workspace versions
 import { registerPersistRoutes } from "./sandbox/persist-routes.ts";
+import { registerEnvironmentRoutes } from "./sandbox/environment-routes.ts"; // round 8: /conversations/:s/:c/environment
 import { CREDENTIAL_MIGRATIONS } from "./credentials/store.ts"; // round 7b: credentials
 import { createCredentialExtension, CREDENTIAL_TOOL_NAMES } from "./credentials/extension.ts";
 import { registerCredentialRoutes } from "./credentials/routes.ts";
@@ -157,6 +158,7 @@ export const toolsModule: WorkroomModule = {
 		});
 
 		// ---- sandbox: driver status/settings, workspace file API, runs, publish (server/src/tools/sandbox-routes.ts) ----
+		registerEnvironmentRoutes(api, ctx); // round 8 (Q2)
 		registerSandboxEnvRoutes(api, ctx); // round 7b: /sandbox-env/*
 		registerPersistRoutes(api, ctx); // round 7b: /workspaces/*, /workspace-policy
 		registerCredentialRoutes(api, ctx); // round 7b: /credential-requests/*, /credentials/*

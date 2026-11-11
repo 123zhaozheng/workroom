@@ -158,6 +158,30 @@ interface InstanceRow {
 }
 const LIVE = "('creating','ready','stopping')";
 
+/**
+ * Round 8: what remote drivers are doing for a workspace RIGHT NOW (in process, nothing persisted), so the UI can say "preparing" truthfully.
+ * `begin` while a run/prepare creates, reconnects or syncs the sandbox; `end` when that phase is over (the program itself then runs: not "preparing").
+ * A failed phase leaves a failure marker (shown until the next successful phase); `ok` clears it. Keys: `activityKey(orgId, spaceId, workspaceKey, provider)`.
+ */
+export const remoteActivity = {
+	preparing: new Map<string, number>(),
+	failures: new Map<string, { error: string; at: number }>(),
+	begin(key: string, now = Date.now()): void {
+		this.preparing.set(key, now);
+	},
+	end(key: string): void {
+		this.preparing.delete(key);
+	},
+	fail(key: string, error: string, now = Date.now()): void {
+		this.preparing.delete(key);
+		this.failures.set(key, { error: scrub(error).slice(0, 300), at: now });
+	},
+	ok(key: string): void {
+		this.failures.delete(key);
+	},
+};
+export const activityKey = (orgId: string, spaceId: string, workspaceKey: string, provider: string): string => `${orgId}|${spaceId}|${workspaceKey}|${provider}`;
+
 export interface RemoteDriverDeps {
 	readonly db: AppDb;
 	readonly provider: RemoteProvider;
@@ -643,7 +667,8 @@ export class RemoteDriver implements SandboxDriver {
 	}
 
 	// ---------- run ----------
-	async run(spec: DriverRunSpec): Promise<RunResult> {
+	/** Checks shared by run() and prepare(): tenant, env, mounts, and the network policy refusal. Throws before anything is created. */
+	#preflight(spec: DriverRunSpec): NonNullable<DriverRunSpec["tenant"]> {
 		const t = spec.tenant;
 		if (!t) throw new HttpError(500, "internal", "远端沙箱需要租户信息（org/space/workspaceKey）");
 		if (t.orgId !== this.orgId) throw new HttpError(500, "internal", "沙箱驱动与组织不匹配");
@@ -652,8 +677,6 @@ export class RemoteDriver implements SandboxDriver {
 		} catch (e: any) {
 			throw bad("bad_env", e.message);
 		}
-		const started = Date.now();
-		if (spec.signal?.aborted) return { status: "killed", exitCode: null, stdout: "", stderr: "[sandbox] 运行在开始前已被取消", durationMs: 0 };
 		for (const m of spec.mounts) if (!m.readOnly) throw new UnsupportedError(this.label, `可写挂载 ${m.target}（远端沙箱只支持只读挂载与 /work；已拒绝）`);
 		// The admin policy says "no network" but this provider's network isolation is not verified: refuse instead of running anyway.
 		if (!spec.network && this.provider.capabilities.networkOff !== "supported")
@@ -661,6 +684,13 @@ export class RemoteDriver implements SandboxDriver {
 				this.label,
 				"在“无网络”策略下运行：该提供方的断网能力尚未验证（例如 OpenSandbox 的出口过滤仍可能经 DNS 外传数据）。如果可以接受沙箱联网，请管理员把沙箱网络策略设为“允许联网”；否则请改用本机 Docker 沙箱",
 			);
+		return t;
+	}
+
+	async run(spec: DriverRunSpec): Promise<RunResult> {
+		const t = this.#preflight(spec);
+		const started = Date.now();
+		if (spec.signal?.aborted) return { status: "killed", exitCode: null, stdout: "", stderr: "[sandbox] 运行在开始前已被取消", durationMs: 0 };
 		return this.#locked(this.#key(t), () => this.#run(spec, started)).catch((e) => {
 			// cancelled while the sandbox was being created/connected: that is a cancelled run, not a provider failure
 			if (spec.signal?.aborted && !(e instanceof UnsupportedError)) return { status: "killed" as const, exitCode: null, stdout: "", stderr: "[sandbox] 运行已被取消（沙箱创建/连接期间）", durationMs: Date.now() - started };
@@ -668,9 +698,28 @@ export class RemoteDriver implements SandboxDriver {
 		});
 	}
 
-	async #run(spec: DriverRunSpec, started: number): Promise<RunResult> {
+	/**
+	 * Round 8: everything a run does BEFORE the program starts (create or reconnect the sandbox, sync /work, verify mounts), without running a program.
+	 * Same code path and lock as run(); used only for an explicit "retry / prepare" request, never by sending a message.
+	 */
+	async prepare(spec: DriverRunSpec): Promise<void> {
+		const t = this.#preflight(spec);
+		await this.#locked(this.#key(t), () => this.#run(spec, Date.now(), true));
+	}
+
+	async #run(spec: DriverRunSpec, started: number, prepareOnly = false): Promise<RunResult> {
 		const notes: string[] = [];
-		const { row, session, fresh } = await this.#acquire(spec, notes);
+		const act = activityKey(spec.tenant!.orgId, spec.tenant!.spaceId, spec.tenant!.workspaceKey, this.id);
+		remoteActivity.begin(act, this.#now());
+		let acquired: { row: InstanceRow; session: RemoteSession; fresh: boolean };
+		try {
+			acquired = await this.#acquire(spec, notes);
+		} catch (e: any) {
+			if (spec.signal?.aborted) remoteActivity.end(act);
+			else remoteActivity.fail(act, String(e?.message ?? e), this.#now());
+			throw e;
+		}
+		const { row, session, fresh } = acquired;
 		this.#busy.add(row.id);
 		const manifest: Manifest = fresh ? {} : parseManifest(row.manifest);
 		const persist = (m: Manifest) => this.#db.run("UPDATE tool_sandbox_instances SET manifest = ? WHERE id = ?", JSON.stringify(m), row.id);
@@ -679,6 +728,9 @@ export class RemoteDriver implements SandboxDriver {
 		try {
 			await this.#pushWork(session, spec, manifest, notes, persist);
 			await this.#ensureMounts(session, spec.mounts, spec.limits, notes, spec.signal);
+			remoteActivity.ok(act);
+			remoteActivity.end(act); // sandbox is ready; from here on the program runs (not "preparing")
+			if (prepareOnly) return { status: "ok", exitCode: 0, stdout: "", stderr: "", durationMs: Date.now() - started };
 			if (await this.#mountWritable(session, spec.mounts, spec.signal)) notes.push(`提示：提供方 ${this.label} 的沙箱用户对技能目录有写权限（单用户沙箱）；每次运行前会校验其哈希，被篡改则重新上传`);
 
 			// the program
@@ -726,6 +778,9 @@ export class RemoteDriver implements SandboxDriver {
 			else if (status === "killed" && cancelled) stderr += "\n[sandbox] 运行已被取消，已请求远端终止";
 			if (notes.length) stderr += `${stderr && !stderr.endsWith("\n") ? "\n" : ""}${notes.map((n) => `[sandbox] ${n}`).join("\n")}`;
 			return { status, exitCode: res.exitCode, stdout: out.text(), stderr, durationMs: Date.now() - started };
+		} catch (e: any) {
+			if (remoteActivity.preparing.has(act)) remoteActivity.fail(act, String(e?.message ?? e), this.#now()); // failed while syncing, before the program started
+			throw e;
 		} finally {
 			this.#busy.delete(row.id);
 			this.#db.run("UPDATE tool_sandbox_instances SET last_used_at = ? WHERE id = ?", new Date(this.#now()).toISOString(), row.id);
