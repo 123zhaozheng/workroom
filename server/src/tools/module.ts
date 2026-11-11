@@ -12,6 +12,10 @@ import { ENV_MIGRATIONS } from "./sandbox/env-vars.ts"; // round 7b: sandbox env
 import { registerSandboxEnvRoutes } from "./sandbox/env-routes.ts";
 import { PERSIST_MIGRATIONS, workspacePersistenceFor } from "./sandbox/persist.ts"; // round 7b: persistent workspace versions
 import { registerPersistRoutes } from "./sandbox/persist-routes.ts";
+import { CREDENTIAL_MIGRATIONS } from "./credentials/store.ts"; // round 7b: credentials
+import { createCredentialExtension, CREDENTIAL_TOOL_NAMES } from "./credentials/extension.ts";
+import { registerCredentialRoutes } from "./credentials/routes.ts";
+import { sandboxEnvFor } from "./sandbox/env-vars.ts";
 import { pdfFontStatus } from "../files/generate.ts";
 import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
@@ -45,7 +49,7 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	};
 }
 
-const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill", "skill_manage", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
+const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "browse", "skill", "skill_manage", "credential_request", "credential_http", "credential_list", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
 /** Tool names a skill may require: the runtime registry when available, else D's own tools plus discovered MCP tools. */
 export function knownToolNames(ctx: AppContext): string[] {
 	const names = new Set(D_TOOLS);
@@ -75,6 +79,7 @@ export const toolsModule: WorkroomModule = {
 		...PROVIDER_CONFIG_MIGRATIONS.map((m) => ({ ...m, version: m.version + 900 })), // sandbox provider configs (round 7)
 		...ENV_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1100 })), // sandbox env vars (round 7b)
 		...PERSIST_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1000 })), // workspace versions (round 7b)
+		...CREDENTIAL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1200 })), // credentials (round 7b)
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -110,11 +115,14 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).
 		workspacePersistenceFor(ctx).reconcileInterruptedRuns();
+		// Ordinary env vars may never use a name a credential is injected under.
+		sandboxEnvFor(ctx).isCredentialEnvName = (orgId: string, name: string) =>
+			!!ctx.db.get("SELECT 1 FROM credentials WHERE org_id = ? AND usage = 'env' AND env_name = ? COLLATE NOCASE AND revoked_at IS NULL LIMIT 1", orgId, name);
 		(ctx.services.get("mcp") as McpManager).start();
 		(ctx.services.get("sandbox") as Sandbox).start();
 		(ctx.services.get("market") as Market).start(); // marketplace group: skills mount provider
@@ -151,6 +159,7 @@ export const toolsModule: WorkroomModule = {
 		// ---- sandbox: driver status/settings, workspace file API, runs, publish (server/src/tools/sandbox-routes.ts) ----
 		registerSandboxEnvRoutes(api, ctx); // round 7b: /sandbox-env/*
 		registerPersistRoutes(api, ctx); // round 7b: /workspaces/*, /workspace-policy
+		registerCredentialRoutes(api, ctx); // round 7b: /credential-requests/*, /credentials/*
 		registerSandboxProviderRoutes(api, ctx); // before /sandbox/:spaceId so /sandbox/providers etc. are not captured
 		registerSandboxRoutes(api, ctx);
 
