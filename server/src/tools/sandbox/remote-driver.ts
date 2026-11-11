@@ -14,7 +14,7 @@ import type { AppDb } from "../../core/db.ts";
 import { HttpError, newId, nowIso } from "../../core/http.ts";
 import type { SandboxInstanceDTO } from "../../../../shared/sandbox.ts";
 import type { DriverCapabilities, DriverRunSpec, DriverServiceProcess, DriverServiceSpec, DriverStatus, IsolationNotes, ProcessRef, RunResult, SandboxDriver, SandboxMount } from "./driver.ts";
-import { DEFAULT_LIFECYCLE, UnsupportedError, type LifecyclePolicy, type ProviderId, type RemoteProvider, type RemoteSession } from "./provider.ts";
+import { DEFAULT_LIFECYCLE, UnsupportedError, type ExplicitResources, type LifecyclePolicy, type ProviderId, type RemoteProvider, type RemoteSession } from "./provider.ts";
 import { capped, checkEnv, shQuote } from "./util.ts";
 import * as ws from "./workspace.ts";
 
@@ -188,6 +188,8 @@ export interface RemoteDriverDeps {
 	readonly orgId: string;
 	readonly lifecycle?: LifecyclePolicy;
 	readonly template?: string;
+	readonly image?: string;
+	readonly resources?: ExplicitResources;
 	readonly now?: () => number;
 	/** Orphan sandboxes younger than this are left alone (a create may be in flight in another process). Default 2 min. */
 	readonly orphanGraceMs?: number;
@@ -212,6 +214,8 @@ export class RemoteDriver implements SandboxDriver {
 	readonly lifecycle: LifecyclePolicy;
 	readonly #db: AppDb;
 	readonly #template: string | undefined;
+	readonly #image: string | undefined;
+	readonly #resources: ExplicitResources | undefined;
 	readonly #now: () => number;
 	readonly #orphanGraceMs: number;
 	readonly #install: string;
@@ -228,6 +232,8 @@ export class RemoteDriver implements SandboxDriver {
 		this.orgId = d.orgId;
 		this.#db = d.db;
 		this.#template = d.template;
+		this.#image = d.image;
+		this.#resources = d.resources;
 		this.#now = d.now ?? Date.now;
 		this.#orphanGraceMs = d.orphanGraceMs ?? 120_000;
 		this.lifecycle = d.lifecycle ?? DEFAULT_LIFECYCLE;
@@ -346,10 +352,14 @@ export class RemoteDriver implements SandboxDriver {
 		try {
 			session = await this.provider.create({
 				...(this.#template ? { template: this.#template } : {}),
+				...(this.#image ? { image: this.#image } : {}),
+				// Only an admin's EXPLICIT resources are a request; the platform's generic memory limit is just a hint (OpenSandbox applies it,
+				// E2B/Daytona ignore it). Passing the generic limit as `resources` made Daytona/E2B refuse every sandbox (round 10 fix).
+				...(this.#resources ? { resources: this.#resources } : {}),
+				defaultMemoryMb: Math.max(64, Math.floor(spec.limits.memoryBytes / MB)),
 				metadata: { workroom: "1", workroom_install: this.#install, workroom_org: this.#orgTag, workroom_instance: id },
 				lifetimeMs,
 				createTimeoutMs: this.lifecycle.createTimeoutSec * 1000,
-				resources: { memoryMb: Math.max(64, Math.floor(spec.limits.memoryBytes / MB)) },
 				signal: spec.signal,
 			});
 		} catch (e: any) {
@@ -913,7 +923,7 @@ export class RemoteDrivers {
 					if (e instanceof HttpError) throw e;
 					throw new HttpError(503, "sandbox_provider_unavailable", `无法初始化沙箱提供方 ${provider}：${scrub(e?.message ?? e)}（不会回退到本机执行）`);
 				}
-				const driver = new RemoteDriver({ db: this.#ctx.db, provider: prov, orgId, lifecycle: lc, template: conn.template });
+				const driver = new RemoteDriver({ db: this.#ctx.db, provider: prov, orgId, lifecycle: lc, template: conn.template, image: conn.image, resources: conn.resources });
 				const old = this.#cache.get(key);
 				this.#cache.set(key, { fp, driver });
 				void old?.driver.close();

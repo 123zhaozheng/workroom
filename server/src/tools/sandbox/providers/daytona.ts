@@ -1,6 +1,8 @@
 // Daytona provider (official `@daytonaio/sdk`, exact version pinned in optionalDependencies, loaded lazily).
 //
-// Status: IMPLEMENTED, NOT CONNECTED (no Daytona key existed when this was written) — every capability is "unverified".
+// Status: IMPLEMENTED, adapter NOT verified end-to-end against the real service (no Daytona key in the dev environment) — every capability
+// is "unverified". Round 10: the control-plane wire requests are verified with the real SDK against a local fake REST API
+// (server/test/sandbox-daytona-wire.test.ts); see docs/r10-daytona.md.
 //
 // Product status that matters to admins (see docs/research/sandbox-providers.md): the open-source daytonaio/daytona repository was
 // archived on 2026-10-03 and its README states that core development moved to a private codebase in June 2026. Daytona is therefore
@@ -14,6 +16,9 @@ import type {
 
 export const DAYTONA_SDK_PACKAGE = "@daytonaio/sdk";
 export const DAYTONA_SDK_VERSION = "0.231.1";
+/** Daytona's official API URL. Passed EXPLICITLY when no endpoint is configured, so the SDK never takes the endpoint (where the key is
+ *  sent) from the host's DAYTONA_API_URL / DAYTONA_SERVER_URL environment variables. */
+export const DAYTONA_DEFAULT_API_URL = "https://app.daytona.io/api";
 const ID = "daytona";
 
 // ---- Minimal structural view of the SDK surface we use. ----
@@ -45,6 +50,8 @@ interface DaytonaClient {
 	get(idOrName: string): Promise<DaytonaSandbox>;
 	list(query?: Record<string, unknown>): AsyncIterableIterator<DaytonaSandbox>;
 	delete(sandbox: DaytonaSandbox, timeoutSec?: number): Promise<void>;
+	/** SDK 0.231.1: closes the client's event WebSocket (and its reconnect timers). */
+	[Symbol.asyncDispose]?(): Promise<void>;
 }
 export interface DaytonaModule {
 	Daytona: new (config: Record<string, unknown>) => DaytonaClient;
@@ -63,8 +70,9 @@ export const DAYTONA_CAPABILITIES: ProviderCapabilities = {
 	files: "unverified",
 	networkOff: "unverified", // NOT USED by Workroom (round 9): create() never sets networkBlockAll
 	networkOn: "unverified", // not verified here (no credentials); the Daytona organisation's own network settings decide
-	// Resources can only be set when creating from an image (not from a snapshot), which this adapter does not do yet.
-	resourceLimits: "unsupported",
+	// Round 10: CPU/memory/disk can be set when the admin configures an IMAGE (SDK CreateSandboxFromImageParams.resources). Snapshot /
+	// default mode keeps the snapshot's size; explicit sizes without an image are refused, never silently dropped. Not verified live.
+	resourceLimits: "unverified",
 	reconnect: "unverified",
 	services: "unsupported",
 	pty: "unsupported",
@@ -165,13 +173,26 @@ class DaytonaProvider implements RemoteProvider {
 				// Explicit config only: never fall back to DAYTONA_* environment variables of the host for a missing key.
 				return new sdk.Daytona({
 					...(this.#conn.apiKey ? { apiKey: this.#conn.apiKey } : {}),
-					...(this.#conn.endpoint ? { apiUrl: this.#conn.endpoint } : {}),
+					apiUrl: this.#conn.endpoint || DAYTONA_DEFAULT_API_URL,
 					...(target ? { target } : {}),
 				});
 			})();
 			this.#client.catch(() => { this.#client = undefined; });
 		}
 		return this.#client;
+	}
+	/** Called by RemoteDrivers when this provider is replaced (config change) or on shutdown: the SDK client keeps an event WebSocket
+	 *  (with reconnect timers) open, so a dropped provider must dispose it instead of leaking it. */
+	async close(): Promise<void> {
+		const pending = this.#client;
+		this.#client = undefined;
+		if (!pending) return;
+		try {
+			const client = await pending;
+			await client[Symbol.asyncDispose]?.();
+		} catch {
+			/* nothing to release */
+		}
 	}
 	#wrapSandbox(sb: DaytonaSandbox): DaytonaSession {
 		return new DaytonaSession(sb, (e) => this.#wrap(e));
@@ -202,8 +223,14 @@ class DaytonaProvider implements RemoteProvider {
 	}
 
 	async create(o: CreateOptions): Promise<RemoteSession> {
-		if (o.resources && (o.resources.cpus !== undefined || o.resources.memoryMb !== undefined)) {
-			throw new UnsupportedError(ID, "创建时指定 CPU/内存（仅镜像方式创建支持，本适配器使用快照/默认方式）");
+		// Creation modes (SDK 0.231.1): image → CreateSandboxFromImageParams (accepts `resources`: cpu cores, memory GiB, disk GiB);
+		// snapshot / default → CreateSandboxFromSnapshotParams (size fixed by the snapshot / Daytona default; no `resources`).
+		// o.defaultMemoryMb is only a platform hint and is NOT a user request: it is never sent and never causes a refusal.
+		const image = o.image ?? this.#conn.image;
+		const explicit = o.resources ?? this.#conn.resources;
+		const wantsResources = !!explicit && (explicit.cpus !== undefined || explicit.memoryGb !== undefined || explicit.diskGb !== undefined);
+		if (wantsResources && !image) {
+			throw new UnsupportedError(ID, "在快照/默认方式下指定 CPU/内存/磁盘（Daytona 只在用镜像创建时接受资源设置：请在配置中填写镜像，或清空资源设置以使用快照/默认规格）");
 		}
 		const client = await this.#clientOnce();
 		const lifetimeMin = Math.max(1, Math.ceil(o.lifetimeMs / 60_000));
@@ -211,7 +238,16 @@ class DaytonaProvider implements RemoteProvider {
 		const params: Record<string, unknown> = {
 			labels: { ...o.metadata },
 			...(o.env && Object.keys(o.env).length ? { envVars: { ...o.env } } : {}),
-			...(template ? { snapshot: template } : {}),
+			...(image
+				? {
+						image,
+						...(wantsResources
+							? { resources: { ...(explicit!.cpus !== undefined ? { cpu: explicit!.cpus } : {}), ...(explicit!.memoryGb !== undefined ? { memory: explicit!.memoryGb } : {}), ...(explicit!.diskGb !== undefined ? { disk: explicit!.diskGb } : {}) } }
+							: {}),
+					}
+				: template
+					? { snapshot: template }
+					: {}),
 			// Hard maximum age (wall clock) and an inactivity stop, both from the Workroom lifetime.
 			ttlMinutes: lifetimeMin,
 			autoStopInterval: lifetimeMin,

@@ -151,6 +151,10 @@ describe("e2b adapter (SDK test double)", () => {
 		const p = createE2b({ provider: "e2b", apiKey: KEY }, { loadSdk: async () => f.mod });
 		await assert.rejects(p.create({ ...baseCreate, resources: { cpus: 2 } }), UnsupportedError);
 		assert.equal(f.calls.create.length, 0);
+		// round 10 (same bug as Daytona): the platform's generic memory hint is NOT a request — creation proceeds without it
+		await p.create({ ...baseCreate, defaultMemoryMb: 512 });
+		assert.equal(f.calls.create.length, 1);
+		assert.equal(JSON.stringify(f.calls.create[0]).includes("512"), false);
 	});
 
 	it("exec maps command/cwd/env/timeout and streams output; non-zero exit is status error, not a throw", async () => {
@@ -354,7 +358,21 @@ describe("daytona adapter (SDK test double)", () => {
 		const p = createDaytona({ provider: "daytona", apiKey: DKEY }, { loadSdk: async () => fakeDaytona().mod });
 		for (const [k, v] of Object.entries(p.capabilities)) assert.notEqual(v, "supported", `${k}`);
 		assert.equal(p.capabilities.location, "vendor_cloud");
-		for (const k of ["services", "pty", "preview", "snapshot", "pauseResume", "resourceLimits"] as const) assert.equal(p.capabilities[k], "unsupported");
+		for (const k of ["services", "pty", "preview", "snapshot", "pauseResume"] as const) assert.equal(p.capabilities[k], "unsupported");
+		assert.equal(p.capabilities.resourceLimits, "unverified", "round 10: image mode takes CPU/memory/disk (not verified live)");
+	});
+
+	it("without a configured endpoint the official API URL is passed explicitly (host DAYTONA_API_URL never redirects the key)", async () => {
+		const f = fakeDaytona();
+		const prev = process.env.DAYTONA_API_URL;
+		process.env.DAYTONA_API_URL = "https://attacker.example/api";
+		try {
+			await createDaytona({ provider: "daytona", apiKey: DKEY }, { loadSdk: async () => f.mod }).create(baseCreate);
+		} finally {
+			if (prev === undefined) delete process.env.DAYTONA_API_URL;
+			else process.env.DAYTONA_API_URL = prev;
+		}
+		assert.deepEqual(f.ctor[0], { apiKey: DKEY, apiUrl: "https://app.daytona.io/api" });
 	});
 
 	it("constructs the client from explicit config only (key, endpoint, target)", async () => {
@@ -381,10 +399,31 @@ describe("daytona adapter (SDK test double)", () => {
 		assert.equal(f.created[1]!.snapshot, "snap-x");
 	});
 
-	it("resource limits are refused (UnsupportedError) before anything is created", async () => {
+	it("round 10 (reported bug): the platform's generic memory limit is only a hint — default/snapshot creation succeeds and sends no resources", async () => {
 		const f = fakeDaytona();
-		await assert.rejects(createDaytona({ provider: "daytona", apiKey: DKEY }, { loadSdk: async () => f.mod }).create({ ...baseCreate, resources: { memoryMb: 512 } }), UnsupportedError);
-		assert.equal(f.created.length, 0);
+		const p = createDaytona({ provider: "daytona", apiKey: DKEY, template: "snap-x" }, { loadSdk: async () => f.mod });
+		await p.create({ ...baseCreate, defaultMemoryMb: 512 });
+		await createDaytona({ provider: "daytona", apiKey: DKEY }, { loadSdk: async () => f.mod }).create({ ...baseCreate, defaultMemoryMb: 512 });
+		assert.equal(f.created.length, 2);
+		for (const c of f.created) {
+			assert.equal("resources" in c, false, "no resources in snapshot/default mode");
+			assert.equal("image" in c, false);
+		}
+		assert.equal(f.created[0]!.snapshot, "snap-x");
+		assert.equal("snapshot" in f.created[1]!, false, "no snapshot configured → Daytona default");
+	});
+
+	it("round 10: explicit resources are sent only in image mode (cpu cores, memory/disk GiB); explicit resources without an image are refused, never ignored", async () => {
+		const f = fakeDaytona();
+		await createDaytona({ provider: "daytona", apiKey: DKEY, image: "python:3.12-slim", resources: { cpus: 2, memoryGb: 4, diskGb: 10 } }, { loadSdk: async () => f.mod }).create({ ...baseCreate, defaultMemoryMb: 512 });
+		assert.equal(f.created[0]!.image, "python:3.12-slim");
+		assert.deepEqual(f.created[0]!.resources, { cpu: 2, memory: 4, disk: 10 });
+		assert.equal("snapshot" in f.created[0]!, false);
+		await createDaytona({ provider: "daytona", apiKey: DKEY, image: "python:3.12-slim" }, { loadSdk: async () => f.mod }).create(baseCreate);
+		assert.equal("resources" in f.created[1]!, false, "image without explicit resources → Daytona default size");
+		await assert.rejects(createDaytona({ provider: "daytona", apiKey: DKEY, resources: { cpus: 2 } }, { loadSdk: async () => f.mod }).create(baseCreate), (e: any) => e instanceof UnsupportedError && /镜像/.test(e.message));
+		await assert.rejects(createDaytona({ provider: "daytona", apiKey: DKEY }, { loadSdk: async () => f.mod }).create({ ...baseCreate, resources: { memoryGb: 2 } }), UnsupportedError);
+		assert.equal(f.created.length, 2, "the refused creates never reached the SDK");
 	});
 
 	it("buildShellLine quotes cwd/env/command and rejects bad env names", () => {
@@ -527,7 +566,7 @@ describe("opensandbox adapter (SDK test double)", () => {
 		setOpenSandboxSdkLoaderForTests(async () => f.mod as never);
 		try {
 			const p = createOpenSandbox({ provider: "opensandbox", apiKey: "sk-os-0123456789abcdef", endpoint: "http://127.0.0.1:8080" } as never);
-			await p.create({ ...baseCreate, resources: { memoryMb: 512 } });
+			await p.create({ ...baseCreate, defaultMemoryMb: 512 });
 			await p.create({ ...baseCreate, network: false } as never);
 			assert.equal(f.created.length, 2);
 			for (const c of f.created) {

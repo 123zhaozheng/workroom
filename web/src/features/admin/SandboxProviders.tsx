@@ -114,6 +114,12 @@ interface Draft {
 	endpoint: string;
 	domain: string;
 	template: string;
+	/** Daytona: "snapshot" (snapshot / Daytona default size) or "image" (image-based; explicit size allowed). */
+	mode: "snapshot" | "image";
+	image: string;
+	cpus: string;
+	memoryGb: string;
+	diskGb: string;
 	allowPrivateNetwork: boolean;
 	egressAcknowledged: boolean;
 	createTimeoutSec: string;
@@ -127,6 +133,11 @@ const toDraft = (p: SandboxProviderConfigDTO): Draft => ({
 	endpoint: p.endpoint ?? "",
 	domain: p.domain ?? "",
 	template: p.template ?? "",
+	mode: p.image ? "image" : "snapshot",
+	image: p.image ?? "",
+	cpus: p.resources?.cpus !== undefined ? String(p.resources.cpus) : "",
+	memoryGb: p.resources?.memoryGb !== undefined ? String(p.resources.memoryGb) : "",
+	diskGb: p.resources?.diskGb !== undefined ? String(p.resources.diskGb) : "",
 	allowPrivateNetwork: p.allowPrivateNetwork,
 	egressAcknowledged: p.egressAcknowledged,
 	createTimeoutSec: String(p.createTimeoutSec),
@@ -135,6 +146,19 @@ const toDraft = (p: SandboxProviderConfigDTO): Draft => ({
 	apiKey: "",
 	clearKey: false,
 });
+
+/** Explicit resources from the form; empty fields = provider default. null when nothing is set (clears). */
+function resourcesOf(d: Draft, disk: boolean): { cpus?: number; memoryGb?: number; diskGb?: number } | null {
+	const n = (v: string) => (v.trim() === "" ? undefined : Number(v));
+	const out: { cpus?: number; memoryGb?: number; diskGb?: number } = {};
+	const c = n(d.cpus);
+	const m = n(d.memoryGb);
+	const g = disk ? n(d.diskGb) : undefined;
+	if (c !== undefined) out.cpus = c;
+	if (m !== undefined) out.memoryGb = m;
+	if (g !== undefined) out.diskGb = g;
+	return Object.keys(out).length ? out : null;
+}
 
 function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProviderConfigDTO; secretStorage: boolean; isDefault: boolean; reload: () => void }) {
 	const [d, setD] = useState<Draft>(() => toDraft(p));
@@ -162,7 +186,13 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 			enabled: d.enabled,
 			endpoint: d.endpoint.trim(),
 			...(p.provider === "e2b" ? { domain: d.domain.trim() } : {}),
-			template: d.template.trim(),
+			...(p.provider === "daytona"
+				? d.mode === "image"
+					? { template: "", image: d.image.trim(), resources: resourcesOf(d, true) }
+					: { template: d.template.trim(), image: "", resources: null }
+				: p.provider === "opensandbox"
+					? { template: d.template.trim(), resources: resourcesOf(d, false) }
+					: { template: d.template.trim() }),
 			allowPrivateNetwork: d.allowPrivateNetwork,
 			egressAcknowledged: d.egressAcknowledged,
 			createTimeoutSec: Math.round(Number(d.createTimeoutSec)),
@@ -210,10 +240,48 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 						<Input id={id("domain")} data-testid={id("domain")} value={d.domain} onChange={(e) => set({ domain: e.target.value })} autoComplete="off" />
 					</div>
 				) : null}
-				<div>
-					<Label htmlFor={id("template")}>模板 / 镜像</Label>
-					<Input id={id("template")} data-testid={id("template")} value={d.template} onChange={(e) => set({ template: e.target.value })} autoComplete="off" />
-				</div>
+				{p.provider === "daytona" ? (
+					<div className="sm:col-span-2">
+						<Label htmlFor={id("mode")}>创建方式</Label>
+						<Select id={id("mode")} data-testid={id("mode")} value={d.mode} onChange={(e) => set({ mode: e.target.value as Draft["mode"] })}>
+							<option value="snapshot">快照 / 默认规格</option>
+							<option value="image">镜像（可指定 CPU、内存、磁盘）</option>
+						</Select>
+					</div>
+				) : null}
+				{p.provider === "daytona" && d.mode === "image" ? (
+					<div>
+						<Label htmlFor={id("image")}>镜像</Label>
+						<Input id={id("image")} data-testid={id("image")} value={d.image} onChange={(e) => set({ image: e.target.value })} placeholder="例如 python:3.12-slim" autoComplete="off" />
+					</div>
+				) : (
+					<div>
+						<Label htmlFor={id("template")}>{p.provider === "daytona" ? "快照（留空用默认）" : "模板 / 镜像"}</Label>
+						<Input id={id("template")} data-testid={id("template")} value={d.template} onChange={(e) => set({ template: e.target.value })} autoComplete="off" />
+					</div>
+				)}
+				{p.provider === "e2b" ? (
+					<p data-testid={id("resources-note")} className="self-end text-xs text-fg-muted sm:col-span-2">CPU 和内存由所选 E2B 模板决定。</p>
+				) : p.provider === "opensandbox" || d.mode === "image" ? (
+					<div className="grid grid-cols-3 gap-2 sm:col-span-2" data-testid={id("resources")}>
+						<div>
+							<Label htmlFor={id("cpus")}>CPU（核）</Label>
+							<Input id={id("cpus")} data-testid={id("cpus")} inputMode="decimal" value={d.cpus} onChange={(e) => set({ cpus: e.target.value })} placeholder="默认" />
+						</div>
+						<div>
+							<Label htmlFor={id("mem")}>内存（GiB）</Label>
+							<Input id={id("mem")} data-testid={id("mem")} inputMode="decimal" value={d.memoryGb} onChange={(e) => set({ memoryGb: e.target.value })} placeholder="默认" />
+						</div>
+						{p.provider === "daytona" ? (
+							<div>
+								<Label htmlFor={id("disk")}>磁盘（GiB）</Label>
+								<Input id={id("disk")} data-testid={id("disk")} inputMode="decimal" value={d.diskGb} onChange={(e) => set({ diskGb: e.target.value })} placeholder="默认" />
+							</div>
+						) : null}
+					</div>
+				) : (
+					<p data-testid={id("resources-note")} className="self-end text-xs text-fg-muted sm:col-span-2">快照方式使用快照或 Daytona 默认规格；要指定 CPU、内存、磁盘，请改用镜像方式。</p>
+				)}
 				<div>
 					<Label htmlFor={id("apikey")}>访问密钥</Label>
 					{p.apiKeySet && !replacing && !d.clearKey ? (

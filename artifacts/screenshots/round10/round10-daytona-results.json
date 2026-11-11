@@ -1,0 +1,45 @@
+{
+  "at": "2026-11-11T07:48:32.559Z",
+  "results": [
+    {
+      "name": "Daytona card defaults to 快照 / 默认规格 with a plain note and no resource fields",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E2B card says size comes from the template",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "image mode shows 镜像 + CPU / 内存 / 磁盘 fields",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "saved: image + explicit resources stored (cpu cores, GiB)",
+      "ok": true,
+      "detail": "{\"image\":\"python:3.12-slim\",\"resources\":{\"cpus\":2,\"memoryGb\":4,\"diskGb\":10}}"
+    },
+    {
+      "name": "snapshot mode saved: no image, no explicit resources (nothing silently kept)",
+      "ok": true,
+      "detail": "{\"provider\":\"daytona\",\"label\":\"Daytona\",\"enabled\":false,\"apiKeySet\":true,\"apiKeyHint\":\"6789\",\"allowPrivateNetwork\":false,\"egressAcknowledged\":false,\"createTimeoutSec\":120,\"idleTimeoutSec\":1800,\"lifetimeSec\":14400,\"capabilities\":{\"exec\":\"unverified\",\"streamOutput\":\"unverified\",\"cancel\":\"unverified\",\"commandTimeout\":\"unverified\",\"files\":\"unverified\",\"networkOff\":\"unverified\",\"networkOn\":\"unverified\",\"resourceLimits\":\"unverified\",\"reconnect\":\"unverified\",\"services\":\"unverified\",\"pty\":\"unverified\",\"preview\":\"unverified\",\"snapshot\":\"unverified\",\"pauseResume\":\"unverified\",\"skills\":\"unsupported\",\"isolation\":\"未验证：尚未运行连接测试，能力以测试结果为准（占位值）\",\"location\":\"vendor_cloud\"},\"sdk\":{\"name\":\"@daytonaio/sdk\",\"version\":\"0.231.1\"},\"updatedAt\":\"2026-11-11T07:48:30.598Z\"}"
+    },
+    {
+      "name": "resources without an image are refused (Daytona), and on E2B — never ignored",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the fake API key never appears in any API response the page received",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390px: no horizontal scroll on the sandbox page",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

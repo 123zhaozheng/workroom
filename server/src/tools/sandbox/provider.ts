@@ -59,8 +59,26 @@ export interface CreateOptions {
 	/** Deadline for creation (distinct from command timeout). */
 	readonly createTimeoutMs: number;
 	// Round 9: no `network` option. Adapters must NOT pass any network-deny/allow option to the provider; vendor defaults apply.
-	readonly resources?: { readonly cpus?: number; readonly memoryMb?: number };
+	/**
+	 * EXPLICIT resources an admin configured for this provider (never filled from generic platform defaults). An adapter that cannot honour
+	 * them in its creation mode must refuse (UnsupportedError) — never silently ignore an explicit setting.
+	 */
+	readonly resources?: ExplicitResources;
+	/** Daytona: create from this image (the only creation mode that accepts `resources`). Other providers: unused. */
+	readonly image?: string;
+	/**
+	 * The platform's generic per-sandbox memory limit, as a HINT. Adapters that support limits in their normal creation mode may apply it
+	 * (OpenSandbox); adapters that don't (E2B template, Daytona snapshot) ignore it — it is not a user request.
+	 */
+	readonly defaultMemoryMb?: number;
 	readonly signal?: AbortSignal;
+}
+
+/** Admin-configured sandbox size. cpus in cores, memory/disk in GiB. */
+export interface ExplicitResources {
+	readonly cpus?: number;
+	readonly memoryGb?: number;
+	readonly diskGb?: number;
 }
 
 export interface ExecOptions {
@@ -148,6 +166,10 @@ export interface ProviderConnection {
 	readonly domain?: string;
 	readonly apiKey?: string;
 	readonly template?: string;
+	/** Daytona image (image-based creation; required for explicit resources). */
+	readonly image?: string;
+	/** Explicit admin-configured resources (absent = provider/template/snapshot defaults). */
+	readonly resources?: ExplicitResources;
 	/** Daytona target/region, OpenSandbox extras, etc. Validated per provider. */
 	readonly options?: Readonly<Record<string, string>>;
 }

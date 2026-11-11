@@ -271,8 +271,11 @@ export function createProvider(conn: ProviderConnection): RemoteProvider & { clo
 		async create(o: CreateOptions) {
 			const { mod, cfg } = await load();
 			const resource: Record<string, string> = {};
+			if (o.resources?.diskGb !== undefined) throw new UnsupportedError("opensandbox", "创建时指定磁盘大小");
 			if (o.resources?.cpus) resource.cpu = String(o.resources.cpus);
-			if (o.resources?.memoryMb) resource.memory = `${Math.max(64, Math.floor(o.resources.memoryMb))}Mi`;
+			// explicit memory wins; otherwise the platform's generic per-sandbox limit is applied as before
+			const memMb = o.resources?.memoryGb ? Math.round(o.resources.memoryGb * 1024) : o.defaultMemoryMb;
+			if (memMb) resource.memory = `${Math.max(64, Math.floor(memMb))}Mi`;
 			try {
 				const sb = await mod.Sandbox.create({
 					connectionConfig: cfg,

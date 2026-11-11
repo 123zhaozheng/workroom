@@ -22,10 +22,41 @@ import { HttpError, newId, nowIso } from "../../core/http.ts";
 import { Allowlist, resolveTarget, systemResolver, type Resolver } from "../../ops/egress.ts";
 import { isPrivateAddress } from "../netpolicy.ts";
 import { SecretBox } from "../secrets.ts";
-import { DEFAULT_LIFECYCLE, PROVIDER_IDS, type LifecyclePolicy, type ProviderConnection, type ProviderId, type RemoteProvider } from "./provider.ts";
+import { DEFAULT_LIFECYCLE, PROVIDER_IDS, type ExplicitResources, type LifecyclePolicy, type ProviderConnection, type ProviderId, type RemoteProvider } from "./provider.ts";
 import type { SandboxProviderCapabilitiesDTO, SandboxProviderConfigDTO, SandboxProviderTestDTO, SandboxProviderUpdate, SandboxProvidersAdminDTO, SandboxSelectionPolicyDTO } from "../../../../shared/sandbox.ts";
 
 /** Export; the integrator wires these into toolsModule.migrations with version offset +900. */
+/** Parse the stored explicit resources (JSON) — undefined when absent/invalid. */
+function parseResources(raw: string | null | undefined): ExplicitResources | undefined {
+	if (!raw) return undefined;
+	try {
+		const v = JSON.parse(raw);
+		return v && typeof v === "object" && Object.keys(v).length ? (v as ExplicitResources) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+/** Explicit admin resources: cpus 0.25–64 cores, memory 0.25–512 GiB, disk 1–2048 GiB; empty object = none. */
+function validateResources(v: unknown): ExplicitResources | undefined {
+	if (!v || typeof v !== "object" || Array.isArray(v)) throw new HttpError(400, "invalid", "resources 必须是对象（cpus / memoryGb / diskGb）");
+	const o = v as Record<string, unknown>;
+	for (const k of Object.keys(o)) if (!["cpus", "memoryGb", "diskGb"].includes(k)) throw new HttpError(400, "invalid", `resources 不支持字段 ${k}`);
+	const num = (k: string, min: number, max: number): number | undefined => {
+		if (o[k] === undefined || o[k] === null || o[k] === "") return undefined;
+		const n = Number(o[k]);
+		if (!Number.isFinite(n) || n < min || n > max) throw new HttpError(400, "invalid", `${k} 必须在 ${min}–${max} 之间`);
+		return n;
+	};
+	const out: { cpus?: number; memoryGb?: number; diskGb?: number } = {};
+	const c = num("cpus", 0.25, 64);
+	const m = num("memoryGb", 0.25, 512);
+	const d = num("diskGb", 1, 2048);
+	if (c !== undefined) out.cpus = c;
+	if (m !== undefined) out.memoryGb = m;
+	if (d !== undefined) out.diskGb = d;
+	return Object.keys(out).length ? out : undefined;
+}
+
 export const PROVIDER_CONFIG_MIGRATIONS: Migration[] = [
 	{
 		version: 1,
@@ -49,6 +80,13 @@ CREATE TABLE tool_sandbox_project_provider (
   project_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, provider TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL
 );`,
 	},
+	{
+		version: 2,
+		name: "sandbox provider: explicit resources and (Daytona) image-based creation",
+		sql: `
+ALTER TABLE tool_sandbox_providers ADD COLUMN image TEXT;
+ALTER TABLE tool_sandbox_providers ADD COLUMN resources TEXT;`,
+	},
 ];
 
 interface Row {
@@ -58,6 +96,8 @@ interface Row {
 	endpoint: string | null;
 	domain: string | null;
 	template: string | null;
+	image?: string | null;
+	resources?: string | null;
 	api_key_sealed: string | null;
 	api_key_hint: string | null;
 	allow_private_network: number;
@@ -216,6 +256,8 @@ export class SandboxProviderConfigs {
 			...(r?.endpoint ? { endpoint: r.endpoint } : {}),
 			...(r?.domain ? { domain: r.domain } : {}),
 			...(r?.template ? { template: r.template } : {}),
+			...(r?.image ? { image: r.image } : {}),
+			...(parseResources(r?.resources) ? { resources: parseResources(r?.resources)! } : {}),
 			apiKeySet: !!r?.api_key_sealed,
 			...(r?.api_key_sealed && r.api_key_hint ? { apiKeyHint: r.api_key_hint } : {}),
 			allowPrivateNetwork: r?.allow_private_network === 1,
@@ -291,6 +333,8 @@ export class SandboxProviderConfigs {
 			endpoint: old?.endpoint ?? "",
 			domain: old?.domain ?? "",
 			template: old?.template ?? "",
+			image: old?.image ?? "",
+			resources: parseResources(old?.resources) as ExplicitResources | undefined,
 			allowPrivate: old?.allow_private_network === 1,
 			ack: old?.egress_ack === 1,
 			createTimeoutSec: old?.create_timeout_sec ?? DEFAULT_LIFECYCLE.createTimeoutSec,
@@ -312,6 +356,27 @@ export class SandboxProviderConfigs {
 			next.template = str("template", patch.template, 128);
 			if (next.template && !TEMPLATE_RE.test(next.template)) throw new HttpError(400, "invalid", "template 只能包含字母、数字和 . _ : / @ -，且以字母或数字开头");
 			changed.push("template");
+		}
+		if (patch.image !== undefined) {
+			next.image = str("image", patch.image ?? "", 256);
+			if (next.image && !TEMPLATE_RE.test(next.image)) throw new HttpError(400, "invalid", "镜像名只能包含字母、数字和 . _ : / @ -，且以字母或数字开头");
+			changed.push("image");
+		}
+		if (patch.resources !== undefined) {
+			next.resources = patch.resources === null ? undefined : validateResources(patch.resources);
+			changed.push("resources");
+		}
+		// Per-provider creation rules (refuse at save time — an explicit setting is never silently ignored later):
+		const hasRes = !!next.resources && Object.keys(next.resources).length > 0;
+		if (provider === "e2b") {
+			if (hasRes) throw new HttpError(400, "unsupported_resources", "E2B 沙箱的 CPU/内存由模板决定：请在 E2B 模板中设置，或清空这里的资源设置");
+			if (next.image) throw new HttpError(400, "invalid", "E2B 使用模板（template），不支持在这里填写镜像");
+		} else if (provider === "daytona") {
+			if (next.image && next.template) throw new HttpError(400, "invalid", "Daytona 的快照（template）和镜像只能选一个");
+			if (hasRes && !next.image) throw new HttpError(400, "unsupported_resources", "Daytona 只有用镜像创建时才能指定 CPU/内存/磁盘：请填写镜像，或清空资源设置以使用快照/默认规格");
+		} else if (provider === "opensandbox") {
+			if (next.image) throw new HttpError(400, "invalid", "OpenSandbox 使用模板/镜像字段（template），这里不需要单独填写镜像");
+			if (next.resources?.diskGb !== undefined) throw new HttpError(400, "unsupported_resources", "OpenSandbox 不支持在创建时指定磁盘大小");
 		}
 		for (const k of ["createTimeoutSec", "idleTimeoutSec", "lifetimeSec"] as const) if (patch[k] !== undefined) ((next[k] = intIn(k, patch[k])), changed.push(k));
 		if (next.idleTimeoutSec > next.lifetimeSec) throw new HttpError(400, "invalid", "空闲回收时间不能超过最长存活时间");
@@ -341,10 +406,10 @@ export class SandboxProviderConfigs {
 		}
 		const now = nowIso();
 		this.#ctx.db.run(
-			`INSERT INTO tool_sandbox_providers (org_id, provider, enabled, endpoint, domain, template, api_key_sealed, api_key_hint, allow_private_network, egress_ack, create_timeout_sec, idle_timeout_sec, lifetime_sec, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint = excluded.endpoint, domain = excluded.domain, template = excluded.template, api_key_sealed = excluded.api_key_sealed, api_key_hint = excluded.api_key_hint, allow_private_network = excluded.allow_private_network, egress_ack = excluded.egress_ack, create_timeout_sec = excluded.create_timeout_sec, idle_timeout_sec = excluded.idle_timeout_sec, lifetime_sec = excluded.lifetime_sec, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
-			p.orgId, provider, next.enabled ? 1 : 0, next.endpoint || null, next.domain || null, next.template || null, next.sealed, next.hint, next.allowPrivate ? 1 : 0, next.ack ? 1 : 0, next.createTimeoutSec, next.idleTimeoutSec, next.lifetimeSec, p.userId, now,
+			`INSERT INTO tool_sandbox_providers (org_id, provider, enabled, endpoint, domain, template, image, resources, api_key_sealed, api_key_hint, allow_private_network, egress_ack, create_timeout_sec, idle_timeout_sec, lifetime_sec, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint = excluded.endpoint, domain = excluded.domain, template = excluded.template, image = excluded.image, resources = excluded.resources, api_key_sealed = excluded.api_key_sealed, api_key_hint = excluded.api_key_hint, allow_private_network = excluded.allow_private_network, egress_ack = excluded.egress_ack, create_timeout_sec = excluded.create_timeout_sec, idle_timeout_sec = excluded.idle_timeout_sec, lifetime_sec = excluded.lifetime_sec, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+			p.orgId, provider, next.enabled ? 1 : 0, next.endpoint || null, next.domain || null, next.template || null, next.image || null, next.resources && Object.keys(next.resources).length ? JSON.stringify(next.resources) : null, next.sealed, next.hint, next.allowPrivate ? 1 : 0, next.ack ? 1 : 0, next.createTimeoutSec, next.idleTimeoutSec, next.lifetimeSec, p.userId, now,
 		);
 		// Audit: field names + key status only. The key (and its hint) never enter the audit row; the endpoint is logged as origin only.
 		let origin: string | undefined;
@@ -384,7 +449,7 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 		let endpoint = r.endpoint ?? undefined;
 		if (endpoint) endpoint = await this.checkEndpoint(orgId, endpoint, r.allow_private_network === 1); // re-validated before every construction
 		if (r.domain) await this.#checkDomain(orgId, r.domain, r.allow_private_network === 1);
-		return { provider, ...(endpoint ? { endpoint } : {}), ...(r.domain ? { domain: r.domain } : {}), ...(apiKey ? { apiKey } : {}), ...(r.template ? { template: r.template } : {}) };
+		return { provider, ...(endpoint ? { endpoint } : {}), ...(r.domain ? { domain: r.domain } : {}), ...(apiKey ? { apiKey } : {}), ...(r.template ? { template: r.template } : {}), ...(r.image ? { image: r.image } : {}), ...(parseResources(r.resources) ? { resources: parseResources(r.resources)! } : {}) };
 	}
 	/** Decrypted, re-validated connection of an ENABLED provider (null when missing/disabled). Async because the endpoint is re-resolved. Never log the result. */
 	connection(orgId: string, provider: ProviderId): Promise<ProviderConnection | null> {
@@ -528,7 +593,7 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 				// Roundtrip with a throwaway sandbox: provider defaults, short lifetime, synthetic data only.
 				let sessionId: string | undefined;
 				try {
-					const session = await timed("create", (signal) => prov.create({ ...(conn.template ? { template: conn.template } : {}), metadata: { workroom: "1", purpose: "connection-test" }, lifetimeMs: 300_000, createTimeoutMs: lc.createTimeoutSec * 1000, signal }), lc.createTimeoutSec * 1000 + 5000);
+					const session = await timed("create", (signal) => prov.create({ ...(conn.template ? { template: conn.template } : {}), ...(conn.image ? { image: conn.image } : {}), ...(conn.resources ? { resources: conn.resources } : {}), metadata: { workroom: "1", purpose: "connection-test" }, lifetimeMs: 300_000, createTimeoutMs: lc.createTimeoutSec * 1000, signal }), lc.createTimeoutSec * 1000 + 5000);
 					sessionId = session.id;
 					const exec = await timed("exec", async (signal) => {
 						const r = await session.exec({ command: "echo workroom-ok", cwd: "/tmp", timeoutMs: 20_000, signal });

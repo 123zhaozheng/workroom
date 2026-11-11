@@ -191,7 +191,8 @@ class E2bProvider implements RemoteProvider {
 	}
 
 	async create(o: CreateOptions): Promise<RemoteSession> {
-		if (o.resources && (o.resources.cpus !== undefined || o.resources.memoryMb !== undefined)) {
+		// Only EXPLICIT admin resources are a request (o.defaultMemoryMb is a hint E2B cannot apply: size comes from the template).
+		if (o.resources && (o.resources.cpus !== undefined || o.resources.memoryGb !== undefined || o.resources.diskGb !== undefined)) {
 			throw new UnsupportedError(ID, "创建时指定 CPU/内存（E2B 的资源规格由模板决定，请改用模板）");
 		}
 		const sdk = await this.#sdkOnce();

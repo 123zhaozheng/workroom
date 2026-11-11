@@ -180,6 +180,10 @@ export interface SandboxProviderConfigDTO {
 	/** E2B-compatible services: sandbox domain. */
 	readonly domain?: string;
 	readonly template?: string;
+	/** Daytona only: image-based creation (the only Daytona mode that accepts explicit resources). */
+	readonly image?: string;
+	/** Explicit admin-configured sandbox size (absent = template / snapshot / provider default). cpus in cores, memory/disk in GiB. */
+	readonly resources?: SandboxResourcesDTO;
 	readonly apiKeySet: boolean;
 	readonly apiKeyHint?: string;
 	/** The endpoint resolves to a private/internal address and the admin explicitly allowed that (self-hosted intranet). */
@@ -215,6 +219,10 @@ export interface SandboxProviderUpdate {
 	readonly endpoint?: string;
 	readonly domain?: string;
 	readonly template?: string;
+	/** Daytona image ("" clears). */
+	readonly image?: string;
+	/** Explicit resources; null clears (back to template / snapshot / provider default). Refused where the provider/creation mode cannot honour them. */
+	readonly resources?: SandboxResourcesDTO | null;
 	readonly apiKey?: string | null;
 	readonly allowPrivateNetwork?: boolean;
 	readonly egressAcknowledged?: boolean;
@@ -289,4 +297,11 @@ export interface ConversationEnvironmentDTO {
 	readonly chooseHint?: string;
 	/** True when an explicit prepare/retry is possible (remote, write access). */
 	readonly canPrepare: boolean;
+}
+
+/** Explicit sandbox size an admin sets per provider (round 10). */
+export interface SandboxResourcesDTO {
+	readonly cpus?: number;
+	readonly memoryGb?: number;
+	readonly diskGb?: number;
 }

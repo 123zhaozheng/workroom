@@ -13,12 +13,12 @@ import { UnsupportedError } from "../src/tools/sandbox/provider.ts";
 import type { DriverRunSpec, SandboxMount } from "../src/tools/sandbox/driver.ts";
 import { FAKE_CAPS, FakeRemoteProvider } from "./helpers/fake-remote-provider.ts";
 
-function setup(opts: { lifecycle?: { createTimeoutSec: number; idleTimeoutSec: number; lifetimeSec: number }; provider?: FakeRemoteProvider; db?: AppDb } = {}) {
+function setup(opts: { lifecycle?: { createTimeoutSec: number; idleTimeoutSec: number; lifetimeSec: number }; provider?: FakeRemoteProvider; db?: AppDb; image?: string; resources?: { cpus?: number; memoryGb?: number; diskGb?: number } } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "wr-remote-"));
 	const db = opts.db ?? new AppDb(":memory:");
 	if (!opts.db) db.migrate("sandbox-test", SANDBOX_MIGRATIONS);
 	const provider = opts.provider ?? new FakeRemoteProvider();
-	const driver = new RemoteDriver({ db, provider, orgId: "org1", ...(opts.lifecycle ? { lifecycle: opts.lifecycle } : {}) });
+	const driver = new RemoteDriver({ db, provider, orgId: "org1", ...(opts.lifecycle ? { lifecycle: opts.lifecycle } : {}), ...(opts.image ? { image: opts.image } : {}), ...(opts.resources ? { resources: opts.resources } : {}) });
 	const wd = join(root, "sandbox", "c1");
 	mkdirSync(wd, { recursive: true });
 	let n = 0;
@@ -440,4 +440,18 @@ test("Sandbox integration: a space whose org policy selects a provider runs thro
 	} finally {
 		await t.dispose();
 	}
+});
+
+
+test("round 10: generic platform limits are passed as a hint (defaultMemoryMb), never as explicit resources; admin resources/image are passed through", async () => {
+	const t = setup();
+	await t.driver.run(t.spec("echo x"));
+	const o = t.box().createOptions as any;
+	assert.equal(o.resources, undefined, "no explicit resources unless an admin configured them (the reported Daytona/E2B refusal)");
+	assert.ok(typeof o.defaultMemoryMb === "number" && o.defaultMemoryMb >= 64);
+	const t2 = setup({ image: "python:3.12-slim", resources: { cpus: 2, memoryGb: 4 } });
+	await t2.driver.run(t2.spec("echo y"));
+	const o2 = t2.box().createOptions as any;
+	assert.deepEqual(o2.resources, { cpus: 2, memoryGb: 4 });
+	assert.equal(o2.image, "python:3.12-slim");
 });

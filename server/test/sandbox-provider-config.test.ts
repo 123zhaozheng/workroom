@@ -406,3 +406,40 @@ test("instances list: empty without the adapter table; org-filtered when present
 		await h.t.dispose();
 	}
 });
+
+test("round 10: explicit resources / Daytona image are validated per provider at save time and flow into the connection", async () => {
+	const h = await harness();
+	try {
+		const put = (prov: string, body: Record<string, unknown>) => h.call(h.owner, "PUT", `/api/sandbox/providers/${prov}`, body);
+		// E2B: size comes from the template → explicit resources refused (never silently ignored)
+		const e = await put("e2b", { resources: { cpus: 2 } });
+		assert.equal(e.status, 400);
+		assert.equal(e.body.error.code, "unsupported_resources");
+		// Daytona: resources only with an image; snapshot and image are exclusive
+		assert.equal((await put("daytona", { resources: { cpus: 2, memoryGb: 4 } })).body.error.code, "unsupported_resources");
+		assert.equal((await put("daytona", { template: "snap-1", image: "python:3.12-slim" })).status, 400);
+		const ok = await put("daytona", { apiKey: KEY, image: "python:3.12-slim", resources: { cpus: 2, memoryGb: 4, diskGb: 10 } });
+		assert.equal(ok.status, 200, ok.text);
+		assert.equal(ok.body.provider?.image ?? ok.body.image ?? (await h.call(h.owner, "GET", "/api/sandbox/providers")).body.providers.find((x: any) => x.provider === "daytona").image, "python:3.12-slim");
+		const dto = (await h.call(h.owner, "GET", "/api/sandbox/providers")).body.providers.find((x: any) => x.provider === "daytona");
+		assert.deepEqual(dto.resources, { cpus: 2, memoryGb: 4, diskGb: 10 });
+		assert.ok(!JSON.stringify(dto).includes(KEY), "the key is never returned");
+		// clearing the image while resources remain is refused; clearing both works
+		assert.equal((await put("daytona", { image: "" })).body.error.code, "unsupported_resources");
+		assert.equal((await put("daytona", { image: "", resources: null })).status, 200);
+		const cleared = (await h.call(h.owner, "GET", "/api/sandbox/providers")).body.providers.find((x: any) => x.provider === "daytona");
+		assert.equal(cleared.image, undefined);
+		assert.equal(cleared.resources, undefined);
+		// range checks and OpenSandbox disk refusal
+		assert.equal((await put("daytona", { image: "img", resources: { cpus: 1000 } })).status, 400);
+		assert.equal((await put("opensandbox", { resources: { diskGb: 10 } })).body.error.code, "unsupported_resources");
+		assert.equal((await put("opensandbox", { resources: { cpus: 1, memoryGb: 2 } })).status, 200);
+		// the decrypted connection carries the explicit settings to the driver
+		await put("daytona", { image: "python:3.12-slim", resources: { cpus: 2 }, enabled: true, egressAcknowledged: true });
+		const conn = await h.svc.connection(h.owner.me.orgId, "daytona");
+		assert.equal(conn?.image, "python:3.12-slim");
+		assert.deepEqual(conn?.resources, { cpus: 2 });
+	} finally {
+		await h.t.dispose();
+	}
+});

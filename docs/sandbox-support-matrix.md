@@ -57,7 +57,7 @@
 | namespaces、docker（本机） | — | 联调通过（与之前相同） | `server/test/tools-sandbox*.test.ts`；合同测试中适用于本机的 6 项 |
 | OpenSandbox（自托管） | `@alibaba-group/opensandbox` 1.2.0，服务端 `opensandbox-server` 1.2.0，均为 Apache-2.0 | **联调通过**：本机 Docker 运行时 | `server/test/sandbox-contract.test.ts` 共 20 项、`server/test/sandbox-remote-e2e.test.ts` 共 1 项，都对 `scripts/opensandbox-local.sh` 拉起的真实服务运行 |
 | E2B（官方，或明确配置的兼容端点） | `e2b` 2.63.0，MIT | 已实现未联调：没有密钥 | `server/test/sandbox-providers-unit.test.ts`，用 SDK 替身；真实测试自动跳过 |
-| Daytona（厂商云） | `@daytonaio/sdk` 0.231.1，Apache-2.0 | 已实现未联调：没有密钥。开源仓库已于 2026-10-03 归档，不作为自托管开源方案 | 同上 |
+| Daytona（厂商云） | `@daytonaio/sdk` 0.231.1，Apache-2.0 | 已实现未联调：Workroom 适配器尚未对真实服务做端到端测试。开源仓库已于 2026-10-03 归档，不作为自托管开源方案。第 10 轮修复了创建路径（快照/默认方式不再误传规格；镜像方式支持 CPU、内存、磁盘），控制面线上请求用真实 SDK 对伪造 REST 服务验证；用户直接调用 REST 实测账号可用，但这不等于适配器端到端通过，见 `docs/r10-daytona.md` | 同上；另有 `server/test/sandbox-daytona-wire.test.ts` |
 | Kubernetes Agent Sandbox | — | 未实现，只做了调研 | `docs/research/sandbox-providers.md` |
 
 ### OpenSandbox 能力（实测）
