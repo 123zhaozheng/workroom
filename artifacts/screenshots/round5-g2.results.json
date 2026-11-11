@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T02:27:48.407Z",
+  "at": "2026-11-11T03:57:20.672Z",
   "results": [
     {
       "name": "display text: the message bubble shows only what the person wrote",
@@ -92,7 +92,7 @@
       "detail": "composer-input"
     },
     {
-      "name": "approval: run bar says waiting and points to the card",
+      "name": "approval: no run bar above the input; the card itself is the place to act",
       "ok": true,
       "detail": ""
     },
@@ -102,7 +102,7 @@
       "detail": ""
     },
     {
-      "name": "approval: 去处理 moves focus to the card, not to 允许",
+      "name": "approval: the card is focusable as a whole, not 允许",
       "ok": true,
       "detail": ""
     },
@@ -157,22 +157,22 @@
       "detail": ""
     },
     {
-      "name": "steer: feedback chip shows the message without directives and a human status",
+      "name": "queue: the item shows the message without directives",
       "ok": true,
-      "detail": "插话 另外请把结论放在最前面 已收到，下一步生效 撤回"
+      "detail": "1 另外请把结论放在最前面 立即发送 撤销 立即发送：把消息交给正在运行的任务，在它的下一步处理。不会打断正在执行的工具，也不会跳过待你确认的操作。 撤销：取消发送，内容和附件放回输入框。"
     },
     {
-      "name": "steer: a message not yet applied can be withdrawn",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "steer: 撤回 is confirmed by the server (已撤回)",
+      "name": "queue: a message not yet applied can be undone (撤销)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "steer: a kept message progresses to applied / done",
+      "name": "queue: 撤销 is confirmed by the server and the text is back in the input",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "queue: a kept message is sent after the current task",
       "ok": true,
       "detail": ""
     },
@@ -204,7 +204,7 @@
     {
       "name": "reconcile: says what, where and that nothing is redone automatically",
       "ok": true,
-      "detail": "待核对：外部操作结果不确定 fixture write crm-sync for g2-1794364039008@example.com 目标 crm://customers 情况 执行过程中被中断，系统不会自动重做。请到目标系统确认后选择： 技术详情 已生效 未生效"
+      "detail": "待核对：外部操作结果不确定 fixture write crm-sync for g2-1794369412003@example.com 目标 crm://customers 情况 执行过程中被中断，系统不会自动重做。请到目标系统确认后选择： 技术详情 已生效 未生效"
     },
     {
       "name": "reconcile: only 已生效 / 未生效 are offered; the idempotency key is behind 技术详情",

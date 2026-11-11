@@ -1,0 +1,265 @@
+{
+  "at": "2026-11-11T04:00:22.601Z",
+  "results": [
+    {
+      "name": "running: no run bar above the input",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "running: no 插话 / 稍后处理 choice anywhere",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "running: 停止 is in the composer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "running: the input says what a sent message does",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "running: nothing queued → no queue box",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "queue: three items in send order, test directives hidden",
+      "ok": true,
+      "detail": "第二条：整理一下要点 | 第三条：附带报价单 | 第四条：最后说结论"
+    },
+    {
+      "name": "queue: the attachment shows on its own item only",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "queue: header says they send automatically, in order, after the current task",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "queue: compact (height under 190px)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "queue: still no run bar, composer stays usable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "queue: sending never navigated away or showed an error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "actions are hidden until hover / focus / tap (no clutter)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "hover reveals 立即发送 and 撤销",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Shift+Tab from the input reaches the last item's 撤销, and its actions are shown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Shift+Tab again reaches 立即发送",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: and then the row itself",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard: Tab from the row moves to 立即发送 (actions stay shown while focused)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "explanation: 立即发送 hands the message to the running task's next step, no interrupt, no approval skip",
+      "ok": true,
+      "detail": "立即发送：把消息交给正在运行的任务，在它的下一步处理。不会打断正在执行的工具，也不会跳过待你确认的操作。 撤销：取消发送，内容和附件放回输入框。"
+    },
+    {
+      "name": "撤销: the text is back in the input for editing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "撤销: the attachment is back as a chip",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "撤销: the queue shrank and says so",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "撤销: no ghost 'unsent' bubble in the conversation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "edited message re-queues at the end, attachment kept",
+      "ok": true,
+      "detail": "第二条：整理一下要点 | 第四条：最后说结论 | 第三条（改过）：附带报价单"
+    },
+    {
+      "name": "refresh: the queue is still there, same order",
+      "ok": true,
+      "detail": "第二条：整理一下要点 | 第四条：最后说结论 | 第三条（改过）：附带报价单"
+    },
+    {
+      "name": "second tab: shows the same queue (from the server)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "second tab: undoing there removes it here too; its text lands in tab 2's input only",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "立即发送: server answers promoted/steered",
+      "ok": true,
+      "detail": "{\"r\":\"promoted\",\"e\":\"steered\"}"
+    },
+    {
+      "name": "立即发送: the notice says what happened (handed to the running task, next step, no interrupt)",
+      "ok": true,
+      "detail": "已交给正在运行的任务，会在它的下一步处理（不会打断正在执行的工具）。"
+    },
+    {
+      "name": "立即发送: the item is marked as handed over and offers only 撤销",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stop: the run ends as cancelled with 继续 offered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stop: queued messages are shown as 未送达 in the conversation (pi-durable drops them on cancel), none vanish",
+      "ok": true,
+      "detail": "4 markers"
+    },
+    {
+      "name": "order: all three ran one after another in the order they were sent",
+      "ok": true,
+      "detail": "顺序一,顺序二,顺序三,顺序四"
+    },
+    {
+      "name": "order: the queue is empty afterwards and there is no run bar",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "offline: the send fails visibly with 重试 and says the text is kept",
+      "ok": true,
+      "detail": "没有发出去：网络连接不可用。内容还在输入框里，网络恢复后点「重试」。 重试"
+    },
+    {
+      "name": "offline: the text stays in the input",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "offline: the queue shows nothing for it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "offline: 重试 sends it once; text cleared, error gone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: the card is in the conversation; no run bar",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: the queue says it waits for the confirmation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: 立即发送 says the message waits for the confirmation",
+      "ok": true,
+      "detail": "已交给当前任务：它正在等你确认，确认之后才会处理这条消息。"
+    },
+    {
+      "name": "approval: the approval is still pending and the message has not reached the model",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "approval: after the decision the handed-over message is processed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "failed: both messages are still queued, not sent automatically",
+      "ok": true,
+      "detail": "失败后的第一条 | 失败后的第二条"
+    },
+    {
+      "name": "failed: the queue says the previous task failed and that nothing is sent automatically",
+      "ok": true,
+      "detail": "· 上一次任务失败，排队的消息不会自动发送，点上方「重试」后一并处理"
+    },
+    {
+      "name": "failed: each item offers 立即发送 / 撤销 / 删除",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "failed: 删除 removes only that item",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "failed: 重试 continues and sends what was still queued",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390px: queue fits the screen (no horizontal scroll)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390px: actions are hidden until the row is tapped",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390px: tapping a row reveals 立即发送 / 撤销 and the explanation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390px: touch targets at least 36px tall",
+      "ok": true,
+      "detail": "h=36"
+    },
+    {
+      "name": "390px: still no run bar",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

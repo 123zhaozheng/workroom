@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T02:27:17.524Z",
+  "at": "2026-11-11T03:56:50.487Z",
   "results": [
     {
       "name": "seed: owner, departments, members, roles, two model services and a pending skill submission exist",
@@ -384,12 +384,12 @@
     {
       "name": "dark mode: members page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "59 texts, min 5.45 "
+      "detail": "58 texts, min 5.45 "
     },
     {
       "name": "dark mode: roles page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "53 texts, min 5.74 "
+      "detail": "49 texts, min 5.74 "
     },
     {
       "name": "dark mode: models page is dark and its text keeps >= 4.5:1 contrast",
@@ -399,7 +399,7 @@
     {
       "name": "dark mode: authz page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "43 texts, min 5.33 "
+      "detail": "42 texts, min 5.33 "
     },
     {
       "name": "dark mode: the confirmation dialog is fully opaque",
@@ -493,6 +493,16 @@
     },
     {
       "name": "390: /settings has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: /settings?tab=credentials has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: /settings?tab=models has no horizontal scroll",
       "ok": true,
       "detail": ""
     },

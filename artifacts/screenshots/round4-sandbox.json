@@ -1,15 +1,15 @@
 {
-  "at": "2026-11-11T02:24:10.887Z",
+  "at": "2026-11-11T03:53:39.568Z",
   "results": [
     {
       "name": "terminal: runs are listed oldest first with the command, stdout and an exit line",
       "ok": true,
-      "detail": "python3 main.py 成功 刚刚 已写入 4 个文件 ['blob.bin', 'notes.md', 'out'] 退出码 0 · 用时 137 ms"
+      "detail": "python3 main.py 成功 刚刚 已写入 4 个文件 ['blob.bin', 'notes.md', 'out'] 退出码 0 · 用时 129 ms"
     },
     {
       "name": "terminal: a failing run shows stdout, stderr and a non-zero exit code",
       "ok": true,
-      "detail": "python3 main.py 出错 刚刚 import sys print('处理到一半') sys.stderr.write('Traceback: boom\\n') sys.exit(3) 处理到一半 Traceback: boom 退出码 3 · 用时 111 ms"
+      "detail": "python3 main.py 出错 刚刚 import sys print('处理到一半') sys.stderr.write('Traceback: boom\\n') sys.exit(3) 处理到一半 Traceback: boom 退出码 3 · 用时 108 ms"
     },
     {
       "name": "terminal: the log scrolls (bounded height, overflow auto) and is monospace",

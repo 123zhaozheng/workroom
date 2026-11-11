@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T02:24:51.396Z",
+  "at": "2026-11-11T03:54:21.419Z",
   "results": [
     {
       "name": "seed-demo.mjs runs against a live server",
@@ -14,12 +14,12 @@
     {
       "name": "home + chat load neither the StatsPage chunk nor Recharts",
       "ok": true,
-      "detail": "76 asset requests, 102 before send"
+      "detail": "78 asset requests, 107 before send"
     },
     {
       "name": "lazy chunks load on /stats (page + Recharts)",
       "ok": true,
-      "detail": "StatsPage-BNy1Ckvj.js, StatsPage-DMDFVS2t.css, RechartsPanels-BxFvpBY0.js"
+      "detail": "StatsPage-cevFSqWN.js, StatsPage-DMDFVS2t.css, RechartsPanels-MwVsor2i.js"
     },
     {
       "name": "real org: no demo banner",

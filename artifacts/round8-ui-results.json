@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T03:09:09.539Z",
+  "at": "2026-11-11T04:01:12.258Z",
   "results": [
     {
       "name": "density: members page shows fewer words than before",
@@ -74,12 +74,12 @@
     {
       "name": "select: a 30+ item list scrolls inside the popover and stays inside the viewport (1440×900)",
       "ok": true,
-      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.13861083984375,\"h\":352}"
+      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.13865661621094,\"h\":352.00001525878906}"
     },
     {
       "name": "select @390: the popover is opaque and inside the viewport",
       "ok": true,
-      "detail": "{\"x\":16,\"y\":304.5507507324219,\"width\":192,\"height\":352.0000305175781}"
+      "detail": "{\"x\":16,\"y\":305,\"width\":192,\"height\":352}"
     },
     {
       "name": "select @390: no horizontal scroll on the page",

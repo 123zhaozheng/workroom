@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T02:30:25.328Z",
+  "at": "2026-11-11T03:59:55.523Z",
   "results": [
     {
       "name": "A [fixture model] credential_request → the card appears in the conversation while the agent waits",
@@ -77,7 +77,7 @@
       "detail": ""
     },
     {
-      "name": "A leak search: not in any of the 127 responses the browser received (json/text/html/js/css)",
+      "name": "A leak search: not in any of the 133 responses the browser received (json/text/html/js/css)",
       "ok": true,
       "detail": ""
     },
@@ -109,7 +109,7 @@
     {
       "name": "A the secret travelled in exactly one request: the POST to …/fulfill",
       "ok": true,
-      "detail": "http://127.0.0.1:8908/api/credential-requests/crq_0mwbi3tti600e46c594cc917e/fulfill"
+      "detail": "http://127.0.0.1:8908/api/credential-requests/crq_0mwblaxz95f2b2ab902d95403/fulfill"
     },
     {
       "name": "A the tool result the model got is status only (fulfilled, a credentialId, no value)",
@@ -149,7 +149,7 @@
     {
       "name": "A replaying the used nonce is answered as the same result (idempotent) and creates nothing new",
       "ok": true,
-      "detail": "{\"request\":{\"id\":\"crq_0mwbi43eya284348b36e4f149\",\"service\":\"Replay Svc\",\"purpose\":\"读取 Replay Svc 的项目列表\",\"targetHosts\":[\""
+      "detail": "{\"request\":{\"id\":\"crq_0mwblb78u8f5cd460ef6fb2de\",\"service\":\"Replay Svc\",\"purpose\":\"读取 Replay Svc 的项目列表\",\"targetHosts\":[\""
     },
     {
       "name": "A a forged / unknown nonce after fulfilment is refused (409), no second credential",
@@ -199,7 +199,7 @@
     {
       "name": "B no way to show a secret anywhere: buttons are only 更换密钥 / 撤销 / 删除 (no show / copy), no text input, no value on the page",
       "ok": true,
-      "detail": "更换密钥|撤销|删除"
+      "detail": "|更换密钥|撤销|删除"
     },
     {
       "name": "B 390px: credentials list fits without horizontal page scroll",
@@ -379,7 +379,7 @@
     {
       "name": "D status after restore: state 已恢复 with a verified restore record (no conflicts)",
       "ok": true,
-      "detail": "{\"s\":\"restored\",\"r\":{\"fromVersion\":1,\"at\":\"2026-11-11T02:30:21.435Z\",\"verified\":true,\"conflicts\":[]}}"
+      "detail": "{\"s\":\"restored\",\"r\":{\"fromVersion\":1,\"at\":\"2026-11-11T03:59:51.669Z\",\"verified\":true,\"conflicts\":[]}}"
     },
     {
       "name": "D the working files really are those of version 1: notes.txt present, later uploads gone",
@@ -399,7 +399,7 @@
     {
       "name": "final: none of the fake secrets appears in any response body this browser received during the whole run",
       "ok": true,
-      "detail": "786 responses"
+      "detail": "806 responses"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T02:11:50.599Z",
+  "at": "2026-11-11T03:41:12.038Z",
   "results": [
     {
       "name": "home: heavy chunks not loaded (markdown/shiki/katex/recharts/preview/work panel)",
@@ -57,7 +57,7 @@
       "detail": ""
     },
     {
-      "name": "approval: pending card shown with run status waiting",
+      "name": "approval: pending card shown in the conversation (no run bar above the input)",
       "ok": true,
       "detail": ""
     },
@@ -67,14 +67,14 @@
       "detail": ""
     },
     {
-      "name": "steer: feedback shown (received/queued/applied)",
+      "name": "queue: a message sent while running waits in the queue (follow-up, runs after the current task)",
       "ok": true,
-      "detail": "status=received"
+      "detail": "mode=followUp"
     },
     {
-      "name": "steer: feedback progresses to applied/done (or explicit 未应用)",
+      "name": "queue: it was sent automatically once the current task finished",
       "ok": true,
-      "detail": "status=done"
+      "detail": ""
     },
     {
       "name": "files api: deliverable is in the file library",
@@ -89,7 +89,7 @@
     {
       "name": "branch: edit created a branch (original untouched)",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mwbhg7cy60d91a8164cc75f6/46"
+      "detail": "http://127.0.0.1:8802/c/sp_0mwbkn5pld162d5b0d3e217a6/46"
     },
     {
       "name": "branch: after a refresh the branch, its answer and the switcher are still there",
@@ -99,7 +99,7 @@
     {
       "name": "branch: switcher returns to the original conversation with its results",
       "ok": true,
-      "detail": "http://127.0.0.1:8802/c/sp_0mwbhg7cy60d91a8164cc75f6/3"
+      "detail": "http://127.0.0.1:8802/c/sp_0mwbkn5pld162d5b0d3e217a6/3"
     },
     {
       "name": "files: two versions listed",

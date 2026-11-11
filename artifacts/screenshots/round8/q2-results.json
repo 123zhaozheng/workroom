@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T03:10:01.698Z",
+  "at": "2026-11-11T04:09:41.095Z",
   "results": [
     {
       "name": "A home: cloud button next to the composer, aria-label '执行环境：<label>'",
@@ -17,9 +17,19 @@
       "detail": "{\"x\":565,\"y\":471,\"width\":36,\"height\":36}"
     },
     {
+      "name": "A popover is fully opaque after its animation (opacity 1, solid background)",
+      "ok": true,
+      "detail": "{\"o\":1,\"alpha\":1}"
+    },
+    {
+      "name": "A popover: plain one-sentence isolation; the technical note is folded",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "name": "A popover: current environment, location badge 本服务器, network, state, options",
       "ok": true,
-      "detail": "当前执行环境 本机沙箱（Linux 命名空间） 本服务器 不联网 独立 user/mount/pid/net/ipc/uts 命名空间；pivot_root 到最小只读系统镜像（/usr、必要的 /etc 文件、Node 运行时），仅 /work（本会话工作目录）可写，/tmp 为 64 MB 内存盘；看不到数据目录（app.sqlite、blobs、其他空间/会话）、源码、/hom 详细说明 已"
+      "detail": "当前执行环境 本机沙箱（Linux 命名空间） 本服务器 不联网 在本服务器的隔离环境中运行，只能读写本对话的工作文件。 详细说明 已就绪：在本服务器上运行，无需准备 可用的执行环境 本机沙箱（Linux 命名空间） （当前） 个人空间使用组织统一设置的执行环境 管理执行环境"
     },
     {
       "name": "A popover: exactly one option is current; personal space cannot choose and says why",
@@ -44,7 +54,7 @@
     {
       "name": "A opening the popover creates no sandbox instance and sends no prepare",
       "ok": true,
-      "detail": "GET /api/conversations/sp_0mwbjir7zfb95429e3eba4dab/new/environment"
+      "detail": "GET /api/conversations/sp_0mwblnhto6167cf4c983d8bca/new/environment"
     },
     {
       "name": "A plain chat: still no sandbox instance and no prepare request",
@@ -64,7 +74,7 @@
     {
       "name": "A phone 390: popover fits the screen (>=8px gutters)",
       "ok": true,
-      "detail": "{\"x\":12,\"y\":395.638916015625,\"width\":366,\"height\":381.5}"
+      "detail": "{\"x\":12,\"y\":474.05157470703125,\"width\":366,\"height\":303.5}"
     },
     {
       "name": "A phone 390 conversation: button present, no horizontal scroll",
@@ -109,7 +119,7 @@
     {
       "name": "B 重试 sends exactly one explicit prepare request",
       "ok": true,
-      "detail": "POST /api/conversations/sp_0mwbjir7zfb95429e3eba4dab/3/environment/prepare"
+      "detail": "POST /api/conversations/sp_0mwblnhto6167cf4c983d8bca/3/environment/prepare"
     },
     {
       "name": "B phone 390: failure line fits (no horizontal scroll)",
@@ -204,7 +214,7 @@
     {
       "name": "D [live] the server reported none → preparing → ready while the real sandbox was created for the tool call (sampled directly from the API)",
       "ok": true,
-      "detail": "[{\"s\":\"none\",\"at\":5},{\"s\":\"preparing\",\"at\":138},{\"s\":\"ready\",\"at\":2662}]"
+      "detail": "[{\"s\":\"none\",\"at\":6},{\"s\":\"preparing\",\"at\":132},{\"s\":\"ready\",\"at\":1759}]"
     },
     {
       "name": "D [live] the UI followed: button reached ready, and (if the window was long enough for its 1 s poll) showed preparing + the inline line",
