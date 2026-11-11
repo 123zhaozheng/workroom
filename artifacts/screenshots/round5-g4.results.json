@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T04:37:38.556Z",
+  "at": "2026-11-11T07:29:12.494Z",
   "results": [
     {
       "name": "setup: deliverables (md v2, docx, xlsx, pptx, pdf, csv) and an image published from the workspace",
@@ -99,12 +99,12 @@
     {
       "name": "terminal: a run shows the command, output and an exit status line",
       "ok": true,
-      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 109 ms"
+      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 117 ms"
     },
     {
       "name": "terminal: no driver / isolation jargon visible",
       "ok": true,
-      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 109 ms"
+      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 117 ms"
     },
     {
       "name": "files tab: one-line usage indicator (count, used / quota)",
@@ -154,7 +154,7 @@
     {
       "name": "file detail: no run / task / tool / version ids",
       "ok": true,
-      "detail": "文件库 项目周报.md 存储：已保存 · 2 个版本 · 助手生成 知识库： 未加入 下载 v2 分享 加入知识库 上传新版本 本周进展 完成需求评审 完成原型 事项 负责人 需求评审 王明 下周计划 开始开发 版本 v2 最新 刚刚 · 149 B 补充风险与下周计划 由 对话「生成成果」生成 · 引用 1 个文件 "
+      "detail": "文件库 上传文件 全部空间 全部来源 chart.png 上传 · v1 · 608 B · 刚刚 项目周报.md 助手生成 · v2 · 149 B · 刚刚 发布会.pptx 助手生成 · v1 · 56.2 KB · 刚刚 销售汇总.xlsx 助手生成 · v1 · 6.5 KB · 刚刚 会议纪要.pdf 助手"
     },
     {
       "name": "file detail: storage and knowledge states stay separate and concise",
@@ -164,7 +164,7 @@
     {
       "name": "shell: the top bar never overlaps the page content",
       "ok": true,
-      "detail": "{\"header\":56,\"title\":96}"
+      "detail": "{\"header\":56,\"title\":113}"
     },
     {
       "name": "sidebar: collapses (no rail left) and the top bar offers the opener",
@@ -179,7 +179,7 @@
     {
       "name": "sidebar: no interface / jargon wording",
       "ok": true,
-      "detail": "Workroom 新对话 搜索 个人知识库 文件库 项目 最近对话 林 林夏 林夏 的工作区"
+      "detail": "Workroom 新对话 搜索 Ctrl K 个人知识库 文件库 项目 还没有项目 最近对话 生成成果 林 林夏 林夏 的工作区"
     },
     {
       "name": "1366: preview column is within 380–680px and the page does not overflow",
@@ -259,7 +259,7 @@
     {
       "name": "stats: demo organisation seeded",
       "ok": true,
-      "detail": "demo org org_0mwbmnqox286646be10847fef flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2255 runs, 11477 ledger rows (demo=1, simulated), 678 knowledge searches, 341 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8891 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
+      "detail": "demo org org_0mwbssd3x95a5b633beea6103 flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2255 runs, 11477 ledger rows (demo=1, simulated), 678 knowledge searches, 341 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8896 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
     },
     {
       "name": "stats: demo banner kept and 模拟 labels kept",
@@ -329,7 +329,7 @@
     {
       "name": "light: file detail secondary text and links pass AA",
       "ok": true,
-      "detail": "{\"worst\":5.59,\"n\":12}"
+      "detail": "{\"worst\":5.28,\"n\":25}"
     },
     {
       "name": "dark: reduced motion is honoured (panel animation ≤ 1ms)",
@@ -359,7 +359,7 @@
     {
       "name": "dark: file detail secondary text and links pass AA",
       "ok": true,
-      "detail": "{\"worst\":5.7,\"n\":12}"
+      "detail": "{\"worst\":5.54,\"n\":25}"
     }
   ]
 }

@@ -1,25 +1,25 @@
 {
-  "at": "2026-11-11T04:40:30.094Z",
+  "at": "2026-11-11T07:32:01.433Z",
   "results": [
     {
       "name": "density: members page shows fewer words than before",
       "ok": true,
-      "detail": "183 → 180"
+      "detail": "147 → 144"
     },
     {
       "name": "density: authz page shows fewer words than before",
       "ok": true,
-      "detail": "227 → 168"
+      "detail": "191 → 132"
     },
     {
       "name": "density: models page shows fewer words than before",
       "ok": true,
-      "detail": "219 → 198"
+      "detail": "183 → 162"
     },
     {
       "name": "density: sandbox providers page shows at least 25% fewer words",
       "ok": true,
-      "detail": "843 → 577"
+      "detail": "807 → 526"
     },
     {
       "name": "density: no inspected page got wordier",
@@ -74,12 +74,12 @@
     {
       "name": "select: a 30+ item list scrolls inside the popover and stays inside the viewport (1440×900)",
       "ok": true,
-      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.1383514404297,\"h\":351.9999542236328}"
+      "detail": "{\"sh\":1164,\"ch\":350,\"y\":227.75140380859375,\"h\":352}"
     },
     {
       "name": "select @390: the popover is opaque and inside the viewport",
       "ok": true,
-      "detail": "{\"x\":16,\"y\":304.5512390136719,\"width\":192,\"height\":352.0000305175781}"
+      "detail": "{\"x\":16,\"y\":305,\"width\":192,\"height\":352}"
     },
     {
       "name": "select @390: no horizontal scroll on the page",
@@ -152,7 +152,7 @@
       "detail": "{\"x\":54,\"y\":531,\"width\":320,\"height\":71.5}"
     },
     {
-      "name": "settings: left navigation with six entries and a content column ≤ 720px",
+      "name": "settings: left navigation with seven entries (round 9 added 安全) and a content column ≤ 720px",
       "ok": true,
       "detail": "w=720"
     },
