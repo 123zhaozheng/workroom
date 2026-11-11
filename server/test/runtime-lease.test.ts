@@ -77,9 +77,9 @@ test("wake state: rt_space_runtime mirrors onWake (active while a run works, ina
 		await waitFor(() => t.app.ctx.db.get<any>("SELECT wake_active FROM rt_space_runtime WHERE space_id = ?", c.spaceId)?.wake_active === 1, { what: "active" });
 		await waitFor(async () => (await t.json("GET", `/api/conversations/${c.spaceId}/${c.conversationId}/submissions/${r.submissionId}`, { token: a.token })).status === "done");
 		await waitFor(() => t.app.ctx.db.get<any>("SELECT wake_active FROM rt_space_runtime WHERE space_id = ?", c.spaceId)?.wake_active === 0, { what: "inactive" });
-		// app.sqlite holds no conversation facts beyond the catalog's ACL/display columns
+		// app.sqlite holds no conversation facts beyond the catalog's ACL/display columns (round 9: + soft-delete markers deleted_at/deleted_by)
 		const cols = t.app.ctx.db.all<{ name: string }>("PRAGMA table_info(rt_conversations)").map((x) => x.name).sort();
-		assert.deepEqual(cols, ["archived", "conversation_id", "created_at", "created_by", "kind", "project_id", "space_id", "title", "updated_at"]);
+		assert.deepEqual(cols, ["archived", "conversation_id", "created_at", "created_by", "deleted_at", "deleted_by", "kind", "project_id", "space_id", "title", "updated_at"]);
 	} finally {
 		await t.dispose();
 	}
