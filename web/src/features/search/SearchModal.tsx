@@ -10,7 +10,7 @@ import type { ConversationSummary } from "@shared/chat";
 import { ApiError, get } from "@/lib/api";
 import { useMedia } from "@/lib/prefs";
 import { useApi } from "@/lib/useApi";
-import { cn, fullTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/misc";
 import { convKey, convPath, normalizeProject } from "@/features/projects/model";
@@ -153,7 +153,6 @@ export function SearchModal({ open, onOpenChange }: { open: boolean; onOpenChang
 							className="h-14 min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle"
 						/>
 						{loading && trimmed ? <Spinner /> : null}
-						<kbd className="hidden rounded border border-border px-1.5 text-xs text-fg-subtle sm:inline">Esc</kbd>
 						<D.Close className="rounded-md px-2 py-1 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring sm:hidden">取消</D.Close>
 					</div>
 
@@ -174,7 +173,6 @@ export function SearchModal({ open, onOpenChange }: { open: boolean; onOpenChang
 										<MessageSquare className="size-5" />
 									</span>
 									<p className="text-sm font-medium">{showingRecent ? "还没有对话" : `没有找到“${trimmed}”`}</p>
-									<p className="mt-1 text-sm text-fg-muted">{showingRecent ? "开始一个新对话后，可以在这里快速找回。" : "换个关键词试试，或者少输入几个字。"}</p>
 								</div>
 							) : (
 								<>
@@ -190,18 +188,6 @@ export function SearchModal({ open, onOpenChange }: { open: boolean; onOpenChang
 						{wide ? <PreviewPane hit={current} query={trimmed} /> : null}
 					</div>
 
-					<div className="hidden shrink-0 items-center gap-4 border-t border-border px-4 py-2 text-xs text-fg-muted [@media(hover:hover)]:flex">
-						<span>
-							<kbd className="rounded border border-border px-1">↑</kbd> <kbd className="rounded border border-border px-1">↓</kbd> 选择
-						</span>
-						<span>
-							<kbd className="rounded border border-border px-1">Enter</kbd> 打开
-						</span>
-						<span>
-							<kbd className="rounded border border-border px-1">Esc</kbd> 关闭
-						</span>
-						{search.indexedThrough && !showingRecent ? <span className="ml-auto hidden sm:inline">搜索范围更新到 {fullTime(search.indexedThrough)}</span> : null}
-					</div>
 				</D.Content>
 			</D.Portal>
 		</D.Root>
@@ -261,7 +247,7 @@ function PreviewPane({ hit, query }: { hit?: SearchHitDTO; query: string }) {
 	return (
 		<aside data-testid="search-preview" aria-label="对话预览" className="wr-scroll hidden min-w-0 flex-1 overflow-y-auto bg-surface-2/40 p-4 lg:block">
 			{!hit ? (
-				<p className="py-16 text-center text-sm text-fg-subtle">选中一个结果，在这里预览。</p>
+				<span className="sr-only">未选中结果</span>
 			) : (
 				<>
 					<h3 className="mb-3 truncate text-sm font-medium">

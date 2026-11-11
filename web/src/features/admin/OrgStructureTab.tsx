@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
-import { Help, useAct } from "@/features/admin/common";
+import { useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 
@@ -61,7 +61,7 @@ export function OrgStructure() {
 	const move = (id: string, to: string) => {
 		const d = byId.get(id);
 		if (!d || (d.parentId ?? "") === to || descendants(id).has(to)) return;
-		void run(() => patch(`/admin/departments/${id}`, { parentId: to || null }), `已把「${d.name}」移动到${to ? `「${byId.get(to)?.name}」下` : "顶级"}`);
+		void run(() => patch(`/admin/departments/${id}`, { parentId: to || null }));
 	};
 	const selected = sel ? byId.get(sel) : undefined;
 	const canCreate = (parent ? byId.get(parent)?.can.manage : res.data?.canCreateRoot) ?? false;
@@ -119,7 +119,7 @@ export function OrgStructure() {
 						className="mb-4 flex flex-wrap items-center gap-2"
 						onSubmit={(e) => {
 							e.preventDefault();
-							void run(() => post("/admin/departments", { name, ...(parent ? { parentId: parent } : {}) }).then(() => setName("")), "部门已创建");
+							void run(() => post("/admin/departments", { name, ...(parent ? { parentId: parent } : {}) }).then(() => setName("")));
 						}}
 					>
 						<Input value={name} onChange={(e) => setName(e.target.value)} placeholder="新部门名称" aria-label="新部门名称" className="h-8 max-w-xs text-sm" />
@@ -135,8 +135,6 @@ export function OrgStructure() {
 							<Plus />
 							新建部门
 						</Button>
-						<span className="flex-1" />
-						<Help label="操作提示">拖动部门到另一个部门上即可移动，也可以在右侧选中部门后用「上级部门」调整。部门管理员只管理本部门及其子部门，且不能授予自己没有的权限。</Help>
 					</form>
 				) : null}
 				{note}
@@ -176,7 +174,7 @@ export function OrgStructure() {
 	);
 }
 
-function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChanged, onGone, onSelect, kids }: { dept: DeptNode; deps: DeptNode[]; descendants: Set<string>; members: MemberDTO[]; busy: boolean; run: (fn: () => Promise<unknown>, ok?: string) => Promise<void>; onChanged: () => void; onGone: () => void; onSelect: (id: string) => void; kids: DeptNode[] }) {
+function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChanged, onGone, onSelect, kids }: { dept: DeptNode; deps: DeptNode[]; descendants: Set<string>; members: MemberDTO[]; busy: boolean; run: (fn: () => Promise<unknown>) => Promise<void>; onChanged: () => void; onGone: () => void; onSelect: (id: string) => void; kids: DeptNode[] }) {
 	const mem = useApi<{ members: DepartmentMemberDTO[] }>(dept.can.view ? `/admin/departments/${dept.id}/members` : null);
 	const inner = useAct(() => (mem.reload(), onChanged()));
 	const { ask, dialog } = useConfirm();
@@ -189,14 +187,14 @@ function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChange
 	const addAdmin = async () => {
 		const who = all.find((m) => m.userId === adminPick)?.name ?? "对方";
 		const ok = await ask({ title: `让 ${who} 成为「${dept.name}」的部门管理员？`, consequence: `${who} 将能管理「${dept.name}」及其子部门：查看和停用成员、邀请新成员、维护子部门与部门知识库。`, items: ["只在这个部门范围内生效", "不能授予自己没有的权限"], confirmLabel: "设为部门管理员" });
-		if (ok) await run(() => post("/admin/role-assignments", { subject: { kind: "user", id: adminPick }, roleId: "builtin:dept_admin", scope: { kind: "department", id: dept.id } }).then(() => setAdminPick("")), "已指定部门管理员");
+		if (ok) await run(() => post("/admin/role-assignments", { subject: { kind: "user", id: adminPick }, roleId: "builtin:dept_admin", scope: { kind: "department", id: dept.id } }).then(() => setAdminPick("")));
 	};
 	return (
 		<div className="space-y-6 rounded-xl border border-border bg-surface p-4" data-testid="dept-detail" data-dept={dept.id}>
 			<div className="flex flex-wrap items-center gap-2">
 				{dept.can.manage ? <Input value={rename} onChange={(e) => setRename(e.target.value)} className="h-8 max-w-[240px] text-base font-semibold" aria-label="部门名称" /> : <h3 className="text-base font-semibold">{dept.name}</h3>}
 				{dept.can.manage && rename.trim() && rename !== dept.name ? (
-					<Button size="sm" variant="primary" disabled={busy} data-testid="dept-rename" onClick={() => run(() => patch(`/admin/departments/${dept.id}`, { name: rename }), "已重命名")}>
+					<Button size="sm" variant="primary" disabled={busy} data-testid="dept-rename" onClick={() => run(() => patch(`/admin/departments/${dept.id}`, { name: rename }))}>
 						重命名
 					</Button>
 				) : null}
@@ -208,7 +206,7 @@ function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChange
 						variant="ghost"
 						disabled={busy}
 						data-testid="dept-delete"
-						onClick={async () => (await ask({ title: `删除部门「${dept.name}」？`, consequence: "子部门会上移一级；这个部门范围内的角色授权会被移除，相关成员会立即失去这些权限。成员本人仍留在组织中。", confirmLabel: "删除部门", danger: true })) && run(async () => (await del(`/admin/departments/${dept.id}`), onGone()), "部门已删除")}
+						onClick={async () => (await ask({ title: `删除部门「${dept.name}」？`, consequence: "子部门会上移一级；这个部门范围内的角色授权会被移除，相关成员会立即失去这些权限。成员本人仍留在组织中。", confirmLabel: "删除部门", danger: true })) && run(async () => (await del(`/admin/departments/${dept.id}`), onGone()))}
 					>
 						<Trash2 />
 						删除
@@ -276,7 +274,7 @@ function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChange
 							<Badge tone="info" className="h-6 gap-1.5 pr-1">
 								{a.name}
 								{dept.can.assign ? (
-									<button type="button" aria-label={`撤销 ${a.name} 的部门管理员`} className="rounded px-1 hover:bg-info/20" data-testid="dept-admin-remove" onClick={() => run(() => del(`/admin/role-assignments/${a.assignmentId}`), "已撤销部门管理员")}>
+									<button type="button" aria-label={`撤销 ${a.name} 的部门管理员`} className="rounded px-1 hover:bg-info/20" data-testid="dept-admin-remove" onClick={() => run(() => del(`/admin/role-assignments/${a.assignmentId}`))}>
 										×
 									</button>
 								) : null}
@@ -319,7 +317,7 @@ function DeptDetail({ dept, deps, descendants, members: all, busy, run, onChange
 										</option>
 									))}
 							</Select>
-							<Button size="sm" disabled={busy || to === (dept.parentId ?? "")} data-testid="dept-move" onClick={() => run(() => patch(`/admin/departments/${dept.id}`, { parentId: to || null }), "已移动")}>
+							<Button size="sm" disabled={busy || to === (dept.parentId ?? "")} data-testid="dept-move" onClick={() => run(() => patch(`/admin/departments/${dept.id}`, { parentId: to || null }))}>
 								移动
 							</Button>
 						</div>

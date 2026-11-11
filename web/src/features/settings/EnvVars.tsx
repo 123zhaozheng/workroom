@@ -11,12 +11,10 @@ import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { Help } from "@/components/ui/help";
 import { Switch } from "@/components/ui/switch";
 import { useConfirm } from "@/features/admin/confirm";
 
 export const ENV_SCOPE_LABEL: Record<EnvScope, string> = { org: "组织", project: "项目", user: "个人", conversation: "本对话" };
-export const ENV_TIMING_NOTE = "修改只对之后启动的命令生效，正在运行的进程不受影响。";
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", compact, onChanged }: { scope: EnvScope; scopeRef: string; editable: boolean; testId?: string; compact?: boolean; onChanged?: () => void }) {
@@ -40,7 +38,7 @@ export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", 
 	};
 	const save = async () => {
 		const n = name.trim();
-		if (!NAME_RE.test(n)) return setErr("变量名只能包含字母、数字和下划线，且不能以数字开头（最长 64 个字符）。");
+		if (!NAME_RE.test(n)) return setErr("变量名只能含字母、数字和下划线，不能以数字开头");
 		setBusy(true);
 		setErr(undefined);
 		try {
@@ -176,7 +174,7 @@ export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", 
 				</form>
 			) : (
 				<p data-testid="env-readonly" className="text-xs text-fg-muted">
-					你只能查看这里的变量，修改需要相应的管理权限。
+					只读
 				</p>
 			)}
 			{err ? (
@@ -184,12 +182,9 @@ export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", 
 					{err}
 				</p>
 			) : null}
-			<div className="flex items-center gap-1 text-xs text-fg-muted" data-testid="env-note">
-				<span>不要在这里放密钥。</span>
-				<Help label="变量生效说明" side="top">
-					{ENV_TIMING_NOTE}需要密钥时请使用「凭据」。
-				</Help>
-			</div>
+			<p className="text-xs text-fg-muted" data-testid="env-note">
+				不要在这里放密钥。
+			</p>
 			{dialog}
 		</div>
 	);

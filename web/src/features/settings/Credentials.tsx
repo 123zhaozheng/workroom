@@ -9,7 +9,6 @@ import { fullTime, relTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Section } from "@/features/admin/common";
-import { Help } from "@/components/ui/help";
 import { useConfirm } from "@/features/admin/confirm";
 import { SecretInput } from "@/features/chat/CredentialRequestCard";
 
@@ -42,7 +41,7 @@ export function CredentialsSection() {
 		}
 	};
 	return (
-		<Section title="我的凭据" testId="credentials-section" action={<Help label="凭据说明">助手请求并经你同意保存的密钥。这里只显示信息，永远不会显示密钥本身。</Help>}>
+		<Section title="我的凭据" testId="credentials-section">
 			{store.data && !store.data.store.available ? (
 				<p data-testid="credentials-no-store" className="mb-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
 					未配置密钥存储，暂不能保存凭据。
@@ -162,7 +161,7 @@ function RotateForm({ id, onDone, onCancel }: { id: string; onDone: () => void; 
 			}}
 		>
 			<SecretInput inputRef={ref} id={`${uid}-rotate`} label="新的密钥" testId="credential-rotate-secret" disabled={busy} />
-			<p className="text-xs text-fg-muted">旧的密钥会立即失效。不要在聊天里粘贴密钥。</p>
+			<p className="text-xs text-fg-muted">旧密钥会立即失效。</p>
 			{err ? (
 				<p role="alert" className="text-sm text-danger">
 					{err}

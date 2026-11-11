@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Help } from "@/components/ui/help";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { FindingList, SCOPE, StateBadge, permText, useAct, useMarketMe } from "./common";
@@ -149,13 +148,7 @@ function UploadPanel({ onUploaded, skillId }: { onUploaded: () => void; skillId?
 					<Upload className="size-5" />
 				</div>
 				<div className="text-[14px] font-medium">把技能包（.zip）拖到这里上传</div>
-				<p className="flex max-w-lg items-center justify-center gap-1 text-xs text-fg-muted">
-					个人使用无需审核，分享给项目、部门或组织需提交审核。
-					<Help label="技能包说明" side="top">
-						包里需要 SKILL.md（含 name、description 的 frontmatter），可带 scripts/、references/、assets/。上传后自动检查。
-						{lim ? ` 上限：${Math.round(lim.uploadBytes / 1048576)} MB、${lim.files} 个文件。` : ""}
-					</Help>
-				</p>
+				{lim ? <p className="text-xs text-fg-muted">上限 {Math.round(lim.uploadBytes / 1048576)} MB · {lim.files} 个文件</p> : null}
 				<div className="mt-1 flex flex-wrap justify-center gap-2">
 					<Button size="sm" disabled={busy} onClick={() => zipRef.current?.click()} data-testid="upload-zip">
 						<FileArchive />
@@ -227,12 +220,12 @@ function VersionSubmit({ skill, onChanged }: { skill: SkillDTO; onChanged: () =>
 	return (
 		<div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-2" data-testid="version-submit">
 			<Send className="size-4 text-fg-muted" />
-			<span className="text-sm">要让项目、部门或整个组织使用？提交一个版本给审核员。</span>
+			<span className="text-sm">分享给项目、部门或组织</span>
 			<Button size="sm" onClick={() => (setVersionNo(skill.latestVersionNo), setOpen(true))} data-testid="submit-review">
 				提交审核…
 			</Button>
 			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent title="提交审核" description="审核通过并发布后，才会出现在技能市场；审核员看到的是你提交的这个不可变版本。">
+				<DialogContent title="提交审核">
 					<div className="space-y-3 text-sm">
 						<div className="grid grid-cols-2 gap-3">
 							<div>
@@ -260,7 +253,7 @@ function VersionSubmit({ skill, onChanged }: { skill: SkillDTO; onChanged: () =>
 						</div>
 						{me.data && !canOrg ? (
 							<p className="text-xs text-fg-muted" data-testid="submit-scope-note">
-								你没有向整个组织发布的权限；可以提交到你有权限的部门或你可编辑的项目。
+								无权发布到整个组织
 							</p>
 						) : null}
 						{scope === "department" || scope === "project" ? (
@@ -444,7 +437,7 @@ function CreateSkillDialog({ open, onOpenChange, onCreated }: { open: boolean; o
 	});
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="新建技能" description="可执行技能请从成功的任务整理（会附带脚本与验证）。" className="max-w-lg">
+			<DialogContent title="新建技能" className="max-w-lg">
 				<div className="space-y-3">
 					<div>
 						<Label htmlFor="sn">名称</Label>
@@ -453,8 +446,8 @@ function CreateSkillDialog({ open, onOpenChange, onCreated }: { open: boolean; o
 					<div>
 						<Label htmlFor="sk">类型</Label>
 						<Select id="sk" value={kind} onChange={(e) => setKind(e.target.value as "prompt" | "context")} className="w-full">
-							<option value="prompt">{KIND.prompt.label}：{KIND.prompt.hint}</option>
-							<option value="context">{KIND.context.label}：{KIND.context.hint}</option>
+							<option value="prompt">{KIND.prompt.label}</option>
+							<option value="context">{KIND.context.label}</option>
 						</Select>
 					</div>
 					<div>

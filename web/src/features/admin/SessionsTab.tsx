@@ -31,7 +31,7 @@ export function Sessions() {
 							{s.revokedAt ? (
 								<Badge>已退出</Badge>
 							) : !s.current ? (
-								<Button size="sm" disabled={busy} onClick={() => run(() => del(`/admin/sessions/${s.id}`), "已退出该设备，它的登录立即失效")}>
+								<Button size="sm" disabled={busy} onClick={() => run(() => del(`/admin/sessions/${s.id}`))}>
 									退出
 								</Button>
 							) : null}

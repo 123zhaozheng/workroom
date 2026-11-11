@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T09:01:20.171Z",
+  "at": "2026-11-11T12:51:16.882Z",
   "results": [
     {
       "name": "seed: owner, departments, members, roles, two model services and a pending skill submission exist",
@@ -322,7 +322,7 @@
       "detail": "weekly-report：把本周的工作整理成周报。当用户要求写周报、汇总本周进展时使用。 需要的权限： 写入文件（新增） 运行代码（新增） 写入文件：把结果保存到文件库（这一版新增） 运行代码：在工作区里执行技能自带的脚本（这一版新增）"
     },
     {
-      "name": "review: each decision states its consequence next to the button",
+      "name": "review [round 11]: the decision bar is just the three buttons (批准并发布 / 要求修改 / 驳回) — no consequence sentence next to each; the confirm dialog still states it",
       "ok": true,
       "detail": ""
     },
@@ -389,7 +389,7 @@
     {
       "name": "dark mode: roles page is dark and its text keeps >= 4.5:1 contrast",
       "ok": true,
-      "detail": "51 texts, min 4.83 "
+      "detail": "41 texts, min 4.83 "
     },
     {
       "name": "dark mode: models page is dark and its text keeps >= 4.5:1 contrast",

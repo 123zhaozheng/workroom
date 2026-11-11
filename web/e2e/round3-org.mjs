@@ -110,7 +110,7 @@ try {
 	await member.p.waitForSelector('[data-testid="browser-session"]', { timeout: 20000 });
 	await member.p.waitForSelector('[data-testid="browser-screenshot"]');
 	const vText = await member.p.locator('[data-testid="browser-session"]').innerText();
-	check("M11-B: a viewer can watch the live page but gets no take-over button (same rule as preview)", (await member.p.locator('[data-testid="browser-takeover"]').count()) === 0 && vText.includes("你只能观看"));
+	check("M11-B: a viewer can watch the live page but gets no take-over button (same rule as preview)", (await member.p.locator('[data-testid="browser-takeover"]').count()) === 0 && vText.includes("只能观看"));
 	const sess = (await (await member.p.request.get(`${base}/api/work/${projChat.split("/c/")[1]}`)).json()).work.browserSessions[0];
 	const tk = await member.p.request.post(`${base}/api/browser-sessions/${sess.id}/takeover`);
 	check("M11-B: the server refuses a viewer's take-over anyway", tk.status() === 403, `status=${tk.status()}`);

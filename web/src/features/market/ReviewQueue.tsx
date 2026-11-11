@@ -74,18 +74,12 @@ export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: nu
 				{sel ? (
 					<ReviewScreen id={sel} me={me} onBack={() => setSel(undefined)} onDecided={() => (list.reload(), setSel(undefined))} />
 				) : (
-					<div className="hidden rounded-xl border border-dashed border-border-strong p-10 text-center text-sm text-fg-muted lg:block">从左侧选一项开始审核。</div>
+					<div className="hidden rounded-xl border border-dashed border-border-strong p-10 text-center text-sm text-fg-muted lg:block"></div>
 				)}
 			</main>
 		</div>
 	);
 }
-
-const CONSEQUENCE = {
-	approve: "立即发布，范围内的成员可以安装使用。",
-	request_changes: "退回给提交人修改，这个版本暂不发布。",
-	reject: "不发布；提交人需要上传新版本才能再次申请。",
-} as const;
 
 function ReviewScreen({ id, me, onBack, onDecided }: { id: string; me: MarketMeDTO; onBack: () => void; onDecided: () => void }) {
 	const d = useApi<{ submission: SubmissionDetailDTO }>(`/market/submissions/${id}`);
@@ -265,17 +259,14 @@ function ReviewScreen({ id, me, onBack, onDecided }: { id: string; me: MarketMeD
 									{isSelf ? (
 										<p className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" data-testid="self-review-note">
 											<TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-											<span>这是你自己提交的内容，不能自己审核，请另一位审核员处理。{me.canManageMarket ? "市场管理员可以勾选下方「强制通过」，需写明理由，并会记入审计。" : ""}</span>
+											<span>这是你自己提交的内容，不能自己审核。</span>
 										</p>
 									) : !s.canDecide ? (
 										<p className="text-sm text-warning">这一项不在你的审核范围内。</p>
 									) : null}
 									<div>
 										<Label htmlFor="cm">评语</Label>
-										<Textarea id="cm" rows={3} value={comment} onChange={(e) => setComment(e.target.value)} disabled={!s.canDecide && !(isSelf && me.canManageMarket)} data-testid="decision-comment" aria-describedby="cm-hint" />
-										<p id="cm-hint" className="mt-1 text-xs text-fg-muted">
-											驳回和要求修改必须填写，评语会发给提交人。
-										</p>
+										<Textarea id="cm" rows={3} value={comment} onChange={(e) => setComment(e.target.value)} disabled={!s.canDecide && !(isSelf && me.canManageMarket)} data-testid="decision-comment" />
 									</div>
 									{isSelf && me.canManageMarket ? (
 										<label className="flex items-center gap-2 text-sm">
@@ -294,21 +285,18 @@ function ReviewScreen({ id, me, onBack, onDecided }: { id: string; me: MarketMeD
 												<Check />
 												批准并发布
 											</Button>
-											<span className="min-w-0 flex-1 basis-48 text-xs text-fg-muted">{CONSEQUENCE.approve}</span>
 										</div>
 										<div className="flex flex-wrap items-center gap-3">
 											<Button className="w-32" disabled={busy || !s.canDecide || needComment} onClick={() => void decide("request_changes")} data-testid="request-changes">
 												<MessageSquareWarning />
 												要求修改
 											</Button>
-											<span className="min-w-0 flex-1 basis-48 text-xs text-fg-muted">{CONSEQUENCE.request_changes}</span>
 										</div>
 										<div className="flex flex-wrap items-center gap-3">
 											<Button variant="danger" className="w-32" disabled={busy || !s.canDecide || needComment} onClick={() => void decide("reject")} data-testid="reject">
 												<X />
 												驳回
 											</Button>
-											<span className="min-w-0 flex-1 basis-48 text-xs text-fg-muted">{CONSEQUENCE.reject}</span>
 										</div>
 									</div>
 								</div>

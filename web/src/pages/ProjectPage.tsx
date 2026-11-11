@@ -33,7 +33,7 @@ export default function ProjectPage() {
 			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
 				<Page>
 					<Loadable state={projects} what="项目">
-						{!project ? <EmptyState icon={<FolderOpen />} title="找不到这个项目">你可能没有访问权限，或已被移出项目。</EmptyState> : <LegacyProject project={project} />}
+						{!project ? <EmptyState icon={<FolderOpen />} title="找不到这个项目" /> : <LegacyProject project={project} />}
 					</Loadable>
 				</Page>
 			</div>
@@ -74,7 +74,7 @@ function LegacyProject({ project }: { project: UiProject }) {
 					<Composer variant="home" spaceId={spaceId} projectId={project.id} placeholder={`在「${project.name}」中开始新对话`} onSubmit={(v) => start(v, { projectId: project.id, spaceId })} />
 				</div>
 			) : (
-				<p className="mb-8 rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-fg-muted">你是查看者：可以查看项目内容，但不能发起对话或修改文件。</p>
+				<p className="mb-8 text-[13px] text-fg-muted">你是查看者 · 只读</p>
 			)}
 			<section data-testid="project-env" className="mb-8">
 				<h2 className="mb-2 text-[13px] font-medium text-fg-muted">环境变量</h2>

@@ -86,7 +86,7 @@ export function summarizeTurn(turn: AssistantTurn): TurnSummary {
 	const fileText = files ? ` · 生成 ${files} 个文件` : "";
 	// A stop (or a crash) cut steps off: they are not failures, and they are not re-run on their own. The completed ones stay.
 	if (stopped) {
-		const cut: TurnSummary["notes"] = [{ text: `${stopped} 步被中途截断，没有重做`, tone: "muted" }, ...notes];
+		const cut: TurnSummary["notes"] = [{ text: `${stopped} 步被截断`, tone: "muted" }, ...notes];
 		// Continued afterwards and answered: the turn is done, the cut-off step is only remarked on.
 		const verb = tools.some((t) => stepState(t) === "stopped" && /was aborted/.test(t.result?.text ?? "")) || tools.some((t) => t.approval?.status === "cancelled") ? "已停止" : "已中断";
 		return turn.answer ? { state: "done", text: `已完成 ${done} 步${fileText}`, notes: cut } : { state: "stopped", text: `${verb} · 已完成 ${done} 步${fileText}`, notes: cut };
@@ -232,7 +232,7 @@ function StepRow({ step, onOpenWork, initiallyOpen = false }: { step: Step; onOp
 							{step.approval.note ? `（${step.approval.note}）` : ""}
 						</div>
 					) : null}
-					{st === "stopped" ? <p className="text-fg-muted">这一步被截断（停止或进程中断），没有执行完；系统不会自动重做，是否再做一次由模型根据对话判断，或由你决定。</p> : outcome ? <p className={cn(st === "error" ? "text-danger" : "text-fg-muted")}>{outcome}</p> : st === "running" ? <p className="text-fg-muted">{view.running}…</p> : null}
+					{st === "stopped" ? <p className="text-fg-muted">这一步被截断，未执行完。</p> : outcome ? <p className={cn(st === "error" ? "text-danger" : "text-fg-muted")}>{outcome}</p> : st === "running" ? <p className="text-fg-muted">{view.running}…</p> : null}
 					{step.call.name === "delegate" && step.subagent?.task ? <p className="text-fg-muted">任务：{step.subagent.task}</p> : null}
 					{step.result?.diagnostics?.length ? (
 						<ul className="space-y-0.5 text-fg-muted">

@@ -13,9 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/overlay";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { Fold, Help, useAct } from "@/features/admin/common";
+import { Fold, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
-import { EffectiveView, ROLE_SHORT, RiskBadge, ScopePicker, baseRoleConfirm, groupLabel, permDesc, permLabel, roleGrantConfirm, rolePurpose, scopeText, useViewerPerms } from "@/features/admin/rbac-ui";
+import { EffectiveView, ROLE_SHORT, RiskBadge, ScopePicker, baseRoleConfirm, groupLabel, permDesc, permLabel, roleGrantConfirm, scopeText, useViewerPerms } from "@/features/admin/rbac-ui";
 
 const BASE_OPTIONS: [string, string][] = [
 	["owner", "组织所有者"],
@@ -33,11 +33,10 @@ export function MemberDetail({ userId, selfId, onClose, onChanged }: { userId: s
 	);
 }
 
-function H({ children, hint }: { children: string; hint?: string }) {
+function H({ children }: { children: string }) {
 	return (
 		<div className="mb-2 flex items-baseline gap-2">
 			<h3 className="text-sm font-medium">{children}</h3>
-			{hint ? <Help label={`${children}说明`} side="top">{hint}</Help> : null}
 		</div>
 	);
 }
@@ -69,26 +68,26 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 	const changeBase = async (to: string) => {
 		const c = baseRoleConfirm(name, baseKey, to);
 		if (c && !(await ask(c))) return;
-		await run(() => patch(`/admin/members/${userId}`, { role: to }), "基础角色已更新");
+		await run(() => patch(`/admin/members/${userId}`, { role: to }));
 	};
 	const assign = async () => {
 		const role = assignable.find((r) => r.id === pickedRole);
 		const c = roleGrantConfirm(name, role, scopeText(scope.kind === "org" ? { kind: "org" } : scope));
 		if (c && !(await ask(c))) return;
-		await run(() => post("/admin/role-assignments", { subject: { kind: "user", id: userId }, roleId: pickedRole, scope: scope.kind === "org" ? { kind: "org" } : scope }), "已授权");
+		await run(() => post("/admin/role-assignments", { subject: { kind: "user", id: userId }, roleId: pickedRole, scope: scope.kind === "org" ? { kind: "org" } : scope }));
 	};
 	const addGrant = async () => {
 		if (effect === "allow" && permDef && permDef.risk !== "normal") {
 			const ok = await ask({ title: `直接授予「${permLabel(permDef)}」？`, consequence: `${name} 将获得这项${permDef.risk === "critical" ? "高危" : "敏感"}权限，不依赖任何角色：${permDesc(permDef)}`, items: ["这条授权会写入审计日志", "可以随时在下方移除"], confirmLabel: "确认授予", danger: permDef.risk === "critical" });
 			if (!ok) return;
 		}
-		await run(() => put(`/admin/members/${userId}/grants`, { permission: perm, effect, scope: gscope.kind === "org" ? { kind: "org" } : gscope, reason: reason || undefined }).then(() => setReason("")), effect === "deny" ? "已禁止" : "已授予");
+		await run(() => put(`/admin/members/${userId}/grants`, { permission: perm, effect, scope: gscope.kind === "org" ? { kind: "org" } : gscope, reason: reason || undefined }).then(() => setReason("")));
 	};
 	const disable = async () => {
-		if (await ask({ title: `停用 ${name}？`, consequence: `${name} 会立即退出所有登录设备，无法再登录；账号和数据保留，随时可以恢复。`, confirmLabel: "停用账号", danger: true })) await run(() => post(`/admin/members/${userId}/disable`), `已停用 ${name}，其全部登录已退出`);
+		if (await ask({ title: `停用 ${name}？`, consequence: `${name} 会立即退出所有登录设备，无法再登录；账号和数据保留，随时可以恢复。`, confirmLabel: "停用账号", danger: true })) await run(() => post(`/admin/members/${userId}/disable`));
 	};
 	const remove = async () => {
-		if (await ask({ title: `将 ${name} 移出组织？`, consequence: `${name} 将失去对本组织的全部访问。`, items: ["角色、部门和项目成员关系会被清除", "TA 创建的分享链接会失效", "要回来需要重新邀请，之前的角色不会恢复"], confirmLabel: "移出组织", danger: true })) await run(async () => (await del(`/admin/members/${userId}`), onClose()), "已移出组织");
+		if (await ask({ title: `将 ${name} 移出组织？`, consequence: `${name} 将失去对本组织的全部访问。`, items: ["角色、部门和项目成员关系会被清除", "TA 创建的分享链接会失效", "要回来需要重新邀请，之前的角色不会恢复"], confirmLabel: "移出组织", danger: true })) await run(async () => (await del(`/admin/members/${userId}`), onClose()));
 	};
 
 	return (
@@ -120,12 +119,12 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 											</option>
 										))}
 									</Select>
-									{!a.can.assign ? <span className="text-xs text-fg-muted">你没有修改该成员角色的权限（或其权限高于你）。</span> : null}
+									{!a.can.assign ? <span className="text-xs text-fg-muted">无权修改</span> : null}
 								</div>
 							</section>
 
 							<section aria-label="角色">
-								<H hint="在基础角色之上叠加，可限定范围">附加角色</H>
+								<H>附加角色</H>
 								<ul className="divide-y divide-border rounded-lg border border-border" data-testid="detail-roles">
 									{a.assignments.map((x) => {
 										const base = /^builtin:(owner|admin|member|guest)$/.test(x.roleId) && x.scope.kind === "org";
@@ -137,7 +136,7 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 													{x.via === "department" ? ` · 来自部门「${x.viaName}」` : x.via === "group" ? ` · 来自用户组「${x.viaName}」` : base ? " · 基础角色" : ""}
 												</span>
 												{x.via === "direct" && !base ? (
-													<Button size="sm" variant="ghost" disabled={busy} data-testid="detail-role-revoke" onClick={() => run(() => del(`/admin/role-assignments/${x.id}`), "已撤销")}>
+													<Button size="sm" variant="ghost" disabled={busy} data-testid="detail-role-revoke" onClick={() => run(() => del(`/admin/role-assignments/${x.id}`))}>
 														<Trash2 />
 														撤销
 													</Button>
@@ -160,12 +159,10 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 											<Plus />
 											授予角色
 										</Button>
-										{assignable.find((r) => r.id === pickedRole) ? <p className="basis-full text-xs text-fg-muted">{rolePurpose(assignable.find((r) => r.id === pickedRole)!)}</p> : null}
 									</div>
 								) : null}
 								<div className="mt-3">
 									<Fold title={`单独授权或禁止（${a.grants.length}）`} testId="detail-grants-fold" defaultOpen={a.grants.length > 0}>
-										<p className="mb-2 text-xs text-fg-muted">只对这个人生效；「禁止」优先于任何角色，组织所有者不受影响。</p>
 										{a.grants.length ? (
 											<ul className="mb-3 divide-y divide-border rounded-lg border border-border" data-testid="detail-grants">
 												{a.grants.map((g) => (
@@ -179,7 +176,7 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 															</span>
 														</span>
 														{a.can.grant ? (
-															<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/members/${userId}/grants/${g.id}`), "已移除")}>
+															<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/members/${userId}/grants/${g.id}`))}>
 																<Trash2 />
 																移除
 															</Button>
@@ -243,7 +240,7 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 							</section>
 
 							<section aria-label="有效权限">
-								<H hint="角色、部门和单独授权合在一起的结果">实际拥有的权限</H>
+								<H>实际拥有的权限</H>
 								<EffectiveView effective={a.effective} testId="detail-effective" collapsible />
 								{a.scoped.length ? (
 									<div className="mt-3 text-xs" data-testid="detail-scoped">
@@ -271,7 +268,7 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 													{s.lastSeenAt ? ` · 最近 ${relTime(s.lastSeenAt)}` : ""}
 												</span>
 												{!s.current ? (
-													<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/sessions/${s.id}`), "已退出该设备")}>
+													<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/sessions/${s.id}`))}>
 														退出
 													</Button>
 												) : (
@@ -292,7 +289,7 @@ function DetailBody({ userId, selfId, onClose, onChanged }: { userId: string; se
 												停用账号
 											</Button>
 										) : (
-											<Button size="sm" disabled={busy} data-testid="detail-enable" onClick={() => run(() => post(`/admin/members/${userId}/enable`), "已恢复（之前的登录不会恢复，需要重新登录）")}>
+											<Button size="sm" disabled={busy} data-testid="detail-enable" onClick={() => run(() => post(`/admin/members/${userId}/enable`))}>
 												<RotateCcw />
 												恢复账号
 											</Button>

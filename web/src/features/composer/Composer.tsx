@@ -253,7 +253,7 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 			failedSend.current = { sig, requestId };
 			const net = e instanceof ApiError ? e.status === 0 || e.code === "network" : e instanceof TypeError;
 			setFailedNet(net);
-			setErr(net ? "没有发出去：网络连接不可用。内容还在输入框里，网络恢复后点「重试」。" : errorText(e));
+			setErr(net ? "网络不可用，没有发出 · 内容还在输入框" : errorText(e));
 		} finally {
 			setSending(false);
 			ta.current?.focus();
@@ -443,7 +443,7 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 					onCompositionStart={() => (composing.current = true)}
 					onCompositionEnd={() => (composing.current = false)}
 					onBlur={() => setTimeout(() => setSlash({ open: false, index: 0 }), 120)}
-					placeholder={disabled ? disabledReason : (placeholder ?? (busy ? "继续输入，回车发送；当前任务结束后会自动处理" : "说说要完成的事"))}
+					placeholder={disabled ? disabledReason : (placeholder ?? (busy ? "继续输入…" : "说说要完成的事"))}
 					className="block max-h-[240px] min-h-[48px] w-full resize-none bg-transparent px-1 text-base leading-6 text-fg outline-none placeholder:text-fg-subtle disabled:cursor-not-allowed"
 				/>
 				<div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-2">

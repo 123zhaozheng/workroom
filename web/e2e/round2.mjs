@@ -90,12 +90,12 @@ try {
 	await sendMessage(page, "[[slow 20000]] 这一条会被我取消");
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 10000 });
 	await page.click('[data-testid="stop"]');
-	await page.waitForSelector('[data-testid="run-bar"][data-status="aborted"]', { timeout: 15000 });
+	await page.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: 15000 });
 	await page.reload();
-	await page.waitForSelector('[data-testid="message-outcome"]', { timeout: 15000 });
-	const oc = await last(page, '[data-testid="message-outcome"]').innerText();
-	check("per-message outcome survives reload on the exact message (已停止 — the message was applied, then stopped; round 10 reworded 未应用/没有得到回复)", /已停止/.test(oc) && !/未应用|没有得到回复|未送达/.test(oc), oc);
-	await last(page, '[data-testid="message-outcome"]').scrollIntoViewIfNeeded();
+	await page.waitForSelector('[data-testid="user-message"]', { timeout: 15000 });
+	await sleep(600);
+	const ocText = await last(page, '[data-testid="user-message"]').innerText();
+	check("after a stop (and a reload) the message simply stays, with no outcome line, run bar, 继续 or stop note — 停止就停止 (round 11 simplification; the old 已停止 label is gone)", ocText.includes("这一条会被我取消") && !/已停止|未应用|没有得到回复|未送达/.test(ocText) && (await page.locator('[data-testid="message-outcome"], [data-testid="run-bar"], [data-testid="continue"], [data-testid="stop-note"]').count()) === 0, ocText.replace(/\s+/g, " "));
 	await shot(page, "1440-message-outcome");
 
 	// ---------------------------------------------------------------- 待核对 reconcile card (A)

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T10:57:32.147Z",
+  "at": "2026-11-11T12:34:31.805Z",
   "results": [
     {
       "name": "A home: cloud button next to the composer, aria-label '执行环境：<label>'",
@@ -27,12 +27,12 @@
       "detail": ""
     },
     {
-      "name": "A popover [round 10]: 云端沙箱 is the active option and names the backend 平台内置沙箱, with a state line",
+      "name": "A popover [round 11]: exactly two options — 云端沙箱 is the active one (the backend 平台内置沙箱 is only in the button's aria-label), no backend label",
       "ok": true,
-      "detail": "代码在哪里运行 云端沙箱 （当前） 平台内置沙箱 已就绪 工作目录 /work 本地环境 指你自己的电脑 即将推出 管理后台 › 沙箱"
+      "detail": "云端沙箱 （当前：平台内置沙箱） 本地环境"
     },
     {
-      "name": "A popover [round 10]: 本地环境 is disabled (aria-disabled) with 即将推出 and a tooltip text; no switch buttons, no chooser hint",
+      "name": "A popover [round 11]: 本地环境 is disabled (aria-disabled), just those four characters — no 即将推出, no explanation; no switch buttons, no chooser hint",
       "ok": true,
       "detail": ""
     },
@@ -42,7 +42,7 @@
       "detail": ""
     },
     {
-      "name": "A popover: admin sees 管理后台 › 沙箱 → admin 沙箱 tab",
+      "name": "A popover [round 11]: no admin link, no working directory (nothing but the two options)",
       "ok": true,
       "detail": ""
     },
@@ -54,7 +54,7 @@
     {
       "name": "A opening the popover creates no sandbox instance and sends no prepare",
       "ok": true,
-      "detail": "GET /api/conversations/sp_0mwc086z99af9db1fa2370d2e/new/environment"
+      "detail": "GET /api/conversations/sp_0mwc3ox0r1514fc9015d41515/new/environment"
     },
     {
       "name": "A plain chat: still no sandbox instance and no prepare request",
@@ -74,7 +74,7 @@
     {
       "name": "A phone 390: popover fits the screen (>=8px gutters)",
       "ok": true,
-      "detail": "{\"x\":42,\"y\":517.5537719726562,\"width\":336,\"height\":260.00006103515625}"
+      "detail": "{\"x\":73,\"y\":670,\"width\":240,\"height\":108}"
     },
     {
       "name": "A phone 390 conversation: button present, no horizontal scroll",
@@ -97,14 +97,14 @@
       "detail": ""
     },
     {
-      "name": "B popover [round 10]: backend name OpenSandbox, state line says it is created when first needed, 现在准备 offered",
+      "name": "B popover [round 11]: still just the two options — no backend label, no state line, no 现在准备 (nothing has failed yet)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "B real failure: popover shows 准备失败 with the provider error and 重试; no silent fallback to local",
+      "name": "B real failure: popover shows one short line 「准备失败」 + 重试 (the provider's error is only the hover title); no silent fallback to local",
       "ok": true,
-      "detail": "准备失败：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行）"
+      "detail": "准备失败 重试"
     },
     {
       "name": "B failed: a dot marks the button",
@@ -119,7 +119,7 @@
     {
       "name": "B 重试 sends exactly one explicit prepare request",
       "ok": true,
-      "detail": "POST /api/conversations/sp_0mwc086z99af9db1fa2370d2e/3/environment/prepare"
+      "detail": "POST /api/conversations/sp_0mwc3ox0r1514fc9015d41515/3/environment/prepare"
     },
     {
       "name": "B phone 390: failure line fits (no horizontal scroll)",
@@ -142,7 +142,7 @@
       "detail": ""
     },
     {
-      "name": "C1 [intercepted] popover during preparing: state line says 准备中…, no 重试 button",
+      "name": "C1 [intercepted] popover during preparing [round 11]: just a spinner on 云端沙箱 (aria-label 准备中) — no state line, no 重试 button",
       "ok": true,
       "detail": ""
     },
@@ -187,7 +187,7 @@
       "detail": ""
     },
     {
-      "name": "C4 [intercepted] backend name E2B, status 已就绪, working directory shown because the DTO carries it",
+      "name": "C4 [intercepted] a ready E2B channel whose DTO carries a workDir: the popover is still only 云端沙箱 / 本地环境 (no backend label, no 已就绪 line, no working directory)",
       "ok": true,
       "detail": ""
     },

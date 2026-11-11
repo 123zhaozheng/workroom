@@ -404,12 +404,13 @@ try {
 		await page.keyboard.press("Escape");
 	});
 
-	// B3. env failure with no failed step to explain it (explicit 现在准备 from the popover): one compact line stays
+	// B3. env failure with no failed step to explain it (a real prepare attempt; round 11: the popover has no 现在准备 button, only 重试 after a failure): one compact line stays
 	const envOnly = await startConv(page, "只聊天一句");
 	await idle(page);
+	await page.request.post(`${base}/api/conversations/${envOnly[1]}/${envOnly[2]}/environment/prepare`).catch(() => {});
+	await page.reload();
 	await page.locator(T("env-button")).click();
 	await page.waitForSelector(T("env-popover"));
-	await page.locator(T("env-prepare")).click();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-state"]')?.getAttribute("data-state") === "failed", null, { timeout: 60000 });
 	await page.keyboard.press("Escape");
 	await page.waitForSelector(T("env-status"), { timeout: 10000 }).catch(async (e) => {
@@ -469,9 +470,7 @@ try {
 	const sb = await cp.locator(T("citations-stale-banner")).boundingBox();
 	note("stale.1440", { h: Math.round(sb.height), units: await unitsIn(cp.locator(T("citations-stale-banner"))) });
 	await sec("B stale citations", async () => {
-		check("B stale citations: one short line (≤ 32px) that says how many; the explanation is behind 详情", sb.height <= 32 && /2 处引用/.test(await cp.locator(T("citations-stale-banner")).innerText()) && !(await cp.locator(T("citations-stale-banner")).innerText()).includes("旧回答保留原引用"));
-		await cp.locator(`${T("citations-stale-banner")} button`).click();
-		check("B stale citations: 详情 shows the full explanation", (await cp.locator(T("citations-stale-banner")).innerText()).includes("旧回答保留原引用"));
+		check("B stale citations: one short line (≤ 32px) that says how many — round 11: no 详情 toggle and no explanation sentence at all", sb.height <= 32 && /2 处引用/.test(await cp.locator(T("citations-stale-banner")).innerText()) && !(await cp.locator(T("citations-stale-banner")).innerText()).includes("旧回答保留原引用") && (await cp.locator(`${T("citations-stale-banner")} button`).count()) === 0);
 	});
 	await cp.close();
 

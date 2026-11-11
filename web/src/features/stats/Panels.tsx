@@ -13,7 +13,7 @@ export function ToolRanking({ data, csv }: { data: StatsOverviewDTO; csv: string
 	const { box, show, hide, el } = useTip();
 	const max = Math.max(1, ...data.tools.map((t) => t.calls));
 	return (
-		<Card testid="chart-tools" title="工具使用排行" subtitle="按调用次数；红色段为出错调用，右侧为错误率" csv={csv}>
+		<Card testid="chart-tools" title="工具使用排行" csv={csv}>
 			{data.tools.length === 0 ? (
 				<Empty>此范围内没有工具调用记录。</Empty>
 			) : (
@@ -71,7 +71,7 @@ export function KnowledgeCard({ data, csv }: { data: StatsOverviewDTO; csv: stri
 		{ key: "other", label: "其他空结果", n: k.otherEmpty, color: "var(--c-other)" },
 	];
 	return (
-		<Card testid="chart-knowledge" title="知识检索命中" subtitle="不含评测运行；“无证据”＝没有可引用的内容" csv={csv}>
+		<Card testid="chart-knowledge" title="知识检索命中" csv={csv}>
 			{k.searches === 0 ? (
 				<Empty height={120}>此范围内没有知识检索记录。</Empty>
 			) : (
@@ -110,7 +110,7 @@ export function KnowledgeCard({ data, csv }: { data: StatsOverviewDTO; csv: stri
 export function LargeContextCard({ data }: { data: StatsOverviewDTO }) {
 	const lc = data.largeContext;
 	return (
-		<Card testid="chart-large-context" title="大上下文失败集中度" subtitle={`输入+缓存 Token ≥ ${fmtCompact(lc.thresholdTokens)} 的模型请求`}>
+		<Card testid="chart-large-context" title="大上下文失败集中度">
 			{lc.requests === 0 ? (
 				<Empty height={120}>此范围内没有达到 {fmtCompact(lc.thresholdTokens)} Token 的请求。</Empty>
 			) : (
@@ -209,7 +209,7 @@ export function DrilldownTables({ data, csv }: { data: StatsOverviewDTO; csv: (c
 			</span>
 		);
 	return (
-		<Card testid="chart-table" title="明细与下钻" subtitle="链接只对有权阅读的对话开放；没有权限的对话不显示标题">
+		<Card testid="chart-table" title="明细与下钻">
 			<Tabs defaultValue="conv">
 				<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
 					<TabsList>

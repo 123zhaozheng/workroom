@@ -47,9 +47,8 @@ export function Unavailable({ what, need, compact }: { what: string; need?: stri
 	return (
 		<div data-testid="unavailable">
 			<EmptyState icon={<PlugZap />} title={`${what}暂不可用`}>
-				这项功能还没有连接，所以这里没有数据。
 				{need ? (
-					<details className="mt-2 text-xs text-fg-subtle">
+					<details className="text-xs text-fg-subtle">
 						<summary className="cursor-pointer select-none rounded hover:text-fg-muted">技术详情</summary>
 						<span className="mt-1 block break-words">缺少：{need}</span>
 					</details>

@@ -7,7 +7,6 @@ import { useSearchParams } from "react-router";
 import { TopBar } from "@/components/shell/AppShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Page, PageHeader } from "@/components/ui/misc";
-import { Help } from "@/features/admin/common";
 import { Connectors } from "@/features/market/Connectors";
 import { McpMarket } from "@/features/market/McpMarket";
 import { MySkills } from "@/features/market/MySkills";
@@ -37,7 +36,7 @@ export default function CapabilitiesPage() {
 			<TopBar />
 			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
 				<Page wide>
-					<PageHeader title="能力" actions={<Help label="说明">技能让智能体学会做某类事，连接让它能使用外部服务。上架前都要经过审核；技能只提供做法，需要运行代码或联网时会单独授权。</Help>} />
+					<PageHeader title="能力" />
 					<Tabs value={canReview || tab !== "review" ? tab : "mine"} onValueChange={go}>
 						<div className="mb-5 overflow-x-auto max-sm:[mask-image:linear-gradient(to_right,black_88%,transparent)]">
 							<TabsList className="min-w-max max-sm:[&_svg]:hidden">

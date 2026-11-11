@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/switch";
-import { Fold, Help, Table, useAct } from "@/features/admin/common";
+import { Fold, Table, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
 import { ModelDialog } from "./ModelDialog";
 import { ProviderDialog } from "./ProviderDialog";
@@ -42,9 +42,7 @@ export function ProviderPanel(props: PanelProps) {
 						{personal ? "添加我的服务" : "添加服务"}
 					</Button>
 				</div>
-			) : (
-				<p className="text-xs text-fg-muted">你没有管理模型服务的权限，只能查看。</p>
-			)}
+			) : null}
 			{providers.length === 0 ? (
 				<p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-fg-muted">{personal ? "还没有自己的模型服务" : "还没有模型服务"}</p>
 			) : (
@@ -115,7 +113,7 @@ function ProviderRowView({ p, base, personal, canProviders, canModels, catalog, 
 											setFetchNote(undefined);
 											try {
 												const r = await post<FetchModelsResponse>(`${base}/${p.id}/fetch-models`, {});
-												setFetchNote(r.ok ? `已获取 ${r.count} 个模型。` : `获取失败：${r.error ?? ""}`);
+												setFetchNote(r.ok ? undefined : `获取失败：${r.error ?? ""}`);
 											} catch (e) {
 												setFetchNote(`获取失败：${errorText(e)}`);
 											}
@@ -163,7 +161,7 @@ function ProviderRowView({ p, base, personal, canProviders, canModels, catalog, 
 						<div className="mb-3 space-y-1 text-sm">
 							{note}
 							{fetchNote ? (
-								<p className={fetchNote.startsWith("获取失败") ? "text-danger" : "text-success"} role="status">
+								<p className="text-danger" role="alert">
 									{fetchNote}
 								</p>
 							) : null}
@@ -212,7 +210,6 @@ function TestResult({ r }: { r: ProviderTestResponse | { error: string } }) {
 		<div className="rounded-lg bg-surface px-3 py-2" data-testid="provider-test-result">
 			<p className={r.list.ok ? "text-success" : "text-danger"}>{r.list.skipped ? "该服务不提供模型列表，已跳过" : r.list.ok ? `能获取模型列表（${r.list.count} 个，${r.list.latencyMs} 毫秒）` : `获取模型列表失败：${r.list.detail ?? ""}`}</p>
 			<p className={r.completion.ok ? "text-success" : "text-danger"}>{r.completion.ok ? `能正常对话（${r.completion.modelId}，${r.completion.latencyMs} 毫秒）` : `试聊失败：${r.completion.detail ?? ""}`}</p>
-			<p className="text-xs text-fg-muted">连接测试不计入用量。</p>
 		</div>
 	);
 }
@@ -235,7 +232,6 @@ function ModelsTable({ p, base, personal, canModels, canProviders, onChanged, de
 		<div data-testid="provider-models">
 			<div className="mb-2 flex flex-wrap items-center gap-2">
 				<h4 className="text-sm font-medium">模型</h4>
-				<Help label="模型说明" side="top">从服务商获取的模型默认不对成员开放。价格和上下文长度以服务商提供的为准，请自行核对。</Help>
 				<Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选模型" aria-label="筛选模型" className="h-8 w-44 text-sm" />
 				<span className="flex items-center gap-2 text-xs text-fg-muted">
 					<Switch aria-label="只看已开放" checked={onlyOn} onCheckedChange={setOnlyOn} />

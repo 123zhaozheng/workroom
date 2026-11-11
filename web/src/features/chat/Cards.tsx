@@ -52,7 +52,7 @@ export function FileCard({ file }: { file: FileVersionRefDTO }) {
 						</span>
 					</span>
 					<span className="mt-0.5 block text-xs text-fg-subtle">
-						{KIND_META[kind].label} · {formatBytes(file.size)} · 点击预览
+						{KIND_META[kind].label} · {formatBytes(file.size)}
 					</span>
 				</span>
 			</button>
@@ -212,7 +212,7 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 					{showNote ? (
 						<div className="mt-2.5">
 							<label htmlFor={`${uid}-n`} className="mb-1 block text-xs text-fg-muted">
-								补充说明（可选，会告诉助手）
+								补充说明（可选）
 							</label>
 							<Textarea id={`${uid}-n`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="text-[13px]" />
 						</div>
@@ -312,7 +312,7 @@ export function ReconcileCard({ effect, base }: { effect: EffectDTO; base: strin
 				<dt className="text-fg-muted">目标</dt>
 				<dd className="min-w-0 break-words">{effect.target}</dd>
 				<dt className="text-fg-muted">情况</dt>
-				<dd>执行过程中被中断，系统不会自动重做。请到目标系统确认后选择：</dd>
+				<dd>执行被中断，不会自动重做。请到目标系统确认后选择：</dd>
 			</dl>
 			{err ? (
 				<p role="alert" className="mt-2 text-[13px] text-danger">

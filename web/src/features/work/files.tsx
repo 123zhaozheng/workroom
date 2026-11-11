@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/misc";
 import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuTrigger, Tip } from "@/components/ui/overlay";
-import { InfoPop } from "@/components/shell/InfoPop";
 import { FileCard } from "@/features/chat/Cards";
 import { LoadState, Notice } from "./states";
 import { WorkspaceSaveStatus } from "./WorkspaceSaveStatus";
@@ -51,7 +50,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [sel, setSel] = useState<{ path: string; kind: "file" | "directory" } | null>(null);
 	const [busy, setBusy] = useState(false);
-	const [note, setNote] = useState<{ tone: "ok" | "err"; text: string }>();
+	const [note, setNote] = useState<{ tone: "err"; text: string }>();
 	const [newDir, setNewDir] = useState<string | null>(null);
 	const [confirmDel, setConfirmDel] = useState<WorkspaceEntryDTO | null>(null);
 	const [published, setPublished] = useState<FileVersionRefDTO>();
@@ -63,12 +62,11 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 	const pct = u ? Math.min(100, Math.round((u.spaceBytes / Math.max(1, u.quotaBytes)) * 100)) : 0;
 
 	const reveal = (dir: string) => setExpanded((s) => new Set([...s, ...dir.split("/").filter(Boolean).map((_, i, a) => a.slice(0, i + 1).join("/"))]));
-	const run = async (fn: () => Promise<unknown>, ok: string) => {
+	const run = async (fn: () => Promise<unknown>) => {
 		setBusy(true);
 		setNote(undefined);
 		try {
 			await fn();
-			setNote({ tone: "ok", text: ok });
 			files.reload();
 		} catch (e) {
 			setNote({ tone: "err", text: errorText(e) });
@@ -84,7 +82,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 			const r = await post<{ version: FileVersionRefDTO }>(`${base(spaceId)}/publish`, { conversationId, path: e.path });
 			select(e);
 			setPublished(r.version);
-		}, "已发布到文件库");
+		});
 
 	return (
 		<div data-testid="files-tab" className="space-y-3">
@@ -97,11 +95,6 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 						<div role="progressbar" aria-label="工作区用量" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-border">
 							<div className={cn("h-full rounded-full", pct >= 90 ? "bg-danger" : pct >= 70 ? "bg-warning" : "bg-success")} style={{ width: `${Math.max(2, pct)}%` }} />
 						</div>
-						<InfoPop label="清理规则" testid="ws-rules">
-							<span data-testid="ws-lifecycle">
-								文件最后修改后闲置 {u.retentionHours} 小时会被自动清理。需要长期保留的成果请「发布到文件库」。单个文件上限 {formatBytes(u.maxFileBytes)}。
-							</span>
-						</InfoPop>
 					</div>
 				) : null}
 
@@ -119,7 +112,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 							void run(async () => {
 								for (const f of list) await uploadFile(spaceId, conversationId, join(targetDir, f.name), f);
 								reveal(targetDir);
-							}, `已上传 ${list.length} 个文件${targetDir ? `到「${targetDir}」` : ""}`);
+							});
 						}}
 					/>
 					<Button size="sm" disabled={!canWrite || busy} data-testid="ws-upload" title={canWrite ? undefined : "查看者不能上传"} onClick={() => input.current?.click()}>
@@ -152,7 +145,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 								await post(`${base(spaceId)}/mkdir`, { conversationId, path: join(targetDir, name) });
 								setNewDir(null);
 								reveal(targetDir);
-							}, `已创建文件夹 ${join(targetDir, name)}`);
+							});
 						}}
 					>
 						<Input autoFocus data-testid="ws-mkdir-name" aria-label="文件夹名称" value={newDir} onChange={(e) => setNewDir(e.target.value)} placeholder="文件夹名称" className="h-8 text-[13px]" />
@@ -168,9 +161,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 				) : null}
 
 				{entries.length === 0 ? (
-					<Notice icon={<UploadCloud />} title="工作区还是空的" testid="ws-empty">
-						助手生成的文件和你上传的文件会出现在这里。
-					</Notice>
+					<Notice icon={<UploadCloud />} title="工作区还是空的" testid="ws-empty" />
 				) : (
 					<ul data-testid="ws-tree" role="tree" aria-label="工作区文件" className="wr-scroll max-h-72 overflow-auto rounded-xl border border-border py-1 text-sm">
 						<TreeRows
@@ -235,7 +226,7 @@ export function FilesTab({ spaceId, conversationId }: { spaceId: string; convers
 									void run(async () => {
 										await del(`${base(spaceId)}/file${qs({ path: e.path, conversationId })}`);
 										setSel((s) => (s && (s.path === e.path || s.path.startsWith(`${e.path}/`)) ? null : s));
-									}, `已删除「${nameOf(e.path)}」`);
+									});
 								}}
 							>
 								删除
@@ -358,7 +349,7 @@ function Preview({ spaceId, conversationId, path }: { spaceId: string; conversat
 							<pre data-testid="ws-preview-text" className="wr-scroll m-2 max-h-72 overflow-auto whitespace-pre rounded-lg bg-surface-2 p-2.5 font-mono text-[12.5px] leading-5 text-fg">
 								{p.text}
 							</pre>
-							{p.truncated ? <p className="px-3 pb-2 text-xs text-fg-muted">只显示前 256 KB，完整内容请下载。</p> : null}
+							{p.truncated ? <p className="px-3 pb-2 text-xs text-fg-muted">只显示前 256 KB</p> : null}
 						</>
 					) : p.kind === "image" ? (
 						<div className="p-2">
@@ -366,7 +357,7 @@ function Preview({ spaceId, conversationId, path }: { spaceId: string; conversat
 						</div>
 					) : (
 						<p data-testid="ws-preview-binary" className="px-3 py-3 text-[13px] text-fg-muted">
-							这种文件无法在这里预览，可以下载查看。
+							无法预览，请下载查看
 						</p>
 					)}
 				</>

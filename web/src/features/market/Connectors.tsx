@@ -28,15 +28,15 @@ export function Connectors() {
 		<Loadable state={conns} what="连接">
 			{conns.data ? (
 				<div className="space-y-2" data-testid="connectors">
-					{conns.data.secretStorage === "unavailable" ? <Blocked title="密钥存储不可用">需要密钥的连接无法保存。</Blocked> : null}
+					{conns.data.secretStorage === "unavailable" ? <Blocked title="密钥存储不可用" /> : null}
 					{conns.data.connectors.length === 0 ? <EmptyState icon={<Plug />} title="还没有可用的连接" /> : null}
 					{conns.data.connectors.map((c) => (
 						<ConnectorCard key={c.id} c={c} onChanged={conns.reload} />
 					))}
 					{conns.data.blocked.map((b) => (
-						<Blocked key={b.kind} title={`${b.kind}：未连接`}>
-							{b.reason}
-						</Blocked>
+						<p key={b.kind} title={b.reason} className="px-1 text-sm text-fg-muted">
+							{b.kind}：未连接
+						</p>
 					))}
 				</div>
 			) : null}
@@ -82,7 +82,7 @@ function ConnectorCard({ c, onChanged }: { c: ConnectorDTO; onChanged: () => voi
 					</>
 				) : null}
 			</div>
-			{pending ? <p className="mt-1 text-xs text-warning">组织策略要求审核：审核员批准前不会向该地址发送任何请求，模型也看不到它的工具。</p> : null}
+			{pending ? <p className="mt-1 text-xs text-warning">等待审核，批准前不会连接</p> : null}
 			{c.statusDetail && !pending ? <p className="mt-1 text-xs text-fg-muted">{c.statusDetail}</p> : null}
 			{c.access === "allowed" && c.canManage && c.secretNames.length && m?.credentialMode !== "per_user" && (c.status === "unauthorized" || c.status === "needs_reconnect") ? (
 				<form

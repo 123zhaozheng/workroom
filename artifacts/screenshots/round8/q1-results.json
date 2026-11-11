@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T08:24:44.330Z",
+  "at": "2026-11-11T12:54:48.990Z",
   "results": [
     {
       "name": "running: no run bar above the input",
@@ -17,7 +17,7 @@
       "detail": ""
     },
     {
-      "name": "running: the input says what a sent message does",
+      "name": "running [round 11]: the input only says 继续输入… (no sentence about what a sent message does)",
       "ok": true,
       "detail": ""
     },
@@ -37,7 +37,7 @@
       "detail": ""
     },
     {
-      "name": "queue: header says they send automatically, in order, after the current task",
+      "name": "queue [round 11]: the header is just 「排队 3 条」 — no explanation of when they are sent",
       "ok": true,
       "detail": ""
     },
@@ -87,9 +87,9 @@
       "detail": ""
     },
     {
-      "name": "explanation: 立即发送 hands the message to the running task's next step, no interrupt, no approval skip",
+      "name": "tap/click opens the row's actions; round 11: no explanation paragraph is added (the buttons say what they do)",
       "ok": true,
-      "detail": "立即发送：把消息交给正在运行的任务，在它的下一步处理。不会打断正在执行的工具，也不会跳过待你确认的操作。 撤销：取消发送，内容和附件放回输入框。"
+      "detail": ""
     },
     {
       "name": "撤销: the text is back in the input for editing",
@@ -102,7 +102,7 @@
       "detail": ""
     },
     {
-      "name": "撤销: the queue shrank and says so",
+      "name": "撤销: the queue shrank — and no banner says so (the text is back in the box)",
       "ok": true,
       "detail": ""
     },
@@ -137,24 +137,19 @@
       "detail": "{\"r\":\"promoted\",\"e\":\"steered\"}"
     },
     {
-      "name": "立即发送: the notice says what happened (handed to the running task, next step, no interrupt)",
-      "ok": true,
-      "detail": "已交给正在运行的任务，会在它的下一步处理（不会打断正在执行的工具）。"
-    },
-    {
-      "name": "立即发送: the item is marked as handed over and offers only 撤销",
+      "name": "立即发送: no success banner; the item itself says 已交给任务 and offers only 撤销",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "stop: the run ends as cancelled with 继续 offered",
+      "name": "stop [round 11]: the run just ends — no run bar, no 继续 button, no banner",
       "ok": true,
       "detail": ""
     },
     {
       "name": "stop: queued messages are shown as 未送达 in the conversation (pi-durable drops them on cancel), none vanish",
       "ok": true,
-      "detail": "4 markers"
+      "detail": "3 markers"
     },
     {
       "name": "order: all three ran one after another in the order they were sent",
@@ -169,7 +164,7 @@
     {
       "name": "offline: the send fails visibly with 重试 and says the text is kept",
       "ok": true,
-      "detail": "没有发出去：网络连接不可用。内容还在输入框里，网络恢复后点「重试」。 重试"
+      "detail": "网络不可用，没有发出 · 内容还在输入框 重试"
     },
     {
       "name": "offline: the text stays in the input",
@@ -192,14 +187,9 @@
       "detail": ""
     },
     {
-      "name": "approval: the queue says it waits for the confirmation",
+      "name": "approval: 立即发送 marks the item 已交给任务 (no banner, no explanation text)",
       "ok": true,
       "detail": ""
-    },
-    {
-      "name": "approval: 立即发送 says the message waits for the confirmation",
-      "ok": true,
-      "detail": "已交给当前任务：它正在等你确认，确认之后才会处理这条消息。"
     },
     {
       "name": "approval: the approval is still pending and the message has not reached the model",
@@ -217,9 +207,9 @@
       "detail": "失败后的第一条 | 失败后的第二条"
     },
     {
-      "name": "failed: the queue says the previous task failed and that nothing is sent automatically",
+      "name": "failed [round 11]: the queue just says 「2 条消息未发出」 (no paragraph about the failed task / 重试)",
       "ok": true,
-      "detail": "· 上一次任务失败，排队的消息不会自动发送，点上方「重试」后一并处理"
+      "detail": "2 条消息未发出"
     },
     {
       "name": "failed: each item offers 立即发送 / 撤销 / 删除",
@@ -247,7 +237,7 @@
       "detail": ""
     },
     {
-      "name": "390px: tapping a row reveals 立即发送 / 撤销 and the explanation",
+      "name": "390px: tapping a row reveals 立即发送 / 撤销 (and no explanation paragraph)",
       "ok": true,
       "detail": ""
     },

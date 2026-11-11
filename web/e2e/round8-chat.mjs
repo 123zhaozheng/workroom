@@ -51,7 +51,7 @@ try {
 	check("running: no run bar above the input", (await page.locator(T("run-bar")).count()) === 0);
 	check("running: no 插话 / 稍后处理 choice anywhere", (await page.getByText("插话").count()) === 0 && (await page.getByText("稍后处理").count()) === 0 && (await page.locator('[role="radiogroup"]').count()) === 0);
 	check("running: 停止 is in the composer", await page.locator(`${T("composer")} ${T("stop")}`).isVisible());
-	check("running: the input says what a sent message does", /当前任务结束后/.test((await page.locator(T("composer-input")).getAttribute("placeholder")) ?? ""));
+	check("running [round 11]: the input only says 继续输入… (no sentence about what a sent message does)", /^继续输入/.test((await page.locator(T("composer-input")).getAttribute("placeholder")) ?? "") && !/自动处理|当前任务结束后/.test((await page.locator(T("composer-input")).getAttribute("placeholder")) ?? ""));
 	check("running: nothing queued → no queue box", (await page.locator(T("message-queue")).count()) === 0);
 
 	// ================================================================ 2. three messages while it runs → compact queue, in order
@@ -66,7 +66,7 @@ try {
 	const q0 = await itemTexts();
 	check("queue: three items in send order, test directives hidden", q0.length === 3 && q0[0].includes("第二条") && q0[1] === "第三条：附带报价单" && q0[2].includes("第四条"), q0.join(" | "));
 	check("queue: the attachment shows on its own item only", (await items().nth(1).locator(T("queue-attachments")).innerText()).includes("报价单.txt") && (await items().nth(0).locator(T("queue-attachments")).count()) === 0);
-	check("queue: header says they send automatically, in order, after the current task", /排队 3 条/.test(await page.locator(T("queue-title")).innerText()) && /结束后按顺序自动发送/.test(await page.locator(T("queue-detail")).innerText()));
+	check("queue [round 11]: the header is just 「排队 3 条」 — no explanation of when they are sent", (await page.locator(T("queue-title")).innerText()).trim() === "排队 3 条" && (await page.locator(T("queue-detail")).count()) === 0 && !(await page.locator(T("message-queue")).innerText()).includes("自动发送"));
 	check("queue: compact (height under 190px)", (await page.locator(T("message-queue")).boundingBox()).height < 190);
 	check("queue: still no run bar, composer stays usable", (await page.locator(T("run-bar")).count()) === 0 && (await page.locator(T("composer-input")).isEnabled()));
 	check("queue: sending never navigated away or showed an error", !(await page.locator(T("composer-error")).count()));
@@ -91,8 +91,7 @@ try {
 	check("keyboard: Tab from the row moves to 立即发送 (actions stay shown while focused)", (await active()) === "queue-send-now" && (await shown(it3.locator(T("queue-send-now")))));
 	await page.locator(T("composer-input")).focus();
 	await it1.locator(T("queue-row")).click();
-	const hint = await it1.locator(T("queue-hint")).innerText();
-	check("explanation: 立即发送 hands the message to the running task's next step, no interrupt, no approval skip", /下一步/.test(hint) && /不会打断正在执行的工具/.test(hint) && /待你确认的操作/.test(hint) && /撤销/.test(hint), hint);
+	check("tap/click opens the row's actions; round 11: no explanation paragraph is added (the buttons say what they do)", (await it1.getAttribute("data-open")) === "true" && (await it1.locator(T("queue-hint")).count()) === 0 && !/不会打断正在执行的工具/.test(await it1.innerText()));
 	await it1.locator(T("queue-row")).click();
 
 	// ================================================================ 4. 撤销 restores text + attachment into the composer
@@ -103,7 +102,7 @@ try {
 	await queueCount(2);
 	check("撤销: the text is back in the input for editing", (await page.locator(T("composer-input")).inputValue()).includes("第三条：附带报价单"));
 	check("撤销: the attachment is back as a chip", (await page.locator(T("chip-file")).count()) === 1 && (await page.locator(T("chip-file")).innerText()).includes("报价单.txt"));
-	check("撤销: the queue shrank and says so", (await itemTexts()).length === 2 && /已撤销/.test(await page.locator(T("queue-notice")).innerText()));
+	check("撤销: the queue shrank — and no banner says so (the text is back in the box)", (await itemTexts()).length === 2 && (await page.locator(T("queue-notice")).count()) === 0);
 	check("撤销: no ghost 'unsent' bubble in the conversation", !(await userTexts()).some((t) => t.includes("第三条")));
 	// edit and send again → goes to the end of the queue
 	await page.locator(T("composer-input")).fill("第三条（改过）：附带报价单");
@@ -141,21 +140,18 @@ try {
 	await last.locator(T("queue-send-now")).click();
 	const pr = await (await sendReq).json();
 	check("立即发送: server answers promoted/steered", pr.result === "promoted" && pr.effect === "steered", JSON.stringify({ r: pr.result, e: pr.effect }));
-	await page.waitForSelector(T("queue-notice"));
-	const note = await page.locator(T("queue-notice")).innerText();
-	check("立即发送: the notice says what happened (handed to the running task, next step, no interrupt)", /已交给正在运行的任务/.test(note) && /下一步/.test(note) && /不会打断/.test(note), note);
 	await page.waitForSelector(`${T("queue-item")}[data-mode="steer"]`);
-	check("立即发送: the item is marked as handed over and offers only 撤销", (await page.locator(`${T("queue-item")}[data-mode="steer"] ${T("queue-steered")}`).count()) === 1 && (await page.locator(`${T("queue-item")}[data-mode="steer"] ${T("queue-send-now")}`).count()) === 0);
+	check("立即发送: no success banner; the item itself says 已交给任务 and offers only 撤销", (await page.locator(T("queue-notice")).count()) === 0 && (await page.locator(`${T("queue-item")}[data-mode="steer"] ${T("queue-steered")}`).innerText()).trim() === "已交给任务" && (await page.locator(`${T("queue-item")}[data-mode="steer"] ${T("queue-send-now")}`).count()) === 0);
 	await shot(page, "round8/q1-after-send-now");
 
 	// ================================================================ 7. stop works; queued messages are not silently lost
 	await page.click(T("stop"));
 	await idle(20000);
-	await page.waitForSelector(`${T("run-bar")}[data-status="aborted"]`, { timeout: 15000 });
-	check("stop: the run ends as cancelled with 继续 offered", (await page.locator(T("continue")).innerText()).includes("继续"));
 	await queueCount(0, page, 15000).catch(() => {});
+	await sleep(500);
+	check("stop [round 11]: the run just ends — no run bar, no 继续 button, no banner", (await page.locator(`${T("run-bar")}, ${T("continue")}, ${T("stop-note")}`).count()) === 0);
 	const unsent = await page.locator(T("message-outcome")).allInnerTexts();
-	check("stop: queued messages are shown as 未送达 in the conversation (pi-durable drops them on cancel), none vanish", unsent.filter((t) => t.includes("未送达模型")).length >= 3, `${unsent.length} markers`);
+	check("stop: queued messages are shown as 未送达 in the conversation (pi-durable drops them on cancel), none vanish", unsent.filter((t) => t.includes("未送达")).length >= 3 && !unsent.some((t) => t.includes("未送达模型")), `${unsent.length} markers`);
 
 	// ================================================================ 8. queued messages run in order after the current task
 	await start("[[slow 3500]] 顺序一");
@@ -180,7 +176,7 @@ try {
 	await page.click(T("send"));
 	await page.waitForSelector(T("composer-error"), { timeout: 10000 });
 	const errText = await page.locator(T("composer-error")).innerText();
-	check("offline: the send fails visibly with 重试 and says the text is kept", /没有发出去/.test(errText) && errText.includes("重试") && (await page.locator(T("composer-retry")).count()) === 1, errText.replace(/\s+/g, " "));
+	check("offline: the send fails visibly with 重试 and says the text is kept", /没有发出/.test(errText) && errText.includes("内容还在输入框") && errText.includes("重试") && (await page.locator(T("composer-retry")).count()) === 1, errText.replace(/\s+/g, " "));
 	check("offline: the text stays in the input", (await page.locator(T("composer-input")).inputValue()) === "离线时发的消息");
 	check("offline: the queue shows nothing for it", !(await itemTexts()).some((t) => t.includes("离线时发的消息")));
 	await shot(page, "round8/q1-offline-failed");
@@ -200,12 +196,10 @@ try {
 	check("approval: the card is in the conversation; no run bar", (await page.locator(T("approval-card")).isVisible()) && (await page.locator(T("run-bar")).count()) === 0);
 	await sendQueued("确认之后再处理这条");
 	await queueCount(1);
-	check("approval: the queue says it waits for the confirmation", /等你确认/.test(await page.locator(T("queue-detail")).innerText()));
 	await items().nth(0).hover();
 	await items().nth(0).locator(T("queue-send-now")).click();
-	await page.waitForSelector(T("queue-notice"));
-	const an = await page.locator(T("queue-notice")).innerText();
-	check("approval: 立即发送 says the message waits for the confirmation", /确认之后才会处理/.test(an), an);
+	await page.waitForSelector(`${T("queue-item")}[data-mode="steer"]`);
+	check("approval: 立即发送 marks the item 已交给任务 (no banner, no explanation text)", (await page.locator(`${T("queue-item")}[data-mode="steer"] ${T("queue-steered")}`).innerText()).trim() === "已交给任务" && (await page.locator(T("queue-notice")).count()) === 0);
 	await sleep(800);
 	check("approval: the approval is still pending and the message has not reached the model", (await page.locator(T("approval-card")).isVisible()) && !(await userTexts()).some((t) => t.includes("确认之后再处理这条")));
 	await shot(page, "round8/q1-approval-pending");
@@ -222,14 +216,14 @@ try {
 	await page.waitForSelector(`${T("run-bar")}[data-status="failed"], ${T("run-bar")}[data-status="interrupted"]`, { timeout: 60000 });
 	await sleep(1500);
 	check("failed: both messages are still queued, not sent automatically", (await itemTexts()).length === 2 && (await userTexts()).length === 1, (await itemTexts()).join(" | "));
-	const fh = await page.locator(T("queue-detail")).innerText();
-	check("failed: the queue says the previous task failed and that nothing is sent automatically", /失败/.test(fh) && /不会自动发送/.test(fh) && /重试/.test(fh) && /还没发出/.test(await page.locator(T("queue-title")).innerText()), fh);
+	const fh = (await page.locator(T("queue-title")).innerText()).trim();
+	check("failed [round 11]: the queue just says 「2 条消息未发出」 (no paragraph about the failed task / 重试)", fh === "2 条消息未发出" && (await page.locator(T("queue-detail")).count()) === 0, fh);
 	await items().nth(0).hover();
 	check("failed: each item offers 立即发送 / 撤销 / 删除", (await shown(items().nth(0).locator(T("queue-delete")))) && (await shown(items().nth(0).locator(T("queue-send-now")))));
 	await shot(page, "round8/q1-failed-queue");
 	await items().nth(0).locator(T("queue-delete")).click();
 	await queueCount(1);
-	check("failed: 删除 removes only that item", (await itemTexts())[0].includes("失败后的第二条") && /已删除/.test(await page.locator(T("queue-notice")).innerText()));
+	check("failed: 删除 removes only that item", (await itemTexts())[0].includes("失败后的第二条") && (await page.locator(T("queue-notice")).count()) === 0);
 	await page.click(T("continue"));
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="queue-item"]').length === 0, null, { timeout: 30000 });
 	await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="user-message"]')].some((e) => e.textContent.includes("失败后的第二条")), null, { timeout: 30000 });
@@ -254,7 +248,7 @@ try {
 	check("390px: queue fits the screen (no horizontal scroll)", await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 	check("390px: actions are hidden until the row is tapped", !(await shown(mp.locator(T("queue-item")).first().locator(T("queue-send-now")))));
 	await mp.locator(T("queue-row")).first().tap();
-	check("390px: tapping a row reveals 立即发送 / 撤销 and the explanation", (await shown(mp.locator(T("queue-send-now")).first())) && (await shown(mp.locator(T("queue-undo")).first())) && (await mp.locator(T("queue-hint")).first().boundingBox()).height > 20);
+	check("390px: tapping a row reveals 立即发送 / 撤销 (and no explanation paragraph)", (await shown(mp.locator(T("queue-send-now")).first())) && (await shown(mp.locator(T("queue-undo")).first())) && (await mp.locator(T("queue-hint")).count()) === 0);
 	const bb = await mp.locator(T("queue-send-now")).first().boundingBox();
 	check("390px: touch targets at least 36px tall", bb.height >= 36, `h=${bb.height}`);
 	check("390px: still no run bar", (await mp.locator(T("run-bar")).count()) === 0);

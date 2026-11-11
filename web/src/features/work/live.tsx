@@ -1,6 +1,6 @@
 // Long-running jobs (M14-C) and live browser sessions with take-over (M11-B). Take-over follows the same
 // permission as the preview: the server reports `canControl` (space write); viewers can only watch.
-import { ArrowLeft, ArrowRight, Ban, Hand, Loader2, MousePointerClick, RotateCw, Send, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Ban, Hand, Loader2, RotateCw, Send, Undo2 } from "lucide-react";
 import { useRef, useState, type MouseEvent } from "react";
 import type { BrowserSessionDTO, JobDTO, JobStatus } from "@shared/files";
 import { errorText, post } from "@/lib/api";
@@ -218,14 +218,8 @@ export function BrowserSessionView({ s, onChanged }: { s: BrowserSessionDTO; onC
 							</Button>
 						) : null
 					) : (
-						<span className="text-xs text-fg-subtle">你只能观看（需要该空间的编辑权限才能接管，与预览权限一致）</span>
+						<span className="text-xs text-fg-subtle">只能观看</span>
 					)}
-					{mine ? (
-						<span className="inline-flex items-center gap-1 text-xs text-fg-subtle">
-							<MousePointerClick className="size-3.5" />
-							点击截图即在页面对应位置点击；接管期间助手的浏览操作会被拒绝
-						</span>
-					) : null}
 				</div>
 				{err ? <p className="text-xs text-danger">{err}</p> : null}
 			</div>

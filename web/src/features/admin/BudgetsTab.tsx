@@ -32,8 +32,7 @@ export function Budgets() {
 					e.preventDefault();
 					const sc = scope === "org" ? { kind: "org", id: "" } : { kind: "project", id: scope.slice(8) };
 					void run(
-						() => post("/admin/budgets", { scope: sc, period, ...(cost ? { limitCost: Number(cost) } : {}), ...(tokens ? { limitTokens: Number(tokens) } : {}), action }),
-						"预算已创建",
+						() => post("/admin/budgets", { scope: sc, period, ...(cost ? { limitCost: Number(cost) } : {}), ...(tokens ? { limitTokens: Number(tokens) } : {}), action })
 					);
 				}}
 			>
@@ -61,9 +60,7 @@ export function Budgets() {
 					新建预算
 				</Button>
 			</form>
-			) : (
-				<p className="mb-3 text-xs text-fg-muted">你只有查看预算的权限，不能新建或修改。</p>
-			)}
+			) : null}
 			{note}
 			<Loadable state={res} what="预算">
 				{(res.data?.budgets ?? []).length === 0 ? (
@@ -86,7 +83,7 @@ export function Budgets() {
 									<Badge tone={b.state === "ok" ? "success" : b.state === "warn" ? "warning" : "danger"}>{b.state === "ok" ? "正常" : b.state === "warn" ? "接近上限" : "已超限"}</Badge>
 									<Switch aria-label="启用预算" data-testid="budget-enabled" checked={b.enabled} disabled={!perms.org.has("budget.manage")} busy={busy} onCheckedChange={(v) => run(() => patch(`/admin/budgets/${b.id}`, { enabled: v }))} />
 									{perms.org.has("budget.manage") ? (
-										<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/budgets/${b.id}`), "预算已删除")}>
+										<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/budgets/${b.id}`))}>
 											<Trash2 />
 										</Button>
 									) : null}

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T11:00:09.250Z",
+  "at": "2026-11-11T12:53:37.210Z",
   "results": [
     {
       "name": "[intercepted] admin sees the 沙箱 tab and the 当前使用的沙箱渠道 section (round 10)",
@@ -62,7 +62,7 @@
       "detail": ""
     },
     {
-      "name": "[intercepted] no unsaved-change test hint conflict: 完整测试 explains temporary sandbox",
+      "name": "[intercepted] round 11: no ? 测试说明 popover next to the test buttons (the explanation is deleted); the buttons are 连通性 / 完整测试",
       "ok": true,
       "detail": ""
     },
@@ -164,7 +164,7 @@
     {
       "name": "[real] unreachable endpoint → plain failure; channel still OpenSandbox; unhealthy banner (no fallback)",
       "ok": true,
-      "detail": "连通性 完整测试 失败 连通性 · 11/11 11:00 · 用时 95 毫秒 OpenSandbox 不可用：fetch failed"
+      "detail": "连通性 完整测试 失败 连通性 · 11/11 12:53 · 用时 81 毫秒 OpenSandbox 不可用：fetch failed"
     },
     {
       "name": "[real] key still absent from every response after tests",

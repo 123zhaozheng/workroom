@@ -197,7 +197,7 @@ try {
 	await a.getByRole("button", { name: "加入知识库" }).click();
 	await pick(a.locator('[data-wr-select][aria-label="知识库"]'), { label: "个人笔记" });
 	await a.getByRole("button", { name: "加入", exact: true }).click();
-	await a.waitForSelector("text=尚不可检索", { timeout: 10000 });
+	await a.waitForSelector("text=已加入，正在索引", { timeout: 10000 });
 	await a.keyboard.press("Escape");
 	await a.waitForFunction(() => document.querySelector('[data-testid="knowledge-status"]')?.textContent?.includes("个人笔记"), null, { timeout: 15000 });
 	await a.waitForFunction(() => document.querySelector('[data-testid="knowledge-status"]')?.textContent?.includes("可检索"), null, { timeout: 30000 });
@@ -222,7 +222,7 @@ try {
 	await extracted.locator('[data-testid="memory-correct-save"]').click();
 	await a.waitForSelector('[data-testid="memory-correction-result"]', { timeout: 10000 });
 	const res = await a.locator('[data-testid="memory-correction-result"]').innerText();
-	check("M10-C: correction shows before / after and that the old version is superseded", res.includes("周报使用英文") && res.includes("周报使用中文") && res.includes("被替代"), res.replace(/\s+/g, " "));
+	check("M10-C: correction shows 已纠正 with before / after (round 11: no explanatory 被替代 / 按新内容理解 sentences)", res.includes("已纠正") && res.includes("周报使用英文") && res.includes("周报使用中文") && !res.includes("被替代") && !res.includes("按新内容理解"), res.replace(/\s+/g, " "));
 	await shot(a, "1440-memory-correction");
 	const manual = a.locator('[data-testid="memory-item"]', { hasText: "汇报对象是销售总监" });
 	await manual.getByRole("button", { name: "编辑" }).click();

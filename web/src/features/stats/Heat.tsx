@@ -75,7 +75,6 @@ export function CalendarHeatmap({ data, csv }: { data: StatsOverviewDTO; csv: st
 		<Card
 			testid="chart-calendar"
 			title="每日活跃度 · 近 365 天"
-			subtitle={`过去 365 天（${fmtDay(cal.from)} – ${fmtDay(cal.to)}），不受上方时间范围限制；颜色越深数值越高`}
 			csv={csv}
 			actions={<Segmented label="指标" value={metric} onChange={setMetric} options={METRICS} />}
 		>
@@ -158,7 +157,7 @@ export function PunchCard({ data, csv }: { data: StatsOverviewDTO; csv: string }
 	const H = TOP + 7 * RH + 20;
 	const fmt = metric === "tokens" ? fmtCompact : fmtInt;
 	return (
-		<Card testid="chart-punchcard" title="活跃时段（星期 × 小时）" subtitle="所选范围内，按本地时间；圆点越大、颜色越深，数值越高" csv={csv} actions={<Segmented label="指标" value={metric} onChange={setMetric} options={METRICS} />}>
+		<Card testid="chart-punchcard" title="活跃时段（星期 × 小时）" csv={csv} actions={<Segmented label="指标" value={metric} onChange={setMetric} options={METRICS} />}>
 			{m.total === 0 ? (
 				<Empty>此范围内没有记录，无法绘制活跃时段。</Empty>
 			) : (
@@ -274,7 +273,7 @@ export function OutcomeWaffle({ data, csv }: { data: StatsOverviewDTO; csv: stri
 		for (let n = 0; n < dots[i]!; n++) seq.push(k);
 	});
 	return (
-		<Card testid="chart-waffle" title="结果占比" subtitle="按结果统计，每个点约占 1%。" csv={csv} actions={<Segmented label="统计口径" value={unit} onChange={setUnit} options={UNITS} />}>
+		<Card testid="chart-waffle" title="结果占比" csv={csv} actions={<Segmented label="统计口径" value={unit} onChange={setUnit} options={UNITS} />}>
 			{c.total === 0 ? (
 				<Empty>此范围内没有{UNITS.find((u) => u.value === unit)?.label}记录。</Empty>
 			) : (

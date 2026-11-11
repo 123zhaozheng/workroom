@@ -102,7 +102,7 @@ export function Invites() {
 									</span>
 									{i.usedAt ? <Badge tone="success">已使用</Badge> : i.revokedAt ? <Badge>已撤销</Badge> : Date.parse(i.expiresAt) < Date.now() ? <Badge>已过期</Badge> : <Badge tone="info">有效</Badge>}
 									{!i.usedAt && !i.revokedAt ? (
-										<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/invites/${i.code}`), "邀请已撤销")}>
+										<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => del(`/admin/invites/${i.code}`))}>
 											撤销
 										</Button>
 									) : null}

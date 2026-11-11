@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T10:59:49.053Z",
+  "at": "2026-11-11T12:58:45.958Z",
   "results": [
     {
       "name": "A medium 390-light: no horizontal scroll",
@@ -174,7 +174,7 @@
     {
       "name": "B skill saved: one slim line (≤ 40px high at 1440) that still says 已保存, the skill and where to find it",
       "ok": true,
-      "detail": "25px · 已保存 「r10-skill」已保存为你的个人技能（v1）。 在「能力 › 我的技能」查看"
+      "detail": "25px · 已保存 「r10-skill」（v1） 在「能力 › 我的技能」查看"
     },
     {
       "name": "B skill saved: is not a card (no border box) and does not sit above the conversation",
@@ -239,7 +239,7 @@
     {
       "name": "B run failure: the bar above the composer is only the status + 重试 (one slim line, no repeated reason, no second 技术详情)",
       "ok": true,
-      "detail": "36px · 失败 · 还没有完成的步骤 说明 重试"
+      "detail": "36px · 失败 重试"
     },
     {
       "name": "B run failure: the error note is one compact line (≤ 48px)",
@@ -257,12 +257,7 @@
       "detail": ""
     },
     {
-      "name": "B stale citations: one short line (≤ 32px) that says how many; the explanation is behind 详情",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B stale citations: 详情 shows the full explanation",
+      "name": "B stale citations: one short line (≤ 32px) that says how many — round 11: no 详情 toggle and no explanation sentence at all",
       "ok": true,
       "detail": ""
     },

@@ -3,7 +3,7 @@
 import { BookOpen, Folders, Paperclip, Plus, Sparkles } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useMedia } from "@/lib/prefs";
-import { BottomSheet, Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip } from "@/components/ui/overlay";
+import { BottomSheet, Menu, MenuContent, MenuItem, MenuTrigger, Tip } from "@/components/ui/overlay";
 
 export interface AttachActions {
 	upload: () => void;
@@ -15,9 +15,9 @@ export interface AttachActions {
 export function AttachMenu({ actions, disabled, side = "top" }: { actions: AttachActions; disabled?: boolean; side?: "top" | "bottom" }) {
 	const phone = useMedia("(max-width: 639px)");
 	const [open, setOpen] = useState(false);
-	// one line each: the label says what it does; the only hint is the one people would not guess (drag / paste)
-	const rows: { id: string; icon: ReactNode; label: string; hint?: string; run: () => void }[] = [
-		{ id: "upload", icon: <Paperclip />, label: "上传文件", hint: "也可拖入文件或粘贴图片", run: actions.upload },
+	// one line each: the label says what it does
+	const rows: { id: string; icon: ReactNode; label: string; run: () => void }[] = [
+		{ id: "upload", icon: <Paperclip />, label: "上传文件", run: actions.upload },
 		{ id: "library", icon: <Folders />, label: "从文件库选择", run: actions.library },
 		{ id: "kb", icon: <BookOpen />, label: "引用知识库", run: actions.kb },
 		...(actions.skill ? [{ id: "skill", icon: <Sparkles />, label: "使用技能", run: actions.skill }] : []),
@@ -54,7 +54,6 @@ export function AttachMenu({ actions, disabled, side = "top" }: { actions: Attac
 							{r.icon}
 							<span>
 								<span className="block text-base">{r.label}</span>
-								{r.hint ? <span className="block text-xs text-fg-muted">{r.hint}</span> : null}
 							</span>
 						</button>
 					))}
@@ -67,13 +66,11 @@ export function AttachMenu({ actions, disabled, side = "top" }: { actions: Attac
 				<MenuTrigger asChild>{trigger}</MenuTrigger>
 			</Tip>
 			<MenuContent side={side} align="start" className="w-64">
-				<MenuLabel>添加到本条消息</MenuLabel>
 				{rows.map((r) => (
 					<MenuItem key={r.id} data-testid={`attach-${r.id}`} onSelect={r.run} className="py-2">
 						{r.icon}
 						<span className="min-w-0">
 							<span className="block">{r.label}</span>
-							{r.hint ? <span className="block text-xs text-fg-muted">{r.hint}</span> : null}
 						</span>
 					</MenuItem>
 				))}

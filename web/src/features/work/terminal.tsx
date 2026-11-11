@@ -7,9 +7,8 @@ import type { SandboxRunDTO, SandboxRunsResponse } from "@shared/files";
 import type { SandboxInfoDTO } from "@shared/sandbox";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
-import { cn, durationText, formatBytes, relTime } from "@/lib/utils";
+import { cn, durationText, relTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/misc";
-import { InfoPop } from "@/components/shell/InfoPop";
 import { LoadState, Notice } from "./states";
 
 const STATUS: Record<SandboxRunDTO["status"], { label: string; tone: "success" | "info" | "danger" | "warning" }> = {
@@ -40,21 +39,12 @@ export function TerminalTab({ spaceId, conversationId }: { spaceId: string; conv
 			<LoadState state={runs} what="运行记录">
 				{list.length === 0 ? (
 					unavailable ? null : (
-						<Notice icon={<TerminalSquare />} title="还没有运行过代码" testid="terminal-empty">
-							助手运行的命令和输出会显示在这里。
-						</Notice>
+						<Notice icon={<TerminalSquare />} title="还没有运行过代码" testid="terminal-empty" />
 					)
 				) : (
 					<>
 						<div className="flex items-center justify-between">
 							<h3 className="text-sm font-medium">运行记录 · {list.length} 次</h3>
-							{info && !unavailable ? (
-								<InfoPop label="运行限制" testid="sandbox-limits">
-									<span data-testid="sandbox-driver">
-										代码在独立环境中运行：限时 {Math.round(info.limits.timeoutMs / 1000)} 秒，内存 {formatBytes(info.limits.memoryBytes)}，网络{info.limits.network ? "开启" : "关闭"}，只能写入工作区。
-									</span>
-								</InfoPop>
-							) : null}
 						</div>
 						<div
 							data-testid="terminal-log"
@@ -81,7 +71,7 @@ function Unavailable({ info }: { info: SandboxInfoDTO }) {
 	return (
 		<div data-testid="sandbox-unavailable" role="status" className="rounded-xl border border-border bg-surface-2 p-3 text-[13px]">
 			<p className="font-medium text-fg">代码运行暂时不可用</p>
-			<p className="mt-0.5 text-fg-muted">助手现在无法执行代码。{isOrgAdmin ? "请在服务器上启用代码运行环境。" : "请联系管理员开启。"}</p>
+			<p className="mt-0.5 text-fg-muted">{isOrgAdmin ? "请在服务器上启用代码运行环境。" : "请联系管理员开启。"}</p>
 			{isOrgAdmin ? (
 				<details className="mt-2" data-testid="sandbox-admin-hint">
 					<summary className="cursor-pointer text-fg-muted">技术详情</summary>

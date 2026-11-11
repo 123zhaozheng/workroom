@@ -11,8 +11,8 @@ import { Badge } from "@/components/ui/misc";
 import { permShort } from "@/features/market/common";
 import { ClampText } from "./Disclosure";
 
-export const SKILL_DRAFT_NOTE = "保存后仅你可用；不会自动运行，也不会发布到商城。发布需在「能力 › 我的技能」另行提交审核。";
-const SKILL_DRAFT_NOTE_MARKET = "不会自动运行。新版本会提交审核，通过之前使用该技能的人仍用旧版本。";
+export const SKILL_DRAFT_NOTE = "保存后仅你可用，不会自动运行。";
+const SKILL_DRAFT_NOTE_MARKET = "新版本会提交审核，通过前仍用旧版本。";
 
 /** The approval's detail when it is a skill draft; undefined for every other approval. */
 export function skillDraftOf(detail: unknown): SkillDraftApprovalDetail | undefined {
@@ -77,7 +77,6 @@ export function SkillDraftFace({ d }: { d: SkillDraftApprovalDetail }) {
 /** Everything else about the draft, behind 查看详情: the file list, permissions, every finding and the fixed sentence about what saving means. */
 export function SkillDraftDetails({ d }: { d: SkillDraftApprovalDetail }) {
 	const risky = d.findings.filter((f) => f.severity !== "info");
-	const exec = d.files.filter((f) => f.executable).length;
 	return (
 		<>
 			<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
@@ -92,7 +91,6 @@ export function SkillDraftDetails({ d }: { d: SkillDraftApprovalDetail }) {
 							</li>
 						))}
 					</ul>
-					{exec ? <p className="mt-1 text-xs text-fg-muted">包含 {exec} 个可执行脚本，保存后只在你使用该技能时、在沙箱里运行。</p> : null}
 				</dd>
 				<dt className="text-fg-muted">需要的权限</dt>
 				<dd data-testid="skill-draft-perms">{permissionWords(d)}</dd>
@@ -150,9 +148,9 @@ export function skillDraftTech(d: SkillDraftApprovalDetail): string {
 /** Result wording that matches what really happened (a market skill's new version is submitted for review, not usable yet). */
 function savedText(d: SkillDraftApprovalDetail, draft: SkillDraftDTO | null): string {
 	const v = draft?.versionNo ? `（v${draft.versionNo}）` : "";
-	if (d.target?.scope === "market") return draft ? `已保存新版本${v}。${draft.error ?? "已提交审核，通过之前使用者仍用旧版本。"}` : "已保存新版本。";
-	if (d.target?.mode === "update") return `已为你的个人技能保存新版本${v}。`;
-	return `已保存为你的个人技能${v}。`;
+	if (d.target?.scope === "market") return draft ? `新版本${v}已提交审核${draft.error ? `：${draft.error}` : ""}` : "新版本已提交审核";
+	if (d.target?.mode === "update") return `新版本${v}`;
+	return v;
 }
 
 /** After the decision: 已保存 (link to 我的技能) / 未保存. The draft route may be absent; the approval status alone is then enough. */
@@ -178,7 +176,7 @@ export function SkillDraftResult({ approval, d }: { approval: ApprovalDTO; d: Sk
 			{saved ? <CheckCircle2 aria-hidden className="size-4 text-success" /> : <CircleX aria-hidden className={failed ? "size-4 text-danger" : "size-4 text-fg-subtle"} />}
 			<span className="font-medium">{failed ? "保存失败" : saved ? "已保存" : "未保存"}</span>
 			<span className="min-w-0 break-words text-fg-muted">
-				「{d.title || d.name}」{failed ? draft?.error ?? "" : saved ? savedText(d, draft) : "没有保存。"}
+				「{d.title || d.name}」{failed ? draft?.error ?? "" : saved ? savedText(d, draft) : ""}
 			</span>
 			{saved ? (
 				<Link to="/capabilities" className="text-info underline-offset-2 hover:underline" data-testid="skill-draft-open">

@@ -36,7 +36,7 @@ export function ConversationHandoffDialog({ spaceId, conversationId, open, onOpe
 	const pendingCount = h ? h.pending.approvals.length + h.pending.effects.length + h.pending.queued.length + h.pending.runningSubagents.length + (h.pending.continuable ? 1 : 0) : 0;
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="交接摘要" description="已做的决定、当前进展、待处理事项和成果。" className="max-w-2xl">
+			<DialogContent title="交接摘要" className="max-w-2xl">
 				<div data-testid="handoff" className="wr-scroll -mx-1 max-h-[72vh] overflow-y-auto px-1 text-[13px]">
 					<Loadable state={res} what="交接摘要" need="A 组：GET /conversations/:spaceId/:id/handoff">
 						{h ? (
@@ -168,7 +168,6 @@ export function ConversationHandoffDialog({ spaceId, conversationId, open, onOpe
 										))}
 									</ul>
 								</Section>
-								<p className="text-xs text-fg-subtle">生成于 {fullTime(h.generatedAt)}</p>
 							</>
 						) : null}
 					</Loadable>
@@ -187,7 +186,7 @@ export function ProjectHandoffSummary({ projectId }: { projectId: string }) {
 			{h ? (
 				<div data-testid="project-handoff" className="space-y-1.5">
 					{h.conversations.length === 0 ? (
-						<None>还没有对话。</None>
+						<None>还没有对话</None>
 					) : (
 						h.conversations.map((c) => {
 							const attention = c.pendingApprovals + c.needsReconciliation + c.queued + (c.continuable ? 1 : 0);

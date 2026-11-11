@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Help } from "@/components/ui/help";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Spinner } from "@/components/ui/misc";
 import { Fold } from "@/features/admin/common";
@@ -21,10 +20,10 @@ interface HeaderRow {
 	value: string;
 }
 type Family = "openai" | "claude" | "builtin";
-const FAMILIES: { id: Family; title: string; desc: string }[] = [
-	{ id: "openai", title: "OpenAI 兼容", desc: "大多数厂商和自建服务：DeepSeek、通义千问、Kimi、智谱、OpenRouter、本地部署…" },
-	{ id: "claude", title: "Claude 兼容", desc: "Anthropic 官方，或兼容 Claude 的中转服务" },
-	{ id: "builtin", title: "内置服务", desc: "Azure OpenAI、Google、Mistral 等，每种只能配置一个" },
+const FAMILIES: { id: Family; title: string }[] = [
+	{ id: "openai", title: "OpenAI 兼容" },
+	{ id: "claude", title: "Claude 兼容" },
+	{ id: "builtin", title: "内置服务" },
 ];
 const familyOf = (t: ModelProviderType): Family => (t === "anthropic-messages" ? "claude" : t === "builtin" ? "builtin" : "openai");
 const AUTH_LABEL: Record<ModelAuthStyle, string> = { default: "自动（推荐）", bearer: "Authorization: Bearer", "x-api-key": "x-api-key", "api-key": "api-key" };
@@ -168,16 +167,13 @@ export function ProviderDialog({
 							{FAMILIES.filter((f) => !personal || f.id !== "builtin").map((f) => (
 								<label key={f.id} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5", family === f.id ? "border-accent bg-accent-soft" : "border-border hover:bg-surface-2")}>
 									<input type="radio" name="family" checked={family === f.id} onChange={() => pickFamily(f.id)} className="mt-1" />
-									<span>
-										<span className="block font-medium">{f.title}</span>
-										<span className="block text-xs text-fg-muted">{f.desc}</span>
-									</span>
+									<span className="font-medium">{f.title}</span>
 								</label>
 							))}
 						</div>
 						{presets.some((p) => familyOf(p.type) === family) ? (
 							<div>
-								<Label>常用服务（可选，自动填好地址）</Label>
+								<Label>常用服务（可选）</Label>
 								<div className="flex flex-wrap gap-1.5" data-testid="provider-preset">
 									{presets
 										.filter((p) => familyOf(p.type) === family && p.key !== "openai-compatible" && p.key !== "claude-relay")
@@ -236,7 +232,7 @@ export function ProviderDialog({
 
 						<div>
 							<Label htmlFor="pv-key">密钥</Label>
-							{!keyOk && !keyless ? <p className="mb-1.5 rounded-lg bg-warning-soft px-2.5 py-1.5 text-xs text-warning">服务端还没有开启密钥加密，暂时不能在这里直接保存密钥。{!personal ? "可以改用「引用环境变量」。" : ""}</p> : null}
+							{!keyOk && !keyless ? <p className="mb-1.5 rounded-lg bg-warning-soft px-2.5 py-1.5 text-xs text-warning">服务端未开启密钥加密，暂不能直接保存密钥。{!personal ? "可以改用「引用环境变量」。" : ""}</p> : null}
 							{!personal ? (
 								<div className="mb-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm">
 									<label className="flex items-center gap-1.5">
@@ -265,11 +261,10 @@ export function ProviderDialog({
 							<div className="mt-2 flex items-center gap-2 text-sm text-fg-muted">
 								<Switch aria-label="不需要密钥" data-testid="provider-keyless" checked={keyless} onCheckedChange={setKeyless} />
 								不需要密钥（本地部署的模型）
-								<Help label="密钥说明" side="top">密钥只保存在服务端，保存后不会再显示。</Help>
 							</div>
 						</div>
 
-						<Fold title="高级设置" hint="鉴权、请求头、限流、失败保护、超时" testId="provider-advanced">
+						<Fold title="高级设置" testId="provider-advanced">
 							<div className="space-y-3">
 								{type !== "builtin" ? (
 									<div>
@@ -287,7 +282,6 @@ export function ProviderDialog({
 									<div className="flex items-center gap-2 text-sm">
 										<Switch aria-label="使用 OpenAI 新版对话接口" checked={type === "openai-responses"} onCheckedChange={(v) => setType(v ? "openai-responses" : "openai-completions")} />
 										使用 OpenAI 新版对话接口
-										<Help label="接口说明" side="top">只有 OpenAI 官方支持；多数第三方服务不要开启。</Help>
 									</div>
 								) : null}
 								<div>
@@ -304,7 +298,6 @@ export function ProviderDialog({
 											</label>
 										))}
 									</div>
-									<p className="mt-1 text-xs text-fg-muted">超限或暂停时，会先改用模型设置里的备用模型；没有备用模型则稍后自动重试。</p>
 								</div>
 								<div>
 									<Label>请求超时（毫秒，可选）</Label>
@@ -457,7 +450,7 @@ function CheckStep({ provider, base, personal, onDone }: { provider: ModelProvid
 						读取模型失败：{models.error}
 					</p>
 				) : list.length === 0 ? (
-					<p className="rounded-lg border border-dashed border-border px-3 py-3 text-fg-muted">没有获取到模型。可以先完成，稍后在模型列表里手动添加。</p>
+					<p className="rounded-lg border border-dashed border-border px-3 py-3 text-fg-muted">没有获取到模型</p>
 				) : (
 					<ul className="max-h-56 divide-y divide-border overflow-y-auto rounded-lg border border-border" data-testid="provider-model-pick">
 						{list.map((m) => (
@@ -471,7 +464,6 @@ function CheckStep({ provider, base, personal, onDone }: { provider: ModelProvid
 						))}
 					</ul>
 				)}
-				{!personal ? <p className="mt-1.5 text-xs text-fg-muted">勾选的模型会对全体成员开放；之后可以在模型列表里限定到部门或个人。不勾选则暂不开放。</p> : null}
 			</section>
 			{err ? (
 				<p className="rounded-lg bg-danger-soft px-3 py-2 text-danger" role="alert">

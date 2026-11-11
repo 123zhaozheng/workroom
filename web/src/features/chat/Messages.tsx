@@ -57,7 +57,6 @@ export function UserMessage({ entry, run, onEdit, onFork, onRestore, readOnly }:
 				<div className="w-full max-w-[85%]">
 					<Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={Math.min(8, Math.max(2, draft.split("\n").length))} autoFocus className="text-[15px]" />
 					<div className="mt-1.5 flex items-center justify-end gap-2">
-						<span className="mr-auto text-xs text-fg-subtle">保存后在新分支中重新回答，原对话保留不变。</span>
 						<Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
 							取消
 						</Button>
@@ -132,12 +131,12 @@ export function UserMessage({ entry, run, onEdit, onFork, onRestore, readOnly }:
  */
 function MessageOutcome({ entry, run, onRestore }: { entry: UserEntryDTO; run?: UserRun; onRestore?: () => void }) {
 	const sub = entry.submission;
+	// Only what the person must act on: a message that never reached the model, or a failure not already shown in the answer.
+	// A stop (or a stop later continued) needs no note: the message and completed steps simply stay in the conversation.
 	if (entry.placed === false)
 		return (
 			<p data-testid="message-outcome" data-kind="unsent" data-status={sub?.status ?? "withdrawn"} className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-danger">
-				<span>
-					未送达模型：{sub?.status === "unanswered" && sub.reason && sub.reason !== "aborted" ? `${reasonText(sub.reason)}，` : ""}这条消息没有进入对话，模型没有看到它
-				</span>
+				<span>未送达</span>
 				{onRestore ? (
 					<button data-testid="unsent-restore" onClick={onRestore} className="rounded px-1 font-medium text-info hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-info">
 						放回输入框
@@ -145,34 +144,10 @@ function MessageOutcome({ entry, run, onRestore }: { entry: UserEntryDTO; run?: 
 				) : null}
 			</p>
 		);
-	if (!sub || sub.status === "done" || sub.status === "applied") return null;
-	if (sub.status === "unanswered" || sub.status === "withdrawn") {
-		const steps = run ? (run.doneSteps ? `已完成 ${run.doneSteps} 步` : "还没有完成的步骤") : "";
-		const stopped = sub.reason === "aborted";
-		if (run?.answered)
-			return (
-				<p data-testid="message-outcome" data-kind="resumed" data-status={sub.status} className="mt-1 text-xs text-fg-subtle">
-					这一轮中途{stopped ? "停止" : `中断（${reasonText(sub.reason)}）`}过，之后已继续完成
-				</p>
-			);
-		if (stopped)
-			return (
-				<p data-testid="message-outcome" data-kind="stopped" data-status={sub.status} className="mt-1 text-xs text-fg-muted">
-					已停止{steps ? `（${steps}）` : ""} · 这条消息和已完成的步骤都保留在对话里
-				</p>
-			);
-		return (
-			<p data-testid="message-outcome" data-kind="incomplete" data-status={sub.status} className="mt-1 text-xs text-danger">
-				{/* The reason is already in the answer's inline error note: say only what the note does not (steps, message kept). */}
-				{run?.errorShown ? "这一轮没有完成" : `这一轮没有完成：${reasonText(sub.reason) || SUBMISSION_LABEL[sub.status]}`}
-				{steps ? `（${steps}）` : ""} · 消息已送达模型，没有丢失
-			</p>
-		);
-	}
+	if (!sub || sub.status !== "unanswered" || sub.reason === "aborted" || run?.answered || run?.errorShown) return null;
 	return (
-		<p data-testid="message-outcome" data-status={sub.status} className="mt-1 text-xs text-info">
-			{SUBMISSION_LABEL[sub.status]}
-			{sub.reason ? `（${reasonText(sub.reason)}）` : ""}
+		<p data-testid="message-outcome" data-kind="incomplete" data-status={sub.status} className="mt-1 text-xs text-danger">
+			未完成：{reasonText(sub.reason) || SUBMISSION_LABEL[sub.status]}
 		</p>
 	);
 }

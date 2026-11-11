@@ -7,7 +7,7 @@ import { fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/misc";
-import { Fold, Help } from "@/features/admin/common";
+import { Fold } from "@/features/admin/common";
 
 /** 排查 (M18-B): one correlation id (request id, run id, automation id, request key, or spaceId:conversationId) →
  * audit, model route attempts, usage rows, automation runs, notifications and other modules' events, all tenant-scoped
@@ -53,7 +53,6 @@ export function Trace() {
 				<Button type="submit" disabled={busy} data-testid="trace-run">
 					查询
 				</Button>
-				<Help label="排查说明">只显示本组织的数据；提示词、检索词和工具参数等敏感内容已脱敏。</Help>
 			</form>
 			{err ? <p className="text-sm text-danger" role="alert">{err}</p> : null}
 			{res ? (

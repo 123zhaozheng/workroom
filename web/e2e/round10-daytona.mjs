@@ -17,8 +17,8 @@ try {
 	await register(page, base, { email: `r10-${Date.now()}@example.com`, name: "管理员" });
 	await page.goto(`${base}/admin?tab=sandbox`);
 	await page.waitForSelector('[data-testid="daytona-mode"]');
-	check("Daytona card defaults to 快照 / 默认规格 with a plain note and no resource fields", (await page.locator('[data-testid="daytona-mode"]').getAttribute("data-value")) === "snapshot" && (await page.locator('[data-testid="daytona-resources-note"]').count()) === 1 && (await page.locator('[data-testid="daytona-resources"]').count()) === 0);
-	check("E2B card says size comes from the template", (await page.locator('[data-testid="e2b-resources-note"]').innerText()).includes("模板"));
+	check("Daytona card defaults to 快照 / 默认规格 with no resource fields and no explanatory note (round 11: the notes are gone)", (await page.locator('[data-testid="daytona-mode"]').getAttribute("data-value")) === "snapshot" && (await page.locator('[data-testid="daytona-resources-note"]').count()) === 0 && (await page.locator('[data-testid="daytona-resources"]').count()) === 0);
+	check("E2B card has no size fields and no 模板 explanation (round 11)", (await page.locator('[data-testid="e2b-resources-note"]').count()) === 0 && (await page.locator('[data-testid="e2b-resources"]').count()) === 0);
 
 	// image mode reveals the size fields; saving an image + size stores both
 	await pick(page.locator('[data-testid="daytona-mode"]'), "image");

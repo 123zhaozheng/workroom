@@ -19,7 +19,6 @@ import { AssistantsSection } from "@/features/assistants/Assistants";
 import type { ModelOption } from "@/features/chat/ModelPicker";
 import { MyPermissionsSection } from "@/features/admin/MyPermissions";
 import { Section } from "@/features/admin/common";
-import { Help } from "@/components/ui/help";
 import { useConfirm } from "@/features/admin/confirm";
 import { CredentialsSection } from "@/features/settings/Credentials";
 import { EnvVarsEditor } from "@/features/settings/EnvVars";
@@ -83,10 +82,10 @@ function General() {
 				<SettingsRow label="主题">
 					<Seg<ThemePref> label="主题" value={prefs.theme} onChange={(v) => prefs.set("theme", v)} options={[["system", "跟随系统"], ["light", "浅色"], ["dark", "深色"]]} />
 				</SettingsRow>
-				<SettingsRow label="减少动画" help="关闭过渡和状态动画。系统开启「减少动态效果」时始终生效。">
+				<SettingsRow label="减少动画">
 					<Switch data-testid="reduce-motion-toggle" aria-label="减少动画" checked={prefs.reduceMotion} onCheckedChange={(v) => prefs.set("reduceMotion", v)} />
 				</SettingsRow>
-				<SettingsRow label="动态点阵背景" help="首页和对话页背后的淡淡点阵。">
+				<SettingsRow label="动态点阵背景">
 					<Switch data-testid="dot-matrix-toggle" aria-label="动态点阵背景" checked={prefs.dotMatrix} onCheckedChange={(v) => prefs.set("dotMatrix", v)} />
 				</SettingsRow>
 			</SettingsGroup>
@@ -130,7 +129,7 @@ function CredentialsTab() {
 	return (
 		<>
 			<CredentialsSection />
-			<Section title="环境变量" testId="my-env-vars" action={<Help label="环境变量说明">只对你自己的工作区命令生效；项目和组织也可以设置同名变量。</Help>}>
+			<Section title="环境变量" testId="my-env-vars">
 				{me ? <EnvVarsEditor scope="user" scopeRef={me.userId} editable testId="env-vars-user" /> : null}
 			</Section>
 		</>

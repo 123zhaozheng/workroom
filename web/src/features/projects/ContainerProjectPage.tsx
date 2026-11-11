@@ -88,7 +88,7 @@ export function ContainerProjectPage({ project, reload }: { project: UiProject; 
 
 					{sharedToMe ? (
 						<p data-testid="project-readonly-note" className="mb-8 rounded-lg bg-surface-2 px-3 py-2 text-sm text-fg-muted">
-							{SHARE_PERMISSION_TEXT}。
+							{SHARE_PERMISSION_TEXT}
 						</p>
 					) : owner ? (
 						<div className="mb-8">
@@ -103,9 +103,7 @@ export function ContainerProjectPage({ project, reload }: { project: UiProject; 
 						</h2>
 						<Loadable state={convs} what="项目对话">
 							{list.length === 0 ? (
-								<EmptyState icon={<FolderOpen />} title="还没有对话">
-									{owner ? "在上面输入开始，或在侧栏里把已有对话移进来。" : "这个项目里还没有可查看的对话。"}
-								</EmptyState>
+								<EmptyState icon={<FolderOpen />} title="还没有对话" />
 							) : (
 								<ul data-testid="project-conversations" className="divide-y divide-border rounded-xl border border-border bg-surface">
 									{list.map((c) => (

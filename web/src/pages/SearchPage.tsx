@@ -45,9 +45,7 @@ export default function SearchPage() {
 						<Search className="absolute left-3 top-3 size-[18px] text-fg-subtle" />
 						<Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索对话、文件和知识" className="h-11 rounded-xl pl-10 text-[15px]" data-testid="search-input" />
 					</div>
-					{!dq ? (
-						<p className="text-center text-[13px] text-fg-subtle">输入关键词，同时搜索对话、文件库和你能访问的知识库。随时按 Ctrl 或 ⌘ + K 可以快速搜索对话。</p>
-					) : (
+					{!dq ? null : (
 						<div className="space-y-8">
 							<Section icon={<MessageSquare />} title="对话">
 								{convs.status === "error" ? (

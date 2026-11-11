@@ -351,7 +351,7 @@ try {
 	check("review: the automated-check verdict comes before the content diff", sectionOrder.indexOf("自动检查") >= 0 && sectionOrder.indexOf("自动检查") < sectionOrder.indexOf("内容变化"), sectionOrder.join(" > "));
 	const man = await rp.locator('[data-testid="manifest"]').innerText();
 	check("review: permissions are in plain words (需要的权限：运行代码、写入文件)", man.includes("需要的权限") && man.includes("运行代码") && man.includes("写入文件") && man.includes("新增"), man.replace(/\s+/g, " ").slice(0, 120));
-	check("review: each decision states its consequence next to the button", (await rp.locator('[data-testid="decision-bar"]').innerText()).includes("不发布；提交人需要上传新版本"));
+	check("review [round 11]: the decision bar is just the three buttons (批准并发布 / 要求修改 / 驳回) — no consequence sentence next to each; the confirm dialog still states it", (await rp.locator('[data-testid="decision-bar"]').innerText()).includes("驳回") && !(await rp.locator('[data-testid="decision-bar"]').innerText()).includes("不发布；提交人需要上传新版本"));
 	check("review: reject / request changes stay disabled without a comment", !(await rp.locator('[data-testid="reject"]').isEnabled()) && !(await rp.locator('[data-testid="request-changes"]').isEnabled()));
 	await rp.fill('[data-testid="decision-comment"]', "脚本需要先说明用途");
 	await rp.click('[data-testid="reject"]');

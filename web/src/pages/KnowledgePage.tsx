@@ -17,7 +17,6 @@ import { usePanel, type PreviewTarget } from "@/components/shell/panel";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Help } from "@/components/ui/help";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
 import { FilePickerDialog, listOf } from "@/features/chat/pickers";
@@ -95,13 +94,10 @@ function KbList() {
 					<PageHeader
 						title="个人知识库"
 						actions={
-							<>
-							<Help label="知识库说明">把资料加入知识库后，系统会解析并建立索引；只有“可检索”的资料会被助手引用。</Help>
 							<Button variant="primary" onClick={() => setCreate(true)} disabled={res.unavailable}>
 								<Plus />
 								新建知识库
 							</Button>
-							</>
 						}
 					/>
 					<Loadable state={res} what="知识库" need="C 组：GET /api/kb">
@@ -169,7 +165,7 @@ function CreateKbDialog({ open, onOpenChange, onCreated }: { open: boolean; onOp
 	}, [scope, show.personal, show.department, show.org]);
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="新建知识库" description="可见范围决定谁能检索它；检索时按当前成员关系过滤。">
+			<DialogContent title="新建知识库">
 				<form
 					className="space-y-3"
 					onSubmit={async (e) => {
@@ -249,7 +245,7 @@ function KbDetail({ kbId, embedded }: { kbId: string; embedded?: boolean }) {
 
 	const input = useRef<HTMLInputElement>(null);
 	const [picker, setPicker] = useState(false);
-	const [msg, setMsg] = useState<{ tone: "info" | "danger"; text: string }>();
+	const [msg, setMsg] = useState<{ tone: "danger"; text: string }>();
 	const [busy, setBusy] = useState(false);
 	const { openPreview } = usePanel();
 	// wide screens already have a list and a detail column: documents preview in a dialog instead of squeezing a third column in
@@ -258,8 +254,6 @@ function KbDetail({ kbId, embedded }: { kbId: string; embedded?: boolean }) {
 	useEffect(() => {
 		if (!docs.data) return;
 		setPoll(anyProcessing);
-		// the "processing" notice must not outlive the processing it describes
-		if (!anyProcessing) setMsg((m) => (m?.tone === "info" ? undefined : m));
 	}, [docs.data, anyProcessing]);
 	const canWrite = kb?.permissions.write ?? true;
 
@@ -279,7 +273,6 @@ function KbDetail({ kbId, embedded }: { kbId: string; embedded?: boolean }) {
 				const r = await post<FileUploadResponse>("/files", fd);
 				await addVersion(r.file.id, r.version.versionId);
 			}
-			setMsg({ tone: "info", text: "文件已上传并加入，正在解析与索引——完成前不会被检索。" });
 			setPoll(true);
 			docs.reload();
 		} catch (e) {
@@ -296,7 +289,6 @@ function KbDetail({ kbId, embedded }: { kbId: string; embedded?: boolean }) {
 			description={kb?.description || undefined}
 			actions={
 				<>
-					<Help label="状态说明">处理中＝尚不可检索；可检索＝已建立索引，可被引用；失败＝可查看原因并重试。</Help>
 					{canWrite ? (
 						<>
 							<input ref={input} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} data-testid="kb-upload-input" />
@@ -317,7 +309,7 @@ function KbDetail({ kbId, embedded }: { kbId: string; embedded?: boolean }) {
 	const content = (
 		<>
 			{header}
-			{msg ? <p className={cn("mb-3 rounded-lg px-3 py-2 text-[13px]", msg.tone === "danger" ? "bg-danger-soft text-danger" : "bg-info-soft text-info")}>{msg.text}</p> : null}
+			{msg ? <p className="mb-3 rounded-lg bg-danger-soft px-3 py-2 text-[13px] text-danger">{msg.text}</p> : null}
 			<Loadable state={docs} what="知识库文档" need="C 组：GET /api/kb/:id/docs">
 				{list.length === 0 ? (
 					<div data-testid="kb-docs-empty" className="rounded-xl border border-border bg-surface">
@@ -367,7 +359,6 @@ function KbDetail({ kbId, embedded }: { kbId: string; embedded?: boolean }) {
 				onPick={async (r) => {
 					try {
 						await addVersion(r.fileId, r.versionId);
-						setMsg({ tone: "info", text: `已加入「${r.name}」，正在解析与索引——完成前不会被检索。` });
 						setPoll(true);
 						docs.reload();
 					} catch (e) {
@@ -445,7 +436,6 @@ function DocRow({ d, first, canWrite, kbId, onChanged, onPreview, siblings }: { 
 			{latestDiffers ? (
 				<p className="ml-7 mt-1 text-xs text-fg-muted">
 					新版本 v{d.latest.versionNo}：{PROC[d.latest.status]}
-					{d.latest.status !== "failed" ? "（完成前仍使用旧版本回答）" : ""}
 				</p>
 			) : null}
 			{failedV ? (
@@ -455,7 +445,7 @@ function DocRow({ d, first, canWrite, kbId, onChanged, onPreview, siblings }: { 
 					</span>
 					{canWrite ? (
 						<>
-							{failedV.retryable === false ? <span className="text-fg-subtle">该错误重试多半仍会失败（例如文件本身损坏或格式不支持）</span> : null}
+							{failedV.retryable === false ? <span className="text-fg-subtle">重试多半仍会失败</span> : null}
 							<Button
 								size="sm"
 								data-testid="kb-retry"
@@ -735,7 +725,6 @@ function EvalBox({ kbId }: { kbId: string }) {
 				<Button size="sm" onClick={run} disabled={busy} data-testid="kb-eval-run">
 					运行评估
 				</Button>
-				<span className="text-xs text-fg-subtle">每行一个问题；“=&gt;”后写期望命中的文件名，留空表示期望“没有证据”。</span>
 			</div>
 			{err ? <p className="mt-1 text-danger">{err}</p> : null}
 			{res ? (

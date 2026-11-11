@@ -1,6 +1,6 @@
 // Shared pieces for the permission UI: viewer permission helpers, scope picker, grouped permission matrix, "why" explanations.
-import { ChevronDown, ChevronRight, Lock, ShieldAlert } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, ShieldAlert } from "lucide-react";
+import { useMemo, useState } from "react";
 import { PERMISSIONS, PERMISSION_GROUPS, permissionDef, type EffectivePermissionDTO, type PermissionDef, type PermissionScopeKind, type ScopeRef } from "@shared/permissions";
 import type { DepartmentDTO } from "@shared/ops";
 import { useSession } from "@/lib/session";
@@ -8,7 +8,6 @@ import { useApi } from "@/lib/useApi";
 import type { Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/misc";
-import { Help } from "@/components/ui/help";
 import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
 import type { ConfirmOptions } from "./confirm";
@@ -42,18 +41,6 @@ export const permDesc = (p: { id: string; description: string }): string => PERM
 export const isCritical = (id: string): boolean => permissionDef(id)?.risk === "critical";
 export const criticalOf = (ids: Iterable<string>): PermissionDef[] => [...ids].map((id) => permissionDef(id)).filter((p): p is PermissionDef => !!p && p.risk === "critical");
 
-/** One line per built-in role: what it is for. Custom roles fall back to their own description. */
-const ROLE_PURPOSE: Record<string, string> = {
-	"builtin:owner": "组织的最终负责人，拥有全部权限，至少保留一位。",
-	"builtin:admin": "日常管理：成员、部门、角色、模型、预算与审计。",
-	"builtin:member": "日常使用：对话、文件、技能、自动化与项目。",
-	"builtin:guest": "只读体验：能对话，不能导出、分享或建项目。",
-	"builtin:dept_admin": "只管理被指定的部门及其子部门。",
-	"builtin:skill_reviewer": "审核技能与连接的上架申请。",
-	"builtin:auditor": "只读：查看和导出审计日志与统计。",
-	"builtin:billing": "管理预算，查看和导出费用与用量。",
-};
-export const rolePurpose = (r: { id: string; description: string }): string => ROLE_PURPOSE[r.id] ?? (r.description || "自定义角色");
 /** Base roles: exactly one per member, organisation-wide. Everything else stacks on top. */
 export const BASE_ROLE_IDS = ["builtin:owner", "builtin:admin", "builtin:member", "builtin:guest"] as const;
 export const isBaseRole = (id: string): boolean => (BASE_ROLE_IDS as readonly string[]).includes(id);
@@ -185,9 +172,6 @@ export function PermissionMatrix({ selected, onChange, readOnly, restrictTo, tes
 				<span>
 					已选 {allIds.filter((id) => selected.has(id)).length} / {allIds.length} 项
 				</span>
-				<Help label="权限说明" side="top">
-					带「高危」标记的权限可能影响整个组织的数据或安全。你只能勾选自己拥有的权限；「变更组织所有者」不能放进自定义角色。
-				</Help>
 				<span className="flex-1" />
 				<button type="button" className="rounded px-1.5 py-0.5 text-fg-muted underline-offset-2 hover:text-fg hover:underline" data-testid="matrix-toggle-all" onClick={() => setOpen(Object.fromEntries(PERMISSION_GROUPS.map((g) => [g.id, anyClosed])))}>
 					{anyClosed ? "展开全部" : "收起全部"}
@@ -340,11 +324,3 @@ export function EffectiveView({ effective, onlyGranted: initialOnly = true, test
 	);
 }
 
-export function LockedNote({ children }: { children: ReactNode }) {
-	return (
-		<p className="mb-3 flex items-start gap-1.5 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">
-			<Lock aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-			<span>{children}</span>
-		</p>
-	);
-}

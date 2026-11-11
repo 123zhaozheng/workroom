@@ -1,6 +1,6 @@
 // KPI tiles: value, period-over-period delta and a sparkline per tile. Simulated (test-model) tokens / latency are labelled 模拟
 // and never mixed into the real value; cost is never shown for simulated usage.
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import type { StatsGranularity, StatsKpiDTO, StatsKpiKey, StatsOverviewDTO } from "@shared/ops";
 import { cn } from "@/lib/utils";
 import { fmtBucket, fmtCompact, fmtInt, fmtMs, fmtPct, fmtUsd } from "./format";
@@ -76,8 +76,7 @@ function Sparkline({ points, buckets, gran, fmt, color = "var(--c1)" }: { points
 }
 
 function Delta({ k, def }: { k: StatsKpiDTO; def: Def }) {
-	if (k.value == null || k.previous == null || k.delta == null) return <span className="text-xs text-fg-subtle">上一周期无数据</span>;
-	if (k.delta === 0) return <span className="inline-flex items-center gap-0.5 text-xs text-fg-subtle"><Minus className="size-3" />与上期持平</span>;
+	if (k.value == null || k.previous == null || k.delta == null || k.delta === 0) return null;
 	const up = k.delta > 0;
 	const good = def.better === "neutral" ? null : (def.better === "up") === up;
 	const tone = good === null ? "text-fg-muted" : good ? "text-[var(--good-text)]" : "text-[var(--bad-text)]";

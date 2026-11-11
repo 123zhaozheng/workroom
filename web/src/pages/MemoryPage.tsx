@@ -28,7 +28,7 @@ export default function MemoryPage() {
 			<TopBar />
 			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
 				<Page>
-					<PageHeader title="记忆" description="助手会在对话中参考这些信息。每条都标明来源和作用范围，可随时修改或删除。" />
+					<PageHeader title="记忆" />
 					{!res.unavailable ? (
 						<form
 							className="mb-6 rounded-xl border border-border bg-surface p-3"
@@ -216,7 +216,7 @@ function MemoryItem({ m, onChanged, onCorrected }: { m: MemoryDTO; onChanged: ()
 function CorrectionResult({ r }: { r: MemoryCorrectionResult }) {
 	return (
 		<div className="mb-4 rounded-lg border border-success/40 bg-success-soft/40 p-3 text-xs" data-testid="memory-correction-result">
-			<div className="mb-1 font-medium text-success">已纠正，从现在起助手按新内容理解</div>
+			<div className="mb-1 font-medium text-success">已纠正</div>
 			<div>
 				<span className="text-fg-subtle">之前：</span>
 				<s>{r.change.before}</s>
@@ -227,7 +227,7 @@ function CorrectionResult({ r }: { r: MemoryCorrectionResult }) {
 			</div>
 			<div className="mt-0.5 text-fg-subtle">
 				{fullTime(r.change.at)}
-				{r.change.note ? ` · ${r.change.note}` : ""} · 旧版本 v{r.previous.version} 已标记为被替代
+				{r.change.note ? ` · ${r.change.note}` : ""}
 			</div>
 		</div>
 	);

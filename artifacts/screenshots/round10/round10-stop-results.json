@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T08:20:20.822Z",
+  "at": "2026-11-11T12:59:49.421Z",
   "results": [
     {
       "name": "stop: the message the person sent is still in the conversation",
@@ -7,19 +7,14 @@
       "detail": "你帮我随意改一下我在做测试 | 排队的一条消息"
     },
     {
-      "name": "stop: its label is 「已停止（已完成 1 步）」",
+      "name": "stop: no 已停止 label, no 保留在对话里 sentence and no 未应用 / 没有得到回复 on the message (only the unsent one has a marker)",
       "ok": true,
-      "detail": "[{\"kind\":\"stopped\",\"text\":\"已停止（已完成 1 步） · 这条消息和已完成的步骤都保留在对话里\"},{\"kind\":\"unsent\",\"text\":\"未送达模型：这条消息没有进入对话，模型没有看到它放回输入框\"}]"
+      "detail": "[{\"kind\":\"unsent\",\"text\":\"未送达放回输入框\"}]"
     },
     {
-      "name": "stop: the applied message is never called 未应用 / 没有得到回复 / 未送达",
+      "name": "stop: no bar of any kind — no run bar, hint, 继续 button or stop note",
       "ok": true,
       "detail": ""
-    },
-    {
-      "name": "stop: it says the message and completed steps are kept",
-      "ok": true,
-      "detail": "已停止（已完成 1 步） · 这条消息和已完成的步骤都保留在对话里"
     },
     {
       "name": "stop: the step chain keeps the completed step and says 已停止 (not 失败)",
@@ -32,29 +27,19 @@
       "detail": "wr_fixture_echo:done,wr_fixture_wait:stopped"
     },
     {
-      "name": "stop: the run bar says 已停止 · 已完成 1 步 and offers a real 继续",
-      "ok": true,
-      "detail": "已停止 · 已完成 1 步 说明 继续"
-    },
-    {
-      "name": "stop: the bar explains honestly: nothing lost, completed steps not redone, the cut-off step is not re-run automatically",
-      "ok": true,
-      "detail": "你的消息和已完成的步骤都保留在对话里，没有丢失。继续会让模型接着这些内容往下做，不会重做已完成的步骤；被截断的那一步不会自动重做，是否再做一次由模型根据对话判断。"
-    },
-    {
       "name": "stop: the message that was still queued is back in the composer (not discarded)",
       "ok": true,
       "detail": "排队的一条消息"
     },
     {
-      "name": "stop: and a note says so",
+      "name": "stop: no note about it either (the text simply is in the box)",
       "ok": true,
-      "detail": "已停止。停止时还有 1 条排队的消息没有发出，内容已放回输入框；你已经发出的那条消息和已完成的步骤都保留着。"
+      "detail": ""
     },
     {
-      "name": "stop: the queued message is also marked 未送达 in the conversation, saying the model never saw it",
+      "name": "stop: the queued message is also marked 未送达 in the conversation, nothing more than 未送达 · 放回输入框",
       "ok": true,
-      "detail": "未送达模型：这条消息没有进入对话，模型没有看到它放回输入框"
+      "detail": "未送达放回输入框"
     },
     {
       "name": "stop: that marker has a working 放回输入框",
@@ -62,9 +47,9 @@
       "detail": ""
     },
     {
-      "name": "reload: the same honest labels after a reload",
+      "name": "reload: the same after a reload — the step chain still says 已停止, the unsent marker is back, still no bar",
       "ok": true,
-      "detail": "stopped,unsent"
+      "detail": "unsent"
     },
     {
       "name": "放回输入框: the unsent text returns to the composer",
@@ -72,27 +57,12 @@
       "detail": "排队的一条消息"
     },
     {
-      "name": "继续: the model answered from the stored context (its answer quotes the step completed before the stop)",
+      "name": "continue by typing: the new message is added, the first message and its steps are still there",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 · 1 步被中途截断，没有重做 【测试模型·非真实AI】 工具执行完成，结果如下： wr_fixture_echo: echo(停止测试): 第一步已完成 wr_fixture_wait（失败）: [error] Tool wr_fixture_wait was aborted 测试模型 · 模拟用量，不计费"
+      "detail": "你帮我随意改一下我在做测试 | 排队的一条消息 | 接着做"
     },
     {
-      "name": "继续: no new user message was created (it is a continue, not a typed 「继续」)",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "继续: the original message now reads as 已继续完成 (not stuck on 已停止)",
-      "ok": true,
-      "detail": "[{\"kind\":\"resumed\",\"text\":\"这一轮中途停止过，之后已继续完成\"},{\"kind\":\"unsent\",\"text\":\"未送达模型：这条消息没有进入对话，模型没有看到它放回输入框\"}]"
-    },
-    {
-      "name": "继续: the turn now reads 已完成 (it has its answer), the cut-off step is still remarked on and was not re-run",
-      "ok": true,
-      "detail": "已完成 1 步"
-    },
-    {
-      "name": "继续: the answer sits in the same turn as the steps (one assistant message)",
+      "name": "continue by typing: the run is answered and nothing announces the earlier stop",
       "ok": true,
       "detail": ""
     },
@@ -107,7 +77,7 @@
       "detail": "请求确认「发布到外部」 已停止"
     },
     {
-      "name": "390px: the stopped state fits (no horizontal scroll) and 继续 is a touch-sized target",
+      "name": "390px: the stopped state fits (no horizontal scroll) and shows no bar",
       "ok": true,
       "detail": "overflow=false"
     }

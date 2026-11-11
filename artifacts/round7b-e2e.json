@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T08:25:01.492Z",
+  "at": "2026-11-11T12:54:20.761Z",
   "results": [
     {
       "name": "A [fixture model] credential_request → the card appears in the conversation while the agent waits",
@@ -77,7 +77,7 @@
       "detail": ""
     },
     {
-      "name": "A leak search: not in any of the 150 responses the browser received (json/text/html/js/css)",
+      "name": "A leak search: not in any of the 147 responses the browser received (json/text/html/js/css)",
       "ok": true,
       "detail": ""
     },
@@ -109,7 +109,7 @@
     {
       "name": "A the secret travelled in exactly one request: the POST to …/fulfill",
       "ok": true,
-      "detail": "http://127.0.0.1:8908/api/credential-requests/crq_0mwburrz20a01183366a81006/fulfill"
+      "detail": "http://127.0.0.1:8908/api/credential-requests/crq_0mwc4e7wccd525577102c3fff/fulfill"
     },
     {
       "name": "A the tool result the model got is status only (fulfilled, a credentialId, no value)",
@@ -149,7 +149,7 @@
     {
       "name": "A replaying the used nonce is answered as the same result (idempotent) and creates nothing new",
       "ok": true,
-      "detail": "{\"request\":{\"id\":\"crq_0mwbus392ddd0d887b57c36fe\",\"service\":\"Replay Svc\",\"purpose\":\"读取 Replay Svc 的项目列表\",\"targetHosts\":[\""
+      "detail": "{\"request\":{\"id\":\"crq_0mwc4eh07169e2c481e46ddef\",\"service\":\"Replay Svc\",\"purpose\":\"读取 Replay Svc 的项目列表\",\"targetHosts\":[\""
     },
     {
       "name": "A a forged / unknown nonce after fulfilment is refused (409), no second credential",
@@ -199,7 +199,7 @@
     {
       "name": "B no way to show a secret anywhere: buttons are only 更换密钥 / 撤销 / 删除 (no show / copy), no text input, no value on the page",
       "ok": true,
-      "detail": "|更换密钥|撤销|删除"
+      "detail": "更换密钥|撤销|删除"
     },
     {
       "name": "B 390px: credentials list fits without horizontal page scroll",
@@ -232,7 +232,7 @@
       "detail": ""
     },
     {
-      "name": "C the timing note is shown: 修改只对之后启动的命令生效，正在运行的进程不受影响",
+      "name": "C [round 11] no timing paragraph and no ? help button any more — only the one short line 「不要在这里放密钥」",
       "ok": true,
       "detail": ""
     },
@@ -307,7 +307,7 @@
       "detail": "{\"state\":\"saved\",\"head\":1}"
     },
     {
-      "name": "D the plain rule sentence is shown (运行环境可能随时到期；…每次命令结束、写入文件后和发布成果前保存。) with the driver's loss-window sentence",
+      "name": "D [round 11] the explanatory rule sentence and the driver's loss-window sentence are gone (the badge, the time and the version list say it all)",
       "ok": true,
       "detail": ""
     },
@@ -347,7 +347,7 @@
       "detail": ""
     },
     {
-      "name": "D 立即保存 → a new version and 已保存",
+      "name": "D 立即保存 → a new version and 已保存 (no success banner: the badge and the list change)",
       "ok": true,
       "detail": ""
     },
@@ -364,7 +364,7 @@
     {
       "name": "D restore while dirty is refused, explained in plain words, and offers 先保存当前内容再恢复",
       "ok": true,
-      "detail": "工作区里有尚未保存的更改，直接恢复会覆盖它们，所以没有恢复。例如：dirty.txt。 先保存当前内容再恢复 取消"
+      "detail": "有尚未保存的更改，恢复会覆盖它们。例如：dirty.txt 先保存当前内容再恢复 取消"
     },
     {
       "name": "D the sticky state after a refused restore is worded as a refusal (nothing touched), not as a failed verification",
@@ -372,14 +372,14 @@
       "detail": ""
     },
     {
-      "name": "D keep-both restore → restored and verified, the previous content kept as its own version",
+      "name": "D keep-both restore → restored and verified; a clean restore shows no banner, and the previous content is kept as its own version in the list",
       "ok": true,
-      "detail": "已恢复到版本 1，并核对无误；恢复前的内容已另存为版本 3"
+      "detail": "历史版本（3） 版本 3 2026/11/11 12:54:16 · 恢复前保存的当前内容 · 3 个文件 · 18 B 恢复 版本 2 2026/11/11 12:54:13 · 手动保存 · 2 个文件 · 11 B 恢复 版本 1 当前 2026/11/11 12:54:10 · 命令结束时自动保存 · 1 个文件 · 6 B 恢复"
     },
     {
       "name": "D status after restore: state 已恢复 with a verified restore record (no conflicts)",
       "ok": true,
-      "detail": "{\"s\":\"restored\",\"r\":{\"fromVersion\":1,\"at\":\"2026-11-11T08:24:57.092Z\",\"verified\":true,\"conflicts\":[]}}"
+      "detail": "{\"s\":\"restored\",\"r\":{\"fromVersion\":1,\"at\":\"2026-11-11T12:54:16.992Z\",\"verified\":true,\"conflicts\":[]}}"
     },
     {
       "name": "D the working files really are those of version 1: notes.txt present, later uploads gone",
@@ -399,7 +399,7 @@
     {
       "name": "final: none of the fake secrets appears in any response body this browser received during the whole run",
       "ok": true,
-      "detail": "913 responses"
+      "detail": "907 responses"
     }
   ]
 }

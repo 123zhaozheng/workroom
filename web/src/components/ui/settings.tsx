@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { cn } from "@/lib/utils";
-import { Help } from "./help";
 
 export function SettingsGroup({ title, action, children, testId, className }: { title?: ReactNode; action?: ReactNode; children: ReactNode; testId?: string; className?: string }) {
 	return (
@@ -19,14 +18,13 @@ export function SettingsGroup({ title, action, children, testId, className }: { 
 	);
 }
 
-/** One setting: label (+ short hint, + optional ? help) left, control right. Stacks on phones when `stack` is set or the control is wide. */
-export function SettingsRow({ label, hint, help, children, htmlFor, stack, testId }: { label: ReactNode; hint?: ReactNode; help?: ReactNode; children?: ReactNode; htmlFor?: string; stack?: boolean; testId?: string }) {
+/** One setting: label (+ short hint) left, control right. Stacks on phones when `stack` is set or the control is wide. */
+export function SettingsRow({ label, hint, children, htmlFor, stack, testId }: { label: ReactNode; hint?: ReactNode; children?: ReactNode; htmlFor?: string; stack?: boolean; testId?: string }) {
 	return (
 		<div data-testid={testId} className={cn("flex gap-x-4 gap-y-2 py-3.5", stack ? "flex-col sm:flex-row sm:items-center" : "items-center")}>
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-1 text-sm">
 					{htmlFor ? <label htmlFor={htmlFor}>{label}</label> : <span>{label}</span>}
-					{help ? <Help label={`${typeof label === "string" ? label : ""}说明`}>{help}</Help> : null}
 				</div>
 				{hint ? <div className="mt-0.5 text-xs text-fg-muted">{hint}</div> : null}
 			</div>

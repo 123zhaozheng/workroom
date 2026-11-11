@@ -102,7 +102,7 @@ export function TwoFactorSetup({ onEnabled, onCancel, autoStart, headingRef }: {
 				<h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium outline-none">
 					用验证器 App 保护账号
 				</h3>
-				<p className="text-sm text-fg-muted">登录时除了密码，还要输入验证器 App 里的 6 位数字。启用后，其他设备上的登录会失效，需要重新登录。</p>
+				<p className="text-sm text-fg-muted">启用后，其他设备上的登录会失效。</p>
 				{err ? (
 					<p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
 						{err}
@@ -128,7 +128,6 @@ export function TwoFactorSetup({ onEnabled, onCancel, autoStart, headingRef }: {
 				<h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium outline-none">
 					1. 在验证器 App 里添加账号
 				</h3>
-				<p className="mt-1 text-sm text-fg-muted">打开验证器 App（如 Google Authenticator、Microsoft Authenticator），选择「手动输入密钥」，基于时间，粘贴下面的密钥。</p>
 				<div className="mt-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
 					<div className="text-xs text-fg-muted">密钥</div>
 					<code data-testid="totp-secret" data-secret={setup.secret} className="mt-0.5 block break-all font-mono text-[15px] font-medium tracking-wider text-fg" aria-label={`密钥 ${setup.secret.split("").join(" ")}`}>
@@ -189,30 +188,24 @@ export function TwoFactorSettings() {
 	const { refresh } = useSession();
 	const [setting, setSetting] = useState(false);
 	const [disabling, setDisabling] = useState(false);
-	const [notice, setNotice] = useState<string>();
 	return (
 		<>
 			<SettingsGroup title="两步验证" testId="two-factor">
-				<SettingsRow label="验证器 App" hint={enabled ? "登录时需要输入验证器里的 6 位数字" : "登录时多一道验证，更安全"} stack>
+				<SettingsRow label="验证器 App" stack>
 					<span data-testid="totp-status" data-enabled={enabled ? "true" : "false"}>
 						{enabled ? <Badge tone="success">已启用</Badge> : <Badge>未启用</Badge>}
 					</span>
 					{enabled ? (
-						<Button size="sm" onClick={() => { setNotice(undefined); setDisabling(true); }} data-testid="totp-disable-open">
+						<Button size="sm" onClick={() => setDisabling(true)} data-testid="totp-disable-open">
 							关闭
 						</Button>
 					) : !setting ? (
-						<Button size="sm" variant="primary" onClick={() => { setNotice(undefined); setSetting(true); }} data-testid="totp-enable-open">
+						<Button size="sm" variant="primary" onClick={() => setSetting(true)} data-testid="totp-enable-open">
 							启用
 						</Button>
 					) : null}
 				</SettingsRow>
 			</SettingsGroup>
-			{notice ? (
-				<p role="status" data-testid="totp-notice" className="-mt-4 mb-6 rounded-lg bg-success-soft px-3 py-2 text-sm text-success">
-					{notice}
-				</p>
-			) : null}
 			{setting && !enabled ? (
 				<div className="-mt-4 mb-8 rounded-xl border border-border bg-surface p-4">
 					<TwoFactorSetup
@@ -220,7 +213,6 @@ export function TwoFactorSettings() {
 						onCancel={() => setSetting(false)}
 						onEnabled={() => {
 							setSetting(false);
-							setNotice("两步验证已启用。其他设备上的登录已失效，下次登录需要输入验证码。");
 						}}
 					/>
 				</div>
@@ -231,7 +223,6 @@ export function TwoFactorSettings() {
 				onDisabled={async () => {
 					setDisabling(false);
 					await refresh();
-					setNotice("两步验证已关闭。");
 				}}
 			/>
 		</>
@@ -251,7 +242,7 @@ function DisableDialog({ open, onOpenChange, onDisabled }: { open: boolean; onOp
 	const id = useId();
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="关闭两步验证" description="关闭后，登录只需要密码。请输入验证器里当前的 6 位数字确认。">
+			<DialogContent title="关闭两步验证">
 				<form
 					className="space-y-3"
 					onSubmit={async (e) => {
@@ -276,7 +267,7 @@ function DisableDialog({ open, onOpenChange, onDisabled }: { open: boolean; onOp
 					<Input id={id} data-testid="totp-disable-code" autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 位数字" className="w-40 text-center font-mono text-base tracking-[0.3em] placeholder:font-sans placeholder:text-sm placeholder:tracking-normal" />
 					{err ? (
 						<p role="alert" data-testid="totp-disable-error" className="text-sm text-danger">
-							{err}。已使用过的验证码不能重复使用，请等验证器刷新后再试。
+							{err}
 						</p>
 					) : null}
 					<div className="flex justify-end gap-2">

@@ -47,7 +47,7 @@ try {
 	for (const k of ["members", "authz", "models"]) check(`density: ${k} page shows fewer words than before`, AFTER[k] < BEFORE[k], `${BEFORE[k]} → ${AFTER[k]}`);
 	// Round 10 (intentional): the round-8 "25% fewer words" baseline for the sandbox page predates the round-10 additions (explicit size fields, 工作目录,
 	// the single-channel choice 当前使用的沙箱渠道). It now guards a ceiling instead, and the page is excluded from the "not wordier than round 8" rule.
-	check("density: sandbox page stays compact (<= 1100 words, incl. the single-channel choice and size fields)", AFTER.sandbox <= 1100, `${AFTER.sandbox}`);
+	check("density: sandbox page stays compact (<= 650 words after the round-11 sweep removed the explanations: was 941)", AFTER.sandbox <= 650, `${AFTER.sandbox}`);
 	check("density: no other inspected page got wordier", Object.keys(pages).filter((k) => k !== "sandbox").every((k) => AFTER[k] <= BEFORE[k]), Object.keys(pages).filter((k) => k !== "sandbox" && AFTER[k] > BEFORE[k]).join(","));
 
 	// ---------------------------------------------------------------- Select: keyboard
@@ -171,31 +171,15 @@ try {
 	}));
 
 	// ---------------------------------------------------------------- Help
-	await page.goto(`${base}/settings?tab=credentials`);
-	const help = page.getByRole("button", { name: "环境变量说明" });
-	await help.waitFor();
-	check("help: closed by default with aria-expanded=false", (await help.getAttribute("aria-expanded")) === "false" && (await page.locator('[data-testid="help-content"]').count()) === 0);
-	await help.focus();
-	await page.keyboard.press("Enter");
-	await page.locator('[data-testid="help-content"]').waitFor();
-	check("help: Enter opens it (aria-expanded=true) with the explanation", (await help.getAttribute("aria-expanded")) === "true" && (await page.locator('[data-testid="help-content"]').innerText()).includes("工作区命令"));
-	await page.keyboard.press("Escape");
-	await page.locator('[data-testid="help-content"]').waitFor({ state: "detached" });
-	check("help: Escape closes it and focus returns to the button", await help.evaluate((el) => el === document.activeElement));
-	await page.keyboard.press("Space");
-	await page.locator('[data-testid="help-content"]').waitFor();
-	await sleep(150); // Radix arms its outside-click listener on the next tick; clicking in the same tick (busy machine) is ignored
-	await page.mouse.click(700, 500);
-	await page.locator('[data-testid="help-content"]').waitFor({ state: "detached" });
-	check("help: Space opens, a click outside closes", true);
-	await m.goto(`${base}/settings?tab=credentials`);
-	const mh = m.getByRole("button", { name: "环境变量说明" });
-	await mh.scrollIntoViewIfNeeded();
-	await mh.tap();
-	await m.locator('[data-testid="help-content"]').waitFor();
-	const hb = await m.locator('[data-testid="help-content"]').boundingBox();
-	check("help @390: a tap opens it, fully inside the viewport", hb.x >= 0 && hb.x + hb.width <= 390 && hb.y >= 0 && hb.y + hb.height <= 844, JSON.stringify(hb));
-	await m.keyboard.press("Escape");
+	// Round 11 (intentional): the "?" Help / InfoPop explanation popovers were removed everywhere (copy simplification — explanations are deleted, not folded).
+	// This replaces the keyboard/tap checks of that component: no page keeps a "?" explanation button.
+	let helpButtons = 0;
+	for (const u of ["/settings?tab=credentials", "/settings?tab=general", "/capabilities?tab=mine", "/knowledge", "/automations", "/stats", "/admin?tab=roles", "/admin?tab=authz", "/admin?tab=models", "/admin?tab=sandbox", "/admin?tab=env", "/admin?tab=departments", "/admin?tab=trace"]) {
+		await page.goto(base + u);
+		await sleep(500);
+		helpButtons += await page.locator('[data-testid="help"], [data-testid="help-content"], button[aria-label$="说明"]').count();
+	}
+	check("help: no page has a '?' explanation button any more (Help/InfoPop popovers removed)", helpButtons === 0, `${helpButtons}`);
 
 	// ---------------------------------------------------------------- settings layout
 	await page.goto(`${base}/settings`);

@@ -37,7 +37,7 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 					className="mb-2 flex gap-2"
 					onSubmit={(e) => {
 						e.preventDefault();
-						void run(() => post("/admin/groups", { name }).then(() => setName("")), "用户组已创建");
+						void run(() => post("/admin/groups", { name }).then(() => setName("")));
 					}}
 				>
 					<Input value={name} onChange={(e) => setName(e.target.value)} placeholder="新用户组名称" className="h-8 max-w-xs text-sm" aria-label="新用户组名称" />
@@ -60,7 +60,7 @@ export function GroupsPanel({ onChanged }: { onChanged?: () => void }) {
 										{g.name} <span className="text-xs font-normal text-fg-subtle">· {g.memberCount} 人</span>
 									</button>
 									{can ? (
-										<Button size="icon-sm" variant="ghost" aria-label={`删除用户组 ${g.name}`} disabled={busy} onClick={async () => (await ask({ title: `删除用户组「${g.name}」？`, consequence: "授予这个组的角色会一并移除，组里的成员会立即失去这些权限（成员本人不受影响）。", confirmLabel: "删除用户组", danger: true })) && run(() => del(`/admin/groups/${g.id}`), "用户组已删除")}>
+										<Button size="icon-sm" variant="ghost" aria-label={`删除用户组 ${g.name}`} disabled={busy} onClick={async () => (await ask({ title: `删除用户组「${g.name}」？`, consequence: "授予这个组的角色会一并移除，组里的成员会立即失去这些权限（成员本人不受影响）。", confirmLabel: "删除用户组", danger: true })) && run(() => del(`/admin/groups/${g.id}`))}>
 											<Trash2 />
 										</Button>
 									) : null}

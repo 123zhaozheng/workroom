@@ -9,9 +9,9 @@ import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Badge, Loadable } from "@/components/ui/misc";
-import { Help, useAct } from "@/features/admin/common";
+import { useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
-import { LockedNote, PermissionMatrix, ROLE_ORDER, criticalOf, isBaseRole, permDesc, permLabel, rolePurpose, scopeText, useViewerPerms } from "@/features/admin/rbac-ui";
+import { PermissionMatrix, ROLE_ORDER, criticalOf, isBaseRole, permDesc, permLabel, scopeText, useViewerPerms } from "@/features/admin/rbac-ui";
 
 export function Roles() {
 	const res = useApi<{ roles: RoleDTO[] }>("/admin/roles");
@@ -26,9 +26,9 @@ export function Roles() {
 	const sections = useMemo(() => {
 		const byOrder = (a: RoleDTO, b: RoleDTO) => ROLE_ORDER.indexOf(a.id) - ROLE_ORDER.indexOf(b.id);
 		return [
-			{ title: "基础角色", hint: "每位成员有且仅有一个。", list: roles.filter((r) => isBaseRole(r.id)).sort(byOrder) },
-			{ title: "附加角色", hint: "叠加在基础角色之上，可限定到部门或项目。", list: roles.filter((r) => r.builtin && !isBaseRole(r.id)).sort(byOrder) },
-			{ title: "自定义角色", hint: "由你的组织定义；内置角色不能修改，克隆后可编辑。", list: roles.filter((r) => !r.builtin) },
+			{ title: "基础角色", list: roles.filter((r) => isBaseRole(r.id)).sort(byOrder) },
+			{ title: "附加角色", list: roles.filter((r) => r.builtin && !isBaseRole(r.id)).sort(byOrder) },
+			{ title: "自定义角色", list: roles.filter((r) => !r.builtin) },
 		];
 	}, [roles]);
 
@@ -53,17 +53,17 @@ export function Roles() {
 										const r = await post<{ role: RoleDTO }>("/admin/roles", v);
 										setCreating(false);
 										setSel(r.role.id);
-									}, "角色已创建")
-								: run(() => patch(`/admin/roles/${current!.id}`, v), "角色已保存")
+									})
+								: run(() => patch(`/admin/roles/${current!.id}`, v))
 						}
 						onClone={() =>
 							run(async () => {
 								const r = await post<{ role: RoleDTO }>(`/admin/roles/${current!.id}/clone`, {});
 								setSel(r.role.id);
-							}, "已克隆为自定义角色")
+							})
 						}
 						onDelete={async () => {
-							if (await ask({ title: `删除角色「${current!.name}」？`, consequence: current!.assignmentCount ? `已经授予这个角色的 ${current!.assignmentCount} 处授权会一并移除，相关成员会立即失去这些权限。` : "这个角色还没有被授予任何人。", confirmLabel: "删除角色", danger: true })) await run(async () => (await del(`/admin/roles/${current!.id}`), setSel(undefined)), "角色已删除");
+							if (await ask({ title: `删除角色「${current!.name}」？`, consequence: current!.assignmentCount ? `已经授予这个角色的 ${current!.assignmentCount} 处授权会一并移除，相关成员会立即失去这些权限。` : "这个角色还没有被授予任何人。", confirmLabel: "删除角色", danger: true })) await run(async () => (await del(`/admin/roles/${current!.id}`), setSel(undefined)));
 						}}
 					/>
 					{dialog}
@@ -86,7 +86,6 @@ export function Roles() {
 					<section key={s.title}>
 						<div className="mb-2 flex items-baseline gap-2">
 							<h3 className="text-sm font-medium">{s.title}</h3>
-							<Help label={`${s.title}说明`} side="top">{s.hint}</Help>
 						</div>
 						{s.list.length === 0 ? (
 							<p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-fg-muted">还没有自定义角色</p>
@@ -107,7 +106,6 @@ export function Roles() {
 															</Badge>
 														) : null}
 													</span>
-													<span className="block text-xs text-fg-muted">{rolePurpose(r)}</span>
 												</span>
 												<span className="hidden shrink-0 text-xs text-fg-muted sm:block">
 													{r.permissions.length} 项权限 · {r.assignmentCount} 处使用
@@ -169,8 +167,6 @@ function RoleEditor({ role, busy, canManage, ask, onSave, onClone, onDelete }: {
 					</Button>
 				) : null}
 			</div>
-			{role?.builtin ? <LockedNote>内置角色不能修改，可克隆后编辑。{role.scopes.length === 1 && role.scopes[0] === "department" ? "只能授予在部门范围。" : ""}</LockedNote> : null}
-			{role ? <p className="mb-4 text-sm text-fg-muted">{rolePurpose(role)}</p> : null}
 			{!role?.builtin && !readOnly ? <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="一句话说明这个角色做什么（可选）" rows={2} className="mb-4" aria-label="角色说明" /> : null}
 			<PermissionMatrix selected={selected} onChange={setSelected} readOnly={readOnly} restrictTo={role?.builtin ? undefined : restrict} testId="perm-matrix" />
 						{role ? (

@@ -12,7 +12,6 @@ import { TopBar } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Help } from "@/components/ui/help";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable, Page, PageHeader, Spinner } from "@/components/ui/misc";
@@ -55,18 +54,15 @@ export default function AutomationsPage() {
 					<PageHeader
 						title="自动化"
 						actions={
-							<>
-							<Help label="自动化说明">按时间、手动或事件自动发起的任务。每次运行都会记录状态、原因和结果对话；通知失败与任务失败分开记录。</Help>
 							<Button variant="primary" onClick={() => setEditing("new")} disabled={res.unavailable} data-testid="automation-new">
 								<Plus />
 								新建自动化
 							</Button>
-							</>
 						}
 					/>
 					{secret ? (
 						<div className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-[13px] text-warning" data-testid="webhook-secret">
-							触发地址（只显示这一次，请妥善保存）：<code className="break-all">{secret}</code>
+							触发地址（仅显示一次）：<code className="break-all">{secret}</code>
 							<button className="ml-2 underline" onClick={() => setSecret(undefined)}>
 								我已保存
 							</button>
@@ -163,14 +159,14 @@ function AutomationCard({ a, onEdit, onChanged }: { a: AutomationDTO; onEdit: ()
 							{a.destination.channelIds.length ? ` · ${a.destination.channelIds.length} 个通知渠道` : ""}
 						</div>
 						<div>
-							并发上限 {a.concurrency.max}（超出则跳过） · 错过的运行：{a.missedPolicy === "skip" ? "跳过" : "补跑一次"}
+							并发上限 {a.concurrency.max} · 错过的运行：{a.missedPolicy === "skip" ? "跳过" : "补跑一次"}
 						</div>
-						<div>最长运行 {Math.round(a.maxDurationMs / 60000)} 分钟 · 授权：以负责人身份运行，每次触发重新校验权限</div>
+						<div>最长运行 {Math.round(a.maxDurationMs / 60000)} 分钟</div>
 					</div>
 					<div className="mb-1 text-xs font-medium text-fg-muted">运行记录</div>
 					<Loadable state={runs} what="运行记录">
 						{(runs.data?.runs ?? []).length === 0 ? (
-							<p className="text-xs text-fg-subtle">还没有运行过。</p>
+							<p className="text-xs text-fg-subtle">还没有运行</p>
 						) : (
 							<ul className="divide-y divide-border rounded-lg border border-border" data-testid="automation-runs">
 								{runs.data!.runs.map((r) => (
@@ -343,11 +339,9 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial?: AutomationD
 						</div>
 					) : kind === "once" ? (
 						<div>
-							<Label htmlFor="aat">运行时间（本机时间输入，按所选时区计算）</Label>
+							<Label htmlFor="aat">运行时间</Label>
 							<Input id="aat" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
 						</div>
-					) : kind === "webhook" ? (
-						<p className="text-xs text-fg-muted">保存后会生成一次性显示的触发地址，重复投递只触发一次。</p>
 					) : null}
 					{preview ? (
 						<div className="rounded-lg bg-surface-2 px-3 py-2 text-xs" data-testid="automation-preview">
@@ -416,7 +410,7 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial?: AutomationD
 						<div>
 							<Label htmlFor="am">停机期间错过的运行</Label>
 							<Select id="am" value={missed} onChange={(e) => setMissed(e.target.value as "skip" | "run_once")} className="w-full">
-								<option value="skip">跳过（记录一条“已跳过”）</option>
+								<option value="skip">跳过</option>
 								<option value="run_once">恢复后补跑一次</option>
 							</Select>
 						</div>

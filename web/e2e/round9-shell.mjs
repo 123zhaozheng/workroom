@@ -159,7 +159,7 @@ try {
 	await A.click('[data-testid="project-share-open"]');
 	await A.waitForSelector('[data-testid="share-project-dialog"]');
 	const note = await A.locator('[data-testid="share-permission-note"]').innerText();
-	check("share dialog: the permission is explained in the agreed words", note.includes("只读：可以查看此项目中的对话和成果，不能发送消息或确认操作"), note);
+	check("share dialog: the permission is stated in one short line (round 11: 只读：可查看对话和成果)", note.trim() === "只读：可查看对话和成果", note);
 	await A.fill('[data-testid="share-search"]', "李");
 	await A.waitForSelector('[data-testid="share-candidate"]');
 	check("share dialog: same-organisation directory search finds the colleague (not myself)", (await A.locator('[data-testid="share-candidate"]').count()) === 1 && (await A.locator('[data-testid="share-candidate"]').innerText()).includes("李四"));
@@ -180,7 +180,7 @@ try {
 	check("sidebar (colleague): the owner's conversations of the project are listed", (await shareBlock.locator('[data-testid="conv-row"]').count()) === 2, String(await shareBlock.locator('[data-testid="conv-row"]').count()));
 	await shareBlock.locator("a", { hasText: "Q3 复盘" }).first().click();
 	await B.waitForSelector('[data-testid="project-readonly-note"]');
-	check("project page (colleague): read-only note, no composer, conversations listed", (await B.locator('[data-testid="composer-input"]').count()) === 0 && (await B.locator('[data-testid="project-conversation"]').count()) === 2 && (await B.locator('[data-testid="project-readonly-note"]').innerText()).includes("不能发送消息或确认操作"));
+	check("project page (colleague): read-only note, no composer, conversations listed", (await B.locator('[data-testid="composer-input"]').count()) === 0 && (await B.locator('[data-testid="project-conversation"]').count()) === 2 && (await B.locator('[data-testid="project-readonly-note"]').innerText()).includes("只读"));
 	await B.locator('[data-testid="project-conversation"]', { hasText: "周报草稿" }).click();
 	await B.waitForSelector('[data-testid="read-only-note"]');
 	await B.waitForSelector('[data-testid="user-message"]');

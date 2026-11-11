@@ -110,7 +110,7 @@ export default function Onboarding({ onLater, onComplete }: { onLater: () => voi
 							{step.id === "welcome" ? <WelcomeStep headingRef={heading} /> : null}
 							{step.id === "appearance" ? <AppearanceStep headingRef={heading} /> : null}
 							{step.id === "security" ? <SecurityStep headingRef={heading} enabled={totpOn} /> : null}
-							{step.id === "done" ? <DoneStep headingRef={heading} skippedSecurity={!totpOn} /> : null}
+							{step.id === "done" ? <DoneStep headingRef={heading} /> : null}
 						</div>
 						{err ? (
 							<p role="alert" data-testid="onboarding-error" className="mx-5 mb-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger md:mx-8">
@@ -163,9 +163,8 @@ function WelcomeStep({ headingRef }: { headingRef: HeadRef }) {
 			<Head headingRef={headingRef}>欢迎使用 {brand.name}</Head>
 			<p className="text-[15px] leading-relaxed text-fg">
 				{me?.name ? `${me.name}，` : ""}
-				{brand.name} 是你的在线工作助手：把任务交给它，成果会保存成文件，随时预览、下载和分享。
+				{brand.name} 是你的在线工作助手。
 			</p>
-			<p className="text-sm text-fg-muted">接下来用一分钟完成几项设置，每一步都可以跳过。</p>
 		</div>
 	);
 }
@@ -231,19 +230,16 @@ function AppearanceStep({ headingRef }: { headingRef: HeadRef }) {
 				<div className="flex items-center gap-3 py-3">
 					<label htmlFor="ob-reduce" className="min-w-0 flex-1">
 						减少动画
-						<span className="block text-xs text-fg-muted">关闭过渡和状态动画。</span>
 					</label>
 					<Switch id="ob-reduce" data-testid="onboarding-reduce-motion" checked={prefs.reduceMotion} onCheckedChange={(v) => prefs.set("reduceMotion", v)} />
 				</div>
 				<div className="flex items-center gap-3 py-3">
 					<label htmlFor="ob-dots" className="min-w-0 flex-1">
 						动态点阵背景
-						<span className="block text-xs text-fg-muted">首页和对话页背后的淡淡点阵。</span>
 					</label>
 					<Switch id="ob-dots" data-testid="onboarding-dot-matrix" checked={prefs.dotMatrix} onCheckedChange={(v) => prefs.set("dotMatrix", v)} />
 				</div>
 			</div>
-			<p className="text-xs text-fg-muted">更改立即生效，之后可以在「设置 → 常规」里调整。</p>
 		</div>
 	);
 }
@@ -255,11 +251,10 @@ function SecurityStep({ headingRef, enabled }: { headingRef: HeadRef; enabled: b
 			{enabled ? (
 				<div data-testid="onboarding-totp-on" role="status" className="flex items-start gap-2 rounded-lg bg-success-soft px-3 py-2.5 text-sm text-success">
 					<Check className="mt-0.5 size-4 shrink-0" aria-hidden />
-					<span>两步验证已启用。下次登录需要输入验证器里的 6 位数字。</span>
+					<span>两步验证已启用</span>
 				</div>
 			) : (
 				<>
-					<p className="text-sm text-fg-muted">可以先跳过，之后随时在「设置 → 安全」里开启。</p>
 					<TwoFactorSetup />
 				</>
 			)}
@@ -267,16 +262,11 @@ function SecurityStep({ headingRef, enabled }: { headingRef: HeadRef; enabled: b
 	);
 }
 
-function DoneStep({ headingRef, skippedSecurity }: { headingRef: HeadRef; skippedSecurity: boolean }) {
+function DoneStep({ headingRef }: { headingRef: HeadRef }) {
 	return (
 		<div className="space-y-3">
 			<Head headingRef={headingRef}>准备好了</Head>
-			<ul className="space-y-2 text-[15px] leading-relaxed">
-				<li>在首页描述要做的事，开始第一次对话。</li>
-				<li>成果会出现在「文件库」，可以预览、下载和分享。</li>
-				<li>常用资料放进「知识库」，助手回答时会引用。</li>
-			</ul>
-			{skippedSecurity ? <p className="text-sm text-fg-muted">两步验证还没有开启，可以随时在「设置 → 安全」里设置。</p> : null}
+			<p className="text-[15px]">在首页描述要做的事，开始第一次对话。</p>
 		</div>
 	);
 }

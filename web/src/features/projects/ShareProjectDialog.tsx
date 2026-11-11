@@ -12,7 +12,7 @@ import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Spinner } from "@/components/ui/misc";
 import { addShare, listShares, revokeShare, searchDirectory } from "./actions";
 
-export const SHARE_PERMISSION_TEXT = "只读：可以查看此项目中的对话和成果，不能发送消息或确认操作";
+export const SHARE_PERMISSION_TEXT = "只读：可查看对话和成果";
 
 export function ShareProjectDialog({ open, onOpenChange, projectId, projectName, onChanged }: { open: boolean; onOpenChange: (o: boolean) => void; projectId: string; projectName: string; onChanged?: () => void }) {
 	const [shares, setShares] = useState<ProjectShareDTO[]>();
@@ -90,10 +90,10 @@ export function ShareProjectDialog({ open, onOpenChange, projectId, projectName,
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="分享项目" description={`「${projectName}」只能分享给同一组织的成员。`} className="max-w-lg" data-testid="share-project-dialog" onOpenAutoFocus={(e) => { e.preventDefault(); inputRef.current?.focus(); }}>
+			<DialogContent title="分享项目" description={`「${projectName}」`} className="max-w-lg" data-testid="share-project-dialog" onOpenAutoFocus={(e) => { e.preventDefault(); inputRef.current?.focus(); }}>
 				<div className="space-y-4 text-sm">
 					<p className="rounded-lg bg-surface-2 px-3 py-2 text-fg-muted" data-testid="share-permission-note">
-						{SHARE_PERMISSION_TEXT}。
+						{SHARE_PERMISSION_TEXT}
 					</p>
 
 					<section aria-label="添加成员">
@@ -147,7 +147,7 @@ export function ShareProjectDialog({ open, onOpenChange, projectId, projectName,
 								<Spinner /> 加载中…
 							</p>
 						) : shares.length === 0 ? (
-							<p className="text-fg-subtle">还没有分享给任何人。</p>
+							<p className="text-fg-subtle">还没有分享</p>
 						) : (
 							<ul data-testid="share-members" className="divide-y divide-border rounded-lg border border-border">
 								{shares.map((s) => (

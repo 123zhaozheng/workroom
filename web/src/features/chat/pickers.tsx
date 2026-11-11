@@ -31,7 +31,7 @@ export function FilePickerDialog({ open, onOpenChange, onPick, spaceId, projectI
 				<div className="wr-scroll max-h-[50vh] overflow-y-auto">
 					<Loadable state={files} what="文件库" need="GET /api/files">
 						{(files.data?.files ?? []).length === 0 ? (
-							<EmptyState icon={<FileText />} title={q ? "没有匹配的文件" : "文件库里还没有文件"}>{q ? "换个关键词试试。" : "上传文件，或让助手生成成果后，会出现在这里。"}</EmptyState>
+							<EmptyState icon={<FileText />} title={q ? "没有匹配的文件" : "文件库里还没有文件"} />
 						) : (
 							files.data!.files.map((f) => (
 								<button
@@ -65,11 +65,11 @@ export function KbPickerDialog({ open, onOpenChange, onPick }: { open: boolean; 
 	const list = listOf<KbSummary>(kbs.data, "kbs", "knowledgeBases");
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="引用知识库" description="只有“可检索”的资料会参与回答。" className="max-w-lg">
+			<DialogContent title="引用知识库" className="max-w-lg">
 				<div className="wr-scroll max-h-[50vh] overflow-y-auto">
 					<Loadable state={kbs} what="知识库" need="GET /api/kb">
 						{list.length === 0 ? (
-							<EmptyState icon={<BookOpen />} title="还没有知识库">在“个人知识库”中添加资料后，就可以在这里引用。</EmptyState>
+							<EmptyState icon={<BookOpen />} title="还没有知识库" />
 						) : (
 							list.map((k) => (
 								<button
@@ -115,7 +115,7 @@ export function SkillPickerDialog({ open, onOpenChange, skills, onPick }: { open
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent title="使用技能" className="max-w-md">
 				<div className="wr-scroll max-h-[50vh] overflow-y-auto">
-					{skills.length === 0 ? <EmptyState icon={<Sparkles />} title="没有可用的技能">在“能力”页启用技能后，就可以在这里选择。</EmptyState> : null}
+					{skills.length === 0 ? <EmptyState icon={<Sparkles />} title="没有可用的技能" /> : null}
 					{skills.map((s) => (
 						<button
 							key={s.id}

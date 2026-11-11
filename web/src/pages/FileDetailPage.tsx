@@ -236,7 +236,7 @@ function NewVersionDialog({ open, onOpenChange, fileId, onDone }: { open: boolea
 	const [err, setErr] = useState<string>();
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="上传新版本" description="旧版本会完整保留，可随时预览、下载或切换回去。">
+			<DialogContent title="上传新版本">
 				<form
 					className="space-y-3"
 					onSubmit={async (e) => {
@@ -293,7 +293,7 @@ function AddToKbDialog({ open, onOpenChange, fileId, version, onDone }: { open: 
 		);
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="加入知识库" description={`将 v${version.versionNo} 加入知识库。加入后需要解析和索引，完成前不会参与回答。`}>
+			<DialogContent title="加入知识库">
 				<LoadState state={kbs} what="知识库">
 					{list.length === 0 ? (
 						<p className="text-sm text-fg-muted">
@@ -319,7 +319,7 @@ function AddToKbDialog({ open, onOpenChange, fileId, version, onDone }: { open: 
 										setMsg(undefined);
 										try {
 											await post(`/kb/${encodeURIComponent(kbId)}/docs`, { fileId, versionId: version.versionId });
-											setMsg("已加入，正在解析与索引（尚不可检索）。");
+											setMsg("已加入，正在索引");
 											onDone();
 										} catch (e) {
 											setMsg(errorText(e));

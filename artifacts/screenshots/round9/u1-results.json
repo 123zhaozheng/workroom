@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:33:58.192Z",
+  "at": "2026-11-11T12:57:38.358Z",
   "results": [
     {
       "name": "setup: second organisation member registered",
@@ -14,7 +14,7 @@
     {
       "name": "project: real API record is a container project owned by the caller",
       "ok": true,
-      "detail": "{\"id\":\"prj_0mwbsxxzs3484c80277142adb\",\"name\":\"季度复盘\",\"kind\":\"container\",\"ownerId\":\"usr_0mwbsxxg11416af0ce1ec2938\",\"ownerName\":\"所有者\",\"access\":\"owner\",\"shared\":false,\"conversationCount\":0,\"createdAt\":\"2026-11-11T07:33:05.752Z\",\"updatedAt\":\"2026-11-11T07:33:05.752Z\"}"
+      "detail": "{\"id\":\"prj_0mwc4i72z8aa594c26bef06c1\",\"name\":\"季度复盘\",\"kind\":\"container\",\"ownerId\":\"usr_0mwc4i6hk9ba1544b2b9b5103\",\"ownerName\":\"所有者\",\"access\":\"owner\",\"shared\":false,\"conversationCount\":0,\"createdAt\":\"2026-11-11T12:56:46.427Z\",\"updatedAt\":\"2026-11-11T12:56:46.427Z\"}"
     },
     {
       "name": "sidebar: the new project is in the tree and open",
@@ -54,7 +54,7 @@
     {
       "name": "motion: the moved row (and the ones it displaced) were animated with WAAPI FLIP, ~250 ms",
       "ok": true,
-      "detail": "[{\"id\":\"c:sp_0mwbsxxhl5e6118dd951505b0/18\",\"kf\":\"[{\\\"transform\\\":\\\"translate(0px, 105px)\\\"},{\\\"transform\\\":\\\"none\\\"}]\",\"dur\":250},{\"id\":\"c:sp_0mwbsxxhl5e6118dd951505b0/3\",\"kf\":\"[{\\\"transform\\\":\\\"translate(0px, -33px)\\\"},{\\\"transform\\\":\\\"none\\\"}]\",\"dur\":250}]"
+      "detail": "[{\"id\":\"c:sp_0mwc4i6j98b85535ac0e7e17f/18\",\"kf\":\"[{\\\"transform\\\":\\\"translate(0px, 105px)\\\"},{\\\"transform\\\":\\\"none\\\"}]\",\"dur\":250},{\"id\":\"c:sp_0mwc4i6j98b85535ac0e7e17f/3\",\"kf\":\"[{\\\"transform\\\":\\\"translate(0px, -33px)\\\"},{\\\"transform\\\":\\\"none\\\"}]\",\"dur\":250}]"
     },
     {
       "name": "move: real API says the conversation now belongs to the project",
@@ -94,7 +94,7 @@
     {
       "name": "sidebar: the key carries the user id",
       "ok": true,
-      "detail": "wr.sidebar.usr_0mwbsxxg11416af0ce1ec2938.projects={\"prj_0mwbsxxzs3484c80277142adb\":false}"
+      "detail": "wr.sidebar.usr_0mwc4i6hk9ba1544b2b9b5103.projects={\"prj_0mwc4i72z8aa594c26bef06c1\":false}"
     },
     {
       "name": "sidebar: opening shows the rows again",
@@ -107,9 +107,9 @@
       "detail": ""
     },
     {
-      "name": "share dialog: the permission is explained in the agreed words",
+      "name": "share dialog: the permission is stated in one short line (round 11: 只读：可查看对话和成果)",
       "ok": true,
-      "detail": "只读：可以查看此项目中的对话和成果，不能发送消息或确认操作。"
+      "detail": "只读：可查看对话和成果"
     },
     {
       "name": "share dialog: same-organisation directory search finds the colleague (not myself)",
@@ -189,7 +189,7 @@
     {
       "name": "legacy: a project with its own space can still be created (kind space)",
       "ok": true,
-      "detail": "{\"id\":\"prj_0mwbsy8lgc50899ac02272d52\",\"name\":\"旧版项目甲\",\"kind\":\"space\",\"spaceId\":\"sp_0mwbsy8lge0d33bfbaca88b9c\",\"ownerId\":\"usr_0mwbsxxg11416af0ce1ec2938\",\"ownerName\":\"所有者\",\"access\":\"member\",\"shared\":false,\"conversationCount\":0,\"createdAt\":\"2026-11-11T07:33:19.492Z\",\"updatedAt\":\"2026-11-11T07:33:19.492Z\",\"description\":\"\",\"role\":\"owner\"}"
+      "detail": "{\"id\":\"prj_0mwc4ihh1b5fb5f3f1c47cd51\",\"name\":\"旧版项目甲\",\"kind\":\"space\",\"spaceId\":\"sp_0mwc4ihh2408cdb8bbd7da6c8\",\"ownerId\":\"usr_0mwc4i6hk9ba1544b2b9b5103\",\"ownerName\":\"所有者\",\"access\":\"member\",\"shared\":false,\"conversationCount\":0,\"createdAt\":\"2026-11-11T12:56:59.894Z\",\"updatedAt\":\"2026-11-11T12:56:59.894Z\",\"description\":\"\",\"role\":\"owner\"}"
     },
     {
       "name": "sidebar: a legacy project shows the quiet 旧版 label",
@@ -264,7 +264,7 @@
     {
       "name": "tags: saved through PUT …/tags",
       "ok": true,
-      "detail": "{\"spaceId\":\"sp_0mwbsxxhl5e6118dd951505b0\",\"conversationId\":43,\"starred\":false,\"tags\":[\"甜点\",\"家庭\"]}"
+      "detail": "{\"spaceId\":\"sp_0mwc4i6j98b85535ac0e7e17f\",\"conversationId\":43,\"starred\":false,\"tags\":[\"甜点\",\"家庭\"]}"
     },
     {
       "name": "export: a Markdown file is downloaded with the conversation text, directives hidden",
@@ -509,7 +509,7 @@
     {
       "name": "motion: with reduced motion the sidebar closes at once (no width transition)",
       "ok": true,
-      "detail": "46 ms"
+      "detail": "49 ms"
     },
     {
       "name": "touch: the ⋯ button is visible without hovering",
@@ -524,7 +524,7 @@
     {
       "name": "touch: choosing a menu item inside the drawer works (星标 → group, saved on the server)",
       "ok": true,
-      "detail": "sp_0mwbsxxhl5e6118dd951505b0/18"
+      "detail": "sp_0mwc4i6j98b85535ac0e7e17f/18"
     },
     {
       "name": "search (phone): list uses the full width, no preview pane, no horizontal scroll",

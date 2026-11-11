@@ -99,7 +99,6 @@ export function CredentialOutcome({ step }: { step: ToolStep }) {
 					<Badge tone={st.tone}>{st.label}</Badge>
 				</div>
 				{hosts.length ? <p className="mt-0.5 break-all text-xs text-fg-muted">只能发往 {hosts.join("、")}</p> : null}
-				{o.status === "fulfilled" ? <p className="mt-0.5 text-xs text-fg-muted">密钥只保存在服务器，助手看不到它。</p> : null}
 			</div>
 		</div>
 	);
@@ -321,7 +320,6 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 				<div data-testid="credential-done" role="status" className="mt-2.5 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm">
 					<st.Icon aria-hidden className={cn("size-4", st.tone === "success" ? "text-success" : "text-fg-muted")} />
 					<span className="font-medium">{st.label}</span>
-					{status === "fulfilled" ? <span className="text-fg-muted">· 密钥只保存在服务器，页面和对话里都没有它。</span> : null}
 				</div>
 			) : noStore ? (
 				<div className="mt-2.5 space-y-2.5">

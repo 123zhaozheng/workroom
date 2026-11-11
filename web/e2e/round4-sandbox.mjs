@@ -102,10 +102,7 @@ try {
 	const termStyle = await a.locator('[data-testid="terminal-log"]').evaluate((el) => ({ overflowY: getComputedStyle(el).overflowY, maxH: getComputedStyle(el).maxHeight }));
 	const monoOk = await a.locator('[data-testid="run-stdout"]').first().evaluate((el) => /mono|courier|consolas/i.test(getComputedStyle(el).fontFamily));
 	check("terminal: the log scrolls (bounded height, overflow auto) and is monospace", termStyle.overflowY === "auto" && termStyle.maxH !== "none" && monoOk, JSON.stringify(termStyle));
-	await a.click('[data-testid="sandbox-limits"]');
-	const driverLine = await a.locator('[data-testid="sandbox-driver"]').innerText();
-	check("terminal: the run limits are shown in plain words (time, memory, network, workspace only) without driver names", driverLine.includes("网络关闭") && driverLine.includes("只能写入工作区") && !/命名空间|namespace|Docker|driver/i.test(driverLine), driverLine.replace(/\s+/g, " ").slice(0, 160));
-	await a.keyboard.press("Escape");
+	check("terminal [round 11]: no run-limits popover or explanatory sentence (限时 / 网络关闭 / 只能写入工作区 are gone from the panel)", (await a.locator('[data-testid="sandbox-limits"], [data-testid="sandbox-driver"]').count()) === 0 && !/网络关闭|只能写入工作区/.test(await a.locator('[data-testid="terminal-tab"]').innerText()));
 	await sleep(300);
 	await shot(a, "1440-sandbox-terminal");
 
@@ -120,10 +117,7 @@ try {
 	await entry("out/report.csv").waitFor({ timeout: 5000 });
 	check("files: expanding a folder reveals its files", (await entry("out/chart.png").count()) === 1);
 	const usage = await a.locator('[data-testid="ws-usage"]').innerText();
-	await a.click('[data-testid="ws-rules"]');
-	const rule = await a.locator('[data-testid="ws-lifecycle"]').innerText();
-	await a.keyboard.press("Escape");
-	check("files: one usage line shows file count and used/quota; the retention rule is behind the ? button", /\d+ 个文件 · 已用/.test(usage) && usage.split("\n").length <= 2 && rule.includes("72 小时") && rule.includes("发布到文件库"), `${usage.replace(/\s+/g, " ")} | ${rule}`);
+	check("files [round 11]: one usage line shows file count and used/quota; no ? button, no retention-rule paragraph", /\d+ 个文件 · 已用/.test(usage) && usage.split("\n").length <= 2 && (await a.locator('[data-testid="ws-rules"], [data-testid="ws-lifecycle"]').count()) === 0, usage.replace(/\s+/g, " "));
 	await entry("notes.md").click();
 	await a.waitForSelector('[data-testid="ws-preview-text"]');
 	const pv = await a.locator('[data-testid="ws-preview-text"]').innerText();
@@ -138,7 +132,7 @@ try {
 	await shot(a, "1440-sandbox-files-image-preview");
 	await entry("blob.bin").click();
 	await a.waitForSelector('[data-testid="ws-preview-binary"]');
-	check("files: a binary file says it cannot be previewed and offers download", (await a.locator('[data-testid="ws-preview-binary"]').innerText()).includes("无法在这里预览"));
+	check("files: a binary file says it cannot be previewed and offers download", (await a.locator('[data-testid="ws-preview-binary"]').innerText()).includes("无法预览"));
 	await entry("out/report.csv").click();
 	await a.waitForSelector('[data-testid="ws-preview-text"]');
 	await a.click('[data-testid="ws-menu"][data-path="out/report.csv"]');
@@ -150,7 +144,6 @@ try {
 	// ---------------------------------------------------------------- upload, new folder, delete, publish
 		await entry("out").click(); // select the folder → upload goes into it (collapse state irrelevant)
 	await a.setInputFiles('[data-testid="ws-upload-input"]', { name: '上传的数据.csv', mimeType: 'text/csv', buffer: Buffer.from('id,name\n1,甲\n2,乙\n') });
-		await a.waitForSelector('[data-testid="ws-note"]:has-text("已上传 1 个文件")', { timeout: 5000 });
 	await entry("out/上传的数据.csv").waitFor({ timeout: 10000 });
 	const upl = await a.request.get(`${base}/api/sandbox/${spaceId}/file?path=${encodeURIComponent("out/上传的数据.csv")}&conversationId=${convId}`);
 	check("files: upload (user) lands in the selected folder with the exact content", (await upl.text()) === "id,name\n1,甲\n2,乙\n");

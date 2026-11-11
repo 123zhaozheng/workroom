@@ -122,7 +122,7 @@ function ImportDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCha
 	};
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="导入连接" description="粘贴连接的配置文件内容，或上传配置文件、离线包。导入后是你的个人草稿。" className="max-w-xl">
+			<DialogContent title="导入连接" className="max-w-xl">
 				<div className="space-y-3 text-sm">
 					<Textarea rows={9} value={text} onChange={(e) => setText(e.target.value)} placeholder={'{\n  "name": "io.github.you/notes",\n  "description": "…",\n  "version": "1.0.0",\n  "remotes": [{ "type": "streamable-http", "url": "https://…" }]\n}'} className="font-mono text-[12px]" aria-label="server.json" data-testid="mcp-json" />
 					{err ? (
@@ -250,7 +250,7 @@ function SubmitDialog({ open, onOpenChange, entry, onDone }: { open: boolean; on
 	const { busy, err, run } = useAct(() => (onOpenChange(false), onDone()));
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="提交审核" description={`提交最新版本 v${entry.latestVersionNo}。审核员会看到地址/命令、密钥名称与（离线包的）代码。`}>
+			<DialogContent title="提交审核" description={`最新版本 v${entry.latestVersionNo}`}>
 				<div className="space-y-3 text-sm">
 					<div>
 						<Label htmlFor="ms">发布到</Label>

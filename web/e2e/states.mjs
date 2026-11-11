@@ -83,11 +83,12 @@ try {
 	check("cross-device: phone shows the same running state", true);
 	await shot(pp, "390-same-task-running");
 	await page.click('[data-testid="stop"]');
-	await page.waitForSelector('[data-testid="run-bar"][data-status="aborted"]', { timeout: 15000 });
-	check("state: cancelled is its own terminal state", true);
+	await page.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: 15000 });
+	await sleep(500);
+	check("state: cancelled is its own terminal state — the run simply ends (round 11: no run bar, no 已停止 chip, no 继续 button)", (await page.locator('[data-testid="run-bar"], [data-testid="run-status"], [data-testid="continue"]').count()) === 0);
 	await shot(page, "1440-state-cancelled");
-	await pp.waitForSelector('[data-testid="run-bar"][data-status="aborted"]', { timeout: 15000 });
-	check("cross-device: cancel on desktop is reflected on phone", true);
+	await pp.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: 15000 });
+	check("cross-device: cancel on desktop is reflected on phone (its stop button is gone, no bar)", (await pp.locator('[data-testid="run-bar"]').count()) === 0);
 	await phone.close();
 
 	// ---------------------------------------------------------------- subagent → work panel

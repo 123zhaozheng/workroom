@@ -43,7 +43,7 @@ export function ShareDialog({ open, onOpenChange, kind, id, spaceId, title }: { 
 	};
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={`分享${KIND[kind]}的只读链接`} description={`「${title}」。外部链接只能查看、会过期、可随时撤销；与项目成员权限是两套独立的模型，不会让对方成为成员。`} className="max-w-lg">
+			<DialogContent title={`分享${KIND[kind]}的只读链接`} description={`「${title}」`} className="max-w-lg">
 				<div data-testid="share-dialog" className="space-y-3 text-[13px]">
 					<div className="flex items-center gap-2">
 						<Select value={hours} onChange={(e) => setHours(Number(e.target.value))} className="h-8 text-[13px]" aria-label="有效期">
@@ -88,7 +88,7 @@ export function ShareDialog({ open, onOpenChange, kind, id, spaceId, title }: { 
 					{err ? <p className="text-danger">{err}</p> : null}
 					<Loadable state={res} what="分享链接" need="E 组：GET /api/shares">
 						{(res.data?.shares ?? []).length === 0 ? (
-							<p className="text-fg-subtle">还没有分享链接。</p>
+							<p className="text-fg-subtle">还没有分享链接</p>
 						) : (
 							<ul className="divide-y divide-border rounded-lg border border-border" data-testid="share-list">
 								{res.data!.shares.map((s) => (
@@ -132,7 +132,6 @@ export function SharedPage() {
 					{res.error ? (
 						<div className="rounded-xl border border-border bg-surface p-6 text-center" data-testid="shared-invalid">
 							<div className="text-[15px] font-medium">链接无效、已过期或已撤销</div>
-							<p className="mt-1 text-[13px] text-fg-muted">请联系分享人重新获取。</p>
 						</div>
 					) : res.loading || !res.data ? (
 						<p className="text-[13px] text-fg-subtle">正在加载…</p>
@@ -147,7 +146,7 @@ export function SharedPage() {
 									{c.description ? <p className="mt-2 text-[14px] text-fg-muted">{c.description}</p> : null}
 								</>
 							) : (
-								<p className="mt-3 text-[13px] text-fg-muted">该类型资源的内容暂不支持在分享页中显示（服务端未提供只读渲染），这里只显示分享信息。</p>
+								<p className="mt-3 text-[13px] text-fg-muted">暂不支持显示内容</p>
 							)}
 						</div>
 					)}

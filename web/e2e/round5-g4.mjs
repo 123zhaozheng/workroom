@@ -365,10 +365,8 @@ try {
 	const st = await s.locator('[data-testid="stats-page"]').innerText();
 	check("stats: demo banner kept and 模拟 labels kept", (await s.locator('[data-testid="demo-banner"]').innerText()).includes("演示数据") && st.includes("模拟"));
 	check("stats: all charts still present (calendar, punch card, waffle, area, donut, tools, latency, knowledge, table)", (await Promise.all(["calendar", "punchcard", "waffle", "area", "donut", "tools", "latency", "knowledge", "table"].map((c) => s.locator(`[data-testid="chart-${c}"]`).count()))).every((n) => n === 1));
-	check("stats: second-level explanations are tooltips, not permanent subtitles; no docs paths or jargon", !st.includes("不受上方时间范围限制") && !/docs\//.test(st) && !JARGON.test(st), st.replace(/\s+/g, " ").slice(0, 100));
-	await s.click('[data-testid="chart-calendar"] [aria-label$="：说明"]');
-	check("stats: the ? popover on a card holds the explanation", (await s.locator("[data-radix-popper-content-wrapper]").innerText()).includes("不受上方时间范围限制"));
-	await s.keyboard.press("Escape");
+	check("stats: no permanent subtitles or explanations; no docs paths or jargon", !st.includes("不受上方时间范围限制") && !/docs\//.test(st) && !JARGON.test(st), st.replace(/\s+/g, " ").slice(0, 100));
+	check("stats [round 11]: no ? explanation popovers on the cards at all (explanations are removed, not folded)", (await s.locator('[aria-label$="：说明"], [data-testid="stats-about"]').count()) === 0);
 	const hs = await s.locator("h2").evaluateAll((els) => [...new Set(els.map((e) => getComputedStyle(e).fontSize + "/" + getComputedStyle(e).fontWeight))]);
 	check("stats: all card headings share one size and weight", hs.length === 1, hs.join(","));
 	const small = await s.evaluate(() => [...document.querySelectorAll('[data-testid="stats-page"] *')].filter((e) => e.childNodes.length && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 12 && !(e instanceof SVGElement)).length);

@@ -70,7 +70,7 @@ try {
 	// network loss first: the page says so, the run keeps going on the server, and it catches up when back online
 	await ctx.setOffline(true);
 	await page.waitForSelector('[data-testid="stream-notice"][data-stream="offline"]', { timeout: 15000 });
-	check("M02-A: losing the network is shown honestly (the task keeps running on the server)", (await page.locator('[data-testid="stream-notice"]').innerText()).includes("任务仍在服务端运行"));
+	check("M02-A: losing the network is shown honestly (the task keeps running on the server)", (await page.locator('[data-testid="stream-notice"]').innerText()).includes("网络已断开"));
 	await shot(page, "1440-offline-notice");
 	await sleep(7000); // the run finishes on the server while this browser is offline
 	await ctx.setOffline(false);

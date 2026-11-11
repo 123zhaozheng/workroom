@@ -93,7 +93,7 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={editing ? `编辑模型：${model!.name}` : `添加模型到「${provider.name}」`} description={editing && !model!.manual ? "这是从服务商获取的模型：这里的修改会覆盖原有参数，可随时恢复。" : "不确定的参数请参考厂商文档。"} className="max-h-[90vh] max-w-2xl overflow-y-auto" data-testid="model-dialog">
+			<DialogContent title={editing ? `编辑模型：${model!.name}` : `添加模型到「${provider.name}」`} className="max-h-[90vh] max-w-2xl overflow-y-auto" data-testid="model-dialog">
 				<div className="space-y-3.5 text-sm">
 					<div className="grid gap-3 sm:grid-cols-2">
 						<div>
@@ -133,7 +133,7 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 						</label>
 					</div>
 					<div>
-						<Label>价格（美元 / 百万 Token，用于费用统计；0 表示未设置）</Label>
+						<Label>价格（美元 / 百万 Token）</Label>
 						<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
 							{(["input", "output", "cacheRead", "cacheWrite"] as const).map((k) => (
 								<label key={k} className="text-xs text-fg-muted">
@@ -169,12 +169,11 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 										))}
 									</div>
 								</div>
-								<p className="mt-1 text-xs text-fg-muted">管理员始终能看到全部模型。不在范围内的人无法继续使用该模型，已有的对话下次发送时会提示换模型。</p>
 							</div>
 						</>
 					) : null}
 
-					<Fold title="高级设置" hint="思考强度、兼容性、备用模型、限流" testId="model-advanced">
+					<Fold title="高级设置" testId="model-advanced">
 						<div className="space-y-3.5">
 					{reasoning ? (
 						<div className="rounded-lg border border-border px-3 py-2">
@@ -187,7 +186,6 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 									</label>
 								))}
 							</div>
-							<p className="mt-1 text-xs text-fg-muted">未勾选的强度会标为“不支持”。具体如何发给厂商由下面的兼容性设置决定。</p>
 							<div className="mt-2">
 								<Label>默认思考强度</Label>
 								<Select aria-label="默认思考强度" value={defaultThinking} onChange={(e) => setDefaultThinking(e.target.value)}>
@@ -206,13 +204,12 @@ export function ModelDialog({ open, onOpenChange, provider, base, personal, mode
 					<div>
 						<Label>兼容性设置（键值对，可留空）</Label>
 						<Textarea value={compat} onChange={(e) => setCompat(e.target.value)} rows={3} placeholder={COMPAT_HELP} className="font-mono text-xs" data-testid="model-compat" />
-						<p className="mt-1 text-xs text-fg-muted">保存时会校验，未知的键或错误的类型会被拒绝。本地部署的模型通常需要关闭 supportsDeveloperRole 和 supportsReasoningEffort。</p>
 					</div>
 
 							{!personal ? (
 								<>
 							<div>
-								<Label>备用模型（主模型出错、超时或被限流时，按顺序改用）</Label>
+								<Label>备用模型</Label>
 								{fallbacks.map((f, i) => (
 									<div key={i} className="mb-1 flex gap-1.5">
 										<Select aria-label={`备用模型 ${i + 1}`} value={f} onChange={(e) => setFallbacks(fallbacks.map((x, j) => (j === i ? e.target.value : x)))} className="flex-1">

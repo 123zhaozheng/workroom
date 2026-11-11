@@ -119,9 +119,7 @@ function SubagentsSection({ spaceId, conversationId, hasJobs }: { spaceId: strin
 	return (
 		<LoadState state={res} what="子任务">
 			{subs.length === 0 && !hasJobs ? (
-				<Notice icon={<ListChecks />} title="还没有子任务" testid="tasks-empty">
-					助手委派的任务会显示在这里。
-				</Notice>
+				<Notice icon={<ListChecks />} title="还没有子任务" testid="tasks-empty" />
 			) : subs.length === 0 ? null : (
 				<div className="space-y-2">
 					<div className="text-[12.5px] text-fg-muted">
@@ -188,9 +186,7 @@ function BrowserTab({ spaceId, conversationId }: { spaceId: string; conversation
 				</div>
 			) : null}
 			{pages.length === 0 && sessions.length === 0 ? (
-				<Notice icon={<Globe />} title="还没有打开过网页" testid="browser-empty">
-					助手浏览的网页会显示在这里。
-				</Notice>
+				<Notice icon={<Globe />} title="还没有打开过网页" testid="browser-empty" />
 			) : (
 				<div className="space-y-3">
 					{pages.map(({ e, b }) => (

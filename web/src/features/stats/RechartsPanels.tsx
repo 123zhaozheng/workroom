@@ -67,7 +67,7 @@ export function SeriesPanel({ data, csv }: { data: StatsOverviewDTO; csv: (dim: 
 	const metricLabel = metric === "requests" ? "模型请求" : "Token（含模拟）";
 	return (
 		<div className="grid gap-4 sm:gap-6 lg:grid-cols-3" data-testid="series-panel">
-			<Card testid="chart-area" className="lg:col-span-2" title={`${metricLabel}趋势`} subtitle={`按${DIMS.find((d) => d.value === dim)!.label}堆叠，${gran === "hour" ? "每小时" : gran === "week" ? "每周" : "每天"}${metric === "tokens" ? "；标“模拟”的是测试模型用量" : ""}`} csv={csv(dim, metric)} actions={controls}>
+			<Card testid="chart-area" className="lg:col-span-2" title={`${metricLabel}趋势`} csv={csv(dim, metric)} actions={controls}>
 				{empty ? (
 					<Empty>此范围内没有模型请求记录</Empty>
 				) : (
@@ -109,7 +109,7 @@ export function SeriesPanel({ data, csv }: { data: StatsOverviewDTO; csv: (dim: 
 					</>
 				)}
 			</Card>
-			<Card testid="chart-donut" title={`${DIMS.find((d) => d.value === dim)!.label}占比`} subtitle={`${metricLabel}份额`} csv={csv(dim, metric)}>
+			<Card testid="chart-donut" title={`${DIMS.find((d) => d.value === dim)!.label}占比`} csv={csv(dim, metric)}>
 				{empty ? (
 					<Empty>此范围内没有模型请求记录。</Empty>
 				) : (
@@ -163,7 +163,7 @@ export function LatencyHistogram({ data, csv }: { data: StatsOverviewDTO; csv: s
 	const p50 = labelFor(L.p50);
 	const p95 = labelFor(L.p95);
 	return (
-		<Card testid="chart-latency" title="模型请求延迟分布" subtitle={L.source === "simulated" ? "只有测试模型请求：耗时为模拟值" : "真实模型请求耗时；虚线为 P50 / P95"} csv={csv}>
+		<Card testid="chart-latency" title="模型请求延迟分布" csv={csv}>
 			{L.count === 0 ? (
 				<Empty>此范围内没有带耗时的模型请求。</Empty>
 			) : (

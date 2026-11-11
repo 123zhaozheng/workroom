@@ -21,7 +21,6 @@ import { EnvVarsEditor } from "@/features/settings/EnvVars";
 import { Budgets } from "@/features/admin/BudgetsTab";
 import { Audit } from "@/features/admin/AuditTab";
 import { Trace } from "@/features/admin/TraceTab";
-import { Help } from "@/features/admin/common";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 
 interface NavItem {
@@ -99,7 +98,7 @@ export default function AdminPage() {
 			<TopBar />
 			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
 				<Page wide>
-					<PageHeader title="组织管理" actions={<Help label="说明">你只会看到自己有权限的页面。所有变更都会记入审计日志，服务端会逐项再次校验权限。</Help>} />
+					<PageHeader title="组织管理" />
 					<div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-8">
 						<nav aria-label="组织管理" data-testid="admin-tabs" onKeyDown={onKeys} className="-mx-4 overflow-x-auto px-4 md:sticky md:top-0 md:mx-0 md:w-48 md:shrink-0 md:overflow-visible md:px-0">
 							<div className="flex w-max items-center gap-1 md:w-auto md:flex-col md:items-stretch md:gap-5">
@@ -137,10 +136,6 @@ export default function AdminPage() {
 							{tab === "sandbox" ? <SandboxProviders /> : null}
 							{tab === "env" ? (
 								<div data-testid="admin-env" className="space-y-3">
-									<div className="flex items-center gap-1 text-sm text-fg-muted">
-										整个组织的工作区变量
-										<Help label="环境变量说明">整个组织的工作区命令都会带上这些变量。「锁定」的变量，项目、个人和对话都不能覆盖。</Help>
-									</div>
 									<EnvVarsEditor scope="org" scopeRef={me.orgId} editable testId="env-vars-org" />
 								</div>
 							) : null}

@@ -29,7 +29,6 @@ const REASON: Record<string, string> = {
 	manual: "手动保存",
 	restore: "恢复前保存的当前内容",
 };
-export const SAVE_RULE = "运行环境可能随时到期；工作文件在每次命令结束、写入文件后和发布成果前保存。";
 
 export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spaceId: string; conversationId: number; canWrite: boolean }) {
 	const key = `c${conversationId}`;
@@ -38,7 +37,7 @@ export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spa
 	const versions = useApi<{ versions: WorkspaceVersionDTO[] }>(`${path}/versions`, { pollMs: 6000 });
 	const { ask, dialog } = useConfirm();
 	const [busy, setBusy] = useState<"save" | "restore" | null>(null);
-	const [note, setNote] = useState<{ tone: "ok" | "err"; text: string }>();
+	const [note, setNote] = useState<{ tone: "err"; text: string }>();
 	const [dirtyRestore, setDirtyRestore] = useState<{ version: number; paths: string[] }>();
 	const [showPaths, setShowPaths] = useState(false);
 	const s = status.data?.status;
@@ -52,8 +51,7 @@ export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spa
 		setBusy("save");
 		setNote(undefined);
 		try {
-			const r = await post<{ saved: { created: boolean; version: number | null } }>(`${path}/save`, {});
-			setNote({ tone: "ok", text: r.saved.created ? `已保存为版本 ${r.saved.version}` : "没有新的更改，已是最新" });
+			await post(`${path}/save`, {});
 		} catch (e) {
 			setNote({ tone: "err", text: `保存没有成功：${errorText(e)}` });
 		} finally {
@@ -68,10 +66,8 @@ export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spa
 			const r = await post<{ restored: { fromVersion: number; verified: boolean; keptAsVersion?: number }; status: WorkspaceSaveStatusDTO }>(`${path}/restore`, { version, ...(force ? { force: "keep-both" } : {}) });
 			setDirtyRestore(undefined);
 			const conflicts = r.status.restore?.conflicts ?? [];
-			setNote({
-				tone: r.restored.verified && !conflicts.length ? "ok" : "err",
-				text: `${r.restored.verified ? `已恢复到版本 ${r.restored.fromVersion}，并核对无误` : `已恢复到版本 ${r.restored.fromVersion}，但没有通过核对`}${r.restored.keptAsVersion !== undefined ? `；恢复前的内容已另存为版本 ${r.restored.keptAsVersion}` : ""}${conflicts.length ? `；有 ${conflicts.length} 个冲突：${conflicts.slice(0, 5).join("、")}` : ""}`,
-			});
+			const problems = [r.restored.verified ? "" : "没有通过核对", conflicts.length ? `有 ${conflicts.length} 个冲突：${conflicts.slice(0, 5).join("、")}` : ""].filter(Boolean);
+			if (problems.length) setNote({ tone: "err", text: `已恢复到版本 ${r.restored.fromVersion}，但${problems.join("；")}` });
 		} catch (e) {
 			if (e instanceof ApiError && e.code === "workspace_dirty") setDirtyRestore({ version, paths: s?.unsynced.paths.slice(0, 5) as string[] ?? [] });
 			else setNote({ tone: "err", text: `恢复没有成功：${errorText(e)}` });
@@ -109,11 +105,11 @@ export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spa
 			{s ? (
 				<div className="mt-2 space-y-1.5 text-[13px]">
 					<p data-testid="ws-save-time" className="text-fg-muted">
-						{s.lastSavedAt ? `上次保存：${fullTime(s.lastSavedAt)}（${relTime(s.lastSavedAt)}）${s.headVersion !== null ? ` · 版本 ${s.headVersion}` : ""}` : "还没有保存过。"}
+						{s.lastSavedAt ? `上次保存：${fullTime(s.lastSavedAt)}（${relTime(s.lastSavedAt)}）${s.headVersion !== null ? ` · 版本 ${s.headVersion}` : ""}` : "还没有保存过"}
 					</p>
 					{refusedRestore ? (
 						<p data-testid="ws-save-failure" role="alert" className="rounded-lg bg-warning-soft px-2.5 py-1.5 text-warning">
-							上次恢复没有进行：工作区里有尚未保存的更改，直接恢复会覆盖它们。可以先「立即保存」，或在历史版本里选择恢复，再点「先保存当前内容再恢复」。
+							恢复没有进行：有尚未保存的更改。请先「立即保存」，再恢复。
 						</p>
 					) : s.failure && (s.state === "failed" || s.state === "conflict") ? (
 						<p data-testid="ws-save-failure" role="alert" className="rounded-lg bg-danger-soft px-2.5 py-1.5 text-danger">
@@ -145,22 +141,16 @@ export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spa
 							{s.restore.conflicts.length ? `；冲突：${s.restore.conflicts.join("、")}` : ""}
 						</p>
 					) : null}
-					<p data-testid="ws-save-rule" className="text-xs text-fg-muted">
-						{SAVE_RULE}
-					</p>
-					<p data-testid="ws-loss-window" className="text-xs text-fg-muted">
-						{s.lossWindow}
-					</p>
 				</div>
 			) : null}
 			{note ? (
-				<p data-testid="ws-save-note" role={note.tone === "err" ? "alert" : "status"} className={cn("mt-2 rounded-lg px-2.5 py-1.5 text-sm", note.tone === "err" ? "bg-danger-soft text-danger" : "bg-success-soft text-success")}>
+				<p data-testid="ws-save-note" role="alert" className="mt-2 rounded-lg bg-danger-soft px-2.5 py-1.5 text-sm text-danger">
 					{note.text}
 				</p>
 			) : null}
 			{dirtyRestore ? (
 				<div data-testid="ws-restore-dirty" role="alert" className="mt-2 space-y-2 rounded-lg bg-warning-soft px-3 py-2 text-[13px] text-warning">
-					<p>工作区里有尚未保存的更改，直接恢复会覆盖它们，所以没有恢复。{dirtyRestore.paths.length ? `例如：${dirtyRestore.paths.join("、")}。` : ""}</p>
+					<p>有尚未保存的更改，恢复会覆盖它们。{dirtyRestore.paths.length ? `例如：${dirtyRestore.paths.join("、")}` : ""}</p>
 					<div className="flex flex-wrap gap-2">
 						<Button size="sm" variant="primary" data-testid="ws-restore-keep-both" disabled={busy !== null} onClick={() => void restore(dirtyRestore.version, true)}>
 							先保存当前内容再恢复
@@ -179,7 +169,7 @@ export function WorkspaceSaveStatus({ spaceId, conversationId, canWrite }: { spa
 				</summary>
 				{list.length === 0 ? (
 					<p data-testid="ws-versions-empty" className="mt-2 text-[13px] text-fg-muted">
-						还没有历史版本。第一次保存后会出现在这里。
+						还没有历史版本
 					</p>
 				) : (
 					<ul className="mt-2 divide-y divide-border rounded-lg border border-border">

@@ -147,7 +147,7 @@ function AssistantEditor({ initial, onClose, onSaved }: { initial?: Assistant; o
 	};
 	return (
 		<Dialog open onOpenChange={(o) => !o && onClose()}>
-			<DialogContent title={initial ? "编辑助手" : "新建助手"} description="助手的身份与配置独立于对话；对话只引用它。" className="max-w-xl">
+			<DialogContent title={initial ? "编辑助手" : "新建助手"} className="max-w-xl">
 				<div className="wr-scroll -mx-1 max-h-[70vh] space-y-3 overflow-y-auto px-1 text-[13px]" data-testid="assistant-editor">
 					<div className="grid grid-cols-[72px_1fr] gap-3">
 						<div>
@@ -209,7 +209,7 @@ function AssistantEditor({ initial, onClose, onSaved }: { initial?: Assistant; o
 						</div>
 					</div>
 					<div>
-						<Label>团队成员（子 Agent，工具需显式列出，不继承）</Label>
+						<Label>团队成员</Label>
 						{members.map((m, i) => (
 							<div key={i} className="mb-1 flex flex-wrap items-center gap-2">
 								<Input value={m.name} onChange={(e) => setMembers((x) => x.map((y, j) => (j === i ? { ...y, name: e.target.value } : y)))} className="h-8 w-32 text-[13px]" aria-label="成员名称" />

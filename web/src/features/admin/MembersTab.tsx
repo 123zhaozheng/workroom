@@ -26,20 +26,18 @@ export function Members({ selfId }: { selfId?: string }) {
 	const { ask, dialog } = useConfirm();
 	const [open, setOpen] = useState<string>();
 	const [q, setQ] = useState("");
-	const orgWide = perms.org.has("member.view");
 	const depName = useMemo(() => new Map((deps.data?.departments ?? []).map((d) => [d.id, d.name])), [deps.data]);
 	const all = res.data?.members ?? [];
 	const rows = all.filter((m) => !q.trim() || `${m.name} ${m.email}`.toLowerCase().includes(q.trim().toLowerCase()));
 	const disable = async (m: MemberRow) => {
-		if (await ask({ title: `停用 ${m.name}？`, consequence: `${m.name} 会立即退出所有登录设备，无法再登录；账号和数据保留，随时可以恢复。`, confirmLabel: "停用", danger: true })) await run(() => post(`/admin/members/${m.userId}/disable`), `已停用 ${m.name}，其全部登录已退出`);
+		if (await ask({ title: `停用 ${m.name}？`, consequence: `${m.name} 会立即退出所有登录设备，无法再登录；账号和数据保留，随时可以恢复。`, confirmLabel: "停用", danger: true })) await run(() => post(`/admin/members/${m.userId}/disable`));
 	};
 	const remove = async (m: MemberRow) => {
-		if (await ask({ title: `将 ${m.name} 移出组织？`, consequence: `${m.name} 将失去对本组织的全部访问。`, items: ["角色、部门和项目成员关系会被清除", "TA 创建的分享链接会失效", "要回来需要重新邀请，之前的角色不会恢复"], confirmLabel: "移出组织", danger: true })) await run(() => del(`/admin/members/${m.userId}`), "已移出组织");
+		if (await ask({ title: `将 ${m.name} 移出组织？`, consequence: `${m.name} 将失去对本组织的全部访问。`, items: ["角色、部门和项目成员关系会被清除", "TA 创建的分享链接会失效", "要回来需要重新邀请，之前的角色不会恢复"], confirmLabel: "移出组织", danger: true })) await run(() => del(`/admin/members/${m.userId}`));
 	};
 	return (
 		<Loadable state={res} what="成员">
 			{note}
-			{!orgWide ? <p className="mb-3 text-xs text-fg-muted">你只能看到自己所管理部门范围内的成员。</p> : null}
 			<div className="mb-3 flex flex-wrap items-center gap-3">
 				<div className="relative w-full max-w-xs">
 					<Search aria-hidden className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-fg-subtle" />
@@ -100,7 +98,7 @@ export function Members({ selfId }: { selfId?: string }) {
 															停用账号
 														</MenuItem>
 													) : (
-														<MenuItem data-testid="member-enable" disabled={busy} onSelect={() => void run(() => post(`/admin/members/${m.userId}/enable`), `已恢复 ${m.name}（之前的登录不会恢复，需要重新登录）`)}>
+														<MenuItem data-testid="member-enable" disabled={busy} onSelect={() => void run(() => post(`/admin/members/${m.userId}/enable`))}>
 															<RotateCcw />
 															恢复账号
 														</MenuItem>

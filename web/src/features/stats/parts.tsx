@@ -3,7 +3,6 @@
 import { Download } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { InfoPop } from "@/components/shell/InfoPop";
 
 export const SERIES_COLORS = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)", "var(--c6)", "var(--c7)", "var(--c8)"];
 export const seriesColor = (key: string, index: number) => (key === "__other" ? "var(--c-other)" : SERIES_COLORS[index % SERIES_COLORS.length]!);
@@ -17,14 +16,11 @@ export const OUTCOME_META = {
 	in_progress: { label: "进行中", color: "var(--st-progress)" },
 } as const;
 
-export function Card({ title, subtitle, actions, csv, children, className, testid }: { title: string; subtitle?: ReactNode; actions?: ReactNode; csv?: string | null; children: ReactNode; className?: string; testid?: string }) {
+export function Card({ title, actions, csv, children, className, testid }: { title: string; actions?: ReactNode; csv?: string | null; children: ReactNode; className?: string; testid?: string }) {
 	return (
 		<section data-testid={testid} aria-label={title} className={cn("min-w-0 rounded-xl border border-border bg-surface p-4", className)}>
 			<header className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-				<div className="flex min-w-0 items-center gap-1">
-					<h2 className="text-sm font-medium">{title}</h2>
-					{subtitle ? <InfoPop label={`${title}：说明`}>{subtitle}</InfoPop> : null}
-				</div>
+				<h2 className="min-w-0 text-sm font-medium">{title}</h2>
 				<div className="flex max-w-full flex-wrap items-center gap-2">
 					{actions}
 					{csv ? (

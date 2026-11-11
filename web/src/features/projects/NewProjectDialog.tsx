@@ -19,7 +19,7 @@ export function NewProjectDialog({ open, onOpenChange, onCreated }: { open: bool
 				onOpenChange(o);
 			}}
 		>
-			<DialogContent title="新建项目" description="把相关的对话放在一起，也可以只读分享给同事。">
+			<DialogContent title="新建项目">
 				<form
 					onSubmit={async (e) => {
 						e.preventDefault();

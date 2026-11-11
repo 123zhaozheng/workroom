@@ -342,7 +342,7 @@ try {
 	await ph.fill('[data-testid="totp-code"]', totp(hSecret));
 	await ph.click('[data-testid="totp-enable"]');
 	await ph.waitForSelector('[data-testid="totp-status"][data-enabled="true"]');
-	check("H: the right code enables it: status 已启用, a notice, the secret is gone from the page", (await ph.locator('[data-testid="totp-notice"]').isVisible()) && (await ph.locator('[data-testid="totp-secret"]').count()) === 0 && (await me(ph)).totpEnabled === true);
+	check("H: the right code enables it: status 已启用 (round 11: no success banner), the secret is gone from the page", (await ph.locator('[data-testid="totp-notice"]').count()) === 0 && (await ph.locator('[data-testid="totp-secret"]').count()) === 0 && (await me(ph)).totpEnabled === true);
 	await snap(ph, "settings-security-on");
 	await ph.reload();
 	await ph.waitForSelector('[data-testid="totp-status"][data-enabled="true"]');
@@ -357,7 +357,7 @@ try {
 	await ph.fill('[data-testid="totp-disable-code"]', totp(hSecret, 1));
 	await ph.click('[data-testid="totp-disable-confirm"]');
 	await ph.waitForSelector('[data-testid="totp-status"][data-enabled="false"]', { timeout: 8000 });
-	check("H: a fresh valid code turns 2FA off (status 未启用, server agrees)", (await me(ph)).totpEnabled === false && /已关闭/.test(await ph.locator('[data-testid="totp-notice"]').innerText()));
+	check("H: a fresh valid code turns 2FA off (status 未启用, server agrees; no 已关闭 banner)", (await me(ph)).totpEnabled === false && (await ph.locator('[data-testid="totp-notice"]').count()) === 0);
 	await ph.setViewportSize({ width: 390, height: 844 });
 	await ph.goto(`${base}/settings?tab=security`);
 	await ph.waitForSelector('[data-testid="two-factor"]');

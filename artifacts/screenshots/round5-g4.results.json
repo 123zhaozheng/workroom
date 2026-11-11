@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:29:12.494Z",
+  "at": "2026-11-11T12:52:51.555Z",
   "results": [
     {
       "name": "setup: deliverables (md v2, docx, xlsx, pptx, pdf, csv) and an image published from the workspace",
@@ -99,12 +99,12 @@
     {
       "name": "terminal: a run shows the command, output and an exit status line",
       "ok": true,
-      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 117 ms"
+      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 128 ms"
     },
     {
       "name": "terminal: no driver / isolation jargon visible",
       "ok": true,
-      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 117 ms"
+      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 128 ms"
     },
     {
       "name": "files tab: one-line usage indicator (count, used / quota)",
@@ -134,7 +134,7 @@
     {
       "name": "files tab: no jargon (/work, namespaces, sandbox) in visible text",
       "ok": true,
-      "detail": "子任务 终端 文件 浏览器 4 个文件 · 已用 927 B / 512.0 MB 上传 已删除「temp.txt」 out blob.bin 256 B notes.md 40 B notes.md 40 B 修改于 刚刚 3天后自动清理 # 分析笔记 - 收入同比增长 25% 保存状态 已保存 立即保存 上次保存："
+      "detail": "子任务 终端 文件 浏览器 4 个文件 · 已用 927 B / 512.0 MB 上传 out blob.bin 256 B notes.md 40 B notes.md 40 B 修改于 刚刚 3天后自动清理 # 分析笔记 - 收入同比增长 25% 保存状态 已保存 立即保存 上次保存：2026/11/11 12:"
     },
     {
       "name": "files page: simple list without explanatory subtitle or jargon",
@@ -259,7 +259,7 @@
     {
       "name": "stats: demo organisation seeded",
       "ok": true,
-      "detail": "demo org org_0mwbssd3x95a5b633beea6103 flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2255 runs, 11477 ledger rows (demo=1, simulated), 678 knowledge searches, 341 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8896 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
+      "detail": "demo org org_0mwc4clfc932eabd63eaf2ba3 flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2255 runs, 11477 ledger rows (demo=1, simulated), 678 knowledge searches, 341 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8892 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
     },
     {
       "name": "stats: demo banner kept and 模拟 labels kept",
@@ -272,12 +272,12 @@
       "detail": ""
     },
     {
-      "name": "stats: second-level explanations are tooltips, not permanent subtitles; no docs paths or jargon",
+      "name": "stats: no permanent subtitles or explanations; no docs paths or jargon",
       "ok": true,
-      "detail": "统计 演示数据：这是演示组织，图表里的记录都是模拟的，不代表真实使用，也没有真实费用。 范围 组织：演示组织（Demo） 近 7 天 近 30 天 近 90 天 本月 近 12 个月 自定义 粒度 小"
+      "detail": "统计 演示数据 范围 组织：演示组织（Demo） 近 7 天 近 30 天 近 90 天 本月 近 12 个月 自定义 粒度 小时 天 周 此范围内只有测试模型（模拟）请求：Token 与耗时是模拟值"
     },
     {
-      "name": "stats: the ? popover on a card holds the explanation",
+      "name": "stats [round 11]: no ? explanation popovers on the cards at all (explanations are removed, not folded)",
       "ok": true,
       "detail": ""
     },
@@ -324,7 +324,7 @@
     {
       "name": "light: workspace files tab passes AA",
       "ok": true,
-      "detail": "{\"worst\":4.77,\"n\":56}"
+      "detail": "{\"worst\":4.77,\"n\":53}"
     },
     {
       "name": "light: file detail secondary text and links pass AA",
@@ -354,7 +354,7 @@
     {
       "name": "dark: workspace files tab passes AA",
       "ok": true,
-      "detail": "{\"worst\":6.57,\"n\":56}"
+      "detail": "{\"worst\":6.57,\"n\":53}"
     },
     {
       "name": "dark: file detail secondary text and links pass AA",

@@ -4,21 +4,17 @@ import { useState, type ReactNode } from "react";
 import { errorText } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-export { Help } from "@/components/ui/help";
 export const ROLE: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员", guest: "访客" };
 
-/** Runs an action, reports its error inline, then refreshes. */
+/** Runs an action, reports its error inline (success needs no banner), then refreshes. */
 export function useAct(after: () => void) {
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string>();
-	const [ok, setOk] = useState<string>();
-	const run = async (fn: () => Promise<unknown>, okText?: string) => {
+	const run = async (fn: () => Promise<unknown>) => {
 		setBusy(true);
 		setErr(undefined);
-		setOk(undefined);
 		try {
 			await fn();
-			if (okText) setOk(okText);
 			after();
 		} catch (e) {
 			setErr(errorText(e));
@@ -26,7 +22,7 @@ export function useAct(after: () => void) {
 			setBusy(false);
 		}
 	};
-	const note = err ? <p className="my-2 rounded-lg bg-danger-soft px-3 py-1.5 text-sm text-danger" role="alert">{err}</p> : ok ? <p className="my-2 rounded-lg bg-success-soft px-3 py-1.5 text-sm text-success" role="status">{ok}</p> : null;
+	const note = err ? <p className="my-2 rounded-lg bg-danger-soft px-3 py-1.5 text-sm text-danger" role="alert">{err}</p> : null;
 	return { busy, run, note };
 }
 

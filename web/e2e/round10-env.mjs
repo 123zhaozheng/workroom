@@ -1,8 +1,8 @@
 // Round 10 · the conversation environment button is two options (云端沙箱 active / 本地环境 coming soon) and the org has ONE active sandbox channel.
 //  A. admin 沙箱 page (REAL server): 当前使用的沙箱渠道 is a single radio choice; choosing a provider deactivates the others; choosing 平台内置沙箱 deactivates all;
 //     a provider that fails server validation shows the server's message and changes nothing; allowProjectOverride=true is refused; the project page has no picker.
-//  B. the popover (REAL server): backend name, status, 重试 on a real failure, 本地环境 disabled + 即将推出 + tooltip, admin link only for admins, no leftover clutter;
-//     a workDir is rendered when the environment API provides one ([intercepted] mock, UI behaviour only) and omitted when it does not.
+//  B. the popover (REAL server): exactly two options (云端沙箱 / 本地环境) and nothing else — round 11 simplification (intentional): no backend name, state line,
+//     working directory, admin link, 即将推出 or tooltip text; 本地环境 is disabled; only a real failure adds one short line 「准备失败 · 重试」 (reason on hover).
 //  Screenshots (artifacts/screenshots/round10/): popover at 1440 and 390, light and dark; the admin channel choice at 1440 and 390.
 // Run: npm run build:web && node web/e2e/round10-env.mjs        (port 8952)
 import { mkdirSync } from "node:fs";
@@ -47,7 +47,7 @@ try {
 	await openAdmin();
 	check("A tab is called 沙箱 and the section 当前使用的沙箱渠道 is one radio group: 平台内置沙箱 + OpenSandbox + E2B + Daytona", (await admin.locator('[data-testid="admin-tab-sandbox"]').innerText()).includes("沙箱") && (await admin.locator('[data-testid="sandbox-channel"]').innerText()).includes("当前使用的沙箱渠道") && (await admin.locator('[data-testid="sandbox-channel"] input[type="radio"]').count()) === 4);
 	check("A fresh org: 平台内置沙箱 is chosen, no provider is active, nothing else to switch on or off", (await admin.locator('[data-testid="channel-local"] input').isChecked()) && (await enabledIds()) === "" && (await admin.locator('[data-testid="allow-override"], [data-testid$="-enabled"]').count()) === 0);
-	check("A providers without a saved key cannot be chosen (disabled radio, with the reason)", (await admin.locator('[data-testid="channel-e2b"] input').isDisabled()) && (await admin.locator('[data-testid="channel-e2b"]').innerText()).includes("先在下方保存访问密钥"));
+	check("A providers without a saved key cannot be chosen (disabled radio, with the reason)", (await admin.locator('[data-testid="channel-e2b"] input').isDisabled()) && (await admin.locator('[data-testid="channel-e2b"]').innerText()).includes("未配置密钥"));
 	await shotR(admin, "admin-channel-1440-light");
 
 	// keys saved WITHOUT enabled never change the channel
@@ -116,20 +116,20 @@ try {
 	const pop = admin.locator('[data-testid="env-popover"]');
 	const text = await pop.innerText();
 	const kind = await admin.locator('[data-testid="env-button"]').getAttribute("data-env-kind");
-	check("B local channel: 云端沙箱 is the active option and names 平台内置沙箱", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && (await pop.locator('[data-testid="env-label"]').innerText()).includes("平台内置沙箱") && (kind === "local" || kind === "none"), `${kind}`);
-	check("B status is shown as one line (已就绪, or 准备失败 with the plain reason when the host has no driver); no 重试 for a built-in sandbox that needs no preparing", /已就绪|准备失败：执行环境未配置/.test(await pop.locator('[data-testid="env-state"]').innerText()) && (await pop.locator('[data-testid="env-prepare"]').count()) === 0);
+	const popText = text.replace(/\s+/g, " ").trim();
+	check("B local channel: 云端沙箱 is the active option (the backend name is only in the screen-reader text); popover says nothing but 云端沙箱 / 本地环境 (+ 准备失败 when the host has no driver)", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && (kind === "local" || kind === "none") && /^云端沙箱\s?(\（当前：[^）]*\）)?\s?(准备失败)?\s?本地环境$/.test(popText.replace(/（当前：[^）]*）/, "")), popText);
+	check("B no state line unless something failed; never a 现在准备 button, no backend label", (await pop.locator('[data-testid="env-label"]').count()) === 0 && (await pop.locator('[data-testid="env-prepare"]').count()) === 0 && ((await pop.locator('[data-testid="env-state"]').count()) === 0 || /^准备失败/.test((await pop.locator('[data-testid="env-state"]').innerText()).trim())));
 	const local = pop.locator('[data-testid="env-local"]');
-	check("B 本地环境 is shown disabled (aria-disabled) with 即将推出 and what it means; clicking does nothing", (await local.getAttribute("aria-disabled")) === "true" && (await local.innerText()).includes("即将推出") && (await local.innerText()).includes("指你自己的电脑"));
+	check("B 本地环境 is shown disabled (aria-disabled), as just the two words — no 即将推出, no explanation", (await local.getAttribute("aria-disabled")) === "true" && (await local.innerText()).trim() === "本地环境");
 	await local.click({ force: true });
 	check("B clicking 本地环境 changes nothing (popover open, still 云端沙箱, no request sent)", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && posts.length === 0);
 	await admin.mouse.move(5, 5); // the click above left the pointer on the element: move away, then hover for real
 	await local.hover();
 	await sleep(900); // tooltip delay is 400ms
 	const tipTexts = await admin.evaluate(() => [...document.querySelectorAll('[role="tooltip"], [data-radix-popper-content-wrapper]')].map((e) => e.textContent ?? ""));
-	check("B 本地环境 has a one-line tooltip (指你自己的电脑，还没有实现)", tipTexts.join(" ").includes("指你自己的电脑，还没有实现"), JSON.stringify(tipTexts));
+	check("B 本地环境 has no explaining tooltip (指你自己的电脑 / 还没有实现 are gone)", !tipTexts.join(" ").includes("指你自己的电脑") && !tipTexts.join(" ").includes("还没有实现"), JSON.stringify(tipTexts));
 	check("B the clutter is gone: no isolation text, location/network badges, option list, 切换, project/conversation chooser hints, 详细说明", (await pop.locator('[data-testid="env-isolation"], [data-testid="env-isolation-full"], [data-testid="env-location"], [data-testid="env-network"], [data-testid="env-options"], [data-testid^="env-switch-"], [data-testid="env-choose-hint"], details').count()) === 0 && !/切换|数据会离开|详细说明|可用的执行环境/.test(text));
-	check("B the working directory from the environment API is shown (工作目录 /work)", /工作目录/.test(text) && (await pop.locator('[data-testid="env-workdir"]').innerText()).includes("/work"), text.replace(/\s+/g, " ").slice(0, 160));
-	check("B admin sees 管理后台 › 沙箱 linking to the 沙箱 tab", (await pop.locator('[data-testid="env-admin-link"]').innerText()).includes("管理后台 › 沙箱") && (await pop.locator('[data-testid="env-admin-link"]').getAttribute("href")) === "/admin?tab=sandbox");
+	check("B no working directory and no admin link in the popover (not even for an admin)", (await pop.locator('[data-testid="env-workdir"]').count()) === 0 && (await pop.locator('[data-testid="env-admin-link"]').count()) === 0 && !/工作目录|管理后台/.test(text));
 	await shotR(admin, "popover-local-1440-light");
 	await admin.keyboard.press("Escape");
 
@@ -145,7 +145,7 @@ try {
 	await member.waitForSelector('[data-testid="home-greeting"]');
 	await member.locator('[data-testid="env-button"]').click();
 	await member.waitForSelector('[data-testid="env-popover"]');
-	check("B a member sees 云端沙箱 and 本地环境 but no admin link", (await member.locator('[data-testid="env-cloud"]').count()) === 1 && (await member.locator('[data-testid="env-local"]').count()) === 1 && (await member.locator('[data-testid="env-admin-link"]').count()) === 0);
+	check("B a member sees the same two options: 云端沙箱 and 本地环境", (await member.locator('[data-testid="env-cloud"]').count()) === 1 && (await member.locator('[data-testid="env-local"]').count()) === 1 && (await member.locator('[data-testid="env-admin-link"]').count()) === 0);
 	await mCtx.close();
 
 	// real remote channel: OpenSandbox at an unreachable address
@@ -158,15 +158,22 @@ try {
 	await btn.click();
 	await admin.waitForSelector('[data-testid="env-popover"]');
 	await sleep(500);
-	check("B OpenSandbox: backend name shown, state says it is created when first needed, 现在准备 offered, working directory shown", (await pop.locator('[data-testid="env-label"]').innerText()).trim() === "OpenSandbox" && (await pop.locator('[data-testid="env-state"]').innerText()).includes("用到时自动创建") && (await pop.locator('[data-testid="env-prepare"]').innerText()).includes("现在准备") && (await pop.locator('[data-testid="env-workdir"]').innerText()).includes("/work"));
-	await pop.locator('[data-testid="env-prepare"]').click();
+	check("B OpenSandbox: still just the two options — no backend label, no state line, no 现在准备 (nothing to retry yet), no working directory", (await pop.locator('[data-testid="env-label"]').count()) === 0 && (await pop.locator('[data-testid="env-state"]').count()) === 0 && (await pop.locator('[data-testid="env-prepare"]').count()) === 0 && (await pop.locator('[data-testid="env-workdir"]').count()) === 0);
+	// the only way to a failure is a real attempt: ask the server to prepare the (unreachable) sandbox, as the first sandbox tool call would
+	const spaceId = (await (await admin.request.get(`${base}/api/me`)).json()).personalSpaceId;
+	await admin.request.post(`${base}/api/conversations/${spaceId}/new/environment/prepare`).catch(() => {});
+	await admin.keyboard.press("Escape");
+	await admin.goto(base);
+	await admin.waitForSelector('[data-testid="env-button"]');
+	await admin.locator('[data-testid="env-button"]').click();
+	await admin.waitForSelector('[data-testid="env-popover"]');
 	await admin.waitForFunction(() => document.querySelector('[data-testid="env-state"]')?.getAttribute("data-state") === "failed", null, { timeout: 60000 });
-	const failText = await pop.locator('[data-testid="env-state"]').innerText();
-	check("B a real failure: 准备失败 with the server's reason, 重试 offered, a red dot on the button, never a fallback to the host", failText.includes("准备失败") && failText.length > 8 && (await pop.locator('[data-testid="env-prepare"]').innerText()).includes("重试") && (await admin.locator('[data-testid="env-dot"]').count()) === 1, failText.replace(/\s+/g, " ").slice(0, 120));
+	const failText = (await pop.locator('[data-testid="env-state"]').innerText()).replace(/\s+/g, " ").trim();
+	check("B a real failure: one short line 「准备失败」 + 重试 (the reason is on hover, not printed), a red dot on the button, never a fallback to the host", failText.replace(/\s?重试$/, "") === "准备失败" && (await pop.locator('[data-testid="env-prepare"]').innerText()).includes("重试") && (await pop.locator('[data-testid="env-state"] span[title]').getAttribute("title"))?.length > 4 && (await admin.locator('[data-testid="env-dot"]').count()) === 1, failText);
 	await shotR(admin, "popover-failed-1440-light");
 	await admin.keyboard.press("Escape");
 
-	// [intercepted] a workDir from the environment API is rendered (UI behaviour only; the server side belongs to the sandbox group)
+	// [intercepted] a workDir in the environment data is NOT shown any more (round 11: the popover lists two options only)
 	{
 		const ic = await ctxOf(1440, "light", await aCtx.cookies());
 		const p = await ic.newPage();
@@ -179,18 +186,8 @@ try {
 		await p.waitForSelector('[data-testid="env-button"]');
 		await p.locator('[data-testid="env-button"]').click();
 		await p.waitForSelector('[data-testid="env-popover"]');
-		check("B [intercepted] a workDir in the environment data is shown as 工作目录; E2B ready has no 重试 / 现在准备", (await p.locator('[data-testid="env-workdir"]').innerText()).includes("/home/user/work") && (await p.locator('[data-testid="env-label"]').innerText()).trim() === "E2B" && (await p.locator('[data-testid="env-state"]').innerText()).includes("已就绪") && (await p.locator('[data-testid="env-prepare"]').count()) === 0);
-		await p.unroute(envUrl);
-		await p.route(envUrl, async (r) => {
-			const body = await (await r.fetch()).json();
-			delete body.workDir;
-			await r.fulfill({ json: body });
-		});
-		await p.reload();
-		await p.waitForSelector('[data-testid="env-button"]');
-		await p.locator('[data-testid="env-button"]').click();
-		await p.waitForSelector('[data-testid="env-popover"]');
-		check("B [intercepted] without a workDir in the data the line is simply omitted (nothing invented)", (await p.locator('[data-testid="env-workdir"]').count()) === 0 && !/工作目录/.test(await p.locator('[data-testid="env-popover"]').innerText()));
+		const ipText = (await p.locator('[data-testid="env-popover"]').innerText()).replace(/\s+/g, " ").trim();
+		check("B [intercepted] a ready E2B channel with a workDir in the data: the popover still shows only 云端沙箱 / 本地环境 (no 工作目录, no E2B label, no 已就绪, no 重试 / 现在准备)", !/工作目录|\/home\/user\/work|已就绪|重试|现在准备/.test(ipText) && (await p.locator('[data-testid="env-workdir"], [data-testid="env-label"], [data-testid="env-state"], [data-testid="env-prepare"]').count()) === 0, ipText);
 		await ic.close();
 	}
 

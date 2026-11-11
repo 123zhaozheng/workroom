@@ -120,7 +120,7 @@ try {
 	await card.locator('[data-testid="approval-details-toggle"]').click();
 	const txtOpen = await card.innerText();
 	await card.locator('[data-testid="approval-details-toggle"]').click();
-	check("A card: the fixed sentence about 仅你可用 / 不会自动运行 / 不会发布", txtOpen.includes("保存后仅你可用；不会自动运行，也不会发布到商城。发布需在「能力 › 我的技能」另行提交审核。"));
+	check("A card: the fixed sentence is one short line: 仅你可用 / 不会自动运行 (round 11: the 发布 / 商城 paragraph is gone)", txtOpen.includes("保存后仅你可用，不会自动运行。") && !txtOpen.includes("商城"));
 	check("A card: package hash and codes only inside 技术详情", !txt.includes("c0ffee") && !txt.includes("sha256") && (await card.locator('[data-testid="tech-details"]').innerHTML()).includes("packageSha256"));
 	check("A card: buttons are 不保存 / 保存 (+ 添加说明), nothing focused on open", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "不保存|保存|查看详情|添加说明" && !["approve", "approve-confirm"].includes(await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "")));
 	await shot(page, "round6/draft-card-1440-light");
@@ -306,7 +306,7 @@ try {
 	await sleep(300);
 	const sel = mp.locator('[data-testid="submit-scope"]');
 	check("C member: the target defaults to something other than 整个组织", (await selValue(sel)) !== "org", await selValue(sel));
-	check("C member: 整个组织 is disabled and a one-line reason is shown", (await selOptions(sel)).some((o) => o.value === "org" && o.disabled) && (await mp.locator('[data-testid="submit-scope-note"]').innerText()).includes("没有向整个组织发布的权限"));
+	check("C member: 整个组织 is disabled and a one-line reason is shown", (await selOptions(sel)).some((o) => o.value === "org" && o.disabled) && (await mp.locator('[data-testid="submit-scope-note"]').innerText()).includes("无权发布到整个组织"));
 	await shot(mp, "round6/submit-dialog-member-1440-light");
 	await mp.keyboard.press("Escape");
 	await member.close();

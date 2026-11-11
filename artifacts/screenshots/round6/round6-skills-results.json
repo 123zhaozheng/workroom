@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T08:24:44.702Z",
+  "at": "2026-11-11T12:53:19.465Z",
   "results": [
     {
       "name": "A card: title 保存为个人技能, name/title and 版本",
@@ -32,7 +32,7 @@
       "detail": ""
     },
     {
-      "name": "A card: the fixed sentence about 仅你可用 / 不会自动运行 / 不会发布",
+      "name": "A card: the fixed sentence is one short line: 仅你可用 / 不会自动运行 (round 11: the 发布 / 商城 paragraph is gone)",
       "ok": true,
       "detail": ""
     },

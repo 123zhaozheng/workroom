@@ -11,7 +11,7 @@ export default function RoutesDialog({ spaceId, conversationId, modelLabel, fixt
 	const rows = res.data?.attempts ?? [];
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="模型与路由记录" description="你选择的平台模型，以及这次对话中每一次实际请求走的渠道与上游模型。" className="max-w-2xl">
+			<DialogContent title="模型与路由记录" className="max-w-2xl">
 				<div data-testid="routes" className="wr-scroll -mx-1 max-h-[70vh] overflow-y-auto px-1 text-[13px]">
 					<p className="mb-3">
 						当前模型：<span className="font-medium">{fixture ? "测试模型（非真实 AI）" : modelLabel}</span>

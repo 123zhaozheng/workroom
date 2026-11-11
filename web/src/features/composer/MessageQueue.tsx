@@ -3,11 +3,10 @@
 // Each item: 立即发送 (hand it to the running task at its next step) and 撤销 (take it back into the input box); both are
 // revealed on hover, keyboard focus, and by tapping the row (touch). Wording never claims more than the server confirmed.
 import { Ban, ChevronDown, ListEnd, Loader2, Paperclip, Send, Trash2, Undo2 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { QueuedInputDTO, RunStatus } from "@shared/chat";
 import { cn } from "@/lib/utils";
 import { cleanTestText } from "@/features/chat/testText";
-import { RUN_LABEL } from "@/features/chat/status";
 
 export interface QueueNotice {
 	tone: "info" | "warn" | "error";
@@ -27,18 +26,8 @@ interface Props {
 
 const STALLED: RunStatus[] = ["failed", "interrupted", "timeout", "aborted"];
 
-export function queueHeader(status: RunStatus, n: number): { title: string; detail: string; stalled: boolean } {
-	if (STALLED.includes(status)) return { title: `${n} 条消息还没发出`, detail: `上一次任务${RUN_LABEL[status]}，排队的消息不会自动发送，点上方「${status === "aborted" ? "继续" : "重试"}」后一并处理`, stalled: true };
-	if (status === "waiting_approval") return { title: `排队 ${n} 条`, detail: "当前任务在等你确认，确认并完成后按顺序自动发送", stalled: false };
-	if (status === "running") return { title: `排队 ${n} 条`, detail: "当前任务结束后按顺序自动发送", stalled: false };
-	return { title: `排队 ${n} 条`, detail: "即将发送", stalled: false };
-}
-
-/** What 立即发送 does right now — shown on the button's description and in the expanded row. */
-export function sendNowHint(status: RunStatus): string {
-	if (STALLED.includes(status)) return "现在就发送这条消息，开始新一轮处理；其余排队的消息会接在后面。";
-	if (status === "waiting_approval") return "把消息交给当前任务。它正在等你确认，确认之后才会处理；不会跳过待确认的操作。";
-	return "把消息交给正在运行的任务，在它的下一步处理。不会打断正在执行的工具，也不会跳过待你确认的操作。";
+export function queueTitle(status: RunStatus, n: number): { title: string; stalled: boolean } {
+	return STALLED.includes(status) ? { title: `${n} 条消息未发出`, stalled: true } : { title: `排队 ${n} 条`, stalled: false };
 }
 
 export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, readOnly }: Props) {
@@ -47,7 +36,6 @@ export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, re
 	const [notice, setNotice] = useState<QueueNotice>();
 	const [expanded, setExpanded] = useState(false);
 	const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-	const uid = useId();
 	useEffect(() => () => clearTimeout(timer.current), []);
 	// an open row whose item left the queue (sent, withdrawn in another tab) closes
 	useEffect(() => {
@@ -55,7 +43,7 @@ export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, re
 	}, [items, open]);
 
 	if (!items.length && !notice) return null;
-	const { title, detail, stalled } = queueHeader(runStatus, items.length);
+	const { title, stalled } = queueTitle(runStatus, items.length);
 
 	const run = async (item: QueuedInputDTO, fn: (i: QueuedInputDTO) => Promise<QueueNotice | void>) => {
 		if (pending.has(item.submissionId)) return;
@@ -88,11 +76,8 @@ export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, re
 			{items.length ? (
 				<header className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1.5 text-[12.5px] text-fg-muted">
 					<ListEnd aria-hidden className="size-3.5 shrink-0" />
-					<span data-testid="queue-title" className="font-medium text-fg">
+					<span data-testid="queue-title" className={cn("font-medium", stalled ? "text-warning" : "text-fg")}>
 						{title}
-					</span>
-					<span data-testid="queue-detail" className={cn("min-w-0 flex-1 basis-48", stalled && "text-warning")}>
-						· {detail}
 					</span>
 				</header>
 			) : null}
@@ -103,7 +88,6 @@ export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, re
 						const busy = pending.has(q.submissionId);
 						const steer = q.mode === "steer";
 						const text = q.displayText ?? cleanTestText(q.text);
-						const hintId = `${uid}-h${q.submissionId}`;
 						return (
 							<li key={q.submissionId} data-testid="queue-item" data-submission-id={q.submissionId} data-mode={q.mode} data-open={isOpen ? "true" : undefined} className="group relative flex flex-wrap items-center gap-x-2 px-3 py-1 focus-within:bg-surface hover:bg-surface">
 								<button
@@ -128,7 +112,7 @@ export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, re
 									) : null}
 									{steer ? (
 										<span data-testid="queue-steered" className="shrink-0 rounded-md bg-info-soft px-1.5 py-0.5 text-[12px] text-info">
-											{runStatus === "waiting_approval" ? "已交给任务，确认后处理" : "已交给任务，下一步处理"}
+											已交给任务
 										</span>
 									) : null}
 									<ChevronDown aria-hidden className={cn("size-3.5 shrink-0 text-fg-subtle transition-transform sm:hidden", isOpen && "rotate-180")} />
@@ -148,7 +132,6 @@ export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, re
 											<button
 												type="button"
 												data-testid="queue-send-now"
-												aria-describedby={hintId}
 												disabled={busy}
 												onClick={() => void run(q, onSendNow)}
 												className="inline-flex h-7 items-center gap-1 rounded-md border border-border-strong bg-surface px-2 text-[12.5px] font-medium text-fg hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 max-sm:h-9 max-sm:flex-1 max-sm:justify-center"
@@ -181,9 +164,6 @@ export function MessageQueue({ items, runStatus, onSendNow, onUndo, onDelete, re
 										) : null}
 									</div>
 								) : null}
-								<p id={hintId} data-testid="queue-hint" className={cn("w-full pb-1.5 pl-6 text-[12px] leading-5 text-fg-muted", isOpen ? "block" : "sr-only")}>
-									{steer ? "这条消息已交给正在运行的任务，会在它的下一步处理；还没处理时可以撤销。" : `立即发送：${sendNowHint(runStatus)} 撤销：取消发送，内容和附件放回输入框。`}
-								</p>
 							</li>
 						);
 					})}

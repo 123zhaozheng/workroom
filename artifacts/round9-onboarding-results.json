@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:32:35.327Z",
+  "at": "2026-11-11T12:56:15.837Z",
   "results": [
     {
       "name": "test helper: the RFC 6238 vector at T=59s gives 287082",
@@ -352,7 +352,7 @@
       "detail": ""
     },
     {
-      "name": "H: the right code enables it: status 已启用, a notice, the secret is gone from the page",
+      "name": "H: the right code enables it: status 已启用 (round 11: no success banner), the secret is gone from the page",
       "ok": true,
       "detail": ""
     },
@@ -367,7 +367,7 @@
       "detail": ""
     },
     {
-      "name": "H: a fresh valid code turns 2FA off (status 未启用, server agrees)",
+      "name": "H: a fresh valid code turns 2FA off (status 未启用, server agrees; no 已关闭 banner)",
       "ok": true,
       "detail": ""
     },

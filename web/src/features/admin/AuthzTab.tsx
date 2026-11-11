@@ -9,10 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
-import { Help, Row, Table, useAct } from "@/features/admin/common";
+import { Row, Table, useAct } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
 import { GroupsPanel } from "@/features/admin/GroupsPanel";
-import { ROLE_SHORT, ScopePicker, deptTreeOptions, roleGrantConfirm, rolePurpose, scopeText, useDepartments, useViewerPerms } from "@/features/admin/rbac-ui";
+import { ROLE_SHORT, ScopePicker, deptTreeOptions, roleGrantConfirm, scopeText, useDepartments, useViewerPerms } from "@/features/admin/rbac-ui";
 
 type SubjectKind = "user" | "department" | "group";
 const SUBJECT_LABEL: Record<SubjectKind, string> = { user: "成员", department: "部门（含子部门成员）", group: "用户组" };
@@ -55,7 +55,7 @@ export function Authorizations() {
 							const who = subjects.find((x) => x.id === sid)?.name.replace(/（.*$/, "").trim() ?? "对方";
 							const c = roleGrantConfirm(kind === "user" ? who : `「${who}」的成员`, role, scopeText(scope.kind === "org" ? { kind: "org" } : scope));
 							if (c && !(await ask(c))) return;
-							await run(() => post("/admin/role-assignments", { subject: { kind, id: sid }, roleId: role.id, scope: scope.kind === "org" ? { kind: "org" } : scope }), "已授权");
+							await run(() => post("/admin/role-assignments", { subject: { kind, id: sid }, roleId: role.id, scope: scope.kind === "org" ? { kind: "org" } : scope }));
 						})();
 					}}
 				>
@@ -86,7 +86,7 @@ export function Authorizations() {
 						</span>
 					</label>
 					<label className="text-xs text-fg-muted">
-						<span className="inline-flex items-center gap-1">角色{role ? <Help label="角色说明" side="top">{rolePurpose(role)}</Help> : null}</span>
+						角色
 						<span className="mt-1 block">
 							<Select aria-label="角色" data-testid="authz-role" value={role?.id ?? ""} className="h-8 text-sm" onChange={(e) => setRoleId(e.target.value)}>
 								{usable.map((r) => (
@@ -107,10 +107,6 @@ export function Authorizations() {
 			{note}
 			<div className="mb-3 flex flex-wrap items-center gap-3">
 				<Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选：姓名 / 角色 / 范围" className="h-8 max-w-xs text-sm" aria-label="筛选授权" />
-				<span className="flex-1" />
-				<span className="relative">
-					<Help label="授权说明">角色可以授予个人、整个部门（含子部门成员）或用户组；范围可以是整个组织、某个部门或某个项目。基础角色（所有者 / 管理员 / 普通成员 / 访客）在成员详情里修改。你只能授予自己拥有的权限。</Help>
-				</span>
 			</div>
 			<Loadable state={list} what="授权">
 				{rows.length === 0 ? (
@@ -129,7 +125,7 @@ export function Authorizations() {
 									</span>
 									<Badge tone="info">{ROLE_SHORT[a.roleId] ?? a.roleName ?? a.roleId}</Badge>
 									{perms.anywhere.has("role.assign") ? (
-										<Button size="sm" variant="ghost" disabled={busy} data-testid="authz-revoke" onClick={() => run(() => del(`/admin/role-assignments/${a.id}`), "已撤销")}>
+										<Button size="sm" variant="ghost" disabled={busy} data-testid="authz-revoke" onClick={() => run(() => del(`/admin/role-assignments/${a.id}`))}>
 											<Trash2 />
 											撤销
 										</Button>

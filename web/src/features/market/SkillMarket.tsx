@@ -194,7 +194,6 @@ function SkillDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 							) : null}
 							{tab === "perms" ? (
 								<div className="space-y-3 text-sm">
-									<p className="text-fg-muted">加载技能只提供说明，不授予任何权限；运行脚本时，使用者需要为这个版本单独授权下列项目。</p>
 									{s.manifest?.requiredPermissions.length ? (
 										<ul className="space-y-1.5">
 											{s.manifest.requiredPermissions.map((p) => (
@@ -287,16 +286,13 @@ function InstallDialog({ open, onOpenChange, s, onDone }: { open: boolean; onOpe
 	const needRef = target === "project" || target === "department";
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={`安装「${s.name}」`} description="只有通过审核并发布的技能可以安装。安装不授予执行权限，运行脚本仍需逐版本授权。">
+			<DialogContent title={`安装「${s.name}」`}>
 				<div className="space-y-3 text-sm">
 					<div className="grid gap-2" role="radiogroup" aria-label="安装范围">
-						{([["me", "安装给我", "我的所有对话"], ["project", "安装到项目", "该项目里的所有对话（需项目写权限）"], ["department", "安装到部门", "部门成员（需部门发布权限）"], ["org", "安装给整个组织", s.canInstallOrg ? "全员默认启用，成员可自行停用" : "仅市场管理员可用"]] as const).map(([k, label, hint]) => (
+						{([["me", "安装给我"], ["project", "安装到项目"], ["department", "安装到部门"], ["org", "安装给整个组织"]] as const).map(([k, label]) => (
 							<label key={k} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2", target === k ? "border-accent bg-surface-2" : "border-border", k === "org" && !s.canInstallOrg && "opacity-50")}>
 								<input type="radio" name="target" className="mt-1" checked={target === k} disabled={k === "org" && !s.canInstallOrg} onChange={() => (setTarget(k), setRef(""))} data-testid={`install-target-${k}`} />
-								<span>
-									<span className="font-medium">{label}</span>
-									<span className="block text-xs text-fg-muted">{hint}</span>
-								</span>
+								<span className="font-medium">{label}</span>
 							</label>
 						))}
 					</div>
@@ -331,7 +327,7 @@ export function PolicyDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 	const pol = p.data?.policy;
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="市场策略" description="控制成员能否自行使用个人技能与个人连接器，以及是否需要审核。">
+			<DialogContent title="市场策略">
 				<div className="space-y-3 text-sm">
 					<div>
 						<Label htmlFor="ps">个人技能</Label>
