@@ -10,9 +10,11 @@ import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
 import type { SandboxEntryDTO, SandboxLimitsDTO, SandboxRunDTO } from "../../../shared/files.ts";
 import type { SandboxInfoDTO, WorkspaceFilesResponse, WorkspacePreviewDTO, WorkspaceUsageDTO } from "../../../shared/sandbox.ts";
-import { normalizeTarget, type DriverId, type DriverStatus, type Language, type ProcessRef, type RunResult, type SandboxDriver, type SandboxMount, type ServiceRuntime } from "./sandbox/driver.ts";
+import { normalizeTarget, type DriverId, type LocalDriverId, type DriverStatus, type Language, type ProcessRef, type RunResult, type SandboxDriver, type SandboxMount, type ServiceRuntime } from "./sandbox/driver.ts";
 import { killStaleNamespaces, NAMESPACES_NOTES, probeNamespaces } from "./sandbox/namespaces.ts";
 import { SandboxDrivers } from "./sandbox/registry.ts";
+import { RemoteDrivers, remoteNotes } from "./sandbox/remote-driver.ts";
+import { UnsupportedError } from "./sandbox/provider.ts";
 import { SandboxService, type SandboxServiceInfo } from "./sandbox/services.ts";
 import * as ws from "./sandbox/workspace.ts";
 import { requirePermission } from "./sandbox/perm.ts";
@@ -53,6 +55,31 @@ CREATE INDEX tool_sandbox_runs_conv ON tool_sandbox_runs(space_id, conversation_
 		sql: `
 CREATE TABLE tool_sandbox_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL);
 ALTER TABLE tool_sandbox_runs ADD COLUMN driver TEXT;
+`,
+	},
+	{
+		// round 7: remote sandbox instances (one per org/space/workspace/provider). The workspace on the host stays authoritative;
+		// `manifest` = path → sha256 of what the remote /work held at the last sync (directories: "dir/" → "dir").
+		version: 3,
+		name: "remote sandbox instances",
+		sql: `
+CREATE TABLE tool_sandbox_instances (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  space_id TEXT NOT NULL,
+  workspace_key TEXT NOT NULL,
+  remote_id TEXT,
+  state TEXT NOT NULL CHECK (state IN ('creating','ready','stopping','destroyed','lost','error')),
+  created_at TEXT NOT NULL,
+  last_used_at TEXT NOT NULL,
+  expires_at TEXT,
+  last_error TEXT,
+  org_id TEXT NOT NULL DEFAULT '',
+  manifest TEXT NOT NULL DEFAULT '{}',
+  network INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX tool_sandbox_instances_live ON tool_sandbox_instances(org_id, space_id, workspace_key, provider) WHERE state IN ('creating','ready','stopping');
+CREATE INDEX tool_sandbox_instances_org ON tool_sandbox_instances(org_id, last_used_at);
 `,
 	},
 ];
@@ -171,6 +198,8 @@ export class Sandbox {
 	#slots: Semaphore;
 	readonly #providers = new Map<string, MountProvider>();
 	readonly #roots = new Set<string>();
+	/** Round 7: remote providers (OpenSandbox/E2B/Daytona) selected per space by the provider-config policy. */
+	readonly remote: RemoteDrivers;
 	readonly #services = new Map<string, SandboxService>();
 	readonly #starting = new Map<string, Promise<SandboxService>>();
 	#reaped: Promise<void> = Promise.resolve();
@@ -180,6 +209,7 @@ export class Sandbox {
 		this.#ctx = ctx;
 		this.drivers = opts.drivers ?? new SandboxDrivers(ctx);
 		this.#slots = new Semaphore(this.drivers.settings().maxConcurrent);
+		this.remote = new RemoteDrivers(ctx);
 	}
 
 	// ---------- paths ----------
@@ -202,7 +232,13 @@ export class Sandbox {
 		if (r.effective === "none") await r.driver.run({} as never); // throws the 503 with the reason and how to enable
 		return r.driver;
 	}
+	/** The driver for a space: a remote provider when the org/project policy selects one (no fallback: unusable → 503), else the local driver. */
+	async #driverFor(space: Space): Promise<SandboxDriver> {
+		const remote = await this.remote.forSpace(space);
+		return remote ?? (await this.#driver());
+	}
 	isolationFor(id: DriverId): string {
+		if (id === "opensandbox" || id === "e2b" || id === "daytona") return isolationText(this.remote.notesFor(id));
 		const d = id === "docker" ? this.drivers.docker : id === "namespaces" ? NAMESPACES_NOTES : undefined;
 		return d ? isolationText("notes" in d ? d.notes : d) : "沙箱未启用";
 	}
@@ -224,6 +260,24 @@ export class Sandbox {
 	}
 
 	async info(space: Space): Promise<SandboxInfoDTO> {
+		const rd = await this.remote.forSpace(space).catch((e: Error) => e);
+		if (rd) {
+			// A remote provider is selected for this space: report it honestly (an unusable provider is "unavailable", never the local driver).
+			const net = this.drivers.settings().network;
+			const st = rd instanceof Error ? undefined : await rd.detect();
+			const id = rd instanceof Error ? "none" : rd.id;
+			const ok = st?.state === "ready";
+			return {
+				spaceId: space.id,
+				isolation: (ok ? id : "unavailable") as SandboxInfoDTO["isolation"],
+				isolationDetail: rd instanceof Error ? rd.message : `${rd.label}：${isolationText(rd.notes)}`,
+				driver: { id: id as DriverId as SandboxInfoDTO["driver"]["id"], label: rd instanceof Error ? "远端沙箱" : rd.label, state: ok ? "ready" : "unavailable", summary: rd instanceof Error ? rd.message : st!.summary, network: net },
+				limits: { ...DEFAULT_LIMITS, network: ok && net === "allowed" && !(rd instanceof Error) && rd.capabilities.network },
+				retentionHours: RETENTION_HOURS,
+				usedBytes: ws.dirSize(this.root(space)).bytes,
+				quotaBytes: quotaBytes(),
+			};
+		}
 		const r = await this.drivers.resolve();
 		const st: DriverStatus = r.effective === "none" ? await r.driver.detect() : r.statuses[r.effective];
 		const ok = r.effective !== "none";
@@ -305,7 +359,7 @@ export class Sandbox {
 	/** Execute code in the sandbox. Records a run row (idempotent per tool call). */
 	async run(input: RunInput): Promise<SandboxRunDTO> {
 		if (!["shell", "python", "node"].includes(input.language)) throw new HttpError(400, "bad_language", "language 必须是 shell、python 或 node");
-		const driver = await this.#driver();
+		const driver = await this.#driverFor(input.space);
 		const network = await this.#networkAllowed(driver, input.network, input.principal);
 		const timeoutMs = Math.min(Math.max(input.timeoutMs ?? DEFAULT_LIMITS.timeoutMs, 1000), input.maxTimeoutMs ?? MAX_TIMEOUT_MS);
 		const cpuSeconds = Math.max(1, Math.min(input.cpuSeconds ?? Math.ceil(timeoutMs / 1000), Math.ceil(timeoutMs / 1000)));
@@ -325,7 +379,7 @@ export class Sandbox {
 		let r: RunResult;
 		const release = await this.#slots.acquire();
 		try {
-			r = await driver.run({ runId: id, scratchBase: this.root(input.space), workdir: wd, exec: { language: input.language, code: input.code }, limits, mounts, env: input.env ?? {}, network, signal: input.signal, onSpawn: (ref: ProcessRef) => ref.pid && input.onSpawn?.(ref.pid) });
+			r = await driver.run({ runId: id, tenant: { orgId: input.space.orgId, spaceId: input.space.id, workspaceKey: input.conversationId === undefined ? "shared" : `c${input.conversationId}` }, scratchBase: this.root(input.space), workdir: wd, exec: { language: input.language, code: input.code }, limits, mounts, env: input.env ?? {}, network, signal: input.signal, onSpawn: (ref: ProcessRef) => ref.pid && input.onSpawn?.(ref.pid) });
 		} catch (e: any) {
 			this.#ctx.db.run("UPDATE tool_sandbox_runs SET status = 'error', stderr = ?, duration_ms = ?, finished_at = ? WHERE id = ?", String(e?.message ?? e).slice(0, 4000), Date.now() - started, nowIso(), id);
 			throw e;
@@ -363,8 +417,9 @@ export class Sandbox {
 
 	// ---------- services ----------
 	async startService(input: StartServiceInput & { key?: string }): Promise<SandboxService> {
-		const driver = await this.#driver();
-		if (!driver.capabilities.services) throw new HttpError(503, "sandbox_unavailable", `当前沙箱驱动（${driver.label}）不支持常驻服务`);
+		const driver = await this.#driverFor(input.space);
+		if (!driver.capabilities.services && !(["opensandbox", "e2b", "daytona"] as string[]).includes(driver.id)) throw new HttpError(503, "sandbox_unavailable", `当前沙箱驱动（${driver.label}）不支持常驻服务`);
+		if (!driver.capabilities.services) throw new UnsupportedError(driver.label, "常驻服务（MCP stdio 等）");
 		await this.#ctx.services.get("acl").require(input.principal, "write", { kind: "space", id: input.space.id });
 		if (!Array.isArray(input.argv) || !input.argv.length || input.argv.some((a) => typeof a !== "string" || a.includes("\0"))) throw new HttpError(400, "invalid", "argv 必须是非空字符串数组");
 		if (!["node", "python", "shell"].includes(input.runtime)) throw new HttpError(400, "invalid", "runtime 必须是 node、python 或 shell");
@@ -527,6 +582,7 @@ export class Sandbox {
 
 	/** Kill what a previous process left behind (job recovery): namespace process group by pid, docker container by name. */
 	async killStale(ref: ProcessRef): Promise<boolean> {
+		if (ref.driver !== "docker" && ref.driver !== "namespaces") return false; // remote sandboxes are reaped by label (RemoteDrivers.reapAll)
 		return ref.driver === "docker" ? this.drivers.docker.killStale(ref) : killStaleNamespaces(ref.pid);
 	}
 
@@ -540,6 +596,7 @@ export class Sandbox {
 			}
 		}, 3600_000);
 		this.#timer.unref();
+		this.remote.start();
 		// Orphaned containers of a previous server process are removed before the first run starts (bounded wait: a wedged daemon must not block runs).
 		const reap = (async () => {
 			const st = await this.drivers.docker.detect();
@@ -549,11 +606,14 @@ export class Sandbox {
 			}
 		})().catch(() => {});
 		this.#reaped = Promise.race([reap, new Promise<void>((r) => setTimeout(r, 4000).unref())]);
+		// Remote sandboxes: idle/expired instances and labelled orphans of a previous process (never blocks runs; errors are logged).
+		void this.remote.reapAll(true).then((n) => n && console.log(`[sandbox] removed ${n} remote sandbox(es) (idle/orphaned)`)).catch(() => {});
 	}
 	async stop(): Promise<void> {
 		this.#stopped = true;
 		clearInterval(this.#timer);
 		await Promise.all([...this.#services.values()].map((s) => s.stopFor("shutdown").catch(() => {})));
+		await this.remote.stop().catch(() => {});
 		await this.drivers.docker.shutdown().catch(() => {});
 	}
 }

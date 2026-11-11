@@ -73,6 +73,13 @@ export interface ExecOptions {
 	readonly signal?: AbortSignal;
 	readonly onStdout?: (chunk: string) => void;
 	readonly onStderr?: (chunk: string) => void;
+	/**
+	 * Additive (A1, round 7): run as the sandbox's administrative user (root / sudo) instead of the unprivileged workload user.
+	 * RemoteDriver uses it ONLY for its own setup/verify commands (mkdir, chmod, hashing, rm); user code never runs privileged.
+	 * A provider whose sandbox has a single user may ignore it; RemoteDriver then reports (in the run notes) that skill directories
+	 * are write-protected only by file mode for that user and re-verifies their hash before every run.
+	 */
+	readonly privileged?: boolean;
 }
 
 export interface ExecResult {

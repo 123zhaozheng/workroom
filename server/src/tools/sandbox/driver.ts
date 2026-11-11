@@ -4,8 +4,12 @@
 // The `Sandbox` service (../sandbox.ts) owns policy (quota, run records, ACL, mount providers); drivers only isolate.
 import type { Readable, Writable } from "node:stream";
 import type { SandboxLimitsDTO } from "../../../../shared/files.ts";
+import type { ProviderId } from "./provider.ts";
 
-export type DriverId = "namespaces" | "docker" | "none";
+/** Local drivers, or a remote provider id (round 7: "opensandbox" | "e2b" | "daytona", implemented by RemoteDriver). */
+export type DriverId = LocalDriverId | ProviderId;
+/** The drivers that run on this host. */
+export type LocalDriverId = "namespaces" | "docker" | "none";
 export type Language = "shell" | "python" | "node";
 /** Runtime a long-running service needs (selects the image for the docker driver; the namespace driver uses host runtimes). */
 export type ServiceRuntime = "python" | "node" | "shell";
@@ -42,8 +46,18 @@ export interface ProcessRef {
 	readonly container?: string;
 }
 
+/** Who the workspace belongs to. Set by Sandbox.run; local drivers ignore it, RemoteDriver needs it to find "its" remote sandbox. */
+export interface DriverTenant {
+	readonly orgId: string;
+	readonly spaceId: string;
+	/** "c<conversationId>" or "shared". */
+	readonly workspaceKey: string;
+}
+
 export interface DriverRunSpec {
 	readonly runId: string;
+	/** Round 7 (optional, additive): required by RemoteDriver, ignored by the local drivers. */
+	readonly tenant?: DriverTenant;
 	/** Host directory the driver may use for per-run scratch (`<scratchBase>/.runs/<runId>`); removed by the driver when the run ends. */
 	readonly scratchBase: string;
 	/** Host directory mounted read-write at /work. */

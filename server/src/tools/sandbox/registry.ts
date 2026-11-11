@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import type { AppContext, Principal } from "../../core/contracts.ts";
 import { HttpError, nowIso } from "../../core/http.ts";
-import type { DriverId, DriverStatus, SandboxDriver } from "./driver.ts";
+import type { DriverStatus, LocalDriverId, SandboxDriver } from "./driver.ts";
 import { DEFAULT_DOCKER_SETTINGS, DockerDriver, type DockerSettings } from "./docker.ts";
 import { namespaceDriver } from "./namespaces.ts";
 import { enableHint, noneDriver } from "./none.ts";
@@ -21,7 +21,7 @@ export interface SandboxSettings {
 
 export interface Resolution {
 	driver: SandboxDriver;
-	effective: DriverId;
+	effective: LocalDriverId;
 	reason: string;
 	statuses: Record<"namespaces" | "docker", DriverStatus>;
 	at: number;
@@ -160,7 +160,7 @@ export class SandboxDrivers {
 		const [ns, dk] = await Promise.all([this.#ns.detect(force), this.docker.detect(force)]);
 		const statuses = { namespaces: ns, docker: dk };
 		const { driver: want } = this.#settings;
-		const pick = (d: SandboxDriver, reason: string): Resolution => (this.#last = { driver: d, effective: d.id, reason, statuses, at: Date.now() });
+		const pick = (d: SandboxDriver, reason: string): Resolution => (this.#last = { driver: d, effective: d.id as LocalDriverId, reason, statuses, at: Date.now() });
 		const none = (reason: string) => pick(noneDriver(() => reason), reason);
 		if (want === "none") return none("管理员已关闭沙箱（driver=none）。");
 		if (want === "namespaces") return ns.state === "ready" ? pick(this.#ns, "管理员选择了命名空间驱动") : none(`已选择命名空间驱动，但不可用：${ns.summary}（${ns.details.join("；")}）`);

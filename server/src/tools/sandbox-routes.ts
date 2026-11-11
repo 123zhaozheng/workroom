@@ -62,7 +62,7 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 
 	// ---------- driver status / settings (host-wide: one sandbox per server) ----------
 	const statusDTO = (d: SandboxDriver, st: DriverStatus, manage: boolean): SandboxDriverStatusDTO => ({
-		id: d.id,
+		id: d.id as SandboxDriverStatusDTO["id"],
 		label: d.label,
 		state: st.state,
 		summary: st.summary,
@@ -89,7 +89,7 @@ export function registerSandboxRoutes(api: Hono<AppEnv>, ctx: AppContext): void 
 			drivers: [statusDTO(sb.drivers.namespaces, r.statuses.namespaces, manage), statusDTO(sb.drivers.docker, r.statuses.docker, manage), statusDTO(none, settingNone, manage)],
 			prepare: prep ? { mode: prep.mode, state: prep.state, startedAt: prep.startedAt, finishedAt: prep.finishedAt, log: manage ? prep.log.slice(-40) : [] } : undefined,
 			maxConcurrent: s.maxConcurrent,
-			services: manage ? sb.listServices().map((x) => ({ key: x.key, id: x.id, runtime: x.runtime, startedAt: x.startedAt, lastActivityAt: x.lastActivityAt, driver: x.driver, running: x.running })) : [],
+			services: manage ? sb.listServices().map((x) => ({ key: x.key, id: x.id, runtime: x.runtime, startedAt: x.startedAt, lastActivityAt: x.lastActivityAt, driver: x.driver as SandboxDriverStatusDTO["id"], running: x.running })) : [],
 			canManage: manage,
 			fromEnvironment: sb.drivers.fromEnvironment(),
 		};
