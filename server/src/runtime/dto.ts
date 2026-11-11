@@ -198,11 +198,21 @@ export function liveDTO(live: Readonly<LiveState> | undefined, approvals: readon
 }
 
 export function queueDTO(inbox: Readonly<InboxState> | undefined): QueuedInputDTO[] {
-	return (inbox?.items ?? []).map((it: any) => ({
-		submissionId: it.id as number,
-		mode: it.mode,
-		...(it.mode !== "write" ? { text: (it.entry?.data as any)?.text ?? textOfContent(it.content ?? "") } : {}),
-	}));
+	return (inbox?.items ?? []).map((it: any) => {
+		if (it.mode === "write") return { submissionId: it.id as number, mode: it.mode } as QueuedInputDTO;
+		const d = (it.entry?.data ?? {}) as any;
+		const text: string = typeof d.text === "string" ? d.text : textOfContent(it.content ?? "");
+		return {
+			submissionId: it.id as number,
+			mode: it.mode,
+			text,
+			displayText: userDisplay(text).displayText,
+			...(typeof d.requestId === "string" ? { requestId: d.requestId } : {}),
+			...(d.attachments?.length ? { attachments: d.attachments } : {}),
+			...(d.knowledgeRefs?.length ? { knowledgeRefs: d.knowledgeRefs } : {}),
+			...(typeof d.userId === "string" ? { userId: d.userId } : {}),
+		} as QueuedInputDTO;
+	});
 }
 
 /** pi SubmissionRecord (+ inbox mode while queued) → M02-C feedback status. */

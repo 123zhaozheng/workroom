@@ -90,9 +90,9 @@ export function useAttachments(scope: { spaceId?: string; projectId?: string; co
 		[pump],
 	);
 
-	const addRef = useCallback((ref: AttachmentRef, meta?: { size?: number; mime?: string }) => {
-		setItems((xs) => (xs.some((x) => x.ref?.versionId === ref.versionId) ? xs : [...xs, { key: uuid(), name: ref.name, size: meta?.size, mime: meta?.mime, status: "ready", progress: 100, ref, source: "library" }]));
-		if (meta) rememberFile(ref.fileId, ref.versionId, meta);
+	const addRef = useCallback((ref: AttachmentRef, meta?: { size?: number; mime?: string; source?: "upload" | "library" }) => {
+		setItems((xs) => (xs.some((x) => x.ref?.versionId === ref.versionId) ? xs : [...xs, { key: uuid(), name: ref.name, size: meta?.size, mime: meta?.mime, status: "ready", progress: 100, ref, source: meta?.source ?? "library" }]));
+		if (meta?.size !== undefined || meta?.mime) rememberFile(ref.fileId, ref.versionId, { size: meta.size, mime: meta.mime } as { size?: number; mime?: string });
 	}, []);
 
 	const revoke = (x: Attachment | undefined) => {

@@ -236,7 +236,14 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 
 	api.post("/conversations/:spaceId/:id/submissions/:submissionId/withdraw", async (c) => {
 		const p = principalOf(c);
-		return c.json(await rt.withdraw(p, c.req.param("spaceId"), convId(c.req.param("id")), Number(c.req.param("submissionId")), ctx0));
+		const b = (await c.req.json().catch(() => ({}))) as { restore?: boolean };
+		return c.json(await rt.withdraw(p, c.req.param("spaceId"), convId(c.req.param("id")), Number(c.req.param("submissionId")), ctx0, { restore: b?.restore === true }));
+	});
+
+	// 立即发送: withdraw the queued follow-up and resubmit it as a steer (idempotent `${requestId}::now`). See Runtime.promote.
+	api.post("/conversations/:spaceId/:id/submissions/:submissionId/promote", async (c) => {
+		const p = principalOf(c);
+		return c.json(await rt.promote(p, c.req.param("spaceId"), convId(c.req.param("id")), Number(c.req.param("submissionId")), ctx0));
 	});
 
 	api.post("/conversations/:spaceId/:id/fork", async (c) => {

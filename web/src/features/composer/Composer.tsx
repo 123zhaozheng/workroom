@@ -3,13 +3,15 @@
 //  - "+" at the left: 上传文件 · 从文件库选择 · 引用知识库 · 使用技能; files can also be dragged anywhere on the page
 //    (clear drop overlay) or pasted (images); multi-file upload with per-file progress, retry and remove;
 //  - model switcher at the right (grouped, capability badges, blocked = disabled with reason) + send / stop;
-//  - while a run is working, send becomes 插话 (steer) with a 稍后处理 option, and a stop button appears.
-import { ArrowUp, BookOpen, Folders, Loader2, Sparkles, Square, Upload, UploadCloud } from "lucide-react";
+//  - while a run is working the person keeps typing and sends normally: the message is queued on the server (follow-up) and
+//    shown in the queue above the box; a stop button appears. A failed send (offline…) keeps the text and offers 重试 with
+//    the SAME requestId, so a retry can never send twice.
+import { ArrowUp, BookOpen, Folders, Loader2, RotateCcw, Sparkles, Square, Upload, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { AttachmentRef, KnowledgeRef, SendMode } from "@shared/chat";
 import type { ThinkingLevel } from "@shared/ops";
-import { errorText } from "@/lib/api";
+import { ApiError, errorText, uuid } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/overlay";
 import { FileTile, RefTile } from "@/components/file/FileTile";
@@ -25,6 +27,8 @@ export interface ComposerSubmit {
 	attachments: AttachmentRef[];
 	knowledgeRefs: KnowledgeRef[];
 	mode: SendMode;
+	/** Stable across retries of the same content: the server dedupes on it. */
+	requestId: string;
 	/** Platform model chosen in the switcher (new conversations); absent when the model switcher is hidden or locked. */
 	modelId?: string;
 	thinkingLevel?: ThinkingLevel;
@@ -41,7 +45,7 @@ export interface ModelBinding {
 
 interface Props {
 	onSubmit: (v: ComposerSubmit) => Promise<boolean>;
-	/** Run is working: send = steer, show stop. */
+	/** Run is working: a sent message is queued behind it (follow-up); the stop button shows. */
 	busy?: boolean;
 	onStop?: () => void;
 	stopping?: boolean;
@@ -57,6 +61,8 @@ interface Props {
 	disabledReason?: string;
 	/** Text pushed in from outside (starter suggestions). */
 	seed?: { text: string; n: number };
+	/** A withdrawn queue item handed back for editing: its text goes in front of what is typed, its files and references come back as chips. */
+	restore?: { n: number; text: string; attachments?: readonly AttachmentRef[]; knowledgeRefs?: readonly KnowledgeRef[] };
 	/** Element (position: relative) that accepts dropped files; defaults to the composer itself. */
 	dropScope?: RefObject<HTMLElement | null>;
 	model?: ModelBinding;
@@ -77,13 +83,15 @@ type SlashId = (typeof SLASH_ITEMS)[number]["id"];
 
 const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
-export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId, conversationId, placeholder, autoFocus, variant = "chat", tools, disabled, disabledReason, seed, dropScope, model, modelLocked, hideModel }: Props) {
+export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId, conversationId, placeholder, autoFocus, variant = "chat", tools, disabled, disabledReason, seed, restore, dropScope, model, modelLocked, hideModel }: Props) {
 	const [text, setText] = useState("");
 	const [kbs, setKbs] = useState<KbChip[]>([]);
 	const att = useAttachments({ spaceId, projectId, conversationId });
 	const [sending, setSending] = useState(false);
 	const [err, setErr] = useState<string>();
-	const [steerMode, setSteerMode] = useState<"steer" | "followUp">("steer");
+	// the last attempt that failed to reach the server: same content → same requestId on retry
+	const failedSend = useRef<{ sig: string; requestId: string } | undefined>(undefined);
+	const [failedNet, setFailedNet] = useState(false);
 	const [picker, setPicker] = useState<"kb" | "file" | "skill" | null>(null);
 	const closePicker = (o: boolean) => {
 		if (o) return;
@@ -132,6 +140,18 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 			ta.current?.focus();
 		}
 	}, [seed]);
+
+	// 撤销 from the queue: put the message back for editing
+	const lastRestore = useRef(0);
+	useEffect(() => {
+		if (!restore || restore.n <= lastRestore.current) return;
+		lastRestore.current = restore.n;
+		setText((t) => (t.trim() ? `${restore.text}\n\n${t}` : restore.text));
+		for (const a of restore.attachments ?? []) att.addRef(a, { source: "upload" });
+		if (restore.knowledgeRefs?.length) setKbs((cs) => [...cs, ...restore.knowledgeRefs!.filter((r) => !cs.some((x) => x.ref.kbId === r.kbId && x.ref.docId === r.docId)).map((ref) => ({ ref }))]);
+		setTimeout(() => ta.current?.focus(), 0);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [restore]);
 
 	// autosize (identical on home and chat)
 	useEffect(() => {
@@ -207,22 +227,33 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 		if (!canSend) return;
 		setSending(true);
 		setErr(undefined);
+		setFailedNet(false);
+		const attachments = att.items.flatMap((a) => (a.status === "ready" && a.ref ? [a.ref] : []));
+		const knowledgeRefs = kbs.map((k) => k.ref);
+		const sig = JSON.stringify([text.trim(), attachments.map((a) => a.versionId), knowledgeRefs.map((k) => `${k.kbId}/${k.docId ?? ""}`)]);
+		const requestId = failedSend.current?.sig === sig ? failedSend.current.requestId : uuid();
 		const v: ComposerSubmit = {
 			text: text.trim(),
-			attachments: att.items.flatMap((a) => (a.status === "ready" && a.ref ? [a.ref] : [])),
-			knowledgeRefs: kbs.map((k) => k.ref),
-			mode: busy ? steerMode : "auto",
+			attachments,
+			knowledgeRefs,
+			mode: busy ? "followUp" : "auto",
+			requestId,
 			...(!model && !modelLocked && !hideModel && resolved.model ? { modelId: resolved.model.id, ...(resolved.thinking ? { thinkingLevel: resolved.thinking } : {}) } : {}),
 		};
 		try {
 			const ok = await onSubmit(v);
 			if (ok) {
+				failedSend.current = undefined;
 				setText("");
 				setKbs([]);
 				att.clear();
 			}
 		} catch (e) {
-			setErr(errorText(e));
+			// the text, files and references stay in the box; a retry of the same content reuses the requestId (no double send)
+			failedSend.current = { sig, requestId };
+			const net = e instanceof ApiError ? e.status === 0 || e.code === "network" : e instanceof TypeError;
+			setFailedNet(net);
+			setErr(net ? "没有发出去：网络连接不可用。内容还在输入框里，网络恢复后点「重试」。" : errorText(e));
 		} finally {
 			setSending(false);
 			ta.current?.focus();
@@ -324,9 +355,9 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 		);
 
 	const stopShown = !!(busy && onStop);
-	// while a run works: no text → stop is the primary button; with text → send (steer) is primary and stop turns secondary
+	// while a run works: no text → stop is the primary button; with text → send (queue) is primary and stop turns secondary
 	const stopPrimary = stopShown && !hasContent;
-	const sendTip = att.failed ? "有文件上传失败：请重试或移除" : att.uploading ? "文件上传完成后才能发送" : busy ? (steerMode === "steer" ? "插话" : "加入队列") : hasContent ? "发送" : "输入内容后发送";
+	const sendTip = att.failed ? "有文件上传失败：请重试或移除" : att.uploading ? "文件上传完成后才能发送" : busy && hasContent ? "加入队列，当前任务结束后发送" : hasContent ? "发送" : "输入内容后发送";
 	const slashId = "composer-slash";
 
 	return (
@@ -412,7 +443,7 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 					onCompositionStart={() => (composing.current = true)}
 					onCompositionEnd={() => (composing.current = false)}
 					onBlur={() => setTimeout(() => setSlash({ open: false, index: 0 }), 120)}
-					placeholder={disabled ? disabledReason : (placeholder ?? (busy ? "补充说明或调整方向，回车发送" : "说说要完成的事"))}
+					placeholder={disabled ? disabledReason : (placeholder ?? (busy ? "继续输入，回车发送；当前任务结束后会自动处理" : "说说要完成的事"))}
 					className="block max-h-[240px] min-h-[48px] w-full resize-none bg-transparent px-1 text-base leading-6 text-fg outline-none placeholder:text-fg-subtle disabled:cursor-not-allowed"
 				/>
 				<div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-2">
@@ -433,23 +464,6 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 						actions={{ upload: () => fileInput.current?.click(), library: () => setPicker("file"), kb: () => setPicker("kb"), skill: skills.length ? () => setPicker("skill") : undefined }}
 					/>
 					{tools}
-					{busy ? (
-						<div className="ml-1 flex items-center rounded-lg bg-surface-2 p-0.5 text-sm max-sm:order-last max-sm:basis-full" role="radiogroup" aria-label="运行中发送方式">
-							{(["steer", "followUp"] as const).map((m) => (
-								<button
-									key={m}
-									type="button"
-									role="radio"
-									aria-checked={steerMode === m}
-									onClick={() => setSteerMode(m)}
-									className={cn("h-7 rounded-md px-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:flex-1", steerMode === m ? "bg-surface text-fg shadow-sm" : "text-fg-muted")}
-									title={m === "steer" ? "在当前任务的下一个步骤间隙加入" : "等当前任务结束后再处理"}
-								>
-									{m === "steer" ? "插话" : "稍后处理"}
-								</button>
-							))}
-						</div>
-					) : null}
 					<div className="ml-auto flex min-w-0 items-center gap-1">
 						<div className="flex min-w-0 items-center justify-end">{switcher}</div>
 						{stopShown ? (
@@ -474,7 +488,7 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 								<button
 									type="button"
 									data-testid="send"
-									aria-label={busy ? "插话" : "发送"}
+									aria-label="发送"
 									onClick={() => void send()}
 									disabled={!canSend}
 									className={cn(
@@ -490,8 +504,14 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 				</div>
 			</div>
 			{err || att.notice || att.failed ? (
-				<p role="alert" data-testid="composer-error" className="mt-2 px-1 text-sm text-danger">
-					{err ?? att.notice ?? "有文件上传失败：请重试或移除后再发送。"}
+				<p role="alert" data-testid="composer-error" className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-sm text-danger">
+					<span className="min-w-0 flex-1 basis-56">{err ?? att.notice ?? "有文件上传失败：请重试或移除后再发送。"}</span>
+					{err && failedSend.current ? (
+						<button type="button" data-testid="composer-retry" data-network={failedNet ? "true" : undefined} onClick={() => void send()} disabled={sending || !canSend} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-strong px-2 py-1 font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60">
+							{sending ? <Loader2 aria-hidden className="size-3.5 wr-spin" /> : <RotateCcw aria-hidden className="size-3.5" />}
+							重试
+						</button>
+					) : null}
 				</p>
 			) : null}
 			<FilePickerDialog open={picker === "file"} onOpenChange={closePicker} spaceId={spaceId} projectId={projectId} onPick={(ref, meta) => att.addRef(ref, meta)} />

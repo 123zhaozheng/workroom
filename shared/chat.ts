@@ -217,6 +217,12 @@ export interface QueuedInputDTO {
 	readonly submissionId: number;
 	readonly mode: "steer" | "followUp" | "write";
 	readonly text?: string;
+	/** Round 8: what the queue UI needs to show and restore an item (followUp / steer items only). */
+	readonly requestId?: string;
+	readonly displayText?: string;
+	readonly attachments?: readonly AttachmentRef[];
+	readonly knowledgeRefs?: readonly KnowledgeRef[];
+	readonly userId?: string;
 }
 
 // ---------------------------------------------------------------- submissions
@@ -253,6 +259,37 @@ export interface SubmissionDTO {
 	readonly detail?: unknown;
 	readonly entryId?: number;
 	readonly answerEntryId?: number;
+}
+
+/** The input of a withdrawn queue item, returned so the composer can restore it for editing (text + attachments). */
+export interface RestoredInputDTO {
+	readonly text: string;
+	readonly attachments?: readonly AttachmentRef[];
+	readonly knowledgeRefs?: readonly KnowledgeRef[];
+}
+
+/** POST …/submissions/:id/withdraw. already_placed = it was applied before the withdraw reached it: nothing is restored. */
+export interface WithdrawResponse {
+	readonly result: "aborted" | "already_placed" | "settled" | "not_found";
+	readonly submission: SubmissionDTO;
+	/** Only with {restore:true} and result "aborted". */
+	readonly input?: RestoredInputDTO;
+}
+
+/**
+ * POST …/submissions/:id/promote (立即发送): withdraw the queued follow-up and resubmit the same input as a steer with the
+ * deterministic requestId `${requestId}::now` (idempotent: a retry or double click returns the same submission).
+ *  promoted        = the input now steers the run: it reaches the model at the running task's next step (it never interrupts a
+ *                    running tool or a pending approval). `effect` "steered" = the run is working, "started" = nothing was
+ *                    running, so the message simply started a new run (and any other queued items follow it).
+ *  already_applied = the follow-up had already been placed in the conversation; nothing changed.
+ *  not_found       = the submission is not in the queue (withdrawn, unknown, or not a user input).
+ */
+export interface PromoteResponse {
+	readonly result: "promoted" | "already_applied" | "not_found";
+	readonly effect?: "steered" | "started";
+	readonly replayed?: boolean;
+	readonly submission: SubmissionDTO;
 }
 
 export interface SendMessageResponse {

@@ -1,7 +1,7 @@
-import { AlertCircle, ArrowDown, Check, ChevronDown, ClipboardList, Hand, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import type { AgentDTO, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, SendMessageResponse } from "@shared/chat";
+import type { AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, WithdrawResponse } from "@shared/chat";
 import type { ThinkingLevel } from "@shared/ops";
 import { ApiError, errorText, get, patch, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -22,9 +22,10 @@ import { SkillDraftResult, skillDraftOf } from "@/features/chat/SkillDraftCard";
 import type { ConversationCitationStatus } from "@shared/knowledge";
 import { AssistantMessage, BranchPointSwitcher, UserMessage } from "@/features/chat/Messages";
 import { buildTurns, type AssistantTurn, type Turn } from "@/features/chat/model";
-import { RUN_LABEL, RunIcon, reasonText, steerChip } from "@/features/chat/status";
-import { cleanErrorText, cleanTestText } from "@/features/chat/testText";
-import { useConversationDetail, useConversationStream, useEarlierEntries, useSubmissionTracker } from "@/features/chat/useConversation";
+import { RUN_LABEL, RunIcon, reasonText } from "@/features/chat/status";
+import { cleanErrorText } from "@/features/chat/testText";
+import { MessageQueue, type QueueNotice } from "@/features/composer/MessageQueue";
+import { useConversationDetail, useConversationStream, useEarlierEntries } from "@/features/chat/useConversation";
 
 const ShareDialog = lazy(() => import("@/features/share/Share").then((m) => ({ default: m.ShareDialog })));
 const RoutesDialog = lazy(() => import("@/features/chat/RoutesDialog"));
@@ -45,11 +46,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const { state, status: streamStatus, error: streamError } = useConversationStream(spaceId, id);
 	const { detail, parentDetail, error: detailError, reload: reloadDetail } = useConversationDetail(spaceId, id);
 	const earlier = useEarlierEntries(spaceId, id);
-	const subs = useSubmissionTracker(spaceId, id);
 	const { openWork, panel } = usePanel();
 	const [actionErr, setActionErr] = useState<string>();
 	const [stopping, setStopping] = useState(false);
 	const [continuing, setContinuing] = useState(false);
+	const [restore, setRestore] = useState<{ n: number; text: string; attachments?: readonly AttachmentRef[]; knowledgeRefs?: readonly KnowledgeRef[] }>();
 	const [handoff, setHandoff] = useState(false);
 	const [routes, setRoutes] = useState(false);
 	const [share, setShare] = useState(false);
@@ -135,19 +136,42 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	}, [state, turns.length]);
 
 	// ----- actions -----
+	// The composer sends with a requestId that stays the same for a retry of the same content (the server dedupes on it).
+	// While a run works the message is queued on the server (follow-up) — what the queue shows is the server's state.
 	const send = async (v: ComposerSubmit) => {
-		const requestId = uuid();
-		const wasBusy = busy;
-		const r = await post<SendMessageResponse>(`${base}/messages`, {
+		await post<SendMessageResponse>(`${base}/messages`, {
 			text: v.text,
-			requestId,
+			requestId: v.requestId,
 			...(v.attachments.length ? { attachments: v.attachments } : {}),
 			...(v.knowledgeRefs.length ? { knowledgeRefs: v.knowledgeRefs } : {}),
 			mode: v.mode,
 		});
-		if (wasBusy) subs.track({ requestId, text: v.text, mode: v.mode, submission: r.submission ?? { submissionId: r.submissionId, conversationId: id, status: r.status }, at: Date.now() });
 		nearBottom.current = true;
 		return true;
+	};
+	const queueItems = useMemo(() => (state?.queue ?? []).filter((q) => q.mode !== "write"), [state?.queue]);
+	/** 立即发送: the server answers what really happened; the notice says exactly that. */
+	const queueSendNow = async (item: QueuedInputDTO): Promise<QueueNotice> => {
+		const r = await post<PromoteResponse>(`${base}/submissions/${item.submissionId}/promote`);
+		if (r.result === "promoted") {
+			if (r.effect === "started") return { tone: "info", text: "已发送，开始新一轮处理。" };
+			return { tone: "info", text: runStatus === "waiting_approval" ? "已交给当前任务：它正在等你确认，确认之后才会处理这条消息。" : "已交给正在运行的任务，会在它的下一步处理（不会打断正在执行的工具）。" };
+		}
+		if (r.result === "already_applied") return { tone: "warn", text: "这条消息刚刚已经被处理了，不需要再发送。" };
+		return { tone: "warn", text: "这条消息已不在队列里（可能已在另一个窗口撤销或处理）。" };
+	};
+	/** 撤销: only when the server confirms the withdraw does the content come back to the box; if it was applied first, nothing is restored. */
+	const queueUndo = async (item: QueuedInputDTO): Promise<QueueNotice> => {
+		const r = await post<WithdrawResponse>(`${base}/submissions/${item.submissionId}/withdraw`, { restore: true });
+		if (r.result === "aborted" && r.input) {
+			setRestore((x) => ({ n: (x?.n ?? 0) + 1, text: r.input!.text, attachments: r.input!.attachments, knowledgeRefs: r.input!.knowledgeRefs }));
+			return { tone: "info", text: "已撤销，内容和附件已放回输入框。" };
+		}
+		return { tone: "warn", text: "这条消息已经被处理，无法撤销，也没有放回输入框。" };
+	};
+	const queueDelete = async (item: QueuedInputDTO): Promise<QueueNotice> => {
+		const r = await post<WithdrawResponse>(`${base}/submissions/${item.submissionId}/withdraw`, { restore: true });
+		return r.result === "aborted" ? { tone: "info", text: "已删除这条排队的消息。" } : { tone: "warn", text: "这条消息已经被处理，无法删除。" };
 	};
 	const act = async (fn: () => Promise<void>) => {
 		setActionErr(undefined);
@@ -419,43 +443,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			</div>
 
 			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]")}>
-				<RunBar
-					status={runStatus}
-					live={live}
-					stream={streamStatus}
-					streamError={streamError?.message}
-					onContinue={cont}
-					continuing={continuing}
-					queue={state?.queue ?? []}
-					pending={pendingApprovals.length + reconcile.length}
-				/>
-				{subs.items.length ? (
-					<ul data-testid="steer-feedback" aria-label="已发送的补充消息" className="mb-2 space-y-1">
-						{subs.items.map((s) => {
-							const chip = steerChip(s.mode, s.submission.status);
-							const tone = chip.tone === "danger" ? "text-danger" : chip.tone === "success" ? "text-success" : chip.tone === "muted" ? "text-fg-muted" : "text-info";
-							return (
-								<li key={s.requestId} data-status={s.submission.status} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[12.5px]">
-									<span className="shrink-0 text-fg-subtle">{s.mode === "followUp" ? "稍后处理" : "插话"}</span>
-									<span className="min-w-0 flex-1 basis-40 truncate">{cleanTestText(s.text) || "（测试指令）"}</span>
-									<span data-testid="steer-status" className={cn("inline-flex shrink-0 items-center gap-1 font-medium", tone)}>
-										{chip.withdrawable ? <Loader2 aria-hidden className="size-3 wr-spin" /> : chip.tone === "success" ? <Check aria-hidden className="size-3" /> : chip.tone === "danger" ? <AlertCircle aria-hidden className="size-3" /> : null}
-										{chip.label}
-										{s.submission.reason ? `：${reasonText(s.submission.reason)}` : ""}
-									</span>
-									{chip.withdrawable ? (
-										<button data-testid="steer-withdraw" onClick={() => act(() => subs.withdraw(s.requestId))} className="shrink-0 rounded px-1 text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-info">
-											撤回
-										</button>
-									) : null}
-									<button aria-label="关闭" onClick={() => subs.dismiss(s.requestId)} className="shrink-0 rounded text-fg-subtle hover:text-fg focus-visible:ring-2 focus-visible:ring-info">
-										<X className="size-3.5" />
-									</button>
-								</li>
-							);
-						})}
-					</ul>
-				) : null}
+				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} />
+				<MessageQueue items={queueItems} runStatus={runStatus} onSendNow={queueSendNow} onUndo={queueUndo} onDelete={queueDelete} readOnly={readOnly} />
 				{actionErr ? (
 					<p role="alert" className="mb-2 rounded-lg bg-danger-soft px-3 py-1.5 text-[13px] text-danger">
 						{actionErr}
@@ -481,6 +470,9 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						onStop={stop}
 						stopping={stopping}
 						onSubmit={send}
+						restore={restore}
+						/* ENV-SLOT (round 8): Q2's <EnvironmentButton/> goes into `tools` (after the "+" button) and <EnvironmentStatus/> above the queue,
+						   once web/src/features/environment/** is committed. Not placed yet: the component did not exist when Q1 finished. */
 						disabled={!state}
 						disabledReason="正在连接…"
 						conversationId={id}
@@ -508,6 +500,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	);
 }
 
+/**
+ * Connection notice + the way out of a run that did not finish (失败 / 已取消 / 超时 / 已中断: 重试 or 继续, technical details).
+ * Nothing is shown while the assistant is running or waiting for you: approvals are cards in the conversation, work is in the work panel,
+ * and 停止 lives in the composer.
+ */
 function RunBar({
 	status,
 	live,
@@ -515,8 +512,6 @@ function RunBar({
 	streamError,
 	onContinue,
 	continuing,
-	queue,
-	pending,
 }: {
 	status: keyof typeof RUN_LABEL;
 	live?: { turns?: number; retry?: { at: number; error: string }; failure?: { reason: string; detail?: string } };
@@ -524,21 +519,13 @@ function RunBar({
 	streamError?: string;
 	onContinue: () => void;
 	continuing: boolean;
-	queue: readonly { submissionId: number; mode: string; text?: string }[];
-	/** Number of items (approvals, 待核对) waiting for the person. */
-	pending: number;
 }) {
 	const canContinue = status === "failed" || status === "interrupted" || status === "aborted" || status === "timeout";
-	const show = status !== "idle" && status !== "done";
+	const show = canContinue;
 	const bad = status === "failed" || status === "interrupted";
 	const detail = cleanErrorText(live?.failure?.detail);
-	const gotoPending = () => {
-		const el = document.querySelector<HTMLElement>('[data-testid="approval-card"], [data-testid="reconcile-card"]');
-		el?.scrollIntoView({ block: "center", behavior: "smooth" });
-		el?.focus({ preventScroll: true });
-	};
 	return (
-		<div className="mb-2 flex flex-col gap-1.5">
+		<div className="mb-2 flex flex-col gap-1.5 empty:hidden">
 			{stream === "reconnecting" || stream === "offline" || streamError ? (
 				<div data-testid="stream-notice" data-stream={stream} role="status" className="flex items-center gap-2 text-[12.5px] text-warning">
 					<WifiOff aria-hidden className="size-3.5" />
@@ -550,46 +537,22 @@ function RunBar({
 				</div>
 			) : null}
 			{show ? (
-				<div data-testid="run-bar" data-status={status} role="status" className={cn("rounded-lg px-2.5 py-1.5 text-[12.5px]", bad ? "bg-danger-soft text-danger" : status === "waiting_approval" || status === "timeout" ? "bg-warning-soft text-warning" : "bg-surface-2 text-fg-muted")}>
+				<div data-testid="run-bar" data-status={status} role="status" className={cn("rounded-lg px-2.5 py-1.5 text-[12.5px]", bad ? "bg-danger-soft text-danger" : status === "timeout" ? "bg-warning-soft text-warning" : "bg-surface-2 text-fg-muted")}>
 					<div className="flex flex-wrap items-center gap-2">
 						<RunIcon status={status} />
 						<span className="font-medium">{RUN_LABEL[status]}</span>
-						{status === "running" && live?.turns ? <span>· 第 {live.turns} 轮</span> : null}
-						{status === "running" && live?.retry ? <span>· 模型请求出错，稍后自动重试</span> : null}
-						{live?.failure && status !== "running" ? (
-							<span className="min-w-0 flex-1">· {reasonText(live.failure.reason)}</span>
-						) : null}
-						{status === "waiting_approval" ? (
-							<>
-								<span>· {pending > 1 ? `${pending} 项待你处理` : "有 1 项待你处理"}</span>
-								<button data-testid="goto-approval" onClick={gotoPending} className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-fg hover:bg-surface focus-visible:ring-2 focus-visible:ring-info">
-									<Hand aria-hidden className="size-3.5" />
-									去处理
-								</button>
-							</>
-						) : null}
-						{canContinue ? (
-							<button data-testid="continue" onClick={onContinue} disabled={continuing} title={status === "aborted" ? "接着上次的进度继续" : "重新请求模型，接着上次的进度继续"} className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-fg hover:bg-surface focus-visible:ring-2 focus-visible:ring-info disabled:opacity-60">
-								{continuing ? <Loader2 aria-hidden className="size-3.5 wr-spin" /> : <RotateCcw aria-hidden className="size-3.5" />}
-								{status === "aborted" ? "继续" : "重试"}
-							</button>
-						) : null}
+						{live?.failure ? <span className="min-w-0 flex-1">· {reasonText(live.failure.reason)}</span> : null}
+						<button data-testid="continue" onClick={onContinue} disabled={continuing} title={status === "aborted" ? "接着上次的进度继续" : "重新请求模型，接着上次的进度继续"} className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-fg hover:bg-surface focus-visible:ring-2 focus-visible:ring-info disabled:opacity-60">
+							{continuing ? <Loader2 aria-hidden className="size-3.5 wr-spin" /> : <RotateCcw aria-hidden className="size-3.5" />}
+							{status === "aborted" ? "继续" : "重试"}
+						</button>
 					</div>
-					{(live?.failure && status !== "running" && detail) || (status === "running" && live?.retry) ? (
+					{live?.failure && detail ? (
 						<details data-testid="tech-details" className="mt-1 text-[12px]">
 							<summary className="cursor-pointer text-fg-muted hover:text-fg">技术详情</summary>
-							<p className="mt-0.5 break-all font-mono text-fg-muted">{status === "running" ? cleanErrorText(live?.retry?.error) : detail}</p>
+							<p className="mt-0.5 break-all font-mono text-fg-muted">{detail}</p>
 						</details>
 					) : null}
-				</div>
-			) : null}
-			{queue.length ? (
-				<div className="text-[12.5px] text-fg-muted">
-					{queue.map((q) => (
-						<div key={q.submissionId} className="truncate">
-							{q.mode === "steer" ? "插话" : "排队"}（已接收，等待处理）：{cleanTestText(q.text) || "（测试指令）"}
-						</div>
-					))}
 				</div>
 			) : null}
 		</div>

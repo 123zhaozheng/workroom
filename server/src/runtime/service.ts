@@ -6,7 +6,7 @@ import { type Context } from "@earendil-works/chord/context";
 import { configure, ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi, type PromptInput, type Extension } from "@earendil-works/pi-durable";
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
-import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, SubagentDTO, SubmissionDTO, TasksResponse } from "../../../shared/chat.ts";
+import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, PromoteResponse, SubagentDTO, SubmissionDTO, TasksResponse, WithdrawResponse } from "../../../shared/chat.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
@@ -476,18 +476,37 @@ export class Runtime implements RuntimeService {
 		await this.ctx.services.get("authz").require(p, "automation.run_as_others");
 	}
 
-	async submit(p: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string; whenBusy?: "steer" | "followUp" | "reject" }, context: Context): Promise<SubmissionDTO> {
+	/** Everything that can refuse an input (shape, run-as, access, budget) — checked before anything durable changes. */
+	async #admit(p: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string }, context: Context) {
 		if (typeof input.requestId !== "string" || !input.requestId || input.requestId.length > 200) throw new HttpError(400, "invalid_request_id", "requestId 必填");
 		if (typeof input.text !== "string" || !input.text.trim()) throw new HttpError(400, "empty", "消息不能为空");
 		if (input.text.length > 100_000) throw new HttpError(413, "too_long", "消息过长");
 		this.validateRefs(input);
 		await this.#checkRunAs(p, input);
-		const { harness, conv, row } = await this.access(p, "write", spaceId, conversationId, context);
-		if (!row) throw new HttpError(409, "read_only", "子任务会话只读");
+		const a = await this.access(p, "write", spaceId, conversationId, context);
+		if (!a.row) throw new HttpError(409, "read_only", "子任务会话只读");
 		if (this.ctx.services.has("budget")) {
-			const b = await this.ctx.services.get("budget").checkSubmit(p, spaceId, row.project_id ?? undefined);
+			const b = await this.ctx.services.get("budget").checkSubmit(p, spaceId, a.row.project_id ?? undefined);
 			if (!b.allow) throw new HttpError(402, "budget_exceeded", `预算不足：${b.reason}`, { reason: b.reason });
 		}
+		return { ...a, row: a.row };
+	}
+
+	/** Queue operations on one conversation (withdraw / promote) run one after another, so a double click or two tabs cannot interleave. */
+	readonly #queueLocks = new Map<string, Promise<unknown>>();
+	#serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
+		const prev = this.#queueLocks.get(key) ?? Promise.resolve();
+		const next = prev.then(fn, fn);
+		const tail = next.catch(() => {});
+		this.#queueLocks.set(key, tail);
+		void tail.then(() => {
+			if (this.#queueLocks.get(key) === tail) this.#queueLocks.delete(key);
+		});
+		return next;
+	}
+
+	async submit(p: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string; whenBusy?: "steer" | "followUp" | "reject" }, context: Context): Promise<SubmissionDTO> {
+		const { harness, conv, row } = await this.#admit(p, spaceId, conversationId, input, context);
 		const data: InputEntryData = {
 			text: input.text,
 			userId: p.userId,
@@ -666,15 +685,78 @@ export class Runtime implements RuntimeService {
 		}
 	}
 
-	async withdraw(p: Principal, spaceId: string, conversationId: number, submissionId: number, context: Context) {
+	/**
+	 * Withdraw a queued input (POST …/withdraw). With `restore` the caller takes the message back into its composer: the
+	 * display-only "未送达" marker is then not written, and the input (text + attachments) is returned. `already_placed` means
+	 * the input was applied first: it is in the conversation, nothing is restored.
+	 */
+	async withdraw(p: Principal, spaceId: string, conversationId: number, submissionId: number, context: Context, opts: { restore?: boolean } = {}): Promise<WithdrawResponse> {
 		const { harness, conv } = await this.access(p, "write", spaceId, conversationId, context);
 		if (!Number.isInteger(submissionId) || submissionId <= 0) throw new HttpError(400, "invalid_id", "提交 id 无效");
-		const inbox = await harness.snapshot(InboxDoc, conv.id, context);
-		const item = inbox?.items.find((i) => (i.id as number) === submissionId);
-		const r = await harness.abortSubmission(submissionId as SubmissionId, context, conv.id);
-		if (r === "not_found") throw new HttpError(404, "not_found", "提交不存在");
-		if (r === "aborted" && item) await this.recordUnplaced(harness, conv, [{ id: submissionId, entry: (item as any).entry }], context);
-		return { result: r, submission: await this.submissionStatus(harness, conversationId, submissionId, context) };
+		return this.#serial(`${spaceId}:${conversationId}`, async () => {
+			const inbox = await harness.snapshot(InboxDoc, conv.id, context);
+			const item = inbox?.items.find((i) => (i.id as number) === submissionId);
+			const r = await harness.abortSubmission(submissionId as SubmissionId, context, conv.id);
+			if (r === "not_found") throw new HttpError(404, "not_found", "提交不存在");
+			const restoring = !!opts.restore && r === "aborted" && !!item && item.mode !== "write";
+			if (r === "aborted" && item && !restoring) await this.recordUnplaced(harness, conv, [{ id: submissionId, entry: (item as any).entry }], context);
+			const d = ((item as any)?.entry?.data ?? {}) as InputEntryData;
+			return {
+				result: r,
+				submission: await this.submissionStatus(harness, conversationId, submissionId, context),
+				...(restoring ? { input: { text: d.text, ...(d.attachments?.length ? { attachments: d.attachments } : {}), ...(d.knowledgeRefs?.length ? { knowledgeRefs: d.knowledgeRefs } : {}) } } : {}),
+			};
+		});
+	}
+
+	/**
+	 * 立即发送: turn a queued follow-up into a steer. pi-durable has no "change mode" operation, so it is withdrawn
+	 * (`abortSubmission`) and the same input is submitted again with `whenBusy: "steer"` under the deterministic requestId
+	 * `${requestId}::now` — a retry / double click / second tab finds that submission and returns it (replayed) instead of sending twice.
+	 * Everything that could refuse the new submission is checked BEFORE the withdraw; if the resubmit still fails the input is
+	 * recorded as an unsent message (never silently lost) and the error is raised. A steer never interrupts a running tool or a
+	 * pending approval: pi-durable places it at the run's next model step (after the approval is decided).
+	 */
+	async promote(p: Principal, spaceId: string, conversationId: number, submissionId: number, context: Context): Promise<PromoteResponse> {
+		const { harness, conv, row } = await this.access(p, "write", spaceId, conversationId, context);
+		if (!row) throw new HttpError(409, "read_only", "子任务会话只读");
+		if (!Number.isInteger(submissionId) || submissionId <= 0) throw new HttpError(400, "invalid_id", "提交 id 无效");
+		return this.#serial(`${spaceId}:${conversationId}`, async () => {
+			const sub = await harness.submission(submissionId as SubmissionId, context);
+			const rec = sub ? await sub.status(context) : undefined;
+			if (!rec || (rec.conversationId as number) !== conversationId) throw new HttpError(404, "not_found", "提交不存在");
+			const dto = () => this.submissionStatus(harness, conversationId, submissionId, context);
+			const inbox = await harness.snapshot(InboxDoc, conv.id, context);
+			const item = inbox?.items.find((i) => (i.id as number) === submissionId) as any;
+			if (rec.type !== "input") return { result: "not_found", submission: await dto() };
+			if (item?.mode === "steer") return { result: "promoted", effect: "steered", replayed: true, submission: await dto() };
+			if (!item) {
+				if (rec.status === "placed" || rec.status === "done" || (rec as any).entry !== undefined) return { result: "already_applied", submission: await dto() };
+				// withdrawn: either by the user, or by an earlier promote of this very input → replay its steer
+				const nowRec = rec.requestId ? await harness.commit((tx) => tx.submissionByRequest(conv.id, `${rec.requestId}::now`), context) : undefined;
+				if (nowRec) {
+					const nowDto = await this.submissionStatus(harness, conversationId, nowRec.id as number, context);
+					return { result: "promoted", effect: nowDto.status === "received" ? "steered" : "started", replayed: true, submission: nowDto };
+				}
+				return { result: "not_found", submission: await dto() };
+			}
+			const data = { ...((item.entry?.data ?? {}) as InputEntryData) } as InputEntryData & { requestId?: string };
+			const nowRid = `${rec.requestId ?? data.requestId ?? `sub-${submissionId}`}::now`;
+			await this.#admit(p, spaceId, conversationId, { ...data, requestId: nowRid }, context);
+			const r = await harness.abortSubmission(submissionId as SubmissionId, context, conv.id);
+			if (r !== "aborted") return { result: r === "not_found" ? "not_found" : "already_applied", submission: await dto() };
+			data.requestId = nowRid;
+			let nowSub;
+			try {
+				nowSub = await conv.submit({ type: "input", content: this.composeContent(data), requestId: nowRid, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
+			} catch (err) {
+				await this.recordUnplaced(harness, conv, [{ id: submissionId, entry: item.entry }], context).catch(() => {});
+				throw new HttpError(500, "promote_failed", "立即发送失败，消息已保留为「未送达」，请重新发送", { cause: String((err as Error)?.message ?? err) });
+			}
+			this.touch(spaceId, conversationId);
+			const nowDto = await this.submissionStatus(harness, conversationId, nowSub.id, context);
+			return { result: "promoted", effect: nowDto.status === "received" ? "steered" : "started", submission: nowDto };
+		});
 	}
 
 	async entries(p: Principal, spaceId: string, conversationId: number, q: { before?: number; limit?: number }, context: Context): Promise<EntriesPage> {

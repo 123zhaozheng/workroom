@@ -16,7 +16,7 @@ export function useStartConversation() {
 			...(opts.assistantId ? { assistantId: opts.assistantId } : {}),
 			// no client title: the server derives it from the first message (directives stripped)
 		});
-		const requestId = uuid();
+		const requestId = v.requestId || uuid();
 		await post<SendMessageResponse>(`/conversations/${conversation.spaceId}/${conversation.conversationId}/messages`, {
 			text: v.text,
 			requestId,

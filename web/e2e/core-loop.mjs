@@ -1,6 +1,6 @@
 // Core loop against the real integrated server with the deterministic fixture model:
 // register → home → chat (streaming + tool steps + file card) → preview open/close → approval card →
-// steer feedback → v2 via file_revise → edit → branch switch → files page v1/v2 → knowledge page.
+// queued message while running → v2 via file_revise → edit → branch switch → files page v1/v2 → knowledge page.
 // Screenshots: artifacts/screenshots/*.png  ·  Results: artifacts/screenshots/core-loop.results.json
 // Run: npm run -w web build && node web/e2e/core-loop.mjs
 import { join } from "node:path";
@@ -88,7 +88,7 @@ try {
 	await sendMessage(page, '发送前请确认 [[call wr_fixture_approval {"title":"对外发送周报","summary":"将《项目周报》v1 发送到 team@example.com","risk":"medium"}]]');
 	await page.waitForSelector('[data-testid="approval-card"]', { timeout: 20000 });
 	await sleep(300);
-	check("approval: pending card shown with run status waiting", (await page.locator('[data-testid="run-bar"][data-status="waiting_approval"]').count()) === 1);
+	check("approval: pending card shown in the conversation (no run bar above the input)", (await page.locator('[data-testid="approval-card"]').count()) === 1 && (await page.locator('[data-testid="run-bar"]').count()) === 0);
 	await shot(page, "1440-chat-approval");
 	await page.click('[data-testid="approve"]');
 	await page.waitForSelector('[data-testid="approval-card"]', { state: "detached", timeout: 20000 });
@@ -98,16 +98,12 @@ try {
 	await sendMessage(page, "[[slow 5000]] 慢慢整理一下要点");
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 10000 });
 	await sendMessage(page, "另外请把结论放在最前面");
-	await page.waitForSelector('[data-testid="steer-feedback"] li', { timeout: 10000 });
-	const s1 = await page.locator('[data-testid="steer-feedback"] li').first().getAttribute("data-status");
-	check("steer: feedback shown (received/queued/applied)", ["received", "queued", "applied", "done"].includes(s1 ?? ""), `status=${s1}`);
+	await page.waitForSelector('[data-testid="message-queue"] [data-testid="queue-item"]', { timeout: 10000 });
+	const s1 = await page.locator('[data-testid="queue-item"]').first().getAttribute("data-mode");
+	check("queue: a message sent while running waits in the queue (follow-up, runs after the current task)", s1 === "followUp" && (await page.locator('[data-testid="queue-text"]').first().innerText()).includes("另外请把结论放在最前面"), `mode=${s1}`);
 	await shot(page, "1440-chat-steer");
-	await page.waitForFunction(() => {
-		const li = document.querySelector('[data-testid="steer-feedback"] li');
-		return li && ["applied", "done", "unanswered"].includes(li.getAttribute("data-status") ?? "");
-	}, null, { timeout: 30000 });
-	const s2 = await page.locator('[data-testid="steer-feedback"] li').first().getAttribute("data-status");
-	check("steer: feedback progresses to applied/done (or explicit 未应用)", true, `status=${s2}`);
+	await page.waitForFunction(() => !document.querySelector('[data-testid="queue-item"]') && [...document.querySelectorAll('[data-testid="user-message"]')].some((e) => e.textContent.includes("另外请把结论放在最前面")), null, { timeout: 40000 });
+	check("queue: it was sent automatically once the current task finished", true);
 	await page.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: 30000 });
 
 	// ---------------------------------------------------------------- v2 via file_revise

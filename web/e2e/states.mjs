@@ -79,7 +79,7 @@ try {
 	const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, storageState: await ctx.storageState() });
 	const pp = await phone.newPage();
 	await pp.goto(page.url());
-	await pp.waitForSelector('[data-testid="run-bar"][data-status="running"]', { timeout: 15000 });
+	await pp.waitForSelector('[data-testid="stop"]', { timeout: 15000 });
 	check("cross-device: phone shows the same running state", true);
 	await shot(pp, "390-same-task-running");
 	await page.click('[data-testid="stop"]');

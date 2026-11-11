@@ -3,7 +3,7 @@
 //  - one run-summary line per turn, steps in human words, raw JSON only behind 「技术详情」
 //  - approval card: operation, scope, risk, requester; nothing focused on open, 高风险 needs a second click, 拒绝 works, keyboard
 //  - 待核对 card offers exactly 已生效 / 未生效
-//  - steer feedback (+ 撤回), failure → 重试, branch switcher still work
+//  - queued message (+ 撤销), failure → 重试, branch switcher still work
 // Run: npm run -w web build && node web/e2e/round5-g2.mjs        (port 8894)
 import { check, chromium, register, sendMessage, shot, sleep, startServer, summary, SHOTS } from "./lib.mjs";
 import { mkdirSync } from "node:fs";
@@ -94,10 +94,10 @@ try {
 	check("approval: only 允许 / 拒绝 (+ an optional note) are offered", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "拒绝|允许|添加说明");
 	const focused = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName);
 	check("approval: default focus is not on 允许", focused !== "approve" && focused !== "approve-confirm", String(focused));
-	check("approval: run bar says waiting and points to the card", (await page.locator('[data-testid="run-bar"][data-status="waiting_approval"]').innerText()).includes("待你处理"));
+	check("approval: no run bar above the input; the card itself is the place to act", (await page.locator('[data-testid="run-bar"]').count()) === 0 && (await card.isVisible()));
 	check("approval: raw tool name / JSON not shown", !cardText.includes("wr_fixture") && !cardText.includes("{"));
-	await page.click('[data-testid="goto-approval"]');
-	check("approval: 去处理 moves focus to the card, not to 允许", (await page.evaluate(() => document.activeElement?.getAttribute("data-testid"))) === "approval-card");
+	await card.focus();
+	check("approval: the card is focusable as a whole, not 允许", (await page.evaluate(() => document.activeElement?.getAttribute("data-testid"))) === "approval-card");
 	await shot(page, "round5/after/g2-e2e-approval-medium");
 	// keyboard: Tab reaches 拒绝 first, then 允许; Enter on 拒绝 denies
 	await page.keyboard.press("Tab");
@@ -150,22 +150,24 @@ try {
 	st = await stateOf(page);
 	check("approval: the optional note is sent with the decision", st.approvals.at(-1)?.note === "只订上午场" && st.approvals.at(-1)?.status === "approved");
 
-	// ------------------------------------------------------------------ 6. steering: feedback chips, 撤回
+	// ------------------------------------------------------------------ 6. queue while running, 撤销
 	await sendMessage(page, "[[slow 9000]] 慢慢整理一下要点");
 	await busy(page);
 	await sendMessage(page, "另外请把结论放在最前面 [[reply 好的]]");
-	await page.waitForSelector('[data-testid="steer-feedback"] li', { timeout: 10000 });
-	const chip = page.locator('[data-testid="steer-feedback"] li').first();
+	await page.waitForSelector('[data-testid="queue-item"]', { timeout: 10000 });
+	const chip = page.locator('[data-testid="queue-item"]').first();
 	const chipText = await chip.innerText();
-	check("steer: feedback chip shows the message without directives and a human status", chipText.includes("另外请把结论放在最前面") && !chipText.includes("[[") && ["received", "queued", "applied", "done"].includes((await chip.getAttribute("data-status")) ?? ""), chipText.replace(/\s+/g, " "));
-	check("steer: a message not yet applied can be withdrawn", (await chip.locator('[data-testid="steer-withdraw"]').count()) === 1);
+	check("queue: the item shows the message without directives", chipText.includes("另外请把结论放在最前面") && !chipText.includes("[["), chipText.replace(/\s+/g, " "));
+	await chip.hover();
+	check("queue: a message not yet applied can be undone (撤销)", (await chip.locator('[data-testid="queue-undo"]').count()) === 1);
 	await shot(page, "round5/after/g2-e2e-steer");
-	await chip.locator('[data-testid="steer-withdraw"]').click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="steer-feedback"] li')?.getAttribute("data-status") === "withdrawn", null, { timeout: 10000 });
-	check("steer: 撤回 is confirmed by the server (已撤回)", (await chip.innerText()).includes("已撤回"));
-	await sendMessage(page, "再补充：用三句话 [[reply 收到补充]]");
-	await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="steer-feedback"] li')].some((li) => ["applied", "done"].includes(li.getAttribute("data-status") ?? "")), null, { timeout: 40000 });
-	check("steer: a kept message progresses to applied / done", true);
+	await chip.locator('[data-testid="queue-undo"]').click();
+	await page.waitForFunction(() => !document.querySelector('[data-testid="queue-item"]'), null, { timeout: 10000 });
+	check("queue: 撤销 is confirmed by the server and the text is back in the input", (await page.locator('[data-testid="composer-input"]').inputValue()).includes("另外请把结论放在最前面"));
+	await page.locator('[data-testid="composer-input"]').fill("再补充：用三句话 [[reply 收到补充]]");
+	await page.click('[data-testid="send"]');
+	await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="user-message"]')].some((e) => e.textContent.includes("再补充：用三句话")), null, { timeout: 40000 });
+	check("queue: a kept message is sent after the current task", true);
 	await idle(page, 40000);
 
 	// ------------------------------------------------------------------ 7. failure with reason + 重试
