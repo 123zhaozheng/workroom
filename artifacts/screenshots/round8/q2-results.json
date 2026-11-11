@@ -1,0 +1,220 @@
+{
+  "at": "2026-11-11T03:10:01.698Z",
+  "results": [
+    {
+      "name": "A home: cloud button next to the composer, aria-label '执行环境：<label>'",
+      "ok": true,
+      "detail": "执行环境：本机沙箱（Linux 命名空间）"
+    },
+    {
+      "name": "A home: local environment uses the local icon variant (kind local/none, not remote)",
+      "ok": true,
+      "detail": "kind=local"
+    },
+    {
+      "name": "A home: button is compact and a comfortable target (>=36px, <=44px)",
+      "ok": true,
+      "detail": "{\"x\":565,\"y\":471,\"width\":36,\"height\":36}"
+    },
+    {
+      "name": "A popover: current environment, location badge 本服务器, network, state, options",
+      "ok": true,
+      "detail": "当前执行环境 本机沙箱（Linux 命名空间） 本服务器 不联网 独立 user/mount/pid/net/ipc/uts 命名空间；pivot_root 到最小只读系统镜像（/usr、必要的 /etc 文件、Node 运行时），仅 /work（本会话工作目录）可写，/tmp 为 64 MB 内存盘；看不到数据目录（app.sqlite、blobs、其他空间/会话）、源码、/hom 详细说明 已"
+    },
+    {
+      "name": "A popover: exactly one option is current; personal space cannot choose and says why",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A popover: no 现在准备 / 重试 for a local environment (nothing to prepare)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A popover: admin sees 管理执行环境 → admin 运行环境 tab",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A keyboard: Escape closes the popover and focus returns to the button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A opening the popover creates no sandbox instance and sends no prepare",
+      "ok": true,
+      "detail": "GET /api/conversations/sp_0mwbjir7zfb95429e3eba4dab/new/environment"
+    },
+    {
+      "name": "A plain chat: still no sandbox instance and no prepare request",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A conversation: the same button sits next to the composer; no status line for a local environment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A phone 390 home: button visible, >=40px target, inside the viewport, no horizontal scroll",
+      "ok": true,
+      "detail": "{\"x\":73,\"y\":781,\"width\":40,\"height\":40}"
+    },
+    {
+      "name": "A phone 390: popover fits the screen (>=8px gutters)",
+      "ok": true,
+      "detail": "{\"x\":12,\"y\":395.638916015625,\"width\":366,\"height\":381.5}"
+    },
+    {
+      "name": "A phone 390 conversation: button present, no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B setup: org default = a remote OpenSandbox whose endpoint is unreachable",
+      "ok": true,
+      "detail": "200/200/200"
+    },
+    {
+      "name": "B remote: cloud icon variant, aria-label names the provider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B remote: just opening the conversation did not connect or create anything (state none, no status line, no POST)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B popover: 自托管 badge, network 可联网, state line says it is created on first need, 现在准备 offered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B real failure: popover shows 准备失败 with the provider error and 重试; no silent fallback to local",
+      "ok": true,
+      "detail": "准备失败：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行） 重试"
+    },
+    {
+      "name": "B failed: a dot marks the button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B conversation shows the failure line with 重试 (not hidden, not blocking the composer)",
+      "ok": true,
+      "detail": "工作环境没有准备好：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行） 重试"
+    },
+    {
+      "name": "B 重试 sends exactly one explicit prepare request",
+      "ok": true,
+      "detail": "POST /api/conversations/sp_0mwbjir7zfb95429e3eba4dab/3/environment/prepare"
+    },
+    {
+      "name": "B phone 390: failure line fits (no horizontal scroll)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B plain chat while the environment is failed: sends fine, creates no sandbox instance",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C1 [intercepted] idle conversation, state none: no status line and (after 6s) no polling",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C1 [intercepted] while the turn runs and the state turns preparing: '正在准备工作环境…' appears, button marked",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C1 [intercepted] popover during preparing: state line says 正在准备工作环境…, no 重试 button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C1 [intercepted] ready: the line hides by itself",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C1 [intercepted] polling stopped once ready (no GET for 6s)",
+      "ok": true,
+      "detail": "0 extra GETs"
+    },
+    {
+      "name": "C1 [intercepted] nothing in this sequence sent a prepare",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C2 [intercepted] failure line: message, 重试, 详情 for a long error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C2 [intercepted] 详情 expands the full error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C2 [intercepted] no automatic prepare before 重试",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C2 [intercepted] 重试 → exactly one prepare → line gone, state ready",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C3 [intercepted] misconfiguration: plain message, 请联系管理员, no 重试",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C4 [intercepted] vendor cloud badge says the data leaves the organisation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C4 [intercepted] canChoose: 切换 only for the enabled non-current option (local), none for the current or disabled one",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D [live] provider configured against the real OpenSandbox and made the org default",
+      "ok": true,
+      "detail": "status 200/200"
+    },
+    {
+      "name": "D [live] opening the popover on home: 自托管, nothing created",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D [live] a plain chat creates no remote sandbox (instance table has no live row)",
+      "ok": true,
+      "detail": "0 live"
+    },
+    {
+      "name": "D [live] the server reported none → preparing → ready while the real sandbox was created for the tool call (sampled directly from the API)",
+      "ok": true,
+      "detail": "[{\"s\":\"none\",\"at\":5},{\"s\":\"preparing\",\"at\":138},{\"s\":\"ready\",\"at\":2662}]"
+    },
+    {
+      "name": "D [live] the UI followed: button reached ready, and (if the window was long enough for its 1 s poll) showed preparing + the inline line",
+      "ok": true,
+      "detail": "UI observed: none,preparing,line:preparing,ready"
+    },
+    {
+      "name": "D [live] exactly one live instance now, and the run output arrived",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
