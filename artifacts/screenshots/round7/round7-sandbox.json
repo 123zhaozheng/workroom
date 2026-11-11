@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T01:58:23.583Z",
+  "at": "2026-11-11T02:29:41.392Z",
   "results": [
     {
       "name": "[intercepted] admin sees 运行环境 tab and the 执行位置 section",
@@ -154,7 +154,7 @@
     {
       "name": "[real] unreachable endpoint → plain failure; default still OpenSandbox; unhealthy banner (no fallback)",
       "ok": true,
-      "detail": "连通性 完整测试 完整测试会临时创建一个沙箱，只使用合成数据，结束后立即销毁。 失败 连通性 · 11/11 01:58 · 用时 68 毫秒 OpenSandbox 不可用：fetch failed"
+      "detail": "连通性 完整测试 完整测试会临时创建一个沙箱，只使用合成数据，结束后立即销毁。 失败 连通性 · 11/11 02:29 · 用时 77 毫秒 OpenSandbox 不可用：fetch failed"
     },
     {
       "name": "[real] key still absent from every response after tests",
@@ -194,7 +194,7 @@
     {
       "name": "[live] OpenSandbox full roundtrip passes (create, exec, file, destroy)",
       "ok": true,
-      "detail": "put=200 成功 完整测试 · 11/11 01:58 · 用时 6.1 秒 · 版本 API schema 0.1.0 往返测试通过：创建、执行、文件读写、销毁均正常 通过 create 3.8 秒 通过 exec 1.0 秒 通过 file 29 毫秒 通过 destroy 1.2 秒"
+      "detail": "put=200 成功 完整测试 · 11/11 02:29 · 用时 5.4 秒 · 版本 API schema 0.1.0 往返测试通过：创建、执行、文件读写、销毁均正常 通过 create 3.1 秒 通过 exec 1.0 秒 通过 file 25 毫秒 通过 destroy 1.2 秒"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T01:50:36.086Z",
+  "at": "2026-11-11T02:31:12.815Z",
   "results": [
     {
       "name": "seed: six members joined the owner's organisation",
@@ -12,8 +12,8 @@
       "detail": ""
     },
     {
-      "name": "owner sees every admin tab (10)",
-      "ok": false,
+      "name": "owner sees every admin tab (12: round 7 added 运行环境 + 环境变量)",
+      "ok": true,
       "detail": "members,invites,departments,sessions,roles,authz,models,sandbox,env,budgets,audit,trace"
     },
     {
@@ -29,7 +29,7 @@
     {
       "name": "org structure: drag 华东 onto 研发部 moves it (server state)",
       "ok": true,
-      "detail": "parent=dep_0mwbgoxbf3830d7bec512eb76"
+      "detail": "parent=dep_0mwbi547c84c698a5537e08a9"
     },
     {
       "name": "org structure: 移动到 menu moves it back under 销售部",

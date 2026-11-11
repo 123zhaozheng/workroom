@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T01:59:41.425Z",
+  "at": "2026-11-11T02:28:52.272Z",
   "results": [
     {
       "name": "setup: deliverables (md v2, docx, xlsx, pptx, pdf, csv) and an image published from the workspace",
@@ -99,12 +99,12 @@
     {
       "name": "terminal: a run shows the command, output and an exit status line",
       "ok": true,
-      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 129 ms"
+      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 117 ms"
     },
     {
       "name": "terminal: no driver / isolation jargon visible",
       "ok": true,
-      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 129 ms"
+      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 117 ms"
     },
     {
       "name": "files tab: one-line usage indicator (count, used / quota)",
@@ -179,7 +179,7 @@
     {
       "name": "sidebar: no interface / jargon wording",
       "ok": true,
-      "detail": "Workroom 新对话 搜索 个人知识库 文件库 项目 最近对话 林 林夏 林夏 的工作区"
+      "detail": "Workroom 新对话 搜索 个人知识库 文件库 项目 最近对话 生成成果 林 林夏 林夏 的工作区"
     },
     {
       "name": "1366: preview column is within 380–680px and the page does not overflow",
@@ -259,7 +259,7 @@
     {
       "name": "stats: demo organisation seeded",
       "ok": true,
-      "detail": "demo org org_0mwbh0lsff09543af3ac8b04a flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2255 runs, 11477 ledger rows (demo=1, simulated), 678 knowledge searches, 341 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8892 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
+      "detail": "demo org org_0mwbi246c7ee00150514c86be flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2255 runs, 11477 ledger rows (demo=1, simulated), 678 knowledge searches, 341 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8893 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
     },
     {
       "name": "stats: demo banner kept and 模拟 labels kept",

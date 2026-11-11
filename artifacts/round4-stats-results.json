@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T01:51:32.311Z",
+  "at": "2026-11-11T02:24:51.396Z",
   "results": [
     {
       "name": "seed-demo.mjs runs against a live server",
@@ -19,7 +19,7 @@
     {
       "name": "lazy chunks load on /stats (page + Recharts)",
       "ok": true,
-      "detail": "StatsPage-MlLwUcoK.js, StatsPage-DMDFVS2t.css, RechartsPanels-Bw2mw_E4.js"
+      "detail": "StatsPage-BNy1Ckvj.js, StatsPage-DMDFVS2t.css, RechartsPanels-BxFvpBY0.js"
     },
     {
       "name": "real org: no demo banner",
