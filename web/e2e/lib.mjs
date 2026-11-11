@@ -42,16 +42,20 @@ export async function startServer({ port = 8802, fresh = true, env = {} } = {}) 
 	child.stdout.on("data", (d) => (out += d));
 	child.stderr.on("data", (d) => (out += d));
 	const base = `http://127.0.0.1:${port}`;
+	// Refuse to test someone else's server: a leftover process on this port would answer /api/health while ours died with EADDRINUSE.
+	let exited = false;
+	child.once("exit", () => (exited = true));
 	for (let i = 0; i < 100; i++) {
+		await sleep(150);
+		if (exited || child.exitCode !== null) throw new Error(`e2e server on port ${port} exited during start (port taken by a leftover server?):\n${out.slice(-2000)}`);
 		try {
 			const r = await fetch(`${base}/api/health`);
-			if (r.ok) break;
+			if (r.ok && /listening|Workroom|http:\/\//i.test(out)) break;
 		} catch {
 			/* not yet */
 		}
-		if (child.exitCode !== null) throw new Error(`server exited:\n${out}`);
-		await sleep(150);
 	}
+	if (exited || child.exitCode !== null) throw new Error(`e2e server on port ${port} exited during start:\n${out.slice(-2000)}`);
 	return {
 		base,
 		/** Hard kill (no graceful shutdown) — for crash/recovery checks. Restart with startServer({ port, fresh: false }). */
@@ -62,6 +66,7 @@ export async function startServer({ port = 8802, fresh = true, env = {} } = {}) 
 		},
 		stop: async () => {
 			writeFileSync(log, out);
+			if (child.exitCode !== null || exited) return;
 			child.kill("SIGTERM");
 			await new Promise((r) => child.once("exit", r));
 		},

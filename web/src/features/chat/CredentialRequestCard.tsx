@@ -12,7 +12,7 @@ import { ApiError, errorText, get, post } from "@/lib/api";
 import { cn, fullTime } from "@/lib/utils";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/misc";
 import type { AssistantTurn, Step } from "./model";
 

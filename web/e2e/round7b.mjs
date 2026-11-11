@@ -13,7 +13,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { check, chromium, register, sendMessage, shot as _shot, sleep, startServer, summary, SHOTS, ROOT } from "./lib.mjs";
+import { check, chromium, selOptions, selValue, register, sendMessage, shot as _shot, sleep, startServer, summary, SHOTS, ROOT } from "./lib.mjs";
 
 const DIR = join(SHOTS, "round7b");
 mkdirSync(DIR, { recursive: true });
@@ -181,7 +181,7 @@ const inp = page.locator('[data-testid="credential-secret"]');
 check("A the field is a password input, autocomplete=new-password, empty, not remembered", (await inp.getAttribute("type")) === "password" && (await inp.getAttribute("autocomplete")) === "new-password" && (await inp.inputValue()) === "");
 check("A choices: 仅本次使用 (default) / 保存供以后使用; scope select only when saving, default 仅自己; 提交 and 拒绝 both present", (await page.locator('[data-testid="credential-persist-once"]').isChecked()) && (await page.locator('[data-testid="credential-scope"]').count()) === 0 && (await page.locator('[data-testid="credential-submit"]').count()) === 1 && (await page.locator('[data-testid="credential-decline"]').innerText()) === "拒绝");
 await page.locator('[data-testid="credential-persist-save"]').check();
-check("A choosing 保存供以后使用 reveals the scope select with 仅自己 selected; a member is offered no project/org scope", (await page.locator('[data-testid="credential-scope"]').inputValue()) === "user" && (await page.locator('[data-testid="credential-scope"] option').count()) === 1);
+check("A choosing 保存供以后使用 reveals the scope select with 仅自己 selected; a member is offered no project/org scope", (await selValue(page.locator('[data-testid="credential-scope"]'))) === "user" && (await selOptions(page.locator('[data-testid="credential-scope"]'))).length === 1);
 await page.locator('[data-testid="credential-persist-once"]').check();
 const tech = await page.locator('[data-testid="credential-tech"]').textContent();
 check("A request id / header name stay inside 技术详情 (collapsed)", !(await page.locator('[data-testid="credential-tech"]').evaluate((el) => el.open)) && /请求头/.test(tech));
