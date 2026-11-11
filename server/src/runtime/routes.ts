@@ -144,6 +144,12 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 			}, sse.pingMs);
 			const recheck = setInterval(async () => {
 				if (closed) return;
+				// A conversation deleted while its stream is open: end the stream (access() already 404s new requests).
+				if ((rt.row(spaceId, id) as { deleted_at?: string | null } | undefined)?.deleted_at) {
+					await stream.writeSSE({ event: "error", data: JSON.stringify({ code: "not_found", message: "会话已被删除" }) }).catch(() => {});
+					close();
+					return;
+				}
 				const d = await rt.acl.check(p, "read", { kind: "conversation", id: String(id), spaceId }).catch(() => ({ allow: false, reason: "error" }));
 				if (!d.allow) {
 					await stream.writeSSE({ event: "error", data: JSON.stringify({ code: "forbidden", message: `访问权限已变更（${d.reason}）`, reason: d.reason }) }).catch(() => {});

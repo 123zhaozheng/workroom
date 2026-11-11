@@ -104,7 +104,7 @@ test("M09-B handoff: editor takes over (reads handoff, approves, continues); vie
 		await t.json("GET", `${base(c)}/handoff`, { token: o.token, expect: 403 });
 		await t.json("GET", `/api/projects/${project.id}/handoff`, { token: o.token, expect: 403 });
 		// the handoff kept no table of its own
-		assert.equal(t.app.ctx.db.all<any>("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'rt_%' ORDER BY name").map((r) => r.name).join(","), "rt_assistants,rt_conversations,rt_promote_intents,rt_space_leases,rt_space_runtime"); // rt_promote_intents (round 8): transient crash-recovery intents for "send now", not handoff facts
+		assert.equal(t.app.ctx.db.all<any>("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'rt_%' AND name NOT LIKE 'rt_search_fts_%' ORDER BY name").map((r) => r.name).join(","), "rt_assistants,rt_conversation_stars,rt_conversation_tags,rt_conversations,rt_promote_intents,rt_search_docs,rt_search_fts,rt_search_progress,rt_space_leases,rt_space_runtime"); // round 8/9 additions are promote recovery, menu state and a derived search index — not handoff facts
 	} finally {
 		await t.dispose();
 	}

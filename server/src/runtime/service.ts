@@ -342,9 +342,11 @@ export class Runtime implements RuntimeService {
 	 * container project are NOT mixed into recents; they are listed under their project). With a container `projectId`: the owner's conversations
 	 * in it (owner: own; grantee: read-only, access "shared"); unknown / other-org / unshared projects are a plain 404. Soft-deleted rows never appear.
 	 */
-	async list(p: Principal, q: { spaceId?: string; projectId?: string; q?: string; limit?: number; archived?: boolean }, context: Context): Promise<ConversationSummary[]> {
+	async list(p: Principal, q: { spaceId?: string; projectId?: string; q?: string; limit?: number; archived?: boolean; maxLimit?: number }, context: Context): Promise<ConversationSummary[]> {
 		const identity = this.ctx.services.get("identity");
-		const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
+		// HTTP callers are capped at 200; internal callers (search/meta visibility) may pass maxLimit up to 5000.
+		const cap = Math.min(Math.max(Number(q.maxLimit) || 200, 200), 5000);
+		const limit = Math.min(Math.max(Number(q.limit) || 50, 1), cap);
 		const live = liveConversations(this.ctx.db);
 		const params: any[] = [];
 		let where: string;

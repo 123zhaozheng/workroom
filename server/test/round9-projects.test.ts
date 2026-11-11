@@ -596,3 +596,23 @@ test("migration on an existing DB: legacy projects get kind 'space', stay listed
 		await t.dispose();
 	}
 });
+
+test("an open event stream ends when its conversation is deleted (and new requests 404)", async () => {
+	const t = await startTestApp();
+	try {
+		const { owner } = await setup(t);
+		const c = await newConv(t, owner.token);
+		await say(t, owner.token, c, "[[reply 好的]] 你好");
+		const sse = sseReader(await t.req("GET", `${base(c)}/events`, { token: owner.token }));
+		await sse.state((s) => s.entries.length > 0);
+		const t0 = Date.now();
+		await t.json("DELETE", base(c), { token: owner.token });
+		const err = await sse.next((e) => e.event === "error", 8000);
+		assert.equal(err.data.code, "not_found");
+		assert.ok(Date.now() - t0 < 5000, "closed within a few seconds");
+		await waitFor(() => sse.ended, { timeoutMs: 3000, what: "stream closed" });
+		await t.json("GET", `${base(c)}/state`, { token: owner.token, expect: 404 });
+	} finally {
+		await t.dispose();
+	}
+});

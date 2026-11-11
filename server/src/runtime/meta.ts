@@ -75,7 +75,7 @@ export class ConversationMeta {
 	constructor(rt: Runtime) {
 		this.rt = rt;
 		this.lister = async (p, context) => {
-			const both = (q: { projectId?: string }) => Promise.all([rt.list(p, { ...q, limit: 200, archived: false }, context), rt.list(p, { ...q, limit: 200, archived: true }, context)]).then(([a, b]) => [...a, ...b]);
+			const both = (q: { projectId?: string }) => Promise.all([rt.list(p, { ...q, limit: 5000, maxLimit: 5000, archived: false }, context), rt.list(p, { ...q, limit: 5000, maxLimit: 5000, archived: true }, context)]).then(([a, b]) => [...a, ...b]);
 			const out = await both({});
 			// Conversations shared with the caller through a container project are listed per project (not in recents).
 			const identity = rt.ctx.services.get("identity");
