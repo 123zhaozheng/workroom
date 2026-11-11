@@ -78,7 +78,8 @@ await register(page, base, { email: "owner-r8q2@example.com", name: "管理员" 
 	await shotR(page, "popover-local-1440");
 	await page.keyboard.press("Escape");
 	await page.waitForSelector('[data-testid="env-popover"]', { state: "detached" });
-	check("A keyboard: Escape closes the popover and focus returns to the button", await btn.evaluate((el) => document.activeElement === el));
+	const refocused = await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "env-button", null, { timeout: 2000 }).then(() => true, () => false);
+	check("A keyboard: Escape closes the popover and focus returns to the button", refocused);
 	await shotR(page, "home-1440");
 
 	// opening it created nothing and never asked for a prepare
@@ -310,8 +311,9 @@ else {
 	let sampling = true;
 	const sampler = (async () => {
 		while (sampling) {
-			const s = await page.locator('[data-testid="env-button"]').getAttribute("data-env-state").catch(() => null);
-			const line = (await page.locator('[data-testid="env-status"]').count()) ? ((await page.locator('[data-testid="env-status"]').innerText().catch(() => "")) || "") : "";
+			const s = await page.locator('[data-testid="env-button"]').getAttribute("data-env-state", { timeout: 300 }).catch(() => null);
+			// short timeouts: the line disappears once the sandbox is ready (a default 30 s wait on a vanished element made the sampler miss "ready")
+			const line = (await page.locator('[data-testid="env-status"]').count()) ? ((await page.locator('[data-testid="env-status"]').innerText({ timeout: 300 }).catch(() => "")) || "") : "";
 			if (s) samples.add(s);
 			if (line.includes("正在准备工作环境…")) samples.add("line:preparing");
 			await sleep(150);
