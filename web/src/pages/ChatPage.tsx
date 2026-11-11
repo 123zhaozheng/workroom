@@ -25,6 +25,8 @@ import { buildTurns, type AssistantTurn, type Turn } from "@/features/chat/model
 import { RUN_LABEL, RunIcon, reasonText } from "@/features/chat/status";
 import { cleanErrorText } from "@/features/chat/testText";
 import { MessageQueue, type QueueNotice } from "@/features/composer/MessageQueue";
+import { EnvironmentButton } from "@/features/environment/EnvironmentButton";
+import { EnvironmentStatus } from "@/features/environment/EnvironmentStatus";
 import { useConversationDetail, useConversationStream, useEarlierEntries } from "@/features/chat/useConversation";
 
 const ShareDialog = lazy(() => import("@/features/share/Share").then((m) => ({ default: m.ShareDialog })));
@@ -444,6 +446,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 
 			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]")}>
 				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} />
+				{spaceId && id !== undefined ? <EnvironmentStatus spaceId={spaceId} conversationId={id} active={runStatus === "running"} className="mb-2" /> : null}
 				<MessageQueue items={queueItems} runStatus={runStatus} onSendNow={queueSendNow} onUndo={queueUndo} onDelete={queueDelete} readOnly={readOnly} />
 				{actionErr ? (
 					<p role="alert" className="mb-2 rounded-lg bg-danger-soft px-3 py-1.5 text-[13px] text-danger">
@@ -471,8 +474,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						stopping={stopping}
 						onSubmit={send}
 						restore={restore}
-						/* ENV-SLOT (round 8): Q2's <EnvironmentButton/> goes into `tools` (after the "+" button) and <EnvironmentStatus/> above the queue,
-						   once web/src/features/environment/** is committed. Not placed yet: the component did not exist when Q1 finished. */
+						tools={spaceId ? <EnvironmentButton spaceId={spaceId} conversationId={id} active={runStatus === "running"} /> : undefined}
 						disabled={!state}
 						disabledReason="正在连接…"
 						conversationId={id}

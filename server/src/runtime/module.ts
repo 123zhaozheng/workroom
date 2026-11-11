@@ -61,6 +61,21 @@ CREATE TABLE rt_assistants (
 CREATE INDEX rt_assistants_org ON rt_assistants (org_id, scope);
 `,
 	},
+	{
+		version: 2,
+		name: "promote intents: 'send now' withdraw+resubmit survives a crash between the two steps",
+		sql: `
+CREATE TABLE rt_promote_intents (
+  space_id TEXT NOT NULL,
+  conversation_id INTEGER NOT NULL,
+  submission_id INTEGER NOT NULL,
+  now_request_id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (space_id, conversation_id, submission_id)
+);
+`,
+	},
 ];
 
 const envNum = (name: string, fallback: number): number => {
@@ -125,6 +140,8 @@ export const runtimeModule: WorkroomModule = {
 		// their definitions present. modules.ts loads runtime last; this runs after every init().
 		for (const ext of ctx.modules.flatMap((m) => m.extensions?.(ctx) ?? [])) manager.installExtension(ext);
 		const r = await manager.resumePending();
+		// A "send now" interrupted between withdrawing the queued input and submitting it as steer: finish it (idempotent by requestId).
+		await (ctx.services.get("runtime") as Runtime).reconcilePromoteIntents().catch((e) => console.error("[runtime] promote reconcile failed", e));
 		if (r.resumed.length || r.skipped.length) console.log(`[runtime] resumed ${r.resumed.length} space(s) with pending work; armed ${r.armed.length}; skipped ${r.skipped.length}`, r.skipped.length ? r.skipped : "");
 	},
 	async stop(ctx) {

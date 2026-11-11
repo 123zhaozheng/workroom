@@ -359,3 +359,34 @@ test("access: another user gets 403/404 on state, withdraw and promote; a strang
 		await t.dispose();
 	}
 });
+
+test("promote crash window: intent recorded before withdraw → startup reconcile resubmits exactly once; an intent whose input is still queued is just cleared", async () => {
+	const t = await startTestApp();
+	try {
+		const q = await setup(t, "r8q-crash@example.com");
+		await q.send("[[slow 2500]] 第一条");
+		await sleep(150);
+		const lost = await q.send("被中断的立即发送", { rid: "rid-crash-1" });
+		const kept = await q.send("仍在队列", { rid: "rid-crash-2" });
+		const rt = t.app.ctx.services.get("runtime") as any;
+		const db = t.app.ctx.db;
+		const ins = (subId: number, rid: string, text: string) =>
+			db.run("INSERT INTO rt_promote_intents (space_id, conversation_id, submission_id, now_request_id, data, created_at) VALUES (?, ?, ?, ?, ?, ?)", q.c.spaceId, q.c.conversationId, subId, `${rid}::now`, JSON.stringify({ text, requestId: `${rid}::now` }), new Date().toISOString());
+		// Simulate "process died after the withdraw, before the resubmit" for the first one only.
+		ins(lost.submissionId, "rid-crash-1", "被中断的立即发送");
+		ins(kept.submissionId, "rid-crash-2", "仍在队列");
+		const harness = await rt.manager.get(q.c.spaceId);
+		assert.equal(await harness.abortSubmission(lost.submissionId, (await import("@earendil-works/chord/context")).BACKGROUND_CONTEXT), "aborted");
+		const r1 = await rt.reconcilePromoteIntents();
+		assert.deepEqual(r1, { resubmitted: 1, cleared: 2 });
+		assert.equal(db.all("SELECT * FROM rt_promote_intents").length, 0);
+		const r2 = await rt.reconcilePromoteIntents();
+		assert.deepEqual(r2, { resubmitted: 0, cleared: 0 }, "nothing left to do; never sends twice");
+		const done = await q.settle("all run", (x) => q.idle(x) && x.queue.length === 0 && q.users(x).length === 3, 30_000);
+		const texts = q.users(done).map((x) => x.replace(/\[\[.*?\]\] ?/g, "").trim());
+		assert.equal(texts.filter((x) => x === "被中断的立即发送").length, 1, "the interrupted promote was delivered exactly once");
+		assert.equal(texts.filter((x) => x === "仍在队列").length, 1, "the still-queued input ran once (no duplicate from its stale intent)");
+	} finally {
+		await t.dispose();
+	}
+});

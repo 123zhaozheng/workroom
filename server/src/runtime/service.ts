@@ -6,6 +6,7 @@ import { type Context } from "@earendil-works/chord/context";
 import { configure, ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi, type PromptInput, type Extension } from "@earendil-works/pi-durable";
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, PromoteResponse, SubagentDTO, SubmissionDTO, TasksResponse, WithdrawResponse } from "../../../shared/chat.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
@@ -743,20 +744,65 @@ export class Runtime implements RuntimeService {
 			const data = { ...((item.entry?.data ?? {}) as InputEntryData) } as InputEntryData & { requestId?: string };
 			const nowRid = `${rec.requestId ?? data.requestId ?? `sub-${submissionId}`}::now`;
 			await this.#admit(p, spaceId, conversationId, { ...data, requestId: nowRid }, context);
+			// Durable intent BEFORE the withdraw: if the process dies between withdraw and resubmit, startup finishes the resubmit (same requestId).
+			const intentKey = [spaceId, conversationId, submissionId] as const;
+			this.ctx.db.run("INSERT OR REPLACE INTO rt_promote_intents (space_id, conversation_id, submission_id, now_request_id, data, created_at) VALUES (?, ?, ?, ?, ?, ?)", ...intentKey, nowRid, JSON.stringify({ ...data, requestId: nowRid }), nowIso());
+			const clearIntent = () => this.ctx.db.run("DELETE FROM rt_promote_intents WHERE space_id = ? AND conversation_id = ? AND submission_id = ?", ...intentKey);
 			const r = await harness.abortSubmission(submissionId as SubmissionId, context, conv.id);
-			if (r !== "aborted") return { result: r === "not_found" ? "not_found" : "already_applied", submission: await dto() };
+			if (r !== "aborted") {
+				clearIntent();
+				return { result: r === "not_found" ? "not_found" : "already_applied", submission: await dto() };
+			}
 			data.requestId = nowRid;
 			let nowSub;
 			try {
 				nowSub = await conv.submit({ type: "input", content: this.composeContent(data), requestId: nowRid, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
 			} catch (err) {
 				await this.recordUnplaced(harness, conv, [{ id: submissionId, entry: item.entry }], context).catch(() => {});
+				clearIntent();
 				throw new HttpError(500, "promote_failed", "立即发送失败，消息已保留为「未送达」，请重新发送", { cause: String((err as Error)?.message ?? err) });
 			}
+			clearIntent();
 			this.touch(spaceId, conversationId);
 			const nowDto = await this.submissionStatus(harness, conversationId, nowSub.id, context);
 			return { result: "promoted", effect: nowDto.status === "received" ? "steered" : "started", submission: nowDto };
 		});
+	}
+
+	/** Startup: finish "send now" operations interrupted between withdraw and resubmit. Never sends twice (requestId), never drops silently. */
+	async reconcilePromoteIntents(context: Context = BACKGROUND_CONTEXT): Promise<{ resubmitted: number; cleared: number }> {
+		let resubmitted = 0;
+		let cleared = 0;
+		const rows = this.ctx.db.all<{ space_id: string; conversation_id: number; submission_id: number; now_request_id: string; data: string }>("SELECT * FROM rt_promote_intents");
+		for (const r of rows) {
+			const del = () => this.ctx.db.run("DELETE FROM rt_promote_intents WHERE space_id = ? AND conversation_id = ? AND submission_id = ?", r.space_id, r.conversation_id, r.submission_id);
+			try {
+				const harness = await this.manager.get(r.space_id);
+				const conv = await harness.conversation(cid(r.conversation_id), context);
+				if (!conv) {
+					del();
+					continue;
+				}
+				const nowRec = await harness.commit((tx) => tx.submissionByRequest(conv.id, r.now_request_id), context);
+				const inbox = await harness.snapshot(InboxDoc, conv.id, context);
+				const stillQueued = inbox?.items.some((i) => (i.id as number) === r.submission_id);
+				if (!nowRec && !stillQueued) {
+					const sub = await harness.submission(r.submission_id as SubmissionId, context);
+					const rec = sub ? await sub.status(context) : undefined;
+					// Only when the original was really withdrawn and never placed: resubmit it as steer under the promised requestId.
+					if (rec && rec.status !== "placed" && rec.status !== "done" && (rec as any).entry === undefined) {
+						const data = JSON.parse(r.data) as InputEntryData & { requestId: string };
+						await conv.submit({ type: "input", content: this.composeContent(data), requestId: r.now_request_id, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
+						resubmitted++;
+					}
+				}
+				del();
+				cleared++;
+			} catch (e) {
+				console.error("[runtime] promote intent", r.space_id, r.conversation_id, r.submission_id, e);
+			}
+		}
+		return { resubmitted, cleared };
 	}
 
 	async entries(p: Principal, spaceId: string, conversationId: number, q: { before?: number; limit?: number }, context: Context): Promise<EntriesPage> {

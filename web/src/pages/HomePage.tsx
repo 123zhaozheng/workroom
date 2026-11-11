@@ -1,3 +1,4 @@
+import { EnvironmentButton } from "@/features/environment/EnvironmentButton";
 import { useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { greeting } from "@/lib/utils";
@@ -42,7 +43,12 @@ export function HomePage() {
 							spaceId={personalSpaceId}
 							seed={seed}
 							dropScope={page}
-							tools={<AssistantPicker value={assistantId} onChange={setAssistantId} />}
+							tools={
+								<>
+									{personalSpaceId ? <EnvironmentButton spaceId={personalSpaceId} side="bottom" /> : null}
+									<AssistantPicker value={assistantId} onChange={setAssistantId} />
+								</>
+							}
 							modelLocked={assistantId ? "使用助手的默认模型" : undefined}
 							onSubmit={(v) => start(v, { spaceId: personalSpaceId, assistantId })}
 						/>
