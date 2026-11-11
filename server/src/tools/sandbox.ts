@@ -21,6 +21,9 @@ import { UnsupportedError } from "./sandbox/provider.ts";
 import { SandboxService, type SandboxServiceInfo } from "./sandbox/services.ts";
 import * as ws from "./sandbox/workspace.ts";
 import { networkText } from "./sandbox/network.ts";
+import { providerConfigsFor } from "./sandbox/provider-config.ts";
+import type { ProviderId } from "./sandbox/provider.ts";
+import { displayPath, LOCAL_SKILLS_ROOT, LOCAL_WORKDIR, stripWorkPrefix } from "./sandbox/workdir.ts";
 
 export type { Language, RunResult, SandboxMount, SandboxService };
 export { SandboxDrivers };
@@ -84,6 +87,13 @@ CREATE TABLE tool_sandbox_instances (
 CREATE UNIQUE INDEX tool_sandbox_instances_live ON tool_sandbox_instances(org_id, space_id, workspace_key, provider) WHERE state IN ('creating','ready','stopping');
 CREATE INDEX tool_sandbox_instances_org ON tool_sandbox_instances(org_id, last_used_at);
 `,
+	},
+	{
+		// round 10: the working directory inside the remote sandbox the manifest refers to. NULL = created by an older version ("/work").
+		// A configured change makes the driver drop the manifest and upload the whole workspace into the new directory.
+		version: 4,
+		name: "remote sandbox instances: working directory",
+		sql: `ALTER TABLE tool_sandbox_instances ADD COLUMN work_dir TEXT;`,
 	},
 ];
 
@@ -231,6 +241,45 @@ export class Sandbox {
 		return ws.resolveIn(workdir, rel).abs;
 	}
 
+	/**
+	 * Round 10: where the workspace and the read-only skills are INSIDE the sandbox this space runs in. Local drivers: "/work" and "/skills".
+	 * A remote provider: its configured (or default) working directory and the skills root next to it. From configuration only: it never
+	 * creates, connects or probes a sandbox, so it is cheap and safe for prompt rendering and tool output.
+	 */
+	layout(space: Space): { kind: "local" | "remote"; provider?: ProviderId; workDir: string; skillsRoot: string } {
+		let r: ReturnType<RemoteDrivers["layoutFor"]> = null;
+		try {
+			r = this.remote.layoutFor(space);
+		} catch {
+			/* configuration unreadable: the run itself reports it */
+		}
+		return r ? { kind: "remote", provider: r.provider, workDir: r.workDir, skillsRoot: r.skillsRoot } : { kind: "local", workDir: LOCAL_WORKDIR, skillsRoot: LOCAL_SKILLS_ROOT };
+	}
+	/** What the system prompt tells the model about the sandbox (kind, label, real paths, whether it can run at all). */
+	async promptInfo(space: Space): Promise<{ kind: "local" | "remote"; label: string; workDir: string; skillsRoot: string; usable: boolean; reason?: string }> {
+		const l = this.layout(space);
+		if (l.kind === "remote") {
+			const cfgs = providerConfigsFor(this.#ctx);
+			const reason = cfgs.explain(space);
+			return { kind: "remote", label: cfgs.dto({ orgId: space.orgId }, l.provider!).label, workDir: l.workDir, skillsRoot: l.skillsRoot, usable: !reason, ...(reason ? { reason } : {}) };
+		}
+		const r = await this.drivers.resolve();
+		if (r.effective === "none") return { kind: "local", label: "平台内置沙箱", workDir: l.workDir, skillsRoot: l.skillsRoot, usable: false, reason: r.reason };
+		return { kind: "local", label: `平台内置沙箱（${r.driver.label}）`, workDir: l.workDir, skillsRoot: l.skillsRoot, usable: true };
+	}
+	/** A path the model gave, relative to the workspace: accepts "a/b", "/work/a/b" and "<real working directory>/a/b" (remote providers). */
+	#rel(space: Space, path: string): string {
+		return stripWorkPrefix(path, this.layout(space).workDir);
+	}
+	/** Clean workspace-relative form of a model-supplied path (relative, "/work/…" or "<real working directory>/…"); throws bad_path like the file API. */
+	relPath(space: Space, path: string): string {
+		return ws.cleanPath(this.#rel(space, path));
+	}
+	/** A workspace-relative path as the model sees it INSIDE the sandbox (e.g. /home/daytona/work/out.csv; "/work/out.csv" for local drivers). */
+	shown(space: Space, rel: string): string {
+		return displayPath(this.layout(space).workDir, rel);
+	}
+
 	// ---------- drivers ----------
 	async #driver(): Promise<SandboxDriver> {
 		const r = await this.drivers.resolve();
@@ -280,6 +329,7 @@ export class Sandbox {
 				retentionHours: RETENTION_HOURS,
 				usedBytes: ws.dirSize(this.root(space)).bytes,
 				quotaBytes: quotaBytes(),
+				workDir: this.layout(space).workDir,
 			};
 		}
 		const r = await this.drivers.resolve();
@@ -294,6 +344,7 @@ export class Sandbox {
 			retentionHours: RETENTION_HOURS,
 			usedBytes: ws.dirSize(this.root(space)).bytes,
 			quotaBytes: quotaBytes(),
+			workDir: LOCAL_WORKDIR,
 		};
 	}
 
@@ -403,7 +454,8 @@ export class Sandbox {
 			cred.cleanup();
 			throw new UnsupportedError(driver.label, `把凭据注入远端沙箱进程环境（${cred.names.join("、")}）；该提供方未验证不会持久化进程环境，已拒绝。请改用“经服务器代为调用”的方式使用凭据`);
 		}
-		const env = { ...mergeSandboxEnv(userEnv, input.env ?? {}), ...cred.env };
+		// Round 10: every run knows its working directory (remote drivers set it themselves from their resolved directory).
+		const env = { ...mergeSandboxEnv(userEnv, input.env ?? {}), ...cred.env, ...(driver instanceof RemoteDriver ? {} : { WORKROOM_WORKDIR: LOCAL_WORKDIR }) };
 		const id = newId("run");
 		const started = Date.now();
 		this.#ctx.db.run(
@@ -552,10 +604,10 @@ export class Sandbox {
 		return ws.listEntries(this.workdir(space, conversationId), RETENTION_HOURS).entries;
 	}
 	preview(space: Space, conversationId: number | undefined, path: string): WorkspacePreviewDTO {
-		return ws.preview(this.workdir(space, conversationId), path, RETENTION_HOURS);
+		return ws.preview(this.workdir(space, conversationId), this.#rel(space, path), RETENTION_HOURS);
 	}
 	readFile(space: Space, conversationId: number | undefined, path: string): { bytes: Uint8Array; name: string } {
-		const f = ws.readBytes(this.workdir(space, conversationId), path, 100 * 1024 * 1024);
+		const f = ws.readBytes(this.workdir(space, conversationId), this.#rel(space, path), 100 * 1024 * 1024);
 		return { bytes: f.bytes, name: f.name };
 	}
 	#checkQuota(space: Space, incoming: number, replacing = 0): void {
@@ -565,21 +617,22 @@ export class Sandbox {
 	}
 	writeFile(space: Space, conversationId: number | undefined, path: string, bytes: Uint8Array): string {
 		const wd = this.workdir(space, conversationId);
+		path = this.#rel(space, path);
 		this.#checkQuota(space, bytes.length, ws.existingSize(wd, path));
 		return ws.writeBytes(wd, path, bytes, this.#owner());
 	}
 	mkdir(space: Space, conversationId: number | undefined, path: string): string {
 		const wd = this.workdir(space, conversationId);
-		const { rel } = ws.resolveIn(wd, path);
+		const { rel } = ws.resolveIn(wd, this.#rel(space, path));
 		if (!rel) throw new HttpError(400, "bad_path", "需要目录路径");
 		ws.mkdirp(wd, rel, this.#owner());
 		return rel;
 	}
 	remove(space: Space, conversationId: number | undefined, path: string) {
-		return ws.remove(this.workdir(space, conversationId), path);
+		return ws.remove(this.workdir(space, conversationId), this.#rel(space, path));
 	}
 	move(space: Space, conversationId: number | undefined, from: string, to: string) {
-		return ws.move(this.workdir(space, conversationId), from, to);
+		return ws.move(this.workdir(space, conversationId), this.#rel(space, from), this.#rel(space, to));
 	}
 
 	/** Re-read settings that live outside the drivers (concurrency). */

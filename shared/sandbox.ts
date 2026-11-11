@@ -83,6 +83,8 @@ export interface SandboxInfoDTO {
 	readonly retentionHours: number;
 	readonly usedBytes: number;
 	readonly quotaBytes: number;
+	/** Round 10: the working directory inside the sandbox of this space ("/work" for local drivers, the provider's configured/default directory for a remote one). */
+	readonly workDir?: string;
 }
 
 // ---------------- workspace (/work of a conversation) ----------------
@@ -174,7 +176,7 @@ export interface SandboxProviderCapabilitiesDTO {
 export interface SandboxProviderConfigDTO {
 	readonly provider: SandboxProviderId;
 	readonly label: string;
-	/** Admin turned it on (it can then be chosen as the org default / by projects if allowed). */
+	/** Round 10: this provider is THE active channel (only one provider is enabled at a time; enabling one disables the others and makes it the org default). */
 	readonly enabled: boolean;
 	readonly endpoint?: string;
 	/** E2B-compatible services: sandbox domain. */
@@ -184,6 +186,10 @@ export interface SandboxProviderConfigDTO {
 	readonly image?: string;
 	/** Explicit admin-configured sandbox size (absent = template / snapshot / provider default). cpus in cores, memory/disk in GiB. */
 	readonly resources?: SandboxResourcesDTO;
+	/** Round 10: working directory INSIDE the sandbox as configured by the admin (absent = the provider default, see `defaultWorkDir`). */
+	readonly workDir?: string;
+	/** Round 10: the deterministic default used while `workDir` is empty (opensandbox /work, e2b /home/user/work, daytona /home/daytona/work). Always set by the server. */
+	readonly defaultWorkDir?: string;
 	readonly apiKeySet: boolean;
 	readonly apiKeyHint?: string;
 	/** The endpoint resolves to a private/internal address and the admin explicitly allowed that (self-hosted intranet). */
@@ -223,6 +229,8 @@ export interface SandboxProviderUpdate {
 	readonly image?: string;
 	/** Explicit resources; null clears (back to template / snapshot / provider default). Refused where the provider/creation mode cannot honour them. */
 	readonly resources?: SandboxResourcesDTO | null;
+	/** Round 10: working directory inside the sandbox: absolute normalised POSIX path (no "..", not "/" or a system directory, <= 200 chars); null or "" clears it (provider default). Changing it re-syncs the workspace into the new directory. */
+	readonly workDir?: string | null;
 	readonly apiKey?: string | null;
 	readonly allowPrivateNetwork?: boolean;
 	readonly egressAcknowledged?: boolean;
@@ -231,12 +239,12 @@ export interface SandboxProviderUpdate {
 	readonly lifetimeSec?: number;
 }
 
-/** Who may pick which sandbox. Enforced on the server. */
+/** Which sandbox channel the organisation uses (round 10: exactly ONE at a time, enforced on the server). */
 export interface SandboxSelectionPolicyDTO {
-	/** Org default for every space (personal spaces always use it). "local" = the local driver setting (auto/namespaces/docker). */
+	/** The active channel for every space: a cloud provider, or "local" = 平台内置沙箱 (the server's own driver setting: auto/namespaces/docker). */
 	readonly orgDefault: "local" | SandboxProviderId;
-	/** Project managers may choose another enabled provider for their project. */
-	readonly allowProjectOverride: boolean;
+	/** @deprecated Round 10: per-project choice was removed; always false. A PUT with `true` is refused. */
+	readonly allowProjectOverride: false;
 }
 
 /** GET /api/sandbox/providers (admins: full; members: 403). */
@@ -269,7 +277,7 @@ export interface ConversationEnvironmentDTO {
 	readonly kind: "local" | "remote" | "none";
 	/** Driver / provider id actually in effect for this space ("namespaces" | "docker" | "opensandbox" | "e2b" | "daytona" | "none"). */
 	readonly id: string;
-	/** Plain label, e.g. "本机沙箱（Docker）", "OpenSandbox（自托管）". */
+	/** Plain label, e.g. "平台内置沙箱（Docker）", "OpenSandbox（自托管）". */
 	readonly label: string;
 	readonly location: "this_server" | "self_hosted" | "vendor_cloud";
 	/** One plain sentence on isolation (honest, from the driver/provider notes). */
@@ -289,14 +297,12 @@ export interface ConversationEnvironmentDTO {
 	readonly state: "none" | "preparing" | "ready" | "failed" | "lost";
 	readonly error?: string;
 	readonly updatedAt?: string;
-	/** Execution environments configured AND permitted for this space (read-only list unless canChoose). */
-	readonly options: readonly { readonly id: string; readonly label: string; readonly current: boolean; readonly enabled: boolean }[];
-	/** True only when the caller may switch this space's environment (project override allowed + project.manage). */
-	readonly canChoose: boolean;
-	/** Why it cannot be chosen here (plain), e.g. "由组织管理员统一设置". */
-	readonly chooseHint?: string;
 	/** True when an explicit prepare/retry is possible (remote, write access). */
 	readonly canPrepare: boolean;
+	/** Round 10: the real working directory of this conversation INSIDE the sandbox (every command runs there; "/work" for local drivers). Always set by the server. */
+	readonly workDir?: string;
+	/** Round 10: where read-only skills are mounted inside the sandbox ("/skills" for local drivers, next to the working directory for a remote provider). */
+	readonly skillsDir?: string;
 }
 
 /** Explicit sandbox size an admin sets per provider (round 10). */

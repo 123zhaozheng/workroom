@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:21:51.629Z",
+  "at": "2026-11-11T08:55:36.109Z",
   "results": [
     {
       "name": "setup: three connectors created",
@@ -19,7 +19,7 @@
     {
       "name": "M04-A: a member sees the admin-only connector as 无权限 (and cannot enable it)",
       "ok": true,
-      "detail": "财务系统（仅管理员） 系统 无权限：admins_only 可用 4 个工具 上次检查 2026/11/11 07:15:35 echo whoami add_note （写操作，需确认） fail"
+      "detail": "财务系统（仅管理员） 系统 无权限：admins_only 可用 4 个工具 上次检查 2026/11/11 08:49:21 echo whoami add_note （写操作，需确认） fail"
     },
     {
       "name": "setup: executable skill created",
@@ -34,7 +34,7 @@
     {
       "name": "M05-A: the executable skill lists its entry, sandbox/file permissions and a grant prompt; text skills need none",
       "ok": true,
-      "detail": "表格汇总脚本 可执行技能 个人 已启用 · 使用 v1（跟随最新） 启用 把 CSV 汇总成统计表 依赖：无工具 · 权限：运行代码、写入文件 · 入口 summarize.sh v1 授权：缺少 运行代码、写入文件 授予 v1 所需权限 跟随最新（v1） 升级到 v1 回滚 要让项目、部门或整个组织使用？提交一个版本给审核员。 提交审核… 版本 v1 · 2026/11/11 07:21:36 "
+      "detail": "表格汇总脚本 可执行技能 个人 已启用 · 使用 v1（跟随最新） 启用 把 CSV 汇总成统计表 依赖：无工具 · 权限：运行代码、写入文件 · 入口 summarize.sh v1 授权：缺少 运行代码、写入文件 授予 v1 所需权限 跟随最新（v1） 升级到 v1 回滚 要让项目、部门或整个组织使用？提交一个版本给审核员。 提交审核… 版本 v1 · 2026/11/11 08:55:21 "
     },
     {
       "name": "M05-A: per-version grant recorded for the executable skill",
@@ -74,7 +74,7 @@
     {
       "name": "M18-B: secrets in tool arguments are masked in the trace",
       "ok": true,
-      "detail": "ok · browse → ok (596 ms) · {\"tool\":\"browse\",\"args\":\"{\\\"url\\\":\\\"http://127.0.0.1:8874/?token=***\\\"}\",\"result\":\"200 http://127.0.0.1:8874/?token=***\",\"attempts\":"
+      "detail": "ok · browse → ok (593 ms) · {\"tool\":\"browse\",\"args\":\"{\\\"url\\\":\\\"http://127.0.0.1:8874/?token=***\\\"}\",\"result\":\"200 http://127.0.0.1:8874/?token=***\",\"attempts\":"
     },
     {
       "name": "M16-A: a revoked session is sent back to login on the other device",

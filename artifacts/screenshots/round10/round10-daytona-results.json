@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:48:32.559Z",
+  "at": "2026-11-11T11:00:46.294Z",
   "results": [
     {
       "name": "Daytona card defaults to 快照 / 默认规格 with a plain note and no resource fields",
@@ -24,7 +24,7 @@
     {
       "name": "snapshot mode saved: no image, no explicit resources (nothing silently kept)",
       "ok": true,
-      "detail": "{\"provider\":\"daytona\",\"label\":\"Daytona\",\"enabled\":false,\"apiKeySet\":true,\"apiKeyHint\":\"6789\",\"allowPrivateNetwork\":false,\"egressAcknowledged\":false,\"createTimeoutSec\":120,\"idleTimeoutSec\":1800,\"lifetimeSec\":14400,\"capabilities\":{\"exec\":\"unverified\",\"streamOutput\":\"unverified\",\"cancel\":\"unverified\",\"commandTimeout\":\"unverified\",\"files\":\"unverified\",\"networkOff\":\"unverified\",\"networkOn\":\"unverified\",\"resourceLimits\":\"unverified\",\"reconnect\":\"unverified\",\"services\":\"unverified\",\"pty\":\"unverified\",\"preview\":\"unverified\",\"snapshot\":\"unverified\",\"pauseResume\":\"unverified\",\"skills\":\"unsupported\",\"isolation\":\"未验证：尚未运行连接测试，能力以测试结果为准（占位值）\",\"location\":\"vendor_cloud\"},\"sdk\":{\"name\":\"@daytonaio/sdk\",\"version\":\"0.231.1\"},\"updatedAt\":\"2026-11-11T07:48:30.598Z\"}"
+      "detail": "{\"provider\":\"daytona\",\"label\":\"Daytona\",\"enabled\":false,\"defaultWorkDir\":\"/home/daytona/work\",\"apiKeySet\":true,\"apiKeyHint\":\"6789\",\"allowPrivateNetwork\":false,\"egressAcknowledged\":false,\"createTimeoutSec\":120,\"idleTimeoutSec\":1800,\"lifetimeSec\":14400,\"capabilities\":{\"exec\":\"unverified\",\"streamOutput\":\"unverified\",\"cancel\":\"unverified\",\"commandTimeout\":\"unverified\",\"files\":\"unverified\",\"networkOff\":\"unverified\",\"networkOn\":\"unverified\",\"resourceLimits\":\"unverified\",\"reconnect\":\"unverified\",\"services\":\"unverified\",\"pty\":\"unverified\",\"preview\":\"unverified\",\"snapshot\":\"unverified\",\"pauseResume\":\"unverified\",\"skills\":\"unsupported\",\"isolation\":\"未验证：尚未运行连接测试，能力以测试结果为准（占位值）\",\"location\":\"vendor_cloud\"},\"sdk\":{\"name\":\"@daytonaio/sdk\",\"version\":\"0.231.1\"},\"updatedAt\":\"2026-11-11T11:00:44.380Z\"}"
     },
     {
       "name": "resources without an image are refused (Daytona), and on E2B — never ignored",

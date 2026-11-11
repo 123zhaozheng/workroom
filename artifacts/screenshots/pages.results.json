@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T07:12:37.402Z",
+  "at": "2026-11-11T08:46:21.750Z",
   "results": [
     {
       "name": "automation: next-run preview (5 runs, server-computed, chosen time zone)",
@@ -29,7 +29,7 @@
     {
       "name": "notification: in-app notice with status and task link",
       "ok": true,
-      "detail": "自动化「工作日早报」已完成 成功 计划时间 2026-11-11 15:12:06 GMT+8 打开任务 日报.md v1 刚刚"
+      "detail": "自动化「工作日早报」已完成 成功 计划时间 2026-11-11 16:45:49 GMT+8 打开任务 日报.md v1 刚刚"
     },
     {
       "name": "notification: link opens the automation's conversation with its result",
@@ -44,7 +44,7 @@
     {
       "name": "automation: failed run recorded with reason, rerun offered",
       "ok": true,
-      "detail": "失败 手动 · 2026/11/11 07:12:22 · model_error · fixture: simulated model failure ([[fail]]) 查看对话 再次运行"
+      "detail": "失败 手动 · 2026/11/11 08:46:05 · model_error · fixture: simulated model failure ([[fail]]) 查看对话 再次运行"
     },
     {
       "name": "automation: cancel a running run → 已取消",
@@ -54,7 +54,7 @@
     {
       "name": "admin: invite created with a join link",
       "ok": true,
-      "detail": "/register?invite=ANwuVE1jw6X6RRdB"
+      "detail": "/register?invite=e8Ap7Zrondb9lnr1"
     },
     {
       "name": "invitee joins the same organisation",

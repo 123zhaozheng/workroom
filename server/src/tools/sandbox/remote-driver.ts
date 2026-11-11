@@ -1,8 +1,9 @@
 // RemoteDriver (round 7): implements the SandboxDriver contract on top of ONE RemoteProvider (OpenSandbox, E2B, Daytona).
 //
 // The conversation workspace stays authoritative on the Workroom host. A run is:
-//   get-or-create the remote sandbox of (org, space, workspaceKey, provider)  →  upload changed /work files (sha256 manifest)
-//   → upload + hash-verify the read-only mounts (skills)  →  exec  →  download changed /work files back (normalised paths, no symlinks,
+//   get-or-create the remote sandbox of (org, space, workspaceKey, provider)  →  upload changed workspace files (sha256 manifest) into the
+//   working directory (round 10: configurable per provider, default per provider — see workdir.ts; "/work" only for OpenSandbox)
+//   → upload + hash-verify the read-only mounts (skills, re-rooted next to the working directory)  →  exec  →  download changed files back (normalised paths, no symlinks,
 //   size limits, quota)  →  delete host files the run deleted  →  persist the manifest.
 // Nothing here ever executes on the host. Anything a provider cannot do is an UnsupportedError (HTTP 501), never a local fallback.
 // pi-durable checkpoints never contain sandbox memory or files: a lost sandbox is recreated and re-synced from the host workspace.
@@ -16,10 +17,11 @@ import type { SandboxInstanceDTO } from "../../../../shared/sandbox.ts";
 import type { DriverCapabilities, DriverRunSpec, DriverServiceProcess, DriverServiceSpec, DriverStatus, IsolationNotes, ProcessRef, RunResult, SandboxDriver, SandboxMount } from "./driver.ts";
 import { DEFAULT_LIFECYCLE, UnsupportedError, type ExplicitResources, type LifecyclePolicy, type ProviderId, type RemoteProvider, type RemoteSession } from "./provider.ts";
 import { capped, checkEnv, shQuote } from "./util.ts";
+import { providerConfigsFor } from "./provider-config.ts";
+import { isWithin, mapMountTarget, resolveWorkDir, skillsRootFor } from "./workdir.ts";
 import * as ws from "./workspace.ts";
 
 const MB = 1024 * 1024;
-export const REMOTE_WORK = "/work";
 export const MOUNT_MARKER = ".workroom-sha256";
 /** Hard caps so a hostile or runaway sandbox cannot make a sync unbounded. */
 export const MAX_SYNC_ENTRIES = 20_000;
@@ -41,14 +43,14 @@ function scrub(text: string): string {
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Isolation statement (honest, per provider capabilities)
 // ---------------------------------------------------------------------------------------------------------------------------------
-export function remoteNotes(label: string, caps?: { isolation: string; location: "self_hosted" | "vendor_cloud" | "configurable"; skills: string; networkOn?: string }): IsolationNotes {
+export function remoteNotes(label: string, caps?: { isolation: string; location: "self_hosted" | "vendor_cloud" | "configurable"; skills: string; networkOn?: string }, workDir?: string): IsolationNotes {
 	const where = !caps ? "由所选沙箱提供方运行" : caps.location === "vendor_cloud" ? "在第三方云服务上运行（工作区文件和命令离开本组织）" : caps.location === "self_hosted" ? "在管理员自建的沙箱服务上运行" : "在管理员配置的沙箱服务上运行";
 	return {
 		isolates: [
 			`代码在远端沙箱（${label}）中执行，${where}；宿主机上不执行任何用户代码，也不会回退到宿主机执行`,
 			...(caps ? [`提供方的隔离方式：${caps.isolation}`] : []),
 			"每个空间的每个会话使用独立的远端沙箱（不同空间、不同组织不共享沙箱或文件）；沙箱按空闲/最长存活时间自动销毁",
-			"/work 是宿主机工作区的副本：运行前上传改动的文件，运行后下载改动（路径规范化、不跟随符号链接、单文件与总量限制、配额）",
+			`沙箱工作目录${workDir ? `（${workDir}）` : ""}是宿主机工作区的副本：运行前上传改动的文件，运行后下载改动（路径规范化、不跟随符号链接、单文件与总量限制、配额）`,
 			"技能等挂载以“上传 + sha256 校验”方式提供（不是绑定挂载），并设为只读",
 		],
 		doesNotIsolate: [
@@ -115,7 +117,7 @@ const validWorkPath = (rel: string): boolean => {
 		return false;
 	}
 };
-/** Remote path as reported by a provider: relative POSIX, nothing that could address outside /work or break a shell/escape rule. */
+/** Remote path as reported by a provider: relative POSIX, nothing that could address outside the working directory or break a shell/escape rule. */
 export function normalizeRemotePath(p: unknown): string | null {
 	if (typeof p !== "string" || !p || p.includes("\0") || p.includes("\\") || p.startsWith("/")) return null;
 	return validWorkPath(p) ? p : null;
@@ -155,6 +157,8 @@ interface InstanceRow {
 	last_error: string | null;
 	manifest: string;
 	network: number;
+	/** Round 10: working directory the manifest refers to (NULL = instances of older versions: "/work"). */
+	work_dir: string | null;
 }
 const LIVE = "('creating','ready','stopping')";
 
@@ -190,6 +194,8 @@ export interface RemoteDriverDeps {
 	readonly template?: string;
 	readonly image?: string;
 	readonly resources?: ExplicitResources;
+	/** Round 10: admin-configured working directory inside the sandbox; absent = the provider's default (workdir.ts). */
+	readonly workDir?: string;
 	readonly now?: () => number;
 	/** Orphan sandboxes younger than this are left alone (a create may be in flight in another process). Default 2 min. */
 	readonly orphanGraceMs?: number;
@@ -212,6 +218,10 @@ export class RemoteDriver implements SandboxDriver {
 	readonly provider: RemoteProvider;
 	readonly orgId: string;
 	readonly lifecycle: LifecyclePolicy;
+	/** Round 10: the working directory inside the sandbox (cwd of every command; the host workspace is synced to/from it). */
+	readonly workDir: string;
+	/** Round 10: where read-only mounts (skills) are placed: next to the working directory ("/skills" while the working directory is "/work"). */
+	readonly skillsRoot: string;
 	readonly #db: AppDb;
 	readonly #template: string | undefined;
 	readonly #image: string | undefined;
@@ -237,9 +247,11 @@ export class RemoteDriver implements SandboxDriver {
 		this.#now = d.now ?? Date.now;
 		this.#orphanGraceMs = d.orphanGraceMs ?? 120_000;
 		this.lifecycle = d.lifecycle ?? DEFAULT_LIFECYCLE;
+		this.workDir = resolveWorkDir(d.provider.id, d.workDir);
+		this.skillsRoot = skillsRootFor(this.workDir);
 		const c = d.provider.capabilities;
 		this.capabilities = { network: c.networkOn !== "unsupported", services: false, mounts: c.skills === "upload_readonly", cgroupLimits: c.resourceLimits !== "unsupported", hostRuntimes: false };
-		this.notes = remoteNotes(this.label, c);
+		this.notes = remoteNotes(this.label, c, this.workDir);
 		this.#install = installId(d.db);
 		this.#orgTag = sha256(d.orgId).slice(0, 16);
 	}
@@ -269,6 +281,10 @@ export class RemoteDriver implements SandboxDriver {
 	#key(t: { orgId: string; spaceId: string; workspaceKey: string }) {
 		return `${t.orgId}|${t.spaceId}|${t.workspaceKey}|${this.id}`;
 	}
+	/** Round 10: the path of a mount target (e.g. /skills/pdf) INSIDE this sandbox: unchanged for "/work", else next to the working directory. */
+	mountTarget(target: string): string {
+		return mapMountTarget(this.workDir, target);
+	}
 
 	/** Run a helper shell command remotely (privileged where the provider supports it). Throws with the remote stderr on failure. */
 	async #sh(s: RemoteSession, command: string, o: { privileged?: boolean; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<string> {
@@ -296,7 +312,7 @@ export class RemoteDriver implements SandboxDriver {
 	}
 
 	/** Get the remote sandbox for this workspace: reuse (connect + verify) or create. Returns whether it is fresh (manifest reset). */
-	async #acquire(spec: DriverRunSpec, notes: string[]): Promise<{ row: InstanceRow; session: RemoteSession; fresh: boolean }> {
+	async #acquire(spec: DriverRunSpec, notes: string[]): Promise<{ row: InstanceRow; session: RemoteSession; fresh: boolean; moved?: string }> {
 		const t = spec.tenant!;
 		let row = this.#row(t);
 		// Round 9: instances created by older versions under the (removed) "no network" policy carry network=0, i.e. were created WITH a deny option.
@@ -330,6 +346,14 @@ export class RemoteDriver implements SandboxDriver {
 			if (session) {
 				const left = row.expires_at ? Math.max(60_000, Date.parse(row.expires_at) - this.#now()) : this.lifecycle.lifetimeSec * 1000;
 				await session.keepAlive(left).catch(() => {}); // best effort (UnsupportedError or transient)
+				// Round 10: the admin changed the working directory since this sandbox was last synced: the manifest describes the OLD directory,
+				// so it is dropped and the whole workspace is uploaded into the new one (the old directory is left alone: it may hold anything).
+				const was = row.work_dir ?? "/work";
+				if (was !== this.workDir) {
+					notes.push(`沙箱工作目录已从 ${was} 改为 ${this.workDir}：已把工作区完整同步到新目录（旧目录中的文件未删除）`);
+					this.#db.run("UPDATE tool_sandbox_instances SET work_dir = ?, manifest = '{}' WHERE id = ?", this.workDir, row.id);
+					return { row: { ...row, manifest: "{}", work_dir: this.workDir }, session, fresh: false, moved: was };
+				}
 				return { row, session, fresh: false };
 			}
 			notes.push("远端沙箱已不存在（过期/被删除）：已重新创建，并从宿主机工作区重新同步");
@@ -345,8 +369,8 @@ export class RemoteDriver implements SandboxDriver {
 		const lifetimeMs = this.lifecycle.lifetimeSec * 1000;
 		const at = nowIso();
 		this.#db.run(
-			"INSERT INTO tool_sandbox_instances (id, org_id, space_id, workspace_key, provider, remote_id, state, created_at, last_used_at, expires_at, manifest, network) VALUES (?, ?, ?, ?, ?, NULL, 'creating', ?, ?, ?, '{}', ?)",
-			id, t.orgId, t.spaceId, t.workspaceKey, this.id, at, at, new Date(this.#now() + lifetimeMs).toISOString(), 1,
+			"INSERT INTO tool_sandbox_instances (id, org_id, space_id, workspace_key, provider, remote_id, state, created_at, last_used_at, expires_at, manifest, network, work_dir) VALUES (?, ?, ?, ?, ?, NULL, 'creating', ?, ?, ?, '{}', ?, ?)",
+			id, t.orgId, t.spaceId, t.workspaceKey, this.id, at, at, new Date(this.#now() + lifetimeMs).toISOString(), 1, this.workDir,
 		);
 		let session: RemoteSession;
 		try {
@@ -390,7 +414,9 @@ export class RemoteDriver implements SandboxDriver {
 	// ---------- mounts (skills): upload + verify + chmod a-w ----------
 	async #ensureMounts(s: RemoteSession, mounts: readonly SandboxMount[], limits: DriverRunSpec["limits"], notes: string[], signal?: AbortSignal): Promise<void> {
 		for (const m of mounts) {
-			if (!m.readOnly) throw new UnsupportedError(this.label, `可写挂载 ${m.target}（远端沙箱只支持只读挂载与 /work；已拒绝）`);
+			if (!m.readOnly) throw new UnsupportedError(this.label, `可写挂载 ${m.target}（远端沙箱只支持只读挂载与工作目录；已拒绝）`);
+			const target = this.mountTarget(m.target); // round 10: re-rooted next to the working directory (unchanged for /work)
+			if (isWithin(target, this.workDir) || isWithin(this.workDir, target)) throw bad("bad_mount", `挂载点 ${target} 与工作目录 ${this.workDir} 重叠：请管理员把工作目录改到别处（例如 …/work）`);
 			const st = lstatSync(m.hostPath);
 			if (!st.isDirectory()) throw new UnsupportedError(this.label, `单个文件挂载 ${m.target}（只支持目录）`);
 			const tree = walk(m.hostPath, validWorkPath);
@@ -401,7 +427,7 @@ export class RemoteDriver implements SandboxDriver {
 				return { rel: f.rel, bytes: b.bytes, sha: sha256(b.bytes), exec: f.exec };
 			});
 			const expected = treeHash(entries);
-			const T = shQuote(m.target);
+			const T = shQuote(target);
 			const probe = `cd ${T} 2>/dev/null || exit 3; M=$(cat ${MOUNT_MARKER} 2>/dev/null); H=$(find . -type f ! -name ${MOUNT_MARKER} | LC_ALL=C sort | while IFS= read -r f; do sha256sum "$f"; done | sha256sum | cut -d' ' -f1); echo "$M $H"`;
 			let current = "";
 			try {
@@ -415,17 +441,17 @@ export class RemoteDriver implements SandboxDriver {
 			const made = new Set<string>();
 			for (const e of entries) {
 				const dir = e.rel.includes("/") ? dirname(e.rel) : "";
-				if (dir && !made.has(dir)) (made.add(dir), await s.mkdir(`${m.target}/${dir}`));
-				await s.writeFile(`${m.target}/${e.rel}`, e.bytes);
+				if (dir && !made.has(dir)) (made.add(dir), await s.mkdir(`${target}/${dir}`));
+				await s.writeFile(`${target}/${e.rel}`, e.bytes);
 			}
-			const execs = entries.filter((e) => e.exec).map((e) => shQuote(`${m.target}/${e.rel}`));
+			const execs = entries.filter((e) => e.exec).map((e) => shQuote(`${target}/${e.rel}`));
 			if (execs.length) await this.#sh(s, `chmod a+x ${execs.join(" ")}`, { signal });
 			const got = (await this.#sh(s, `cd ${T} && find . -type f | LC_ALL=C sort | while IFS= read -r f; do sha256sum "$f"; done | sha256sum | cut -d' ' -f1`, { signal })).trim();
 			if (got !== expected) {
 				await this.#sh(s, `chmod -R u+w ${T}; rm -rf ${T}`, { signal }).catch(() => {});
-				throw new HttpError(502, "sandbox_integrity", `挂载 ${m.target} 上传后哈希校验失败（期望 ${expected.slice(0, 12)}…，实际 ${got.slice(0, 12)}…）；已删除，运行被拒绝`);
+				throw new HttpError(502, "sandbox_integrity", `挂载 ${target} 上传后哈希校验失败（期望 ${expected.slice(0, 12)}…，实际 ${got.slice(0, 12)}…）；已删除，运行被拒绝`);
 			}
-			await s.writeFile(`${m.target}/${MOUNT_MARKER}`, Buffer.from(expected));
+			await s.writeFile(`${target}/${MOUNT_MARKER}`, Buffer.from(expected));
 			await this.#sh(s, `chmod -R a-w,a+rX ${T}`, { signal });
 		}
 	}
@@ -433,14 +459,44 @@ export class RemoteDriver implements SandboxDriver {
 	/** Can the unprivileged workload user write into a mount? (Single-user providers can: reported, and the hash is re-verified every run.) */
 	async #mountWritable(s: RemoteSession, mounts: readonly SandboxMount[], signal?: AbortSignal): Promise<boolean> {
 		if (!mounts.length) return false;
-		const r = await s.exec({ command: `test -w ${shQuote(mounts[0]!.target)} && echo writable || echo protected`, cwd: "/", timeoutMs: 20_000, signal }).catch(() => undefined);
+		const r = await s.exec({ command: `test -w ${shQuote(this.mountTarget(mounts[0]!.target))} && echo writable || echo protected`, cwd: "/", timeoutMs: 20_000, signal }).catch(() => undefined);
 		return r?.stdout.includes("writable") ?? false;
 	}
 
-	// ---------- /work sync: host → remote ----------
+	// ---------- working directory ----------
+	/**
+	 * Create the working directory and make sure the unprivileged workload user can write to it. A failure is a plain, visible error that tells the
+	 * admin what to change (the Daytona user is not root: a root-level directory cannot be created). Never falls back to the host.
+	 */
+	async #ensureWorkDir(s: RemoteSession, signal?: AbortSignal): Promise<void> {
+		const W = shQuote(this.workDir);
+		try {
+			await this.#sh(s, `mkdir -p ${W} && chmod a+rwx ${W}`, { signal });
+		} catch (e) {
+			if (signal?.aborted) throw e;
+			throw await this.#workDirError(s, signal);
+		}
+		const r = await s.exec({ command: `test -d ${W} && test -w ${W} && test -x ${W}`, cwd: "/", timeoutMs: 20_000, privileged: false, signal });
+		if (r.status !== "ok" || r.exitCode !== 0) throw await this.#workDirError(s, signal);
+	}
+	async #workDirError(s: RemoteSession, signal?: AbortSignal): Promise<HttpError> {
+		let user = "未知";
+		try {
+			const r = await s.exec({ command: "id -un 2>/dev/null || whoami", cwd: "/", timeoutMs: 15_000, privileged: false, signal });
+			const name = r.stdout.trim().split("\n")[0] ?? "";
+			if (/^[A-Za-z0-9._@-]{1,64}$/.test(name)) user = name;
+		} catch {
+			/* keep "未知" */
+		}
+		return new HttpError(503, "sandbox_workdir_unwritable", `工作目录 ${this.workDir} 在沙箱内不可写（当前用户 ${user}）：请管理员在“沙箱提供方”中把工作目录改为该用户可写的路径`);
+	}
+
+	// ---------- workspace sync: host → remote ----------
 	async #pushWork(s: RemoteSession, spec: DriverRunSpec, manifest: Manifest, notes: string[], persist: (m: Manifest) => void): Promise<void> {
 		const wd = spec.workdir;
+		const W = this.workDir;
 		const maxFile = spec.limits.maxFileBytes;
+		await this.#ensureWorkDir(s, spec.signal); // remote root + permissions (the workload user is unprivileged; files are uploaded by the provider's file API)
 		const tree = walk(wd, validWorkPath);
 		for (const n of tree.notes) notes.push(n);
 		const hostFiles = new Map<string, { f: TreeFile; sha: string }>();
@@ -463,13 +519,11 @@ export class RemoteDriver implements SandboxDriver {
 		}
 		const dels = [...delFiles, ...delDirs.sort((a, b) => b.length - a.length)];
 		for (let i = 0; i < dels.length; i += 100) {
-			const chunk = dels.slice(i, i + 100).map((p) => shQuote(`${REMOTE_WORK}/${p}`));
+			const chunk = dels.slice(i, i + 100).map((p) => shQuote(`${W}/${p}`));
 			await this.#sh(s, `rm -rf -- ${chunk.join(" ")}`, { signal: spec.signal });
 		}
 		for (const p of delFiles) delete manifest[p];
 		for (const d of delDirs) delete manifest[`${d}/`];
-		// remote root + permissions (the workload user is unprivileged; files are uploaded by the provider's file API)
-		await this.#sh(s, `mkdir -p ${REMOTE_WORK} && chmod a+rwx ${REMOTE_WORK}`, { signal: spec.signal });
 		// directories
 		let changed = dels.length > 0;
 		const mk = new Set<string>();
@@ -480,7 +534,7 @@ export class RemoteDriver implements SandboxDriver {
 			while (d && d !== ".") (mk.add(d), (d = dirname(d)));
 		}
 		for (const d of [...mk].sort((a, b) => a.length - b.length)) {
-			await s.mkdir(`${REMOTE_WORK}/${d}`);
+			await s.mkdir(`${W}/${d}`);
 			manifest[`${d}/`] = "dir";
 			changed = true;
 		}
@@ -493,7 +547,7 @@ export class RemoteDriver implements SandboxDriver {
 				try {
 					const b = ws.readBytes(wd, p, maxFile);
 					const sha = sha256(b.bytes);
-					await s.writeFile(`${REMOTE_WORK}/${p}`, b.bytes);
+					await s.writeFile(`${W}/${p}`, b.bytes);
 					manifest[p] = sha;
 					changed = true;
 					void h;
@@ -505,22 +559,23 @@ export class RemoteDriver implements SandboxDriver {
 		await Promise.all(Array.from({ length: Math.min(4, toUpload.length) }, worker));
 		if (changed) persist(manifest); // also on failure: what did go up is recorded
 		if (failure) throw failure;
-		if (changed) await this.#sh(s, `chmod -R a+rwX ${REMOTE_WORK}`, { signal: spec.signal });
+		if (changed) await this.#sh(s, `chmod -R a+rwX ${shQuote(W)}`, { signal: spec.signal });
 	}
 
-	// ---------- /work sync: remote → host ----------
+	// ---------- workspace sync: remote → host ----------
 	async #pullWork(s: RemoteSession, spec: DriverRunSpec, manifest: Manifest, runId: string, notes: string[]): Promise<void> {
 		const wd = spec.workdir;
+		const W = this.workDir;
 		const maxFile = spec.limits.maxFileBytes;
 		let entries;
 		try {
-			entries = await s.list(REMOTE_WORK);
+			entries = await s.list(W);
 		} catch (e: any) {
-			notes.push(`无法列出远端 /work，文件未同步回宿主机：${scrub(e?.message ?? e)}`);
+			notes.push(`无法列出远端工作目录 ${W}，文件未同步回宿主机：${scrub(e?.message ?? e)}`);
 			return;
 		}
 		if (entries.length > MAX_SYNC_ENTRIES) {
-			notes.push(`远端 /work 文件数超过 ${MAX_SYNC_ENTRIES}，未同步回宿主机（请清理后重试）`);
+			notes.push(`远端工作目录 ${W} 的文件数超过 ${MAX_SYNC_ENTRIES}，未同步回宿主机（请清理后重试）`);
 			return;
 		}
 		const files = new Map<string, number>();
@@ -543,7 +598,7 @@ export class RemoteDriver implements SandboxDriver {
 		const hashes = new Map<string, string>();
 		const hf = `/tmp/.wr-h-${runId.replace(/[^A-Za-z0-9_-]/g, "")}`;
 		try {
-			await this.#sh(s, `cd ${REMOTE_WORK} && find . -type f -exec sha256sum {} + > ${hf} 2>/dev/null; true`, { signal: undefined });
+			await this.#sh(s, `cd ${shQuote(W)} && find . -type f -exec sha256sum {} + > ${shQuote(hf)} 2>/dev/null; true`, { signal: undefined });
 			const raw = Buffer.from(await s.readFile(hf, 64 * MB)).toString("utf8");
 			for (const line of raw.split("\n")) {
 				const m = /^([0-9a-f]{64}) {2}\.\/(.+)$/.exec(line);
@@ -552,7 +607,7 @@ export class RemoteDriver implements SandboxDriver {
 		} catch (e: any) {
 			notes.push(`远端哈希计算失败，改为逐个下载比对：${scrub(e?.message ?? e)}`);
 		}
-		await this.#sh(s, `rm -f ${hf}`).catch(() => {});
+		await this.#sh(s, `rm -f ${shQuote(hf)}`).catch(() => {});
 
 		let budget = quotaBytes() - ws.dirSize(spec.scratchBase).bytes;
 		let downloaded = 0;
@@ -569,7 +624,7 @@ export class RemoteDriver implements SandboxDriver {
 			}
 			let bytes: Uint8Array;
 			try {
-				bytes = await s.readFile(`${REMOTE_WORK}/${p}`, maxFile);
+				bytes = await s.readFile(`${W}/${p}`, maxFile);
 			} catch (e: any) {
 				notes.push(`下载失败，未同步 ${p}：${scrub(e?.message ?? e)}`);
 				continue;
@@ -687,7 +742,7 @@ export class RemoteDriver implements SandboxDriver {
 		} catch (e: any) {
 			throw bad("bad_env", e.message);
 		}
-		for (const m of spec.mounts) if (!m.readOnly) throw new UnsupportedError(this.label, `可写挂载 ${m.target}（远端沙箱只支持只读挂载与 /work；已拒绝）`);
+		for (const m of spec.mounts) if (!m.readOnly) throw new UnsupportedError(this.label, `可写挂载 ${m.target}（远端沙箱只支持只读挂载与工作目录；已拒绝）`);
 		return t;
 	}
 
@@ -703,7 +758,7 @@ export class RemoteDriver implements SandboxDriver {
 	}
 
 	/**
-	 * Round 8: everything a run does BEFORE the program starts (create or reconnect the sandbox, sync /work, verify mounts), without running a program.
+	 * Round 8: everything a run does BEFORE the program starts (create or reconnect the sandbox, sync the working directory, verify mounts), without running a program.
 	 * Same code path and lock as run(); used only for an explicit "retry / prepare" request, never by sending a message.
 	 */
 	async prepare(spec: DriverRunSpec): Promise<void> {
@@ -761,7 +816,7 @@ export class RemoteDriver implements SandboxDriver {
 			const timer = setTimeout(() => ((timedOut = true), ac.abort()), spec.limits.timeoutMs + 5000);
 			let res;
 			try {
-				res = await session.exec({ command: argv, cwd: REMOTE_WORK, env: { HOME: "/tmp", TMPDIR: "/tmp", ...spec.env }, timeoutMs: spec.limits.timeoutMs, signal: ac.signal });
+				res = await session.exec({ command: argv, cwd: this.workDir, env: { HOME: "/tmp", TMPDIR: "/tmp", ...spec.env, WORKROOM_WORKDIR: this.workDir }, timeoutMs: spec.limits.timeoutMs, signal: ac.signal });
 			} finally {
 				clearTimeout(timer);
 				spec.signal?.removeEventListener("abort", onAbort);
@@ -865,6 +920,8 @@ interface ConfigsLike {
 	explain(space: Space): string;
 	connection(orgId: string, provider: ProviderId): Promise<import("./provider.ts").ProviderConnection | null>;
 	lifecycle(orgId: string, provider: ProviderId): LifecyclePolicy;
+	/** Round 10: the admin-configured working directory of a provider (absent when none is set; sync, reads the stored row only). */
+	workDirOf?(orgId: string, provider: ProviderId): string | undefined;
 	factory: (conn: import("./provider.ts").ProviderConnection) => Promise<RemoteProvider>;
 }
 
@@ -879,6 +936,16 @@ export class RemoteDrivers {
 	constructor(ctx: AppContext, opts: { configs?: () => ConfigsLike | undefined } = {}) {
 		this.#ctx = ctx;
 		this.#override = opts.configs;
+	}
+
+	/** Synchronous view of the configuration (override or the per-context provider configs); undefined when not available. */
+	#cfgSync(): ConfigsLike | undefined {
+		if (this.#override) return this.#override();
+		try {
+			return providerConfigsFor(this.#ctx) as unknown as ConfigsLike;
+		} catch {
+			return undefined;
+		}
 	}
 
 	#cfg(): Promise<ConfigsLike | undefined> {
@@ -909,7 +976,8 @@ export class RemoteDrivers {
 		const conn = await cfg.connection(orgId, provider);
 		if (!conn) throw new HttpError(503, "sandbox_provider_unavailable", `沙箱提供方 ${provider} 未启用或未配置（不会回退到本机执行）`);
 		const lc = cfg.lifecycle(orgId, provider);
-		const fp = sha256(JSON.stringify([conn, lc]));
+		// The resolved working directory is part of the fingerprint: a change rebuilds the driver, whose runs then re-sync the whole workspace into the new directory.
+		const fp = sha256(JSON.stringify([conn, lc, resolveWorkDir(provider, conn.workDir)]));
 		const key = `${orgId}|${provider}`;
 		const hit = this.#cache.get(key);
 		if (hit && hit.fp === fp) return hit.driver;
@@ -923,7 +991,7 @@ export class RemoteDrivers {
 					if (e instanceof HttpError) throw e;
 					throw new HttpError(503, "sandbox_provider_unavailable", `无法初始化沙箱提供方 ${provider}：${scrub(e?.message ?? e)}（不会回退到本机执行）`);
 				}
-				const driver = new RemoteDriver({ db: this.#ctx.db, provider: prov, orgId, lifecycle: lc, template: conn.template, image: conn.image, resources: conn.resources });
+				const driver = new RemoteDriver({ db: this.#ctx.db, provider: prov, orgId, lifecycle: lc, template: conn.template, image: conn.image, resources: conn.resources, workDir: conn.workDir });
 				const old = this.#cache.get(key);
 				this.#cache.set(key, { fp, driver });
 				void old?.driver.close();
@@ -932,6 +1000,19 @@ export class RemoteDrivers {
 			this.#building.set(`${key}|${fp}`, p);
 		}
 		return p;
+	}
+
+	/**
+	 * Round 10: where the workspace and the skills live inside the sandbox this space uses, from configuration only (never creates, connects or probes
+	 * anything; cheap enough for every prompt render). null = the space uses a local driver ("/work", "/skills").
+	 */
+	layoutFor(space: Space): { provider: ProviderId; workDir: string; skillsRoot: string } | null {
+		const cfg = this.#cfgSync();
+		if (!cfg) return null;
+		const eff = cfg.effectiveFor(space);
+		if (eff.kind === "local") return null;
+		const workDir = resolveWorkDir(eff.provider, cfg.workDirOf?.(eff.orgId, eff.provider));
+		return { provider: eff.provider, workDir, skillsRoot: skillsRootFor(workDir) };
 	}
 
 	/** Notes for run records: from a cached driver of that provider, else the generic text. */

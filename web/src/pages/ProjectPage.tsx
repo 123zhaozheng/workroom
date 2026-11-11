@@ -13,7 +13,6 @@ import { Badge, EmptyState, Loadable, Page } from "@/components/ui/misc";
 import { Composer } from "@/features/chat/Composer";
 import { ProjectHandoffSummary } from "@/features/handoff/Handoff";
 import { ShareDialog } from "@/features/share/Share";
-import { SandboxPicker } from "@/features/projects/SandboxPicker";
 import { EnvVarsEditor } from "@/features/settings/EnvVars";
 import { useStartConversation } from "@/features/chat/useStartConversation";
 import { ContainerProjectPage } from "@/features/projects/ContainerProjectPage";
@@ -77,7 +76,6 @@ function LegacyProject({ project }: { project: UiProject }) {
 			) : (
 				<p className="mb-8 rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-fg-muted">你是查看者：可以查看项目内容，但不能发起对话或修改文件。</p>
 			)}
-			{isOwner ? <SandboxPicker projectId={project.id} /> : null}
 			<section data-testid="project-env" className="mb-8">
 				<h2 className="mb-2 text-[13px] font-medium text-fg-muted">环境变量</h2>
 				<EnvVarsEditor scope="project" scopeRef={project.id} editable={isOwner} testId="env-vars-project" />

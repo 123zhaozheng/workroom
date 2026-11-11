@@ -1,7 +1,7 @@
-// Round 7 · pluggable sandbox providers (admin UI + project override).
+// Round 7 · pluggable sandbox providers (admin UI). Round 10: ONE active channel (当前使用的沙箱渠道); the per-project override was removed.
 //  A. INTERCEPTED (route-mocked admin DTOs, labelled "[intercepted]"): rendering, capability table, key display, states, screenshots (1440 / 390, light + dark)
 //  B. REAL server (WORKROOM_SECRET_KEY set, WORKROOM_WEBHOOK_ALLOWLIST=127.0.0.1): permissions (member hidden + 403), key never in HTML/API responses, clear key, egress ack required,
-//     SSRF refusal, unreachable endpoint → failure shown with no silent fallback, project override rules. Skipped with a reason while the routes are absent.
+//     SSRF refusal, unreachable endpoint → failure shown with no silent fallback, the single-channel rules (UI + API) and the removed project override. Skipped with a reason while the routes are absent.
 //  C. LIVE roundtrip against a real OpenSandbox (WORKROOM_TEST_OPENSANDBOX_URL / _KEY) — skipped with an explicit reason otherwise, never faked.
 // Run: npm run build:web && node web/e2e/round7-sandbox.mjs        (port 8907)
 import { check, chromium, register, ROOT, shot, startServer, summary, SHOTS, pick, selValue, selOptions } from "./lib.mjs";
@@ -33,7 +33,7 @@ const mockData = (o = {}) => ({
 		cfg("e2b", "E2B", { capabilities: caps({ location: "vendor_cloud", isolation: "每个工作区一台云端微虚拟机" }), template: "base" }),
 		cfg("daytona", "Daytona", { capabilities: caps({ location: "vendor_cloud", isolation: "每个工作区一个云端工作空间", pty: "unverified" }) }),
 	],
-	policy: { orgDefault: "opensandbox", allowProjectOverride: true },
+	policy: { orgDefault: "opensandbox", allowProjectOverride: false },
 	secretStorage: true,
 	canManage: true,
 	...o,
@@ -59,9 +59,10 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await mockRoutes(page, mockData(), INSTANCES);
 	await page.goto(`${base}/admin?tab=sandbox`);
 	await page.waitForSelector('[data-testid="sandbox-admin"]');
-	check("[intercepted] admin sees 运行环境 tab and the 执行位置 section", (await page.locator('[data-testid="admin-tab-sandbox"]').count()) === 1 && (await page.locator('[data-testid="sandbox-location"]').innerText()).includes("执行位置"));
+	check("[intercepted] admin sees the 沙箱 tab and the 当前使用的沙箱渠道 section (round 10)", (await page.locator('[data-testid="admin-tab-sandbox"]').count()) === 1 && (await page.locator('[data-testid="sandbox-channel"]').innerText()).includes("当前使用的沙箱渠道"));
 	check("[intercepted] one card per provider (3) with location badges", (await page.locator('[data-testid^="provider-"]').count()) === 3 && (await page.locator('[data-testid="loc-e2b"]').innerText()).includes("数据会离开组织") && (await page.locator('[data-testid="loc-opensandbox"]').innerText()).includes("自托管"));
-	check("[intercepted] org default select: only enabled providers selectable", await (async () => { const o = await selOptions(page.locator("#org-default")); return o.find((x) => x.value === "e2b")?.disabled && !o.find((x) => x.value === "opensandbox")?.disabled; })() && (await selValue(page.locator("#org-default"))) === "opensandbox");
+	check("[intercepted] one single choice: 平台内置沙箱 + 3 providers as radios, OpenSandbox is the one checked, providers without a key cannot be chosen; no 允许项目单独选择 switch, no per-card 启用 switch", (await page.locator('[data-testid="sandbox-channel"] input[type="radio"]').count()) === 4 && (await page.locator('[data-testid="channel-opensandbox"] input').isChecked()) && !(await page.locator('[data-testid="channel-local"] input').isChecked()) && (await page.locator('[data-testid="channel-e2b"] input').isDisabled()) && (await page.locator('[data-testid="channel-daytona"] input').isDisabled()) && (await page.locator('[data-testid="allow-override"], [data-testid$="-enabled"]').count()) === 0);
+	check("[intercepted] cards say which one is 当前使用", (await page.locator('[data-testid="opensandbox-active"]').innerText()).includes("当前使用") && (await page.locator('[data-testid="e2b-inactive"]').innerText()).includes("未使用"));
 	const saved = await page.locator('[data-testid="opensandbox-key-saved"]').innerText();
 	check("[intercepted] key shown as 已保存 ••••1234, never an input value", saved.includes("已保存") && saved.includes("••••1234") && (await page.locator('[data-testid="opensandbox-apikey"]').count()) === 0);
 	await page.locator('[data-testid="opensandbox-key-replace"]').click();
@@ -91,7 +92,7 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await page.reload();
 	await page.waitForSelector('[data-testid="sandbox-admin"]');
 	check("[intercepted] secretStorage=false → explicit state, key field disabled with reason", (await page.locator('[data-testid="secret-missing"]').innerText()).includes("密钥存储") && (await page.locator('[data-testid="opensandbox-apikey"]').isDisabled()));
-	check("[intercepted] unhealthy default shown, says no silent fallback, selection unchanged", (await page.locator('[data-testid="default-unhealthy"]').innerText()).includes("不会自动改用本机沙箱") && (await selValue(page.locator("#org-default"))) === "opensandbox");
+	check("[intercepted] unhealthy active channel shown, says no silent fallback, selection unchanged", (await page.locator('[data-testid="default-unhealthy"]').innerText()).includes("不会自动改用平台内置沙箱") && (await page.locator('[data-testid="channel-opensandbox"] input').isChecked()));
 	check("[intercepted] empty instances → empty state", (await page.locator('[data-testid="sandbox-instances"]').innerText()).includes("还没有远程沙箱"));
 	await shotR(page, "admin-sandbox-1440-states");
 	const overflow = (p) => p.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
@@ -194,8 +195,7 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	check("[real] cleared key: apiKeySet false, empty field shown again", (await getAdmin()).providers.find((p) => p.provider === "opensandbox").apiKeySet === false && (await card.locator('[data-testid="opensandbox-apikey"]').count()) === 1);
 	// egress acknowledgement
 	const e2b = admin.locator('[data-testid="provider-e2b"]');
-	await e2b.locator('[data-testid="e2b-enabled"]').check();
-	check("[real] E2B: UI blocks enabling without acknowledgement", (await e2b.locator('[data-testid="e2b-save"]').isDisabled()) && (await e2b.locator('[data-testid="e2b-need-egress"]').count()) === 1);
+	check("[real] E2B: its channel option cannot be chosen until an access key is saved (UI); no per-card 启用 switch", (await admin.locator('[data-testid="channel-e2b"] input').isDisabled()) && (await e2b.locator('[data-testid="e2b-enabled"]').count()) === 0);
 	const noAck = await putP("e2b", { enabled: true, apiKey: "e2b-key-0123456789", egressAcknowledged: false });
 	const noAckD = await putP("daytona", { enabled: true, apiKey: "daytona-key-0123456789", egressAcknowledged: false });
 	check("[real] E2B and Daytona: server refuses enabling without acknowledgement (400 egress_ack_required)", noAck.status === 400 && noAck.body?.error?.code === "egress_ack_required" && noAckD.status === 400 && noAckD.body?.error?.code === "egress_ack_required", `${noAck.body?.error?.code}/${noAckD.body?.error?.code}`);
@@ -204,12 +204,12 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	// unreachable endpoint, default chosen → failure shown, nothing falls back
 	const en = await putP("opensandbox", { enabled: true, endpoint: "http://127.0.0.1:9", allowPrivateNetwork: true, apiKey: KEY });
 	const pol = await j(await admin.request.put(`${base}/api/sandbox/provider-policy`, { data: { orgDefault: "opensandbox", allowProjectOverride: false } }));
-	check("[real] opensandbox enabled (loopback allowed by both switches) and set as org default", en.status === 200 && pol.status === 200 && pol.body?.policy?.orgDefault === "opensandbox", `${en.status}/${pol.status}`);
+	check("[real] opensandbox enabled (loopback allowed by both switches) and set as the active channel; E2B (enabled earlier) was deactivated by it", en.status === 200 && pol.status === 200 && pol.body?.policy?.orgDefault === "opensandbox" && (await getAdmin()).providers.filter((p) => p.enabled).map((p) => p.provider).join() === "opensandbox", `${en.status}/${pol.status}`);
 	await open();
 	await card.locator('[data-testid="opensandbox-test-health"]').click();
 	await admin.waitForSelector('[data-testid="opensandbox-test-result"][data-ok="false"], [data-testid="opensandbox-test-error"]', { timeout: 45000 });
 	const failTxt = await card.locator('[data-testid="opensandbox-test"]').innerText();
-	check("[real] unreachable endpoint → plain failure; default still OpenSandbox; unhealthy banner (no fallback)", failTxt.includes("失败") && (await selValue(admin.locator("#org-default"))) === "opensandbox" && (await admin.locator('[data-testid="default-unhealthy"]').count()) === 1, failTxt.replace(/\s+/g, " ").slice(0, 100));
+	check("[real] unreachable endpoint → plain failure; channel still OpenSandbox; unhealthy banner (no fallback)", failTxt.includes("失败") && (await admin.locator('[data-testid="channel-opensandbox"] input').isChecked()) && (await admin.locator('[data-testid="default-unhealthy"]').count()) === 1, failTxt.replace(/\s+/g, " ").slice(0, 100));
 	await shotR(admin, "admin-sandbox-real-test-failed");
 	await admin.evaluate(() => document.querySelector(".wr-scroll")?.scrollTo(0, 0));
 	await shotR(admin, "admin-sandbox-real-1440-light");
@@ -234,32 +234,29 @@ await register(admin, base, { email: "owner-r7@example.com", name: "管理员" }
 	await shotR(pp, "admin-sandbox-real-390-light");
 	await pctx.close();
 
-	// project override
+	// single channel through the UI + the removed project override
+	await open();
+	await admin.locator('[data-testid="channel-e2b"] input').click();
+	await admin.waitForSelector('[data-testid="e2b-active"]', { timeout: 15000 });
+	let st = await getAdmin();
+	check("[real] UI: choosing E2B makes it the only enabled provider and the org default (OpenSandbox keeps its saved key)", st.providers.filter((p) => p.enabled).map((p) => p.provider).join() === "e2b" && st.policy.orgDefault === "e2b" && st.providers.find((p) => p.provider === "opensandbox").apiKeySet === true && (await admin.locator('[data-testid="opensandbox-inactive"]').count()) === 1);
+	await admin.locator('[data-testid="channel-local"] input').click();
+	await admin.waitForSelector('[data-testid="channel-local"][data-active="true"]', { timeout: 15000 });
+	st = await getAdmin();
+	check("[real] UI: choosing 平台内置沙箱 deactivates every provider (org default local)", st.providers.every((p) => !p.enabled) && st.policy.orgDefault === "local");
+	await shotR(admin, "admin-sandbox-real-channel-local");
+	const refuse = await j(await admin.request.put(`${base}/api/sandbox/provider-policy`, { data: { allowProjectOverride: true } }));
+	check("[real] allowProjectOverride=true is refused (400 project_override_removed); the policy still reports false", refuse.status === 400 && refuse.body?.error?.code === "project_override_removed" && (await getAdmin()).policy.allowProjectOverride === false, `${refuse.status}`);
 	const projRes = await (await admin.request.post(`${base}/api/projects`, { data: { kind: "space", name: "运行位置项目" } })).json();
 	const pid = projRes.project?.id ?? projRes.id;
-	const gp = async (pg) => j(await pg.request.get(`${base}/api/projects/${pid}/sandbox-provider`));
-	await admin.request.put(`${base}/api/sandbox/provider-policy`, { data: { allowProjectOverride: false } });
+	const pGet = await admin.request.get(`${base}/api/projects/${pid}/sandbox-provider`);
+	const pPut = await admin.request.put(`${base}/api/projects/${pid}/sandbox-provider`, { data: { provider: "e2b" } });
 	await admin.goto(`${base}/projects/${pid}`);
 	await admin.waitForSelector("h1");
 	await admin.waitForTimeout(600);
-	const hidden = (await admin.locator('[data-testid="project-sandbox"]').count()) === 0 && (await gp(admin)).body?.allowed === false;
-	const refused = await j(await admin.request.put(`${base}/api/projects/${pid}/sandbox-provider`, { data: { provider: "opensandbox" } }));
-	check("[real] project override hidden when the org does not allow it; PUT refused (403)", hidden && refused.status === 403, `PUT ${refused.status}`);
-	await admin.request.put(`${base}/api/sandbox/provider-policy`, { data: { allowProjectOverride: true } });
-	await admin.goto(`${base}/projects/${pid}`);
-	await admin.waitForSelector('[data-testid="project-sandbox"]');
-	await pick(admin.locator('[data-testid="project-sandbox-select"]'), "opensandbox");
-	await admin.waitForSelector('[data-testid="project-sandbox"] [role="status"]');
-	check("[real] allowed: owner sees the picker, choosing OpenSandbox is saved and read back", (await gp(admin)).body?.provider === "opensandbox" && (await selValue(admin.locator('[data-testid="project-sandbox-select"]'))) === "opensandbox");
-	await shotR(admin, "project-sandbox-override");
-	await pick(admin.locator('[data-testid="project-sandbox-select"]'), "");
-	await admin.waitForSelector('[data-testid="project-sandbox"] [role="status"]');
-	check("[real] 跟随组织默认 clears the override (provider null)", (await gp(admin)).body?.provider === null);
-	const mGet = await member.request.get(`${base}/api/projects/${pid}/sandbox-provider`);
-	const mPut = await member.request.put(`${base}/api/projects/${pid}/sandbox-provider`, { data: { provider: "local" } });
-	await member.goto(`${base}/projects/${pid}`);
-	await member.waitForTimeout(800);
-	check("[real] non-member: GET 404, PUT refused, no picker", mGet.status() === 404 && mPut.status() >= 400 && (await member.locator('[data-testid="project-sandbox"]').count()) === 0, `${mGet.status()}/${mPut.status()}`);
+	check("[real] per-project sandbox choice is gone: endpoints 404 and the project page has no picker", pGet.status() === 404 && pPut.status() === 404 && (await admin.locator('[data-testid="project-sandbox"]').count()) === 0, `${pGet.status()}/${pPut.status()}`);
+	// back to OpenSandbox for the rest of the run
+	await putP("opensandbox", { enabled: true });
 	await mCtx.close();
 }
 

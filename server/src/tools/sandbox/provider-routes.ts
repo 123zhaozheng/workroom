@@ -1,9 +1,10 @@
 // HTTP API for remote sandbox providers (group S). All under /api. Permission: `sandbox.policy.manage` (org) for provider configuration,
-// the selection policy write, tests and the instance list; `project.manage` (on that project) for a project override. The policy READ is
-// admin-only too (members learn what they need from GET /projects/:id/sandbox-provider).
+// the active-channel write (PUT /sandbox/provider-policy), tests and the instance list. The policy READ is admin-only too.
+// Round 10: ONE sandbox channel for the organisation. Per-project overrides (GET/PUT /projects/:id/sandbox-provider) were removed; members learn the
+// channel in effect from GET /conversations/:spaceId/:conversationId/environment.
 import type { Hono } from "hono";
 import type { AppContext, AppEnv } from "../../core/contracts.ts";
-import { HttpError, jsonBody, principalOf } from "../../core/http.ts";
+import { jsonBody, principalOf } from "../../core/http.ts";
 import type { SandboxInstanceDTO, SandboxProviderUpdate, SandboxSelectionPolicyDTO } from "../../../../shared/sandbox.ts";
 import { providerConfigsFor, SandboxProviderConfigs } from "./provider-config.ts";
 
@@ -24,20 +25,7 @@ export function registerSandboxProviderRoutes(api: Hono<AppEnv>, ctx: AppContext
 		return c.json({ test: await svc().test(p, c.req.param("provider"), (b.kind ?? "health") as "health" | "roundtrip") });
 	});
 	api.get("/sandbox/provider-policy", async (c) => c.json({ policy: await svc().policyFor(principalOf(c)) }));
-	api.put("/sandbox/provider-policy", async (c) => c.json({ policy: await svc().setPolicy(principalOf(c), await jsonBody<Partial<SandboxSelectionPolicyDTO>>(c)) }));
-	api.get("/projects/:projectId/sandbox-provider", async (c) => {
-		const p = principalOf(c);
-		await ctx.services.get("acl").require(p, "read", { kind: "project", id: c.req.param("projectId") }).catch((e) => {
-			throw e instanceof HttpError && e.status === 403 ? new HttpError(404, "project_not_found", "项目不存在") : e;
-		});
-		return c.json(svc().projectChoice(p, c.req.param("projectId")));
-	});
-	api.put("/projects/:projectId/sandbox-provider", async (c) => {
-		const b = await jsonBody<{ provider?: string | null }>(c);
-		if (b.provider !== null && typeof b.provider !== "string") throw new HttpError(400, "invalid", "provider 必须是字符串或 null");
-		return c.json(await svc().setProjectProvider(principalOf(c), c.req.param("projectId"), b.provider));
-	});
-
+	api.put("/sandbox/provider-policy", async (c) => c.json({ policy: await svc().setPolicy(principalOf(c), await jsonBody<{ orgDefault?: SandboxSelectionPolicyDTO["orgDefault"]; allowProjectOverride?: boolean }>(c)) }));
 	// Remote sandbox instances Workroom tracks (A1's table, queried defensively: absent table or columns never break the admin page).
 	api.get("/sandbox/instances", async (c) => {
 		const p = principalOf(c);

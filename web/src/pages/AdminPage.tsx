@@ -54,7 +54,7 @@ const GROUPS: NavGroup[] = [
 		],
 	},
 	{ label: "模型", items: [{ value: "models", label: "模型服务", any: ["model.manage", "model.provider.manage"] }] },
-	{ label: "工作区运行", items: [{ value: "sandbox", label: "运行环境", any: ["sandbox.policy.manage"] }, { value: "env", label: "环境变量", any: ["sandbox.policy.manage"] }] },
+	{ label: "工作区运行", items: [{ value: "sandbox", label: "沙箱", any: ["sandbox.policy.manage"] }, { value: "env", label: "环境变量", any: ["sandbox.policy.manage"] }] },
 	{ label: "技能与连接", items: [{ value: "market-review", label: "技能与连接审核", any: ["skill.review", "mcp.connector.review"], href: "/capabilities?tab=review" }] },
 	{ label: "用量与预算", items: [{ value: "budgets", label: "预算", any: ["budget.view", "budget.manage"] }] },
 	{

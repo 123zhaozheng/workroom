@@ -22,6 +22,7 @@ import { HttpError, newId, nowIso } from "../../core/http.ts";
 import { Allowlist, resolveTarget, systemResolver, type Resolver } from "../../ops/egress.ts";
 import { isPrivateAddress } from "../netpolicy.ts";
 import { SecretBox } from "../secrets.ts";
+import { DEFAULT_WORKDIR, normalizeWorkDir, resolveWorkDir, WorkDirError } from "./workdir.ts";
 import { DEFAULT_LIFECYCLE, PROVIDER_IDS, type ExplicitResources, type LifecyclePolicy, type ProviderConnection, type ProviderId, type RemoteProvider } from "./provider.ts";
 import type { SandboxProviderCapabilitiesDTO, SandboxProviderConfigDTO, SandboxProviderTestDTO, SandboxProviderUpdate, SandboxProvidersAdminDTO, SandboxSelectionPolicyDTO } from "../../../../shared/sandbox.ts";
 
@@ -87,6 +88,12 @@ CREATE TABLE tool_sandbox_project_provider (
 ALTER TABLE tool_sandbox_providers ADD COLUMN image TEXT;
 ALTER TABLE tool_sandbox_providers ADD COLUMN resources TEXT;`,
 	},
+	{
+		// round 10: working directory inside the sandbox (NULL/empty = the provider's default, see workdir.ts)
+		version: 3,
+		name: "sandbox provider: working directory",
+		sql: `ALTER TABLE tool_sandbox_providers ADD COLUMN work_dir TEXT;`,
+	},
 ];
 
 interface Row {
@@ -98,6 +105,7 @@ interface Row {
 	template: string | null;
 	image?: string | null;
 	resources?: string | null;
+	work_dir?: string | null;
 	api_key_sealed: string | null;
 	api_key_hint: string | null;
 	allow_private_network: number;
@@ -252,12 +260,15 @@ export class SandboxProviderConfigs {
 		return {
 			provider,
 			label: LABEL[provider],
-			enabled: r?.enabled === 1,
+			// Round 10: "enabled" = this provider is THE active channel (only one at a time; see `#syncActive`).
+			enabled: r?.enabled === 1 && this.policy(p).orgDefault === provider,
 			...(r?.endpoint ? { endpoint: r.endpoint } : {}),
 			...(r?.domain ? { domain: r.domain } : {}),
 			...(r?.template ? { template: r.template } : {}),
 			...(r?.image ? { image: r.image } : {}),
 			...(parseResources(r?.resources) ? { resources: parseResources(r?.resources)! } : {}),
+			...(r?.work_dir ? { workDir: r.work_dir } : {}),
+			defaultWorkDir: DEFAULT_WORKDIR[provider],
 			apiKeySet: !!r?.api_key_sealed,
 			...(r?.api_key_sealed && r.api_key_hint ? { apiKeyHint: r.api_key_hint } : {}),
 			allowPrivateNetwork: r?.allow_private_network === 1,
@@ -327,6 +338,7 @@ export class SandboxProviderConfigs {
 			if (typeof v !== "string" || v.length > max || /[\u0000-\u001f]/.test(v)) throw new HttpError(400, "invalid", `${k} 必须是不超过 ${max} 字符的文本`);
 			return v.trim();
 		};
+		if (patch.enabled === false && this.policy(p).orgDefault === provider) throw new HttpError(409, "active_provider", "这是当前使用的沙箱渠道：请先在“当前使用的沙箱渠道”中选择其他渠道（或平台内置沙箱），再停用它");
 		const old = this.#row(p.orgId, provider);
 		const next = {
 			enabled: old?.enabled === 1,
@@ -378,6 +390,20 @@ export class SandboxProviderConfigs {
 			if (next.image) throw new HttpError(400, "invalid", "OpenSandbox 使用模板/镜像字段（template），这里不需要单独填写镜像");
 			if (next.resources?.diskGb !== undefined) throw new HttpError(400, "unsupported_resources", "OpenSandbox 不支持在创建时指定磁盘大小");
 		}
+		// Round 10: working directory inside the sandbox. null / "" clears it (provider default); anything else must be a valid absolute POSIX path.
+		let workDirPatch: string | null | undefined;
+		if (patch.workDir !== undefined) {
+			if (patch.workDir === null || (typeof patch.workDir === "string" && !patch.workDir.trim())) workDirPatch = null;
+			else {
+				try {
+					workDirPatch = normalizeWorkDir(patch.workDir);
+				} catch (e) {
+					if (e instanceof WorkDirError) throw new HttpError(400, "invalid_workdir", e.message);
+					throw e;
+				}
+			}
+			changed.push("workDir");
+		}
 		for (const k of ["createTimeoutSec", "idleTimeoutSec", "lifetimeSec"] as const) if (patch[k] !== undefined) ((next[k] = intIn(k, patch[k])), changed.push(k));
 		if (next.idleTimeoutSec > next.lifetimeSec) throw new HttpError(400, "invalid", "空闲回收时间不能超过最长存活时间");
 		let keyStatus: "set" | "cleared" | "unchanged" = "unchanged";
@@ -405,12 +431,17 @@ export class SandboxProviderConfigs {
 			if (this.#needsEgressAck(provider, next.endpoint, next.allowPrivate) && !next.ack) throw new HttpError(400, "egress_ack_required", "该提供方在组织外部运行：工作区文件与命令会离开组织。启用前管理员必须确认（egressAcknowledged）");
 		}
 		const now = nowIso();
+		// Round 10: the row write and the single-channel bookkeeping (deactivate the others, make this the org default) are ONE transaction.
+		this.#ctx.db.tx(() => {
 		this.#ctx.db.run(
 			`INSERT INTO tool_sandbox_providers (org_id, provider, enabled, endpoint, domain, template, image, resources, api_key_sealed, api_key_hint, allow_private_network, egress_ack, create_timeout_sec, idle_timeout_sec, lifetime_sec, updated_by, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint = excluded.endpoint, domain = excluded.domain, template = excluded.template, image = excluded.image, resources = excluded.resources, api_key_sealed = excluded.api_key_sealed, api_key_hint = excluded.api_key_hint, allow_private_network = excluded.allow_private_network, egress_ack = excluded.egress_ack, create_timeout_sec = excluded.create_timeout_sec, idle_timeout_sec = excluded.idle_timeout_sec, lifetime_sec = excluded.lifetime_sec, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
 			p.orgId, provider, next.enabled ? 1 : 0, next.endpoint || null, next.domain || null, next.template || null, next.image || null, next.resources && Object.keys(next.resources).length ? JSON.stringify(next.resources) : null, next.sealed, next.hint, next.allowPrivate ? 1 : 0, next.ack ? 1 : 0, next.createTimeoutSec, next.idleTimeoutSec, next.lifetimeSec, p.userId, now,
 		);
+		if (workDirPatch !== undefined) this.#ctx.db.run("UPDATE tool_sandbox_providers SET work_dir = ? WHERE org_id = ? AND provider = ?", workDirPatch, p.orgId, provider);
+		this.#syncActive(p, provider, patch.enabled);
+		});
 		// Audit: field names + key status only. The key (and its hint) never enter the audit row; the endpoint is logged as origin only.
 		let origin: string | undefined;
 		try {
@@ -418,7 +449,7 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 		} catch {
 			/* ignore */
 		}
-		this.#audit(p, "sandbox.provider.update", provider, { changed, enabled: next.enabled, apiKey: keyStatus, ...(origin ? { endpointOrigin: origin } : {}), allowPrivateNetwork: next.allowPrivate, egressAcknowledged: next.ack });
+		this.#audit(p, "sandbox.provider.update", provider, { changed, enabled: next.enabled, ...(patch.enabled === true ? { activated: true } : {}), apiKey: keyStatus, ...(origin ? { endpointOrigin: origin } : {}), allowPrivateNetwork: next.allowPrivate, egressAcknowledged: next.ack });
 		return this.dto(p, provider);
 	}
 	/** Vendor cloud (E2B / Daytona) or any non-private remote endpoint: data leaves the organisation. A self-hosted private-network endpoint does not need the acknowledgement. */
@@ -449,7 +480,7 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 		let endpoint = r.endpoint ?? undefined;
 		if (endpoint) endpoint = await this.checkEndpoint(orgId, endpoint, r.allow_private_network === 1); // re-validated before every construction
 		if (r.domain) await this.#checkDomain(orgId, r.domain, r.allow_private_network === 1);
-		return { provider, ...(endpoint ? { endpoint } : {}), ...(r.domain ? { domain: r.domain } : {}), ...(apiKey ? { apiKey } : {}), ...(r.template ? { template: r.template } : {}), ...(r.image ? { image: r.image } : {}), ...(parseResources(r.resources) ? { resources: parseResources(r.resources)! } : {}) };
+		return { provider, ...(endpoint ? { endpoint } : {}), ...(r.domain ? { domain: r.domain } : {}), ...(apiKey ? { apiKey } : {}), ...(r.template ? { template: r.template } : {}), ...(r.image ? { image: r.image } : {}), ...(parseResources(r.resources) ? { resources: parseResources(r.resources)! } : {}), ...(r.work_dir ? { workDir: r.work_dir } : {}) };
 	}
 	/** Decrypted, re-validated connection of an ENABLED provider (null when missing/disabled). Async because the endpoint is re-resolved. Never log the result. */
 	connection(orgId: string, provider: ProviderId): Promise<ProviderConnection | null> {
@@ -459,69 +490,67 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 		const r = this.#row(orgId, provider);
 		return r ? { createTimeoutSec: r.create_timeout_sec, idleTimeoutSec: r.idle_timeout_sec, lifetimeSec: r.lifetime_sec } : DEFAULT_LIFECYCLE;
 	}
+	/** Round 10: the working directory an admin configured for a provider (undefined = none: the provider's default applies, see `resolveWorkDir`). Stored row only. */
+	workDirOf(orgId: string, provider: ProviderId): string | undefined {
+		return this.#row(orgId, provider)?.work_dir || undefined;
+	}
+	/** Round 10: the working directory a provider actually uses (configured, else its default). */
+	effectiveWorkDir(orgId: string, provider: ProviderId): string {
+		return resolveWorkDir(provider, this.workDirOf(orgId, provider));
+	}
 	isEnabled(orgId: string, provider: ProviderId): boolean {
 		return this.#row(orgId, provider)?.enabled === 1;
 	}
 
-	// ---------- selection policy ----------
+	// ---------- active channel (round 10: ONE sandbox channel for the whole organisation) ----------
+	// The model: the org's active channel is `tool_sandbox_provider_policy.org_default` — a cloud provider, or "local" (平台内置沙箱: the server's own
+	// driver, used when no cloud provider is active). A provider's `enabled` flag is true for the active channel only: activating one clears the others
+	// and sets the org default in the same transaction. Per-project overrides no longer exist (`allow_project_override` is always 0; the old
+	// `tool_sandbox_project_provider` table is left in place, unread). A chosen provider that is not usable stays chosen and fails visibly (no fallback).
 	/** Admin read of the policy (sandbox.policy.manage). */
 	async policyFor(p: Principal): Promise<SandboxSelectionPolicyDTO> {
 		await this.requireManage(p);
 		return this.policy(p);
 	}
-	/** What a project member sees: current override, whether managers may change it, and the choosable providers (no secrets). */
-	projectChoice(p: Principal, projectId: string): { provider: "local" | ProviderId | null; allowed: boolean; options: { id: ProviderId; label: string; enabled: boolean }[] } {
-		const space = this.#ctx.services.get("identity").projectSpace(projectId);
-		if (!space || space.orgId !== p.orgId) throw new HttpError(404, "project_not_found", "项目不存在");
-		return { provider: this.projectOverride(projectId), allowed: this.policy(p).allowProjectOverride, options: PROVIDER_IDS.map((id) => ({ id, label: LABEL[id], enabled: this.isEnabled(p.orgId, id) })) };
-	}
 	policy(p: Principal | { orgId: string }): SandboxSelectionPolicyDTO {
-		const r = this.#ctx.db.get<{ org_default: string; allow_project_override: number }>("SELECT org_default, allow_project_override FROM tool_sandbox_provider_policy WHERE org_id = ?", p.orgId);
+		const r = this.#ctx.db.get<{ org_default: string }>("SELECT org_default FROM tool_sandbox_provider_policy WHERE org_id = ?", p.orgId);
 		const d = r?.org_default;
-		return { orgDefault: d && (PROVIDER_IDS as readonly string[]).includes(d) ? (d as ProviderId) : "local", allowProjectOverride: r?.allow_project_override === 1 };
+		return { orgDefault: d && (PROVIDER_IDS as readonly string[]).includes(d) ? (d as ProviderId) : "local", allowProjectOverride: false };
 	}
-	async setPolicy(p: Principal, dto: Partial<SandboxSelectionPolicyDTO>): Promise<SandboxSelectionPolicyDTO> {
+	#writePolicy(p: Principal, orgDefault: "local" | ProviderId): void {
+		this.#ctx.db.run("INSERT INTO tool_sandbox_provider_policy (org_id, org_default, allow_project_override, updated_by, updated_at) VALUES (?, ?, 0, ?, ?) ON CONFLICT(org_id) DO UPDATE SET org_default = excluded.org_default, allow_project_override = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at", p.orgId, orgDefault, p.userId, nowIso());
+	}
+	/**
+	 * Single-channel bookkeeping, called inside the transaction of every provider write. `requested` is the caller's explicit `enabled` (undefined = not touched,
+	 * so editing a provider's settings never changes which channel is active): true → this provider becomes the only enabled one and the org default.
+	 * Deactivating the active provider is refused earlier (`update`): the org never drifts to the local driver by a side effect.
+	 */
+	#syncActive(p: Principal, provider: ProviderId, requested: boolean | undefined): void {
+		if (requested === true) {
+			this.#ctx.db.run("UPDATE tool_sandbox_providers SET enabled = 0, updated_by = ?, updated_at = ? WHERE org_id = ? AND provider <> ? AND enabled = 1", p.userId, nowIso(), p.orgId, provider);
+			this.#writePolicy(p, provider);
+		}
+	}
+	/** Choose the active channel: "local" (平台内置沙箱) or an enabled provider. Project overrides are gone: `allowProjectOverride: true` is refused. */
+	async setPolicy(p: Principal, dto: { orgDefault?: SandboxSelectionPolicyDTO["orgDefault"]; /** Only `false` is accepted. */ allowProjectOverride?: boolean }): Promise<SandboxSelectionPolicyDTO> {
 		await this.requireManage(p);
 		const cur = this.policy(p);
 		const orgDefault = dto?.orgDefault ?? cur.orgDefault;
 		if (orgDefault !== "local" && !(PROVIDER_IDS as readonly string[]).includes(orgDefault as string)) throw new HttpError(400, "invalid", "orgDefault 必须是 local 或已知的提供方");
 		if (dto?.allowProjectOverride !== undefined && typeof dto.allowProjectOverride !== "boolean") throw new HttpError(400, "invalid", "allowProjectOverride 必须是布尔值");
-		const allow = dto?.allowProjectOverride ?? cur.allowProjectOverride;
-		if (orgDefault !== "local" && !this.isEnabled(p.orgId, orgDefault as ProviderId)) throw new HttpError(409, "provider_disabled", "只能把已启用的提供方设为组织默认；请先配置并启用它");
-		this.#ctx.db.run("INSERT INTO tool_sandbox_provider_policy (org_id, org_default, allow_project_override, updated_by, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(org_id) DO UPDATE SET org_default = excluded.org_default, allow_project_override = excluded.allow_project_override, updated_by = excluded.updated_by, updated_at = excluded.updated_at", p.orgId, orgDefault, allow ? 1 : 0, p.userId, nowIso());
-		this.#audit(p, "sandbox.provider.policy", p.orgId, { orgDefault, allowProjectOverride: allow });
-		return { orgDefault: orgDefault as SandboxSelectionPolicyDTO["orgDefault"], allowProjectOverride: allow };
+		if (dto?.allowProjectOverride === true) throw new HttpError(400, "project_override_removed", "项目单独选择沙箱已取消：整个组织同一时间只使用一个沙箱渠道");
+		if (orgDefault !== "local" && !this.isEnabled(p.orgId, orgDefault as ProviderId)) throw new HttpError(409, "provider_disabled", "只能选择已配置并启用的提供方；请先配置并启用它");
+		this.#ctx.db.tx(() => {
+			if (orgDefault === "local") this.#ctx.db.run("UPDATE tool_sandbox_providers SET enabled = 0, updated_by = ?, updated_at = ? WHERE org_id = ? AND enabled = 1", p.userId, nowIso(), p.orgId);
+			else this.#ctx.db.run("UPDATE tool_sandbox_providers SET enabled = 0, updated_by = ?, updated_at = ? WHERE org_id = ? AND provider <> ? AND enabled = 1", p.userId, nowIso(), p.orgId, orgDefault);
+			this.#writePolicy(p, orgDefault as "local" | ProviderId);
+		});
+		this.#audit(p, "sandbox.provider.policy", p.orgId, { orgDefault });
+		return { orgDefault: orgDefault as SandboxSelectionPolicyDTO["orgDefault"], allowProjectOverride: false };
 	}
-	/** Project manager picks this project's sandbox. `null` clears the override (always allowed to the manager). */
-	async setProjectProvider(p: Principal, projectId: string, choice: string | null): Promise<{ provider: "local" | ProviderId | null }> {
-		const space = this.#ctx.services.get("identity").projectSpace(projectId);
-		if (!space || space.orgId !== p.orgId) throw new HttpError(404, "project_not_found", "项目不存在");
-		if (this.#ctx.services.has("authz")) await this.#ctx.services.get("authz").require(p, "project.manage", { kind: "project", id: projectId });
-		else if (p.orgRole !== "owner" && p.orgRole !== "admin") throw new HttpError(403, "forbidden", "没有权限：管理项目（project.manage）");
-		if (choice === null) {
-			this.#ctx.db.run("DELETE FROM tool_sandbox_project_provider WHERE project_id = ?", projectId);
-			this.#audit(p, "sandbox.provider.project", projectId, { provider: null });
-			return { provider: null };
-		}
-		if (choice !== "local" && !(PROVIDER_IDS as readonly string[]).includes(choice)) throw new HttpError(400, "invalid", "provider 必须是 local、已知的提供方或 null");
-		if (!this.policy(p).allowProjectOverride) throw new HttpError(403, "override_not_allowed", "组织管理员未允许项目自行选择沙箱");
-		if (choice !== "local" && !this.isEnabled(p.orgId, choice as ProviderId)) throw new HttpError(409, "provider_disabled", "该提供方未启用");
-		this.#ctx.db.run("INSERT INTO tool_sandbox_project_provider (project_id, org_id, provider, updated_by, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET provider = excluded.provider, updated_by = excluded.updated_by, updated_at = excluded.updated_at", projectId, p.orgId, choice, p.userId, nowIso());
-		this.#audit(p, "sandbox.provider.project", projectId, { provider: choice });
-		return { provider: choice as "local" | ProviderId };
-	}
-	projectOverride(projectId: string): "local" | ProviderId | null {
-		const r = this.#ctx.db.get<{ provider: string }>("SELECT provider FROM tool_sandbox_project_provider WHERE project_id = ?", projectId);
-		return r && (r.provider === "local" || (PROVIDER_IDS as readonly string[]).includes(r.provider)) ? (r.provider as "local" | ProviderId) : null;
-	}
-	/**
-	 * Which sandbox a space uses. Personal spaces: org default. Project spaces: the project's override while the org still allows overrides,
-	 * else the org default. NO silent fallback: a chosen provider that is disabled/unconfigured stays chosen and runs fail with `explain()`.
-	 */
+	/** Which sandbox a space uses: the organisation's active channel, for personal and project spaces alike. NO silent fallback: a chosen provider that is disabled/unconfigured stays chosen and runs fail with `explain()`. */
 	effectiveFor(space: Space): EffectiveSandbox {
-		const pol = this.policy({ orgId: space.orgId });
-		let choice: "local" | ProviderId = pol.orgDefault;
-		if (space.kind === "project" && space.projectId && pol.allowProjectOverride) choice = this.projectOverride(space.projectId) ?? choice;
+		const choice = this.policy({ orgId: space.orgId }).orgDefault;
 		return choice === "local" ? { kind: "local" } : { kind: "provider", provider: choice, orgId: space.orgId };
 	}
 	/** Human-readable reason for a run error when the effective provider is not usable (empty string when usable or local). */
@@ -529,7 +558,7 @@ ON CONFLICT(org_id, provider) DO UPDATE SET enabled = excluded.enabled, endpoint
 		const e = this.effectiveFor(space);
 		if (e.kind === "local") return "";
 		const r = this.#row(e.orgId, e.provider);
-		if (!r) return `组织选择了沙箱提供方 ${LABEL[e.provider]}，但尚未配置。请管理员在“沙箱 → 提供方”中配置（不会回退到本机执行）`;
+		if (!r) return `组织选择了沙箱提供方 ${LABEL[e.provider]}，但尚未配置。请管理员在“沙箱”中配置（不会回退到本机执行）`;
 		if (r.enabled !== 1) return `沙箱提供方 ${LABEL[e.provider]} 已被管理员停用，当前空间无法执行代码（不会回退到本机执行）`;
 		if (!r.api_key_sealed) return `沙箱提供方 ${LABEL[e.provider]} 缺少 API 密钥（不会回退到本机执行）`;
 		return "";

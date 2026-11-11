@@ -172,6 +172,8 @@ export interface ProviderConnection {
 	readonly resources?: ExplicitResources;
 	/** Daytona target/region, OpenSandbox extras, etc. Validated per provider. */
 	readonly options?: Readonly<Record<string, string>>;
+	/** Round 10: working directory INSIDE the sandbox as configured by the admin (validated on save); absent = DEFAULT_WORKDIR[provider] (workdir.ts). Used by RemoteDriver, not by the adapters. */
+	readonly workDir?: string;
 }
 
 export class UnsupportedError extends HttpError {

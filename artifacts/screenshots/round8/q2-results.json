@@ -1,10 +1,10 @@
 {
-  "at": "2026-11-11T08:31:54.827Z",
+  "at": "2026-11-11T10:57:32.147Z",
   "results": [
     {
       "name": "A home: cloud button next to the composer, aria-label '执行环境：<label>'",
       "ok": true,
-      "detail": "执行环境：本机沙箱（Linux 命名空间）"
+      "detail": "执行环境：云端沙箱（平台内置沙箱）"
     },
     {
       "name": "A home: local environment uses the local icon variant (kind local/none, not remote)",
@@ -22,17 +22,17 @@
       "detail": "{\"o\":1,\"alpha\":1}"
     },
     {
-      "name": "A popover: plain one-sentence isolation; the technical note is folded",
+      "name": "A popover [round 10]: the technical isolation note, location/network badges and option list are gone",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "A popover: current environment, location badge 本服务器, network, state, options",
+      "name": "A popover [round 10]: 云端沙箱 is the active option and names the backend 平台内置沙箱, with a state line",
       "ok": true,
-      "detail": "当前执行环境 本机沙箱（Linux 命名空间） 本服务器 无网络 在本服务器的隔离环境中运行，只能读写本对话的工作文件。 详细说明 已就绪：在本服务器上运行，无需准备 可用的执行环境 本机沙箱（Linux 命名空间） （当前） 个人空间使用组织统一设置的执行环境 管理执行环境"
+      "detail": "代码在哪里运行 云端沙箱 （当前） 平台内置沙箱 已就绪 工作目录 /work 本地环境 指你自己的电脑 即将推出 管理后台 › 沙箱"
     },
     {
-      "name": "A popover: exactly one option is current; personal space cannot choose and says why",
+      "name": "A popover [round 10]: 本地环境 is disabled (aria-disabled) with 即将推出 and a tooltip text; no switch buttons, no chooser hint",
       "ok": true,
       "detail": ""
     },
@@ -42,7 +42,7 @@
       "detail": ""
     },
     {
-      "name": "A popover: admin sees 管理执行环境 → admin 运行环境 tab",
+      "name": "A popover: admin sees 管理后台 › 沙箱 → admin 沙箱 tab",
       "ok": true,
       "detail": ""
     },
@@ -54,7 +54,7 @@
     {
       "name": "A opening the popover creates no sandbox instance and sends no prepare",
       "ok": true,
-      "detail": "GET /api/conversations/sp_0mwbv0wxy5cd4601574dcb1be/new/environment"
+      "detail": "GET /api/conversations/sp_0mwc086z99af9db1fa2370d2e/new/environment"
     },
     {
       "name": "A plain chat: still no sandbox instance and no prepare request",
@@ -74,7 +74,7 @@
     {
       "name": "A phone 390: popover fits the screen (>=8px gutters)",
       "ok": true,
-      "detail": "{\"x\":12,\"y\":474.0543518066406,\"width\":366,\"height\":303.4999694824219}"
+      "detail": "{\"x\":42,\"y\":517.5537719726562,\"width\":336,\"height\":260.00006103515625}"
     },
     {
       "name": "A phone 390 conversation: button present, no horizontal scroll",
@@ -97,14 +97,14 @@
       "detail": ""
     },
     {
-      "name": "B popover: 自托管 badge, network 由提供方决定 (round 9: no Workroom policy), state line says it is created on first need, 现在准备 offered",
+      "name": "B popover [round 10]: backend name OpenSandbox, state line says it is created when first needed, 现在准备 offered",
       "ok": true,
       "detail": ""
     },
     {
       "name": "B real failure: popover shows 准备失败 with the provider error and 重试; no silent fallback to local",
       "ok": true,
-      "detail": "准备失败：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行） 重试"
+      "detail": "准备失败：沙箱提供方 OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行）"
     },
     {
       "name": "B failed: a dot marks the button",
@@ -119,7 +119,7 @@
     {
       "name": "B 重试 sends exactly one explicit prepare request",
       "ok": true,
-      "detail": "POST /api/conversations/sp_0mwbv0wxy5cd4601574dcb1be/3/environment/prepare"
+      "detail": "POST /api/conversations/sp_0mwc086z99af9db1fa2370d2e/3/environment/prepare"
     },
     {
       "name": "B phone 390: failure line fits (no horizontal scroll)",
@@ -142,7 +142,7 @@
       "detail": ""
     },
     {
-      "name": "C1 [intercepted] popover during preparing: state line says 正在准备工作环境…, no 重试 button",
+      "name": "C1 [intercepted] popover during preparing: state line says 准备中…, no 重试 button",
       "ok": true,
       "detail": ""
     },
@@ -187,12 +187,12 @@
       "detail": ""
     },
     {
-      "name": "C4 [intercepted] vendor cloud badge says the data leaves the organisation",
+      "name": "C4 [intercepted] backend name E2B, status 已就绪, working directory shown because the DTO carries it",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "C4 [intercepted] canChoose: 切换 only for the enabled non-current option (local), none for the current or disabled one",
+      "name": "C4 [intercepted] no switch buttons even for a project owner; no 重试 / 现在准备 while ready",
       "ok": true,
       "detail": ""
     }

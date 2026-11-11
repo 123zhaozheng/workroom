@@ -432,8 +432,9 @@ test("Sandbox integration: a space whose org policy selects a provider runs thro
 		assert.equal(readFileSync(join(sb.workdir(space, 9), "made.txt"), "utf8"), "hi");
 		const row = ctx.db.get<{ workspace_key: string; org_id: string; space_id: string }>("SELECT * FROM tool_sandbox_instances")!;
 		assert.deepEqual([row.workspace_key, row.org_id, row.space_id], ["c9", a.me.orgId, space.id]);
-		// no silent fallback
-		await svc.update(principal, "opensandbox", { enabled: false });
+		// no silent fallback (round 10: the active channel cannot be disabled through the API; a legacy / hand-edited row still fails loudly)
+		await assert.rejects(svc.update(principal, "opensandbox", { enabled: false }), (e: any) => e.status === 409 && e.code === "active_provider");
+		ctx.db.run("UPDATE tool_sandbox_providers SET enabled = 0 WHERE provider = 'opensandbox'");
 		await assert.rejects(sb.run({ principal, space, conversationId: 9, language: "python", code: "echo should-not-run" }), (e: any) => e.status === 503 && /不会回退/.test(e.message));
 		assert.equal(fake.created, 1);
 		await assert.rejects(sb.startService({ principal, space, conversationId: 9, runtime: "shell", argv: ["sleep", "1"] }), (e: any) => e.status === 503 || e.status === 501);

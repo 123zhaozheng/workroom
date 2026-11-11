@@ -1,8 +1,9 @@
-// 运行环境 (admin, sandbox.policy.manage): where workspace code runs — org default, per-provider cards, connection tests, instances.
+// 沙箱 (admin, sandbox.policy.manage): where workspace code runs. ONE channel is active for the whole organisation: a cloud provider, or
+// 平台内置沙箱 (the server's own driver). Per-provider cards hold the connection settings; connection tests; instances.
 // The access key is write-only: it is never read back, only "已保存 ••••1234" is shown. Nothing falls back silently.
 import { CheckCircle2, KeyRound, Server, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { CapabilitySupport, SandboxInstanceDTO, SandboxProviderConfigDTO, SandboxProviderId, SandboxProviderTestDTO, SandboxProviderUpdate, SandboxProvidersAdminDTO, SandboxSelectionPolicyDTO } from "@shared/sandbox";
+import type { CapabilitySupport, SandboxDriverAdminDTO, SandboxInstanceDTO, SandboxProviderConfigDTO, SandboxProviderId, SandboxProviderTestDTO, SandboxProviderUpdate, SandboxProvidersAdminDTO } from "@shared/sandbox";
 import { errorText, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge, EmptyState, Loadable, Spinner } from "@/components/ui/misc";
 import { Fold, Help, Row, SectionHead, Table, useAct } from "./common";
 
-export const PROVIDER_NAME: Record<"local" | SandboxProviderId, string> = { local: "本机沙箱", opensandbox: "OpenSandbox", e2b: "E2B", daytona: "Daytona" };
+export const PROVIDER_NAME: Record<"local" | SandboxProviderId, string> = { local: "平台内置沙箱", opensandbox: "OpenSandbox", e2b: "E2B", daytona: "Daytona" };
 
 const CAPS: { key: keyof SandboxProviderConfigDTO["capabilities"]; label: string }[] = [
 	{ key: "exec", label: "运行命令" },
@@ -48,7 +49,7 @@ export function SandboxProviders() {
 	const res = useApi<SandboxProvidersAdminDTO>("/sandbox/providers");
 	const inst = useApi<{ instances: SandboxInstanceDTO[] }>("/sandbox/instances");
 	return (
-		<Loadable state={res} what="运行环境">
+		<Loadable state={res} what="沙箱设置">
 			{res.data ? (
 				<div className="space-y-6" data-testid="sandbox-admin">
 					{!res.data.secretStorage ? (
@@ -57,10 +58,13 @@ export function SandboxProviders() {
 							<Help label="配置方法" side="bottom" className="ml-1 align-middle">需要服务器管理员设置环境变量 WORKROOM_SECRET_KEY 后重启服务。</Help>
 						</p>
 					) : null}
-					<Location data={res.data} reload={res.reload} />
-					<section aria-label="执行位置服务" className="space-y-3">
+					<Channel data={res.data} reload={res.reload} />
+					<section aria-label="渠道设置" className="space-y-3">
+						<SectionHead title="渠道设置">
+							<Help label="渠道设置说明">每个渠道的连接信息会一直保存；只有上面选中的渠道会被使用。</Help>
+						</SectionHead>
 						{res.data.providers.map((p) => (
-							<ProviderCard key={p.provider} p={p} secretStorage={res.data!.secretStorage} isDefault={res.data!.policy.orgDefault === p.provider} reload={res.reload} />
+							<ProviderCard key={p.provider} p={p} secretStorage={res.data!.secretStorage} reload={res.reload} />
 						))}
 					</section>
 					<Instances inst={inst} />
@@ -70,39 +74,70 @@ export function SandboxProviders() {
 	);
 }
 
-function Location({ data, reload }: { data: SandboxProvidersAdminDTO; reload: () => void }) {
-	const { busy, run, note } = useAct(reload);
+/** 当前使用的沙箱渠道: the single choice. Server-enforced: choosing one deactivates the others. */
+function Channel({ data, reload }: { data: SandboxProvidersAdminDTO; reload: () => void }) {
+	const drv = useApi<SandboxDriverAdminDTO>("/sandbox/driver");
+	const { busy, run, note } = useAct(() => {
+		reload();
+		drv.reload();
+	});
 	const { policy, providers } = data;
-	const def = providers.find((p) => p.provider === policy.orgDefault);
-	const save = (patch: Partial<SandboxSelectionPolicyDTO>) => run(() => put("/sandbox/provider-policy", { ...policy, ...patch }), "已保存");
+	const active = policy.orgDefault;
+	const def = providers.find((p) => p.provider === active);
+	const d = drv.data;
+	const driverLabel = d?.drivers.find((x) => x.id === d.effective)?.label;
+	const choose = (v: "local" | SandboxProviderId) =>
+		run(() => (v === "local" ? put("/sandbox/provider-policy", { orgDefault: "local" }) : put(`/sandbox/providers/${v}`, { enabled: true })), "已切换，之后的运行使用新渠道");
+	const radio = "mt-0.5 size-4 shrink-0 accent-[var(--accent)]";
+	const row = (on: boolean) => `flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm ${on ? "border-accent" : "border-border"}`;
 	return (
-		<section data-testid="sandbox-location" className="rounded-xl border border-border bg-surface p-4">
-			<SectionHead title="执行位置">
-				<Help label="执行位置说明">工作区里的代码在哪里运行。个人空间始终使用这里的默认位置。</Help>
-			</SectionHead>
-			<div className="flex flex-wrap items-end gap-4">
-				<div>
-					<Label htmlFor="org-default">组织默认</Label>
-					<Select id="org-default" data-testid="org-default" value={policy.orgDefault} disabled={busy} onChange={(e) => void save({ orgDefault: e.target.value as SandboxSelectionPolicyDTO["orgDefault"] })} className="w-56">
-						<option value="local">本机沙箱</option>
-						{providers.map((p) => (
-							<option key={p.provider} value={p.provider} disabled={!p.enabled}>
-								{PROVIDER_NAME[p.provider]}
-								{p.enabled ? "" : "（未启用）"}
-							</option>
-						))}
-					</Select>
+		<section data-testid="sandbox-channel" className="rounded-xl border border-border bg-surface p-4">
+			<fieldset disabled={busy} className="min-w-0">
+				<legend className="mb-2 flex items-center gap-1 text-sm font-medium">
+					当前使用的沙箱渠道
+					<Help label="沙箱渠道说明">整个组织同一时间只使用一个渠道，个人空间和项目都一样；没选云端渠道时使用平台内置沙箱。选中一个渠道会自动停用其他渠道，它们的配置仍然保留。</Help>
+				</legend>
+				<div className="space-y-2" role="radiogroup" aria-label="当前使用的沙箱渠道">
+					<label data-testid="channel-local" data-active={active === "local"} className={row(active === "local")}>
+						<input type="radio" name="sandbox-channel" value="local" checked={active === "local"} onChange={() => void choose("local")} className={radio} />
+						<span className="min-w-0 flex-1">
+							<span className="block font-medium">{PROVIDER_NAME.local}</span>
+							<span className="block text-xs text-fg-muted">
+								{d ? (d.effective === "none" ? "当前不可用" : `在本服务器上运行${driverLabel ? `（${driverLabel}）` : ""}`) : "在本服务器上运行"}
+							</span>
+						</span>
+					</label>
+					{providers.map((p) => {
+						const on = active === p.provider;
+						return (
+							<label key={p.provider} data-testid={`channel-${p.provider}`} data-active={on} className={`${row(on)} ${!p.apiKeySet && !on ? "opacity-70" : ""}`}>
+								<input type="radio" name="sandbox-channel" value={p.provider} checked={on} disabled={!p.apiKeySet && !on} onChange={() => void choose(p.provider)} className={radio} />
+								<span className="min-w-0 flex-1">
+									<span className="block font-medium">{PROVIDER_NAME[p.provider]}</span>
+									<span className="block text-xs text-fg-muted">
+										{LOCATION[p.capabilities.location].text}；{p.apiKeySet ? "已有密钥" : "先在下方保存访问密钥"}
+									</span>
+								</span>
+							</label>
+						);
+					})}
 				</div>
-				<div className="flex h-9 items-center gap-2 text-sm">
-					<Switch data-testid="allow-override" aria-label="允许项目单独选择" checked={policy.allowProjectOverride} busy={busy} onCheckedChange={(v) => void save({ allowProjectOverride: v })} />
-					<span>允许项目单独选择</span>
-				</div>
-			</div>
+			</fieldset>
 			{note}
-			{def && (!def.lastTest || !def.lastTest.ok) ? (
+			{active === "local" && d?.effective === "none" ? (
+				<p data-testid="local-unavailable" role="alert" className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+					平台内置沙箱现在不可用：{d.reason}。工作区运行会直接报错，不会改用别的渠道。
+				</p>
+			) : null}
+			{def && !def.enabled ? (
+				<p data-testid="channel-inactive" role="alert" className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+					当前渠道「{PROVIDER_NAME[def.provider]}」没有启用，工作区运行会直接报错。
+					<Button size="sm" className="ml-2" disabled={busy} onClick={() => void choose(def.provider)} data-testid="channel-reactivate">启用它</Button>
+				</p>
+			) : def && (!def.lastTest || !def.lastTest.ok) ? (
 				<p data-testid="default-unhealthy" role="alert" className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
-					{def.lastTest ? `默认位置「${PROVIDER_NAME[def.provider]}」最近一次测试失败：${def.lastTest.detail}。` : `默认位置「${PROVIDER_NAME[def.provider]}」还没有测试过连接。`}
-					失败时不会自动改用本机沙箱，工作区运行会直接报错。
+					{def.lastTest ? `当前渠道「${PROVIDER_NAME[def.provider]}」最近一次测试失败：${def.lastTest.detail}。` : `当前渠道「${PROVIDER_NAME[def.provider]}」还没有测试过连接。`}
+					失败时不会自动改用平台内置沙箱，工作区运行会直接报错。
 				</p>
 			) : null}
 		</section>
@@ -110,7 +145,6 @@ function Location({ data, reload }: { data: SandboxProvidersAdminDTO; reload: ()
 }
 
 interface Draft {
-	enabled: boolean;
 	endpoint: string;
 	domain: string;
 	template: string;
@@ -120,6 +154,8 @@ interface Draft {
 	cpus: string;
 	memoryGb: string;
 	diskGb: string;
+	/** Working directory inside the sandbox ("" = the provider default shown as placeholder). */
+	workDir: string;
 	allowPrivateNetwork: boolean;
 	egressAcknowledged: boolean;
 	createTimeoutSec: string;
@@ -129,7 +165,6 @@ interface Draft {
 	clearKey: boolean;
 }
 const toDraft = (p: SandboxProviderConfigDTO): Draft => ({
-	enabled: p.enabled,
 	endpoint: p.endpoint ?? "",
 	domain: p.domain ?? "",
 	template: p.template ?? "",
@@ -138,6 +173,7 @@ const toDraft = (p: SandboxProviderConfigDTO): Draft => ({
 	cpus: p.resources?.cpus !== undefined ? String(p.resources.cpus) : "",
 	memoryGb: p.resources?.memoryGb !== undefined ? String(p.resources.memoryGb) : "",
 	diskGb: p.resources?.diskGb !== undefined ? String(p.resources.diskGb) : "",
+	workDir: p.workDir ?? "",
 	allowPrivateNetwork: p.allowPrivateNetwork,
 	egressAcknowledged: p.egressAcknowledged,
 	createTimeoutSec: String(p.createTimeoutSec),
@@ -160,7 +196,7 @@ function resourcesOf(d: Draft, disk: boolean): { cpus?: number; memoryGb?: numbe
 	return Object.keys(out).length ? out : null;
 }
 
-function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProviderConfigDTO; secretStorage: boolean; isDefault: boolean; reload: () => void }) {
+function ProviderCard({ p, secretStorage, reload }: { p: SandboxProviderConfigDTO; secretStorage: boolean; reload: () => void }) {
 	const [d, setD] = useState<Draft>(() => toDraft(p));
 	const [replacing, setReplacing] = useState(false);
 	const [test, setTest] = useState<SandboxProviderTestDTO | undefined>(p.lastTest);
@@ -179,11 +215,11 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 	const needsEgress = loc !== "self_hosted" || !d.allowPrivateNetwork;
 	const id = (s: string) => `${p.provider}-${s}`;
 	const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
-	const missingAck = d.enabled && needsEgress && !d.egressAcknowledged;
+	const missingAck = p.enabled && needsEgress && !d.egressAcknowledged;
 
 	const save = () => {
 		const body: SandboxProviderUpdate = {
-			enabled: d.enabled,
+			// No `enabled` here: saving a card never changes which channel is active (that is the 当前使用的沙箱渠道 choice).
 			endpoint: d.endpoint.trim(),
 			...(p.provider === "e2b" ? { domain: d.domain.trim() } : {}),
 			...(p.provider === "daytona"
@@ -193,6 +229,7 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 				: p.provider === "opensandbox"
 					? { template: d.template.trim(), resources: resourcesOf(d, false) }
 					: { template: d.template.trim() }),
+			workDir: d.workDir.trim() === "" ? null : d.workDir.trim(), // null clears → the provider default
 			allowPrivateNetwork: d.allowPrivateNetwork,
 			egressAcknowledged: d.egressAcknowledged,
 			createTimeoutSec: Math.round(Number(d.createTimeoutSec)),
@@ -222,12 +259,8 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 				<Server aria-hidden className="size-4 text-fg-muted" />
 				<h3 className="text-sm font-medium">{PROVIDER_NAME[p.provider]}</h3>
 				<Badge tone={LOCATION[loc].tone} data-testid={`loc-${p.provider}`}>{LOCATION[loc].text}</Badge>
-				{isDefault ? <Badge tone="info">组织默认</Badge> : null}
 				<span className="flex-1" />
-				<span className="flex items-center gap-2 text-sm">
-					<Switch data-testid={id("enabled")} aria-label={`启用 ${PROVIDER_NAME[p.provider]}`} checked={d.enabled} onCheckedChange={(v) => set({ enabled: v })} />
-					启用
-				</span>
+				{p.enabled ? <Badge tone="success" data-testid={id("active")}>当前使用</Badge> : <span data-testid={id("inactive")} className="text-xs text-fg-subtle">未使用</span>}
 			</header>
 			<div className="mt-3 grid gap-3 sm:grid-cols-2">
 				<div>
@@ -282,6 +315,13 @@ function ProviderCard({ p, secretStorage, isDefault, reload }: { p: SandboxProvi
 				) : (
 					<p data-testid={id("resources-note")} className="self-end text-xs text-fg-muted sm:col-span-2">快照方式使用快照或 Daytona 默认规格；要指定 CPU、内存、磁盘，请改用镜像方式。</p>
 				)}
+				<div className="sm:col-span-2">
+					<Label htmlFor={id("workdir")}>工作目录</Label>
+					<Input id={id("workdir")} data-testid={id("workdir")} value={d.workDir} onChange={(e) => set({ workDir: e.target.value })} placeholder={p.defaultWorkDir ?? "留空使用默认值"} autoComplete="off" spellCheck={false} />
+					<p data-testid={id("workdir-note")} className="mt-1 text-xs text-fg-muted">
+						沙箱里放会话文件、并作为每条命令当前目录的绝对路径；留空使用默认值{p.defaultWorkDir ? `（${p.defaultWorkDir}）` : ""}。必须是沙箱用户可写的位置（例如 Daytona 默认用户不是 root，不能用根目录下的 /work）。技能以只读方式放在它同级的 skills 目录。更改后下一次运行会把工作区完整同步到新目录。
+					</p>
+				</div>
 				<div>
 					<Label htmlFor={id("apikey")}>访问密钥</Label>
 					{p.apiKeySet && !replacing && !d.clearKey ? (

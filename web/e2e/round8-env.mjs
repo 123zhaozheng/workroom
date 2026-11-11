@@ -69,12 +69,12 @@ await register(page, base, { email: "owner-r8q2@example.com", name: "管理员" 
 		return { o, alpha };
 	});
 	check("A popover is fully opaque after its animation (opacity 1, solid background)", op.o === 1 && op.alpha === 1, JSON.stringify(op));
-	check("A popover: plain one-sentence isolation; the technical note is folded", /只能读写本对话的工作文件|工作文件会同步|发送到厂商/.test(await page.locator('[data-testid="env-isolation"]').innerText()) && !(await page.locator('[data-testid="env-isolation"]').innerText()).includes("pivot_root"));
+	check("A popover [round 10]: the technical isolation note, location/network badges and option list are gone", (await page.locator('[data-testid="env-isolation"], [data-testid="env-isolation-full"], [data-testid="env-location"], [data-testid="env-network"], [data-testid="env-options"]').count()) === 0);
 	const t = await page.locator('[data-testid="env-popover"]').innerText();
-	check("A popover: current environment, location badge 本服务器, network, state, options", t.includes("当前执行环境") && (await page.locator('[data-testid="env-location"]').innerText()).includes("本服务器") && /可联网|无网络/.test(await page.locator('[data-testid="env-network"]').innerText()) && (await page.locator('[data-testid="env-state"]').count()) === 1 && (await page.locator('[data-testid="env-options"] li').count()) >= 1, t.replace(/\s+/g, " ").slice(0, 200));
-	check("A popover: exactly one option is current; personal space cannot choose and says why", (await page.locator('[data-testid="env-options"] li[data-current="true"]').count()) === 1 && (await page.locator('[data-testid="env-choose-hint"]').innerText()).includes("组织") && (await page.locator('[data-testid^="env-switch-"]').count()) === 0);
+	check("A popover [round 10]: 云端沙箱 is the active option and names the backend 平台内置沙箱, with a state line", t.includes("云端沙箱") && (await page.locator('[data-testid="env-cloud"]').count()) === 1 && (await page.locator('[data-testid="env-label"]').innerText()).includes("平台内置沙箱") && (await page.locator('[data-testid="env-state"]').count()) === 1, t.replace(/\s+/g, " ").slice(0, 200));
+	check("A popover [round 10]: 本地环境 is disabled (aria-disabled) with 即将推出 and a tooltip text; no switch buttons, no chooser hint", (await page.locator('[data-testid="env-local"]').getAttribute("aria-disabled")) === "true" && (await page.locator('[data-testid="env-local"]').innerText()).includes("即将推出") && (await page.locator('[data-testid="env-local"]').innerText()).includes("本地环境") && (await page.locator('[data-testid^="env-switch-"], [data-testid="env-choose-hint"]').count()) === 0);
 	check("A popover: no 现在准备 / 重试 for a local environment (nothing to prepare)", (await page.locator('[data-testid="env-prepare"]').count()) === 0);
-	check("A popover: admin sees 管理执行环境 → admin 运行环境 tab", (await page.locator('[data-testid="env-admin-link"]').getAttribute("href")) === "/admin?tab=sandbox");
+	check("A popover: admin sees 管理后台 › 沙箱 → admin 沙箱 tab", (await page.locator('[data-testid="env-admin-link"]').innerText()).includes("管理后台 › 沙箱") && (await page.locator('[data-testid="env-admin-link"]').getAttribute("href")) === "/admin?tab=sandbox");
 	await shotR(page, "popover-local-1440");
 	await page.keyboard.press("Escape");
 	await page.waitForSelector('[data-testid="env-popover"]', { state: "detached" });
@@ -135,11 +135,11 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	const btn = page.locator('[data-testid="env-button"]');
 	await btn.waitFor();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-kind") === "remote");
-	check("B remote: cloud icon variant, aria-label names the provider", (await btn.getAttribute("data-env-kind")) === "remote" && /^执行环境：OpenSandbox/.test((await btn.getAttribute("aria-label")) ?? ""));
+	check("B remote: cloud icon variant, aria-label names the provider", (await btn.getAttribute("data-env-kind")) === "remote" && /^执行环境：云端沙箱（OpenSandbox/.test((await btn.getAttribute("aria-label")) ?? ""));
 	check("B remote: just opening the conversation did not connect or create anything (state none, no status line, no POST)", (await btn.getAttribute("data-env-state")) === "none" && (await page.locator('[data-testid="env-status"]').count()) === 0 && !reqLog.some((l) => l.startsWith("POST")) && (await instances(page)).length === 0);
 	await btn.click();
 	await page.waitForSelector('[data-testid="env-popover"]');
-	check("B popover: 自托管 badge, network 由提供方决定 (round 9: no Workroom policy), state line says it is created on first need, 现在准备 offered", (await page.locator('[data-testid="env-location"]').innerText()).includes("自托管") && (await page.locator('[data-testid="env-network"]').innerText()).includes("由提供方决定") && (await page.locator('[data-testid="env-state"]').innerText()).includes("第一次需要运行代码时") && (await page.locator('[data-testid="env-prepare"]').innerText()).includes("现在准备"));
+	check("B popover [round 10]: backend name OpenSandbox, state line says it is created when first needed, 现在准备 offered", (await page.locator('[data-testid="env-label"]').innerText()).includes("OpenSandbox") && (await page.locator('[data-testid="env-state"]').innerText()).includes("用到时自动创建") && (await page.locator('[data-testid="env-prepare"]').innerText()).includes("现在准备"));
 	await shotR(page, "popover-remote-none-1440");
 	await page.locator('[data-testid="env-prepare"]').click();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-state"]')?.getAttribute("data-state") === "failed", null, { timeout: 60000 });
@@ -181,7 +181,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 
 // ================================================================== C. intercepted state sequences
 {
-	const dto = (over = {}) => ({ kind: "remote", id: "opensandbox", label: "OpenSandbox（自托管）", location: "self_hosted", isolation: "代码在远端沙箱中执行。未隔离/限制：网络由提供方决定。", network: "allowed", networkText: "由提供方决定（Workroom 不限制，也不修改提供方的网络设置）", state: "none", options: [{ id: "opensandbox", label: "OpenSandbox（自托管）", current: true, enabled: true }], canChoose: false, chooseHint: "由组织管理员统一设置", canPrepare: true, ...over });
+	const dto = (over = {}) => ({ kind: "remote", id: "opensandbox", label: "OpenSandbox（自托管）", location: "self_hosted", isolation: "代码在远端沙箱中执行。未隔离/限制：网络由提供方决定。", network: "allowed", networkText: "由提供方决定（Workroom 不限制，也不修改提供方的网络设置）", state: "none", canPrepare: true, ...over });
 	// the intercepted UI sequence runs a real (local) sandbox call to keep the turn busy: back to the local driver for this part
 	await page.request.put(`${base}/api/sandbox/provider-policy`, { data: { orgDefault: "local", allowProjectOverride: false } });
 	const ic = await newCtx();
@@ -221,7 +221,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	check("C1 [intercepted] while the turn runs and the state turns preparing: '正在准备工作环境…' appears, button marked", (await p.locator('[data-testid="env-status"]').innerText()).includes("正在准备工作环境…") && (await p.locator('[data-testid="env-button"]').getAttribute("data-env-state")) === "preparing");
 	await shotR(p, "status-preparing-1440");
 	await p.locator('[data-testid="env-button"]').click();
-	check("C1 [intercepted] popover during preparing: state line says 正在准备工作环境…, no 重试 button", (await p.locator('[data-testid="env-state"]').innerText()).includes("正在准备工作环境…") && (await p.locator('[data-testid="env-prepare"]').count()) === 0);
+	check("C1 [intercepted] popover during preparing: state line says 准备中…, no 重试 button", (await p.locator('[data-testid="env-state"]').innerText()).includes("准备中") && (await p.locator('[data-testid="env-prepare"]').count()) === 0);
 	await p.keyboard.press("Escape");
 	phase = "ready";
 	await p.waitForSelector('[data-testid="env-status"]', { state: "detached", timeout: 15000 });
@@ -263,14 +263,14 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	await p.waitForSelector('[data-testid="env-status"]');
 	check("C3 [intercepted] misconfiguration: plain message, 请联系管理员, no 重试", (await p.locator('[data-testid="env-status"]').innerText()).includes("执行环境未配置：请联系管理员") && (await p.locator('[data-testid="env-retry"]').count()) === 0);
 
-	// C4: vendor cloud + switching allowed (project owner): honest badge, 切换 only on enabled non-current options
+	// C4 [round 10]: vendor cloud: backend name E2B, working directory shown only when the API provides it, nothing to switch
 	await p.unroute(envUrl);
-	await p.route(envUrl, (r) => r.fulfill({ json: dto({ location: "vendor_cloud", label: "E2B", id: "e2b", canChoose: true, chooseHint: undefined, options: [{ id: "local", label: "本机沙箱（Docker 容器）", current: false, enabled: true }, { id: "e2b", label: "E2B", current: true, enabled: true }, { id: "daytona", label: "Daytona", current: false, enabled: false }] }) }));
+	await p.route(envUrl, (r) => r.fulfill({ json: dto({ location: "vendor_cloud", label: "E2B", id: "e2b", state: "ready", workDir: "/home/user/work" }) }));
 	await p.goto(chatUrl);
 	await p.locator('[data-testid="env-button"]').click();
 	await p.waitForSelector('[data-testid="env-popover"]');
-	check("C4 [intercepted] vendor cloud badge says the data leaves the organisation", (await p.locator('[data-testid="env-location"]').innerText()).includes("数据会离开组织"));
-	check("C4 [intercepted] canChoose: 切换 only for the enabled non-current option (local), none for the current or disabled one", (await p.locator('[data-testid="env-switch-local"]').count()) === 1 && (await p.locator('[data-testid="env-switch-e2b"]').count()) === 0 && (await p.locator('[data-testid="env-switch-daytona"]').count()) === 0);
+	check("C4 [intercepted] backend name E2B, status 已就绪, working directory shown because the DTO carries it", (await p.locator('[data-testid="env-label"]').innerText()).includes("E2B") && (await p.locator('[data-testid="env-state"]').innerText()).includes("已就绪") && (await p.locator('[data-testid="env-workdir"]').innerText()).includes("/home/user/work"));
+	check("C4 [intercepted] no switch buttons even for a project owner; no 重试 / 现在准备 while ready", (await p.locator('[data-testid^="env-switch-"]').count()) === 0 && (await p.locator('[data-testid="env-prepare"]').count()) === 0);
 	await shotR(p, "popover-vendor-choose-1440");
 	await ic.close();
 }
@@ -287,7 +287,7 @@ else {
 	reqLog.length = 0;
 	await page.locator('[data-testid="env-button"]').click();
 	await page.waitForSelector('[data-testid="env-popover"]');
-	check("D [live] opening the popover on home: 自托管, nothing created", (await page.locator('[data-testid="env-location"]').innerText()).includes("自托管") && (await instances(page)).filter((i) => i.state !== "error" && i.state !== "destroyed" && i.state !== "lost").length === 0);
+	check("D [live] opening the popover on home: OpenSandbox, nothing created", (await page.locator('[data-testid="env-label"]').innerText()).includes("OpenSandbox") && (await instances(page)).filter((i) => i.state !== "error" && i.state !== "destroyed" && i.state !== "lost").length === 0);
 	await page.keyboard.press("Escape");
 	// plain chat first
 	await sendMessage(page, "只是聊天，请回答：1+1 等于几？");

@@ -1,4 +1,4 @@
-// Group S: per-org sandbox provider configuration, selection policy, project overrides, SSRF rules and the connection test.
+// Group S: per-org sandbox provider configuration, the single active channel (round 10), SSRF rules and the connection test.
 // The provider factory used for connection tests is a TEST DOUBLE (no vendor is contacted); DNS is a test double too.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -100,7 +100,9 @@ test("permissions: member 403, admin ok, other org isolated; key never returned,
 		assert.equal(await h.svc.connection(h.other.me.orgId, "e2b"), null);
 		// Other org cannot see or modify this org's config.
 		assert.equal((await h.call(h.other, "GET", "/api/sandbox/providers")).body.providers.find((x: any) => x.provider === "e2b").apiKeySet, false);
-		// key cleared
+		// key cleared (round 10: e2b is the active channel; it cannot be disabled until the org chooses another channel)
+		assert.equal((await h.call(h.owner, "PUT", "/api/sandbox/providers/e2b", { apiKey: null, enabled: false })).status, 409);
+		assert.equal((await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { orgDefault: "local" })).status, 200);
 		const clr = await h.call(h.owner, "PUT", "/api/sandbox/providers/e2b", { apiKey: null, enabled: false });
 		assert.equal(clr.body.provider.apiKeySet, false);
 		assert.equal(clr.body.provider.apiKeyHint, undefined);
@@ -193,60 +195,99 @@ test("validation: ranges, template charset, required fields, egress acknowledgem
 	}
 });
 
-test("selection policy, project override and effectiveFor matrix", async () => {
+test("one active sandbox channel: activating deactivates the others (one transaction), project override is gone, no silent fallback", async () => {
 	const h = await harness();
 	try {
 		const orgId = h.owner.me.orgId;
-		const proj = await h.t.json("POST", "/api/projects", { token: h.member.token, json: { kind: "space", name: "mgr-proj" } }); // member creates → project owner
+		const proj = await h.t.json("POST", "/api/projects", { token: h.member.token, json: { kind: "space", name: "mgr-proj" } });
 		const projectId = proj.project.id as string;
 		const personal = h.t.app.ctx.services.get("identity").personalSpace(h.member.me.userId, orgId) as Space;
 		const pspace = h.t.app.ctx.services.get("identity").projectSpace(projectId) as Space;
 		const put = (prov: string, body: unknown) => h.call(h.owner, "PUT", `/api/sandbox/providers/${prov}`, body);
-		await put("e2b", { apiKey: KEY, egressAcknowledged: true, enabled: true });
-		await put("daytona", { apiKey: KEY, egressAcknowledged: true, enabled: true });
-		// Defaults: local everywhere.
+		const policy = async () => (await h.call(h.owner, "GET", "/api/sandbox/provider-policy")).body.policy;
+		const enabledIds = async () => (await h.call(h.owner, "GET", "/api/sandbox/providers")).body.providers.filter((p: any) => p.enabled).map((p: any) => p.provider);
+		// Defaults: 平台内置沙箱 (local) everywhere, nothing active.
 		assert.deepEqual(h.svc.effectiveFor(personal), { kind: "local" });
 		assert.deepEqual(h.svc.effectiveFor(pspace), { kind: "local" });
-		// GET: project members read their choice; options never include secrets; non-members cannot.
-		const g0 = await h.call(h.member, "GET", `/api/projects/${projectId}/sandbox-provider`);
-		assert.equal(g0.status, 200, g0.text);
-		assert.equal(g0.body.provider, null);
-		assert.equal(g0.body.allowed, false);
-		assert.deepEqual(g0.body.options.map((o: any) => [o.id, o.enabled]), [["opensandbox", false], ["e2b", true], ["daytona", true]]);
-		assert.ok(!g0.text.includes("SUPERSECRET"));
-		assert.equal((await h.call(h.other, "GET", `/api/projects/${projectId}/sandbox-provider`)).status, 404);
-		// Project manager cannot override while the org forbids it.
-		assert.equal((await h.call(h.member, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: "e2b" })).status, 403);
-		// Non-manager of the project (other user in another org / member without the project) cannot.
-		assert.equal((await h.call(h.other, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: "e2b" })).status, 404);
-		// Org default must be enabled.
-		assert.equal((await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { orgDefault: "opensandbox" })).status, 409);
+		assert.deepEqual(await policy(), { orgDefault: "local", allowProjectOverride: false });
+		assert.deepEqual(await enabledIds(), []);
+
+		// Configuring WITHOUT `enabled` never activates anything (saving a card must not change the channel).
+		assert.equal((await put("e2b", { apiKey: KEY, egressAcknowledged: true, template: "base" })).status, 200);
+		assert.deepEqual(await enabledIds(), []);
+		assert.deepEqual(await policy(), { orgDefault: "local", allowProjectOverride: false });
+		// Choosing a provider that is not enabled is refused; unknown ids are refused.
+		assert.equal((await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { orgDefault: "e2b" })).status, 409);
 		assert.equal((await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { orgDefault: "bogus" })).status, 400);
-		const pol = await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { orgDefault: "e2b", allowProjectOverride: true });
-		assert.deepEqual(pol.body.policy, { orgDefault: "e2b", allowProjectOverride: true });
+
+		// Enabling e2b activates it: it is the org default for every space, personal and project alike.
+		const on = await put("e2b", { enabled: true });
+		assert.equal(on.status, 200, on.text);
+		assert.equal(on.body.provider.enabled, true);
+		assert.deepEqual(await policy(), { orgDefault: "e2b", allowProjectOverride: false });
 		assert.deepEqual(h.svc.effectiveFor(personal), { kind: "provider", provider: "e2b", orgId });
 		assert.deepEqual(h.svc.effectiveFor(pspace), { kind: "provider", provider: "e2b", orgId });
-		// Org member who is not a project manager cannot; the manager can, only for an enabled provider.
-		const inv = await h.t.json("POST", "/api/admin/invites", { token: h.owner.token, json: { role: "member" } });
-		const rando = await h.t.user("rando@s.example", { inviteCode: inv.invite.code });
-		assert.equal((await h.call(rando, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: "daytona" })).status, 403);
-		assert.equal((await h.call(h.member, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: "opensandbox" })).status, 409);
-		assert.equal((await h.call(h.member, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: "nonsense" })).status, 400);
-		assert.equal((await h.call(h.member, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: "daytona" })).status, 200);
+
+		// Enabling daytona deactivates e2b in the same write and becomes the org default. e2b keeps its configuration (key, template).
+		const dt = await put("daytona", { apiKey: KEY, egressAcknowledged: true, enabled: true });
+		assert.equal(dt.status, 200, dt.text);
+		assert.deepEqual(await enabledIds(), ["daytona"]);
+		assert.deepEqual(await policy(), { orgDefault: "daytona", allowProjectOverride: false });
+		const e2b = (await h.call(h.owner, "GET", "/api/sandbox/providers")).body.providers.find((p: any) => p.provider === "e2b");
+		assert.equal(e2b.enabled, false);
+		assert.equal(e2b.apiKeySet, true, "the deactivated provider keeps its saved configuration");
+		assert.equal(e2b.template, "base");
 		assert.deepEqual(h.svc.effectiveFor(pspace), { kind: "provider", provider: "daytona", orgId });
-		assert.deepEqual(h.svc.effectiveFor(personal), { kind: "provider", provider: "e2b", orgId }, "personal spaces always use the org default");
-		assert.equal((await h.call(h.member, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: "local" })).status, 200);
+		// The raw rows agree: at most one enabled row per org.
+		assert.equal(h.t.app.ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM tool_sandbox_providers WHERE org_id = ? AND enabled = 1", orgId)!.n, 1);
+
+		// A failed activation changes nothing (validation happens before the transaction): opensandbox has no endpoint.
+		const bad = await put("opensandbox", { apiKey: KEY, egressAcknowledged: true, enabled: true });
+		assert.equal(bad.body.error.code, "missing_field");
+		assert.deepEqual(await enabledIds(), ["daytona"]);
+		assert.deepEqual(await policy(), { orgDefault: "daytona", allowProjectOverride: false });
+
+		// Editing the active provider's settings keeps it active; editing another provider does not take the channel over.
+		assert.equal((await put("daytona", { createTimeoutSec: 90 })).status, 200);
+		assert.equal((await put("e2b", { template: "base2" })).status, 200);
+		assert.deepEqual(await enabledIds(), ["daytona"]);
+		assert.deepEqual(await policy(), { orgDefault: "daytona", allowProjectOverride: false });
+
+		// Choosing through the policy endpoint: an enabled-before provider can be re-chosen; "local" (平台内置沙箱) deactivates every provider.
+		assert.equal((await put("e2b", { enabled: true })).status, 200);
+		assert.deepEqual(await enabledIds(), ["e2b"]);
+		const loc = await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { orgDefault: "local" });
+		assert.deepEqual(loc.body.policy, { orgDefault: "local", allowProjectOverride: false });
+		assert.deepEqual(await enabledIds(), []);
+		assert.deepEqual(h.svc.effectiveFor(personal), { kind: "local" });
 		assert.deepEqual(h.svc.effectiveFor(pspace), { kind: "local" });
-		// Org turns overrides off: stored override is ignored → org default.
-		await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { allowProjectOverride: false });
-		assert.deepEqual(h.svc.effectiveFor(pspace), { kind: "provider", provider: "e2b", orgId });
-		// No silent fallback: disabling the chosen provider keeps it chosen, and explain() says why.
+
+		// Project override is gone: the endpoints do not exist, `allowProjectOverride: true` is refused, a stored legacy override is ignored.
+		// (the real app's GET/PUT /projects/:id/sandbox-provider routes are gone: asserted in round8-environment.test.ts)
+		const refuse = await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { allowProjectOverride: true });
+		assert.equal(refuse.status, 400);
+		assert.equal(refuse.body.error.code, "project_override_removed");
+		assert.equal((await h.call(h.owner, "PUT", "/api/sandbox/provider-policy", { allowProjectOverride: false })).status, 200);
+		const db = h.t.app.ctx.db;
+		db.run("INSERT INTO tool_sandbox_project_provider (project_id, org_id, provider, updated_by, updated_at) VALUES (?, ?, 'daytona', 'x', 'x')", projectId, orgId);
+		db.run("UPDATE tool_sandbox_provider_policy SET allow_project_override = 1 WHERE org_id = ?", orgId);
+		assert.deepEqual(h.svc.effectiveFor(pspace), { kind: "local" }, "a legacy override row / flag is ignored");
+		assert.equal((await h.call(h.owner, "GET", "/api/sandbox/provider-policy")).body.policy.allowProjectOverride, false);
+
+		// No silent fallback: the active provider cannot be switched off from under the org (409), it stays chosen; explain() covers a broken legacy state.
+		assert.equal((await put("e2b", { enabled: true })).status, 200);
+		const off = await put("e2b", { enabled: false });
+		assert.equal(off.status, 409);
+		assert.equal(off.body.error.code, "active_provider");
+		assert.deepEqual(await policy(), { orgDefault: "e2b", allowProjectOverride: false });
 		assert.equal(h.svc.explain(personal), "");
-		await put("e2b", { enabled: false });
+		db.run("UPDATE tool_sandbox_providers SET enabled = 0 WHERE org_id = ? AND provider = 'e2b'", orgId); // legacy / hand-edited state
 		assert.deepEqual(h.svc.effectiveFor(personal), { kind: "provider", provider: "e2b", orgId });
 		assert.match(h.svc.explain(personal), /停用.*不会回退到本机/);
-		// Clearing an override (null) by the manager works.
-		assert.equal((await h.call(h.member, "PUT", `/api/projects/${projectId}/sandbox-provider`, { provider: null })).status, 200);
+		// A non-active provider can be "disabled" idempotently.
+		assert.equal((await put("daytona", { enabled: false })).status, 200);
+		// Members cannot choose the channel.
+		assert.equal((await h.call(h.member, "PUT", "/api/sandbox/provider-policy", { orgDefault: "local" })).status, 403);
 	} finally {
 		await h.t.dispose();
 	}

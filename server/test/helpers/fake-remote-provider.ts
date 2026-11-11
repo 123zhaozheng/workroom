@@ -13,6 +13,14 @@ export class FakeBox {
 	dirs = new Set<string>(["/", "/work", "/tmp"]);
 	/** Directories made read-only by `chmod -R a-w` (the fake models "unprivileged user cannot write"). */
 	ro = new Set<string>();
+	/**
+	 * Round 10: models an unprivileged workload user that is NOT root (Daytona): it may only create directories / write files below these prefixes
+	 * (creating "/work" fails with "Permission denied"). undefined = root-like (everything allowed).
+	 */
+	writable: string[] | undefined;
+	user = "root";
+	/** cwd and env of the last user program (round 10: tests assert the working directory and WORKROOM_WORKDIR). */
+	lastRun: { cwd: string; env: Readonly<Record<string, string>> } | undefined;
 	running = 0;
 	maxRunning = 0;
 	writes: string[] = [];
@@ -28,6 +36,9 @@ export class FakeBox {
 		this.metadata = metadata;
 		this.createOptions = createOptions;
 		this.createdAt = createdAt;
+	}
+	canCreate(path: string): boolean {
+		return !this.writable || this.writable.some((w) => path === w || path.startsWith(`${w}/`));
 	}
 	put(path: string, text: string | Uint8Array) {
 		this.files.set(path, { kind: "file", bytes: typeof text === "string" ? Buffer.from(text) : text, mode: 0o644 });
@@ -59,6 +70,8 @@ export class FakeRemoteProvider implements RemoteProvider {
 	failCreate: Error | undefined;
 	/** Skip the read-only enforcement (models a single-user provider). */
 	singleUser = false;
+	/** Round 10: new sandboxes get a non-root user that can only write below `writable` (e.g. ["/home/daytona", "/tmp"]); "/work" does not exist and cannot be created. */
+	nonRoot: { user: string; writable: string[] } | undefined;
 	#n = 0;
 
 	async health() {
@@ -68,6 +81,11 @@ export class FakeRemoteProvider implements RemoteProvider {
 		if (this.failCreate) throw this.failCreate;
 		const id = `fake-${++this.#n}`;
 		const box = new FakeBox(id, { ...o.metadata }, { ...o });
+		if (this.nonRoot) {
+			box.user = this.nonRoot.user;
+			box.writable = [...this.nonRoot.writable];
+			box.dirs = new Set(["/", "/tmp", "/home", ...this.nonRoot.writable.filter((w) => w.startsWith("/home/"))]);
+		}
 		this.boxes.set(id, box);
 		this.created++;
 		return this.#session(box);
@@ -98,7 +116,7 @@ export class FakeRemoteProvider implements RemoteProvider {
 			},
 			async writeFile(path, bytes) {
 				if (!box.alive) throw new Error("sandbox gone");
-				if (self.#blocked(box, path)) throw new Error("permission denied");
+				if (self.#blocked(box, path) || !box.canCreate(path)) throw new Error("permission denied");
 				box.writes.push(path);
 				box.put(path, bytes);
 			},
@@ -118,6 +136,7 @@ export class FakeRemoteProvider implements RemoteProvider {
 				self.#rm(box, path);
 			},
 			async mkdir(path) {
+				if (!box.canCreate(path)) throw new Error("permission denied");
 				box.dirs.add(path);
 			},
 			async keepAlive() {},
@@ -144,18 +163,26 @@ export class FakeRemoteProvider implements RemoteProvider {
 		const q = (s: string) => s.replace(/^'|'$/g, "").replace(/'\\''/g, "'");
 		let m: RegExpExecArray | null;
 		if (c === "true") return ok();
-		if ((m = /^mkdir -p (\S+) && chmod a\+rwx \S+$/.exec(c))) return (box.dirs.add(m[1]!), ok());
+		if ((m = /^mkdir -p '([^']+)' && chmod a\+rwx '[^']+'$/.exec(c))) {
+			if (!box.canCreate(m[1]!)) return { status: "error", exitCode: 1, stdout: "", stderr: `mkdir: cannot create directory '${m[1]}': Permission denied` };
+			let d = m[1]!;
+			while (d) (box.dirs.add(d), (d = d.slice(0, d.lastIndexOf("/"))));
+			return ok();
+		}
+		if ((m = /^test -d '([^']+)' && test -w '[^']+' && test -x '[^']+'$/.exec(c))) return box.dirs.has(m[1]!) && box.canCreate(`${m[1]}/x`) ? ok() : { status: "error", exitCode: 1, stdout: "", stderr: "" };
+		if (c === "id -un 2>/dev/null || whoami") return ok(`${box.user}\n`);
 		if (/^chmod -R a\+rwX /.test(c)) return ok();
 		if ((m = /^rm -rf -- (.+)$/.exec(c))) {
 			for (const a of m[1]!.match(/'(?:[^']|'\\'')*'/g) ?? []) this.#rm(box, q(a));
 			return ok();
 		}
-		if ((m = /^cd '\/work' && find \. -type f -exec sha256sum \{\} \+ > (\S+); true$/.exec(c))) {
-			const lines = box.under("/work").filter((p) => box.files.get(p)!.kind === "file").map((p) => `${sha((box.files.get(p) as any).bytes)}  .${p.slice("/work".length)}`);
-			box.put(m[1]!, `${lines.join("\n")}\n`);
+		if ((m = /^cd '([^']+)' && find \. -type f -exec sha256sum \{\} \+ > '([^']+)' 2>\/dev\/null; true$/.exec(c))) {
+			const W = m[1]!;
+			const lines = box.under(W).filter((p) => box.files.get(p)!.kind === "file").map((p) => `${sha((box.files.get(p) as any).bytes)}  .${p.slice(W.length)}`);
+			box.put(m[2]!, `${lines.join("\n")}\n`);
 			return ok();
 		}
-		if ((m = /^rm -f (\S+)$/.exec(c))) return (box.files.delete(m[1]!), ok());
+		if ((m = /^rm -f '([^']+)'$/.exec(c))) return (box.files.delete(m[1]!), ok());
 		if ((m = /^rm -rf '(\/tmp\/\.wr-[^']+)'$/.exec(c))) return (this.#rm(box, m[1]!), ok());
 		if ((m = /^mkdir -p '(\/tmp\/\.wr-[^']+)' && chmod 755/.exec(c))) return (box.dirs.add(m[1]!), ok());
 		if (/^chmod 644 /.test(c)) return ok();
@@ -171,7 +198,10 @@ export class FakeRemoteProvider implements RemoteProvider {
 		if ((m = /^chmod -R a-w,a\+rX '([^']+)'$/.exec(c))) return (box.ro.add(m[1]!), ok());
 		if ((m = /^test -w '([^']+)' && echo writable \|\| echo protected$/.exec(c))) return ok(this.singleUser ? "writable\n" : "protected\n");
 		// user program
-		if ((m = /^(?:python3|\/bin\/sh|node(?: --max-old-space-size=\d+)?) '([^']+)'$/.exec(c))) return this.#program(box, box.text(m[1]!) ?? "", o);
+		if ((m = /^(?:python3|\/bin\/sh|node(?: --max-old-space-size=\d+)?) '([^']+)'$/.exec(c))) {
+			box.lastRun = { cwd: o.cwd, env: { ...(o.env ?? {}) } };
+			return this.#program(box, box.text(m[1]!) ?? "", o);
+		}
 		return { status: "error", exitCode: 127, stdout: "", stderr: `fake: unknown command ${c.slice(0, 120)}` };
 	}
 

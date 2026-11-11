@@ -45,8 +45,10 @@ try {
 	}
 	console.log("DENSITY before→after", Object.keys(pages).map((k) => `${k} ${BEFORE[k]}→${AFTER[k]}`).join(" | "));
 	for (const k of ["members", "authz", "models"]) check(`density: ${k} page shows fewer words than before`, AFTER[k] < BEFORE[k], `${BEFORE[k]} → ${AFTER[k]}`);
-	check("density: sandbox providers page shows at least 25% fewer words", AFTER.sandbox <= BEFORE.sandbox * 0.75, `${BEFORE.sandbox} → ${AFTER.sandbox}`);
-	check("density: no inspected page got wordier", Object.keys(pages).every((k) => AFTER[k] <= BEFORE[k]), Object.keys(pages).filter((k) => AFTER[k] > BEFORE[k]).join(","));
+	// Round 10 (intentional): the round-8 "25% fewer words" baseline for the sandbox page predates the round-10 additions (explicit size fields, 工作目录,
+	// the single-channel choice 当前使用的沙箱渠道). It now guards a ceiling instead, and the page is excluded from the "not wordier than round 8" rule.
+	check("density: sandbox page stays compact (<= 1100 words, incl. the single-channel choice and size fields)", AFTER.sandbox <= 1100, `${AFTER.sandbox}`);
+	check("density: no other inspected page got wordier", Object.keys(pages).filter((k) => k !== "sandbox").every((k) => AFTER[k] <= BEFORE[k]), Object.keys(pages).filter((k) => k !== "sandbox" && AFTER[k] > BEFORE[k]).join(","));
 
 	// ---------------------------------------------------------------- Select: keyboard
 	await page.goto(`${base}/admin?tab=audit`);
@@ -151,22 +153,20 @@ try {
 	const onBg = await page.locator('[data-testid="reduce-motion-toggle"]').evaluate((el) => getComputedStyle(el).backgroundColor);
 	check("switch: on state is the blue info colour", onBg !== "rgba(0, 0, 0, 0)" && /^rgb\(36, 88, 198\)$/.test(onBg), onBg);
 	await page.locator('[data-testid="reduce-motion-toggle"]').click();
-	// admin switch persisting through the existing API
+	// admin switch. Round 10: the 允许项目单独选择 switch (and its persistence checks) was removed with the per-project sandbox override;
+	// the provider card's 允许内网地址 switch (saved with the card's 保存) is the admin Switch under test now.
 	await page.goto(`${base}/admin?tab=sandbox`);
-	const ov = page.locator('[data-testid="allow-override"]');
+	const ov = page.locator('[data-testid="opensandbox-private"]');
 	await ov.waitFor();
-	const pol0 = (await (await api.get(`${base}/api/sandbox/providers`)).json()).policy.allowProjectOverride;
+	const ov0 = await ov.getAttribute("aria-checked");
 	await ov.click();
-	await page.waitForFunction((v) => document.querySelector('[data-testid="allow-override"]')?.getAttribute("aria-checked") === String(v), !pol0, { timeout: 8000 });
-	const pol1 = (await (await api.get(`${base}/api/sandbox/providers`)).json()).policy.allowProjectOverride;
-	check("switch: 允许项目单独选择 persists through the existing policy API", pol1 === !pol0, `${pol0} → ${pol1}`);
+	check("switch: the admin 允许内网地址 switch toggles aria-checked on click", (await ov.getAttribute("aria-checked")) !== ov0, `${ov0}`);
 	await ov.focus();
 	await page.keyboard.press("Space");
-	await page.waitForFunction((v) => document.querySelector('[data-testid="allow-override"]')?.getAttribute("aria-checked") === String(v), pol0, { timeout: 8000 });
-	check("switch: Space on the admin switch saves too", (await (await api.get(`${base}/api/sandbox/providers`)).json()).policy.allowProjectOverride === pol0);
+	check("switch: Space on the admin switch toggles it back", (await ov.getAttribute("aria-checked")) === ov0);
 	// busy + invalid are expressed with aria
 	check("switch: busy/invalid states are exposed as aria-busy / aria-invalid", await page.evaluate(async () => {
-		const el = document.querySelector('[data-testid="allow-override"]');
+		const el = document.querySelector('[data-testid="opensandbox-private"]');
 		return el !== null && "ariaBusy" in el;
 	}));
 

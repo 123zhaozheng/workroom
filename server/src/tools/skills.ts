@@ -15,6 +15,7 @@ import type { SkillDraftDTO, SkillDTO, SkillKind, SkillPermission, SkillRunDTO, 
 import { runtimeActorResolver, type ActorResolver } from "../files/actor.ts";
 import type { ToolCallLog } from "./calls.ts";
 import type { Sandbox } from "./sandbox.ts";
+import { LOCAL_SKILLS_ROOT, LOCAL_WORKDIR, mapMountTarget } from "./sandbox/workdir.ts";
 import type { Market } from "./market.ts";
 
 export const SKILL_MIGRATIONS: Migration[] = [
@@ -505,29 +506,33 @@ export class Skills {
 		const caps = await sb.capabilities().catch(() => null);
 		const useMounts = !!caps?.mounts;
 		const runKey = (ids.callId ?? newId("in")).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 40);
+		// Round 10: the mount TARGET stays the logical /skills/<slug> (the driver re-roots it); the paths the SCRIPT sees are the real ones of the active driver.
+		const lay = sb.layout(space);
 		let root: string;
+		let mountTarget = "";
 		let mounts: { hostPath: string; target: string; readOnly: boolean }[] = [];
 		let inputPath: string;
 		if (useMounts) {
 			const { dir, slug } = this.#market.materialize(skill, v, ids.slugOverride);
-			root = `/skills/${slug}`;
+			mountTarget = `/skills/${slug}`;
+			root = mapMountTarget(lay.workDir, mountTarget);
 			// Mounts are on demand: the provider mounts the skills this conversation has loaded. A skill run always mounts its own skill:
 			// record it as loaded (most recent) and only add it explicitly when the provider would not (drafts, no conversation, slug clash).
 			let provided = false;
 			if (!ids.slugOverride && wdKey != null) {
 				this.markLoaded(space.id, wdKey, skill, v);
-				provided = (await this.#market.loadedMountPlan(p, space, wdKey)).mounts.some((x) => x.mount.target === root);
+				provided = (await this.#market.loadedMountPlan(p, space, wdKey)).mounts.some((x) => x.mount.target === mountTarget);
 			}
-			if (!provided) mounts = [{ hostPath: dir, target: root, readOnly: true }];
-			inputPath = `/work/.skill-run/${runKey}/input.txt`;
+			if (!provided) mounts = [{ hostPath: dir, target: mountTarget, readOnly: true }];
+			inputPath = `${lay.workDir}/.skill-run/${runKey}/input.txt`;
 			sb.writeFile(space, wdKey, `.skill-run/${runKey}/input.txt`, new TextEncoder().encode(input));
 		} else {
 			const resources = this.#market.versionFiles(skill, v);
 			const dir = `.skills/${skill.id}-v${v.version_no}`;
 			for (const r of resources) sb.writeFile(space, wdKey, `${dir}/${r.path}`, r.bytes);
 			sb.writeFile(space, wdKey, `${dir}/.input.txt`, new TextEncoder().encode(input));
-			root = `/work/${dir}`;
-			inputPath = `/work/${dir}/.input.txt`;
+			root = `${lay.workDir}/${dir}`;
+			inputPath = `${lay.workDir}/${dir}/.input.txt`;
 		}
 		const code =
 			language === "node"
@@ -746,11 +751,13 @@ const oneLine = (x: string, max: number) => {
 };
 
 /** Prompt section text for the skills a user may use now: "name (slug) — description", ≤ 50 lines, with an explicit "N more" line (never a silent cut). */
-export function renderSkillIndex(entries: readonly { name: string; slug: string; description: string }[]): string | undefined {
+export function renderSkillIndex(entries: readonly { name: string; slug: string; description: string }[], paths: { workDir?: string; skillsRoot?: string } = {}): string | undefined {
+	const workDir = paths.workDir ?? LOCAL_WORKDIR;
+	const skillsRoot = paths.skillsRoot ?? LOCAL_SKILLS_ROOT;
 	if (!entries.length) return undefined;
 	const shown = entries.slice(0, SKILL_PROMPT_MAX_LINES);
 	const lines = [
-		"可用技能（按需使用：用 skill 工具 action=load 读取说明，action=read 读取技能包文件，action=run 运行可执行技能；不要凭记忆假设技能内容。要修改已安装的技能：skill_manage action=checkout 取出当前文件 → 在 /work 里编辑并提高 version → skill_manage action=submit_draft，用户确认后保存为新版本；不要用 sandbox_exec 复制 /skills/）：",
+		`可用技能（按需使用：用 skill 工具 action=load 读取说明，action=read 读取技能包文件，action=run 运行可执行技能；不要凭记忆假设技能内容。要修改已安装的技能：skill_manage action=checkout 取出当前文件 → 在 ${workDir} 里编辑并提高 version → skill_manage action=submit_draft，用户确认后保存为新版本；不要用 sandbox_exec 复制 ${skillsRoot}/）：`,
 		...shown.map((e) => `- ${oneLine(e.name, 60)} (${oneLine(e.slug, 80)}) — ${oneLine(e.description, 120) || "（无描述）"}`),
 	];
 	if (entries.length > shown.length) lines.push(`另有 ${entries.length - shown.length} 个技能未列出，用 skill 工具 action=search 查找`);
@@ -790,15 +797,23 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 	const log = () => ctx.services.get("toolCalls") as ToolCallLog;
 	type Out = { text: string; isError?: boolean; details?: Record<string, string | number | boolean | { runId: string; spaceId: string }> };
 
-	const describe = (mk: Market, { skill, version }: { skill: SkillRow; version: VersionRow }) =>
-		`- ${skill.name}（/skills/${mk.slugOf(skill)}，${skill.kind}，v${version.version_no}${version.semver ? ` ${version.semver}` : ""}）：${version.description}${version.required_permissions !== "[]" ? `；需要授权：${JSON.parse(version.required_permissions).join(", ")}` : ""}`;
+	/** Round 10: where the active sandbox mounts skills / keeps the working directory (the logical /skills and /work for local drivers). Configuration only. */
+	const layoutOf = (space: Space): { workDir: string; skillsRoot: string } => {
+		try {
+			return (ctx.services.get("sandbox") as Sandbox).layout(space);
+		} catch {
+			return { workDir: LOCAL_WORKDIR, skillsRoot: LOCAL_SKILLS_ROOT };
+		}
+	};
+	const describe = (mk: Market, { skill, version }: { skill: SkillRow; version: VersionRow }, skillsRoot: string) =>
+		`- ${skill.name}（${skillsRoot}/${mk.slugOf(skill)}，${skill.kind}，v${version.version_no}${version.semver ? ` ${version.semver}` : ""}）：${version.description}${version.required_permissions !== "[]" ? `；需要授权：${JSON.parse(version.required_permissions).join(", ")}` : ""}`;
 
 	// ----- shared implementations (the unified `skill` tool and the legacy skill_* tools call the same code) -----
 	async function doList(actor: ToolActor, limit = 100): Promise<Out> {
 		const act = await skills().active(actor.principal, actor.space);
 		const mk = market();
 		if (!act.length) return { text: "（用户没有启用的技能）" };
-		const lines = act.slice(0, limit).map((a) => describe(mk, a));
+		const lines = act.slice(0, limit).map((a) => describe(mk, a, layoutOf(actor.space).skillsRoot));
 		if (act.length > limit) lines.push(`另有 ${act.length - limit} 个技能未列出，用 skill 工具 action=search 查找`);
 		return { text: lines.join("\n") };
 	}
@@ -816,7 +831,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 			.sort((x, y) => Number(y.all) - Number(x.all) || y.s - x.s || x.a.skill.name.localeCompare(y.a.skill.name));
 		if (!hits.length) return { text: `没有找到与「${query}」匹配的可用技能（共 ${act.length} 个可用技能；用 action=list 查看全部）` };
 		const top = hits.slice(0, 20);
-		const lines = top.map((h) => describe(mk, h.a));
+		const lines = top.map((h) => describe(mk, h.a, layoutOf(actor.space).skillsRoot));
 		if (hits.length > top.length) lines.push(`另有 ${hits.length - top.length} 个匹配未列出，请换更具体的关键词`);
 		return { text: lines.join("\n") };
 	}
@@ -831,7 +846,8 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 		skills().recordRun({ skill, version, mode: "load", userId: actor.principal.userId, actor, status: "ok" });
 		const res = (JSON.parse(version.resources) as Resource[]).filter((r) => r.path !== "SKILL.md");
 		const slug = market().slugOf(skill);
-		const text = `<skill name="${skill.name}" kind="${skill.kind}" version="${version.version_no}"${version.semver ? ` semver="${version.semver}"` : ""} dir="/skills/${slug}">\n${version.instructions}\n</skill>\n${res.length ? `资源（沙箱中只读挂载在 /skills/${slug}/ ，可用 skill 工具 action=read 读取文本）：${res.map((r) => r.path).join(", ")}\n` : ""}${SKILL_CONTRACT}${await overflowNote(actor)}`;
+		const skillsRoot = layoutOf(actor.space).skillsRoot;
+		const text = `<skill name="${skill.name}" kind="${skill.kind}" version="${version.version_no}"${version.semver ? ` semver="${version.semver}"` : ""} dir="${skillsRoot}/${slug}">\n${version.instructions}\n</skill>\n${res.length ? `资源（沙箱中只读挂载在 ${skillsRoot}/${slug}/ ，可用 skill 工具 action=read 读取文本）：${res.map((r) => r.path).join(", ")}\n` : ""}${SKILL_CONTRACT}${await overflowNote(actor)}`;
 		return { text, details: { skillId: skill.id, versionId: version.id, versionNo: version.version_no } };
 	}
 	async function doRead(actor: ToolActor, name: string, path: string, offset?: number): Promise<Out> {
@@ -881,7 +897,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 	const skillTool = defineTool({
 		name: "skill",
 		description:
-			"Use the skills the user has installed (listed in the system prompt). action=list shows them all; action=search needs `query`; action=load needs `name` (name or slug) and returns the skill's instructions (SKILL.md) — loading also mounts its package read-only at /skills/<slug>/ in later sandbox runs and never grants permission to run scripts; " +
+			"Use the skills the user has installed (listed in the system prompt). action=list shows them all; action=search needs `query`; action=load needs `name` (name or slug) and returns the skill's instructions (SKILL.md) — loading also mounts its package read-only at <skills directory>/<slug>/ in later sandbox runs (the real path is printed in the result) and never grants permission to run scripts; " +
 			"action=read needs `name` and `path` (optional `offset`) and returns a text file of the package; action=run needs `name` (optional `input`, `script`) and runs an executable skill in the sandbox (needs the user's grant for that exact version). Parameters not used by the chosen action are rejected.",
 		parameters: obj({
 			action: oneOf(SKILL_ACTIONS as unknown as ["list", "search", "load", "read", "run"], { description: "list | search | load | read | run" }),
@@ -972,7 +988,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 					const mk = market();
 					if (!(await mk.can(scope.principal, "skill.use"))) return undefined;
 					const act = await skills().active(scope.principal, scope.space);
-					return renderSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })));
+					return renderSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })), layoutOf(scope.space));
 				} catch {
 					return undefined;
 				}

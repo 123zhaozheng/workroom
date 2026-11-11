@@ -1,8 +1,8 @@
 {
-  "at": "2026-11-11T07:47:26.940Z",
+  "at": "2026-11-11T11:00:09.250Z",
   "results": [
     {
-      "name": "[intercepted] admin sees 运行环境 tab and the 执行位置 section",
+      "name": "[intercepted] admin sees the 沙箱 tab and the 当前使用的沙箱渠道 section (round 10)",
       "ok": true,
       "detail": ""
     },
@@ -12,7 +12,12 @@
       "detail": ""
     },
     {
-      "name": "[intercepted] org default select: only enabled providers selectable",
+      "name": "[intercepted] one single choice: 平台内置沙箱 + 3 providers as radios, OpenSandbox is the one checked, providers without a key cannot be chosen; no 允许项目单独选择 switch, no per-card 启用 switch",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[intercepted] cards say which one is 当前使用",
       "ok": true,
       "detail": ""
     },
@@ -72,7 +77,7 @@
       "detail": ""
     },
     {
-      "name": "[intercepted] unhealthy default shown, says no silent fallback, selection unchanged",
+      "name": "[intercepted] unhealthy active channel shown, says no silent fallback, selection unchanged",
       "ok": true,
       "detail": ""
     },
@@ -137,7 +142,7 @@
       "detail": ""
     },
     {
-      "name": "[real] E2B: UI blocks enabling without acknowledgement",
+      "name": "[real] E2B: its channel option cannot be chosen until an access key is saved (UI); no per-card 启用 switch",
       "ok": true,
       "detail": ""
     },
@@ -152,14 +157,14 @@
       "detail": "200"
     },
     {
-      "name": "[real] opensandbox enabled (loopback allowed by both switches) and set as org default",
+      "name": "[real] opensandbox enabled (loopback allowed by both switches) and set as the active channel; E2B (enabled earlier) was deactivated by it",
       "ok": true,
       "detail": "200/200"
     },
     {
-      "name": "[real] unreachable endpoint → plain failure; default still OpenSandbox; unhealthy banner (no fallback)",
+      "name": "[real] unreachable endpoint → plain failure; channel still OpenSandbox; unhealthy banner (no fallback)",
       "ok": true,
-      "detail": "连通性 完整测试 失败 连通性 · 11/11 07:47 · 用时 222 毫秒 OpenSandbox 不可用：fetch failed"
+      "detail": "连通性 完整测试 失败 连通性 · 11/11 11:00 · 用时 95 毫秒 OpenSandbox 不可用：fetch failed"
     },
     {
       "name": "[real] key still absent from every response after tests",
@@ -177,24 +182,24 @@
       "detail": ""
     },
     {
-      "name": "[real] project override hidden when the org does not allow it; PUT refused (403)",
-      "ok": true,
-      "detail": "PUT 403"
-    },
-    {
-      "name": "[real] allowed: owner sees the picker, choosing OpenSandbox is saved and read back",
+      "name": "[real] UI: choosing E2B makes it the only enabled provider and the org default (OpenSandbox keeps its saved key)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "[real] 跟随组织默认 clears the override (provider null)",
+      "name": "[real] UI: choosing 平台内置沙箱 deactivates every provider (org default local)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "[real] non-member: GET 404, PUT refused, no picker",
+      "name": "[real] allowProjectOverride=true is refused (400 project_override_removed); the policy still reports false",
       "ok": true,
-      "detail": "404/403"
+      "detail": "400"
+    },
+    {
+      "name": "[real] per-project sandbox choice is gone: endpoints 404 and the project page has no picker",
+      "ok": true,
+      "detail": "404/404"
     }
   ]
 }

@@ -5,7 +5,7 @@
 //    (Local driver detection is the existing cached probe, not a sandbox.)
 //  * Sending a message never calls anything here. `prepare()` exists only for an explicit retry and goes through Sandbox.prepare → RemoteDriver.prepare,
 //    i.e. the same acquire / restore / sync code a sandbox tool call uses (no second path), under the same lock.
-//  * No fake options: the list is what the space may actually use; switching is the existing project-override API (policy enforced there).
+//  * Round 10: one organisation-wide sandbox channel (admin: 管理后台 › 沙箱). The conversation only REPORTS it: no option list, no per-project switching.
 //  * No silent fallback: a misconfigured environment is reported as `failed` with a plain message, never as the local driver.
 import type { AppContext, Principal, Space } from "../../core/contracts.ts";
 import { HttpError } from "../../core/http.ts";
@@ -13,12 +13,12 @@ import type { ConversationEnvironmentDTO } from "../../../../shared/sandbox.ts";
 import { isolationText, type Sandbox } from "../sandbox.ts";
 import { activityKey, remoteActivity } from "./remote-driver.ts";
 import { providerConfigsFor } from "./provider-config.ts";
-import { PROVIDER_IDS, type ProviderId } from "./provider.ts";
+import type { ProviderId } from "./provider.ts";
 import { workspaceKeyOf } from "./persist.ts";
 import { requirePermission } from "./perm.ts";
 import { NETWORK_TEXT_PROVIDER, networkText } from "./network.ts";
+import { LOCAL_SKILLS_ROOT, LOCAL_WORKDIR, skillsRootFor } from "./workdir.ts";
 
-type Option = ConversationEnvironmentDTO["options"][number];
 type State = ConversationEnvironmentDTO["state"];
 
 interface Row {
@@ -56,23 +56,13 @@ export class ConversationEnvironments {
 		}
 	}
 
-	async #canManageProject(p: Principal, projectId: string): Promise<boolean> {
-		const authz = this.#ctx.services.has("authz") ? this.#ctx.services.get("authz") : undefined;
-		if (!authz) return p.orgRole === "owner" || p.orgRole === "admin";
-		try {
-			return await authz.has(p, "project.manage", { kind: "project", id: projectId });
-		} catch {
-			return false;
-		}
-	}
-
 	/** Local driver as resolved now (cached probe). */
 	async #local(): Promise<{ id: string; label: string; usable: boolean; reason: string; isolation: string; network: boolean; networkText: string }> {
 		const r = await this.#sandbox.drivers.resolve();
-		if (r.effective === "none") return { id: "none", label: "未启用本机沙箱", usable: false, reason: r.reason, isolation: "没有可用的执行环境", network: false, networkText: "无网络（没有可用的沙箱驱动）" };
+		if (r.effective === "none") return { id: "none", label: "平台内置沙箱（未启用）", usable: false, reason: r.reason, isolation: "没有可用的执行环境", network: false, networkText: "无网络（没有可用的沙箱驱动）" };
 		return {
 			id: r.effective,
-			label: `本机沙箱（${r.driver.label}）`,
+			label: `平台内置沙箱（${r.driver.label}）`,
 			usable: true,
 			reason: "",
 			isolation: isolationText(r.driver.notes),
@@ -120,29 +110,9 @@ export class ConversationEnvironments {
 	async get(p: Principal, space: Space, conversationId: number): Promise<ConversationEnvironmentDTO> {
 		const cfgs = providerConfigsFor(this.#ctx);
 		const eff = cfgs.effectiveFor(space);
-		const policy = cfgs.policy({ orgId: space.orgId });
 		const writable = await this.#canWrite(p, space);
 		const local = await this.#local();
 		const wk = workspaceKeyOf(conversationId);
-
-		// ---- who may switch ----
-		let canChoose = false;
-		let chooseHint: string | undefined;
-		if (space.kind !== "project" || !space.projectId) chooseHint = "个人空间使用组织统一设置的执行环境";
-		else if (!policy.allowProjectOverride) chooseHint = "由组织管理员统一设置";
-		else if (!(await this.#canManageProject(p, space.projectId))) chooseHint = "只有项目管理员可以更改这个项目的执行环境";
-		else canChoose = true;
-
-		// ---- options: what this space may actually use ----
-		const currentOptionId = eff.kind === "local" ? "local" : eff.provider;
-		const all: Option[] = [{ id: "local", label: local.label, current: currentOptionId === "local", enabled: local.usable }];
-		for (const id of PROVIDER_IDS) {
-			const d = cfgs.dto({ orgId: space.orgId }, id);
-			if (d.enabled) all.push({ id, label: d.label, current: currentOptionId === id, enabled: d.apiKeySet });
-		}
-		// Not choosable here → only the one in effect is "permitted" for this space (no list of things the caller cannot pick).
-		const options = canChoose ? all : all.filter((o) => o.current);
-		if (!options.some((o) => o.current)) options.push(all.find((o) => o.current) ?? { id: currentOptionId, label: currentOptionId, current: true, enabled: false });
 
 		// ---- local ----
 		if (eff.kind === "local") {
@@ -156,10 +126,9 @@ export class ConversationEnvironments {
 				networkText: local.networkText,
 				state: local.usable ? "ready" : "failed",
 				...(local.usable ? {} : { error: NO_DRIVER }),
-				options,
-				canChoose,
-				...(chooseHint ? { chooseHint } : {}),
 				canPrepare: false,
+				workDir: LOCAL_WORKDIR,
+				skillsDir: LOCAL_SKILLS_ROOT,
 			};
 		}
 
@@ -196,10 +165,9 @@ export class ConversationEnvironments {
 			state,
 			...(error ? { error } : {}),
 			...(updatedAt ? { updatedAt } : {}),
-			options,
-			canChoose,
-			...(chooseHint ? { chooseHint } : {}),
 			canPrepare: writable && !why,
+			workDir: cfgs.effectiveWorkDir(space.orgId, provider),
+			skillsDir: skillsRootFor(cfgs.effectiveWorkDir(space.orgId, provider)),
 		};
 	}
 

@@ -1,28 +1,28 @@
 {
-  "at": "2026-11-11T08:25:58.951Z",
+  "at": "2026-11-11T10:58:21.434Z",
   "results": [
     {
       "name": "density: members page shows fewer words than before",
       "ok": true,
-      "detail": "147 → 144"
+      "detail": "147 → 142"
     },
     {
       "name": "density: authz page shows fewer words than before",
       "ok": true,
-      "detail": "191 → 132"
+      "detail": "191 → 130"
     },
     {
       "name": "density: models page shows fewer words than before",
       "ok": true,
-      "detail": "183 → 162"
+      "detail": "183 → 160"
     },
     {
-      "name": "density: sandbox providers page shows at least 25% fewer words",
+      "name": "density: sandbox page stays compact (<= 1100 words, incl. the single-channel choice and size fields)",
       "ok": true,
-      "detail": "807 → 593"
+      "detail": "1001"
     },
     {
-      "name": "density: no inspected page got wordier",
+      "name": "density: no other inspected page got wordier",
       "ok": true,
       "detail": ""
     },
@@ -74,12 +74,12 @@
     {
       "name": "select: a 30+ item list scrolls inside the popover and stays inside the viewport (1440×900)",
       "ok": true,
-      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.1394500732422,\"h\":352.00001525878906}"
+      "detail": "{\"sh\":1164,\"ch\":350,\"y\":227.75198364257812,\"h\":351.9999694824219}"
     },
     {
       "name": "select @390: the popover is opaque and inside the viewport",
       "ok": true,
-      "detail": "{\"x\":16,\"y\":304.5514221191406,\"width\":192,\"height\":351.9999694824219}"
+      "detail": "{\"x\":16,\"y\":304.5523986816406,\"width\":192,\"height\":351.9999694824219}"
     },
     {
       "name": "select @390: no horizontal scroll on the page",
@@ -112,12 +112,12 @@
       "detail": "rgb(36, 88, 198)"
     },
     {
-      "name": "switch: 允许项目单独选择 persists through the existing policy API",
+      "name": "switch: the admin 允许内网地址 switch toggles aria-checked on click",
       "ok": true,
-      "detail": "false → true"
+      "detail": "false"
     },
     {
-      "name": "switch: Space on the admin switch saves too",
+      "name": "switch: Space on the admin switch toggles it back",
       "ok": true,
       "detail": ""
     },
@@ -149,7 +149,7 @@
     {
       "name": "help @390: a tap opens it, fully inside the viewport",
       "ok": true,
-      "detail": "{\"x\":54,\"y\":530.550048828125,\"width\":320,\"height\":71.5}"
+      "detail": "{\"x\":54,\"y\":531,\"width\":320,\"height\":71.5}"
     },
     {
       "name": "settings: left navigation with seven entries (round 9 added 安全) and a content column ≤ 720px",

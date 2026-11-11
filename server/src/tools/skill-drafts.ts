@@ -34,6 +34,7 @@ import type { ToolCallLog } from "./calls.ts";
 import type { Market } from "./market.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { cleanPath, isInside } from "./sandbox/workspace.ts";
+import { displayPath, stripWorkPrefix } from "./sandbox/workdir.ts";
 import { requirePermission } from "./sandbox/perm.ts";
 import { workspaceKeyOf, workspacePersistenceFor } from "./sandbox/persist.ts";
 import { buildPackage, compareSemver, LIMITS, PackageError, sha256Hex } from "./skills-package.ts";
@@ -92,12 +93,17 @@ interface DraftRow {
 const bad = (msg: string, code = "bad_dir") => new HttpError(400, code, msg);
 const MAX_ENTRIES = LIMITS.files * 4;
 
-/** Validate the model-supplied `dir` (relative to /work) and return the clean relative path. */
-export function cleanDir(dir: unknown): string {
-	if (typeof dir !== "string" || !dir.trim()) throw bad("dir 必须是 /work 下的子目录，例如 weekly-report");
+/**
+ * Validate the model-supplied `dir` (relative to the sandbox working directory) and return the clean relative path.
+ * Accepted shapes: `a/b`, `/work/a/b` (local drivers, backward compatible) and `<real working directory>/a/b` (`workDir`, remote providers).
+ */
+export function cleanDir(dir: unknown, workDir?: string): string {
+	if (typeof dir === "string") dir = stripWorkPrefix(dir, workDir);
+	const wd = workDir && workDir !== "/work" ? `工作目录（${workDir}）` : "/work";
+	if (typeof dir !== "string" || !dir.trim()) throw bad(`dir 必须是 ${wd} 下的子目录，例如 weekly-report`);
 	if (dir.includes("\0") || dir.includes("\\")) throw bad("dir 含非法字符");
 	if (/^[A-Za-z]:/.test(dir)) throw bad("dir 不能是盘符路径");
-	if (dir.startsWith("/") && !/^\/work(\/|$)/.test(dir)) throw bad("dir 必须相对于 /work，不允许绝对路径");
+	if (dir.startsWith("/") && !/^\/work(\/|$)/.test(dir)) throw bad(`dir 必须相对于 ${wd}，不允许绝对路径`);
 	if (dir.split("/").includes("..")) throw bad("dir 不能包含 “..”");
 	let rel: string;
 	try {
@@ -105,7 +111,7 @@ export function cleanDir(dir: unknown): string {
 	} catch (e) {
 		throw bad(String((e as Error).message));
 	}
-	if (!rel) throw bad("dir 必须是 /work 下的子目录，不能是工作区根目录");
+	if (!rel) throw bad(`dir 必须是 ${wd} 下的子目录，不能是工作区根目录`);
 	return rel;
 }
 
@@ -118,8 +124,9 @@ export interface Snapshot {
  * Read every file of `<workdir>/<rel>`. Refuses symlinks (the directory itself, any parent inside the workdir, any entry), special files
  * (fifo/socket/device), more than LIMITS.files files / LIMITS.fileBytes per file / LIMITS.totalBytes in total.
  */
-export function snapshotDir(workdir: string, dir: unknown): Snapshot {
-	const rel = cleanDir(dir);
+export function snapshotDir(workdir: string, dir: unknown, shown?: string): Snapshot {
+	const rel = cleanDir(dir, shown);
+	const at = displayPath(shown ?? "/work", rel);
 	const segs = rel.split("/");
 	let rootSt;
 	try {
@@ -137,10 +144,10 @@ export function snapshotDir(workdir: string, dir: unknown): Snapshot {
 		try {
 			st = lstatSync(cur);
 		} catch {
-			throw bad(`目录不存在：/work/${rel}`, "dir_not_found");
+			throw bad(`目录不存在：${at}`, "dir_not_found");
 		}
-		if (st.isSymbolicLink()) throw bad(`路径经过符号链接，已拒绝：/work/${rel}`, "symlink_refused");
-		if (!st.isDirectory()) throw bad(`不是目录：/work/${rel}`);
+		if (st.isSymbolicLink()) throw bad(`路径经过符号链接，已拒绝：${at}`, "symlink_refused");
+		if (!st.isDirectory()) throw bad(`不是目录：${at}`);
 	}
 	const realDir = realpathSync.native(cur);
 	if (realDir !== join(realRoot, ...segs) || !isInside(realRoot, realDir)) throw bad("目录不在会话工作区内", "symlink_refused");
@@ -395,7 +402,7 @@ export class SkillDrafts {
 
 		let snap: Snapshot;
 		try {
-			snap = snapshotDir(this.#sandbox.workdir(actor.space, actor.conversationId), dir);
+			snap = snapshotDir(this.#sandbox.workdir(actor.space, actor.conversationId), dir, this.#sandbox.layout(actor.space).workDir);
 		} catch (e) {
 			if (!(e instanceof HttpError)) throw e;
 			return failed(String(dir).slice(0, 200), [{ severity: "error", code: e.code, message: e.message }]);
@@ -540,14 +547,14 @@ export class SkillDrafts {
 	}
 
 	/** Result text for the agent. */
-	describe(r: DraftRow, orgId: string): string {
+	describe(r: DraftRow, orgId: string, workDir = "/work"): string {
 		const d = JSON.parse(r.detail) as SkillDraftApprovalDetail;
 		const fl = d.findings.filter((f) => f.severity !== "info").map((f) => `- [${f.severity}] ${f.message}`).join("\n");
 		const t = d.target;
 		if (r.state === "failed") {
 			const tail = d.findings.some((f) => f.code === "name_taken_not_writable" || f.code === "submit_not_allowed")
 				? "没有创建审批，也没有保存任何内容。按上面的建议处理后重新调用 skill_manage submit_draft。"
-				: `请修改 /work/${d.sourceDir} 中的文件后重新调用 skill_manage submit_draft。`;
+				: `请修改 ${displayPath(workDir, d.sourceDir)} 中的文件后重新调用 skill_manage submit_draft。`;
 			return `技能草稿「${d.name}」未能保存：${r.error ?? "失败"}\n${fl ? `检查结果：\n${fl}\n` : ""}${tail}`;
 		}
 		if (r.state === "rejected") return `用户拒绝了技能草稿「${d.name}」v${d.version}，没有保存任何内容。${r.error ? `原因：${r.error}` : ""}`;
@@ -603,7 +610,8 @@ export class SkillDrafts {
 			const u = this.#market.usable(skill, v);
 			if (!u.ok) throw new HttpError(409, u.reason, u.message);
 		}
-		const rel = cleanDir(input.dir ?? slug);
+		const W = this.#sandbox.layout(actor.space).workDir; // the real working directory the model sees (round 10)
+		const rel = cleanDir(input.dir ?? slug, W);
 		const files = this.#market.versionFiles(skill, v);
 		const total = files.reduce((n, f) => n + f.bytes.byteLength, 0);
 
@@ -611,7 +619,7 @@ export class SkillDrafts {
 			const wd = this.#sandbox.workdir(actor.space, actor.conversationId);
 			let existing: Snapshot["files"] = [];
 			try {
-				existing = snapshotDir(wd, rel).files;
+				existing = snapshotDir(wd, rel, W).files;
 			} catch (e) {
 				if (!(e instanceof HttpError) || e.code !== "dir_not_found") throw e;
 			}
@@ -626,7 +634,7 @@ export class SkillDrafts {
 					throw new HttpError(
 						409,
 						"dir_not_empty",
-						`/work/${rel} 里已有内容，而且${prev ? `其中有你改动过或新增的文件（${changed.slice(0, 5).join("、")}${changed.length > 5 ? " 等" : ""}）` : "它不是这个技能的检出目录"}，为避免覆盖已拒绝检出。` +
+						`${W}/${rel} 里已有内容，而且${prev ? `其中有你改动过或新增的文件（${changed.slice(0, 5).join("、")}${changed.length > 5 ? " 等" : ""}）` : "它不是这个技能的检出目录"}，为避免覆盖已拒绝检出。` +
 							`${prev ? `要保留改动，直接继续编辑并调用 skill_manage submit_draft { dir: "${rel}" } 即可；` : ""}要重新检出，请换一个 dir（例如 ${rel}-2）。`,
 					);
 				}
@@ -651,9 +659,9 @@ export class SkillDrafts {
 			const canSubmit = writable && (skill.scope === "personal" || (await this.#market.canSubmitTo(p, skill.scope, skill.scope_ref)));
 			const where = skill.scope === "personal" ? "个人技能" : `市场技能（${skill.scope === "org" ? "组织" : skill.scope === "department" ? "部门" : "项目"}）`;
 			const next = canSubmit
-				? `下一步：用 sandbox_read_file / sandbox_write_file 修改 /work/${rel} 里的文件；把 SKILL.md 里的 version 提高到大于 ${sem ?? "现有版本"}${sem ? `（例如 ${bumpPatch(sem)}）` : ""}，name 保持 ${slug} 不变；然后调用 skill_manage { action: "submit_draft", dir: "${rel}" }。用户确认后会保存为该技能的新版本${skill.scope === "personal" ? "" : "并提交审核，通过审核之前使用者仍用旧版本"}。`
+				? `下一步：用 sandbox_read_file / sandbox_write_file 修改 ${W}/${rel} 里的文件；把 SKILL.md 里的 version 提高到大于 ${sem ?? "现有版本"}${sem ? `（例如 ${bumpPatch(sem)}）` : ""}，name 保持 ${slug} 不变；然后调用 skill_manage { action: "submit_draft", dir: "${rel}" }。用户确认后会保存为该技能的新版本${skill.scope === "personal" ? "" : "并提交审核，通过审核之前使用者仍用旧版本"}。`
 				: `注意：用户没有更新这个${where}的权限（只有作者或市场管理员可以）。这些文件只能作为参考；若要基于它做自己的版本，把 SKILL.md 的 name 改成 ${this.#freeCopyName(p, slug)}（或别的名称）再 submit_draft，会保存为用户的个人副本，原技能不受影响。`;
-			const text = `已把${where}「${skill.name}」${sem ? ` ${sem}` : ""}（版本 ${v.version_no}）的 ${files.length} 个文件写入 /work/${rel}：${files.map((f) => f.path).join("、")}。${stale.length ? `（已移除旧检出里不再存在的文件：${stale.join("、")}）` : ""}\n${next}`;
+			const text = `已把${where}「${skill.name}」${sem ? ` ${sem}` : ""}（版本 ${v.version_no}）的 ${files.length} 个文件写入 ${W}/${rel}：${files.map((f) => f.path).join("、")}。${stale.length ? `（已移除旧检出里不再存在的文件：${stale.join("、")}）` : ""}\n${next}`;
 			return { text, details: { skillId: skill.id, versionNo: v.version_no, dir: rel, files: files.length, canUpdate: canSubmit } };
 		});
 	}
@@ -673,12 +681,13 @@ export function createSkillManageExtension(ctx: AppContext, opts: { resolveActor
 	const drafts = () => skillDraftsFor(ctx);
 	const log = () => ctx.services.get("toolCalls") as ToolCallLog;
 	const market = () => ctx.services.get("market") as Market;
+	const sandboxWork = (space: ToolActor["space"]): string => (ctx.services.get("sandbox") as Sandbox).layout(space).workDir;
 
 	const skillManage = defineTool({
 		name: "skill_manage",
 		description:
 			"Create a skill, or update an existing one, from files in the conversation workspace. Workflow: (1) to UPDATE an installed skill, call action \"checkout\" with its `name` (name or slug) or `skillId` and optionally `dir` (default: the slug) — " +
-			"it writes the skill's current approved files into /work/<dir> without sandbox_exec (do not copy /skills/<name> by hand); to CREATE a new one, just start writing files. (2) Edit or write SKILL.md (frontmatter: name, description, version) and any scripts/references in /work/<dir> " +
+			"it writes the skill's current approved files into <dir> under the sandbox working directory (see the system prompt) without sandbox_exec (do not copy the read-only skills directory by hand); to CREATE a new one, just start writing files. (2) Edit or write SKILL.md (frontmatter: name, description, version) and any scripts/references in /work/<dir> " +
 			"with sandbox_write_file; keep `name` unchanged when updating, and raise `version` above the skill's current highest version (e.g. 1.0.0 → 1.0.1) — an unchanged version or identical content is rejected immediately. " +
 			"(3) call action \"submit_draft\" with that relative dir. The package is checked and frozen, then the user is asked to confirm; only after they confirm it is saved: a new personal skill, or a NEW VERSION of the existing skill of that name " +
 			"(your personal skill, or a market/org skill the user is author/admin of — its new version is submitted for review and others keep the old version until approved). Nothing is run. " +
@@ -686,7 +695,7 @@ export function createSkillManageExtension(ctx: AppContext, opts: { resolveActor
 			"If the result lists errors, fix the files and submit again. action \"get_draft\" reads a draft you submitted earlier.",
 		parameters: obj({
 			action: oneOf(["submit_draft", "get_draft", "checkout"]),
-			dir: opt(str({ description: "Directory under /work, e.g. weekly-report: the package to submit (submit_draft), or where to put the checked-out files (checkout; default: the skill's slug)" })),
+			dir: opt(str({ description: "Directory under the sandbox working directory (relative, e.g. weekly-report): the package to submit (submit_draft), or where to put the checked-out files (checkout; default: the skill's slug)" })),
 			draftId: opt(str()),
 			name: opt(str({ description: "checkout: the skill's name or slug" })),
 			skillId: opt(str({ description: "checkout: the skill's id (alternative to name)" })),
@@ -701,7 +710,7 @@ export function createSkillManageExtension(ctx: AppContext, opts: { resolveActor
 				if (args.action === "get_draft") {
 					if (!args.draftId) throw new HttpError(400, "invalid", "get_draft 需要 draftId");
 					const r = svc.forOwner(p, args.draftId);
-					return { output: textOf(svc.describe(r, p.orgId)), details: { draftId: r.id, state: r.state, ...(r.skill_id ? { skillId: r.skill_id, versionNo: r.version_no } : {}) } };
+					return { output: textOf(svc.describe(r, p.orgId, sandboxWork(actor.space))), details: { draftId: r.id, state: r.state, ...(r.skill_id ? { skillId: r.skill_id, versionNo: r.version_no } : {}) } };
 				}
 				if (args.action === "checkout") {
 					await ctx.services.get("acl").require(p, "write", { kind: "space", id: actor.space.id });
@@ -726,7 +735,7 @@ export function createSkillManageExtension(ctx: AppContext, opts: { resolveActor
 					row = decision.decision === "approved" ? await svc.save(after.principal, row.id) : svc.reject(after.principal, row.id, decision.note);
 				}
 				return {
-					output: textOf(svc.describe(row, p.orgId)),
+					output: textOf(svc.describe(row, p.orgId, sandboxWork(actor.space))),
 					isError: row.state === "failed",
 					details: { draftId: row.id, state: row.state, ...(row.skill_id ? { skillId: row.skill_id, versionNo: row.version_no } : {}) },
 				};

@@ -82,3 +82,100 @@ test("LIVE OpenSandbox through the app: admin config → org default → run wit
 		else process.env.WORKROOM_WEBHOOK_ALLOWLIST = prevAllow;
 	}
 });
+
+// Round 10: the working directory is configurable per provider (Daytona's default user cannot create /work). Proof against a REAL provider that a
+// non-default directory is honoured end to end: files sync both ways, it is the cwd, WORKROOM_WORKDIR names it, read-only mounts are re-rooted next
+// to it, the model-facing paths follow it, and changing it re-syncs the whole workspace into the new directory (same sandbox).
+test("LIVE OpenSandbox: a non-default working directory (/tmp/wr-work) is honoured: sync both ways, cwd, env, skills mount, change → full resync", { skip, timeout: 900_000 }, async () => {
+	const prevAllow = process.env.WORKROOM_WEBHOOK_ALLOWLIST;
+	process.env.WORKROOM_WEBHOOK_ALLOWLIST = new URL(URL_!).hostname;
+	const t = await startTestApp({ config: { secretKey: "test-master-key-for-live-e2e-only-0123456789" } });
+	const { mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
+	const { join } = await import("node:path");
+	let provider: Awaited<ReturnType<typeof createRemoteProvider>> | undefined;
+	let remoteId: string | undefined;
+	try {
+		const owner = await t.user(`live-wd-${Date.now()}@example.com`);
+		const ctx = t.app.ctx;
+		// invalid values are refused over HTTP before anything is stored
+		for (const bad of ["/etc", "relative", "/a/../b"]) {
+			const r = await t.req("PUT", "/api/sandbox/providers/opensandbox", { token: owner.token, json: { workDir: bad } });
+			assert.equal(r.status, 400, bad);
+		}
+		await t.json("PUT", "/api/sandbox/providers/opensandbox", { token: owner.token, json: { enabled: true, endpoint: URL_, apiKey: KEY, allowPrivateNetwork: true, egressAcknowledged: true, workDir: "/tmp/wr-work" } });
+		await t.json("PUT", "/api/sandbox/provider-policy", { token: owner.token, json: { orgDefault: "opensandbox", allowProjectOverride: false } });
+		const cfg = (await t.json("GET", "/api/sandbox/providers", { token: owner.token })).providers.find((p: any) => p.provider === "opensandbox");
+		assert.equal(cfg.workDir, "/tmp/wr-work");
+		assert.equal(cfg.defaultWorkDir, "/work");
+
+		const identity = ctx.services.get("identity");
+		const principal = (await identity.principalFor(owner.me.userId, owner.me.orgId))!;
+		const space = identity.personalSpace(owner.me.userId, owner.me.orgId);
+		const sb = ctx.services.get("sandbox") as Sandbox;
+		const W = "/tmp/wr-work";
+		assert.deepEqual(sb.layout(space), { kind: "remote", provider: "opensandbox", workDir: W, skillsRoot: "/tmp/skills" });
+		const env1 = await t.json("GET", `/api/conversations/${space.id}/21/environment`, { token: owner.token });
+		assert.equal(env1.workDir, W);
+		assert.equal(env1.skillsDir, "/tmp/skills");
+
+		// host → remote: the file tool is given the REAL absolute path; the run sees it in the configured directory and relative to cwd
+		sb.writeFile(space, 21, `${W}/in.txt`, new TextEncoder().encode("from-host"));
+		sb.writeFile(space, 21, "/work/legacy.txt", new TextEncoder().encode("legacy-form"));
+		const skillHost = join(sb.mountsRoot(), `wd-live-${Date.now()}`);
+		mkdirSync(skillHost, { recursive: true });
+		writeFileSync(join(skillHost, "SKILL.md"), "# live skill\n");
+		const mount = { hostPath: skillHost, target: "/skills/wd-live", readOnly: true };
+		const r1 = await sb.run({
+			principal, space, conversationId: 21, language: "shell", mounts: [mount],
+			code: 'echo "cwd=$(pwd)"; echo "env=$WORKROOM_WORKDIR"; echo "in=$(cat in.txt)"; echo "legacy=$(cat legacy.txt)"; echo "abs=$(cat /tmp/wr-work/in.txt)"; printf from-remote > made.txt; mkdir -p deep/er && printf nested > deep/er/n.txt; echo "skill=$(cat /tmp/skills/wd-live/SKILL.md)"; echo "skills-ls=$(ls /tmp/skills)"; (echo hacked >> /tmp/skills/wd-live/SKILL.md) 2>/dev/null; true',
+		});
+		assert.equal(r1.exitCode, 0, r1.stderr);
+		assert.match(r1.stdout, /^cwd=\/tmp\/wr-work$/m);
+		assert.match(r1.stdout, /^env=\/tmp\/wr-work$/m);
+		assert.match(r1.stdout, /^in=from-host$/m);
+		assert.match(r1.stdout, /^legacy=legacy-form$/m, "a path given as /work/… landed in the same workspace");
+		assert.match(r1.stdout, /^abs=from-host$/m);
+		assert.match(r1.stdout, /^skill=# live skill$/m, "the skill is mounted next to the working directory");
+		assert.match(r1.stdout, /^skills-ls=wd-live$/m);
+		// remote → host
+		assert.equal(readFileSync(join(sb.workdir(space, 21), "made.txt"), "utf8"), "from-remote");
+		assert.equal(readFileSync(join(sb.workdir(space, 21), "deep", "er", "n.txt"), "utf8"), "nested");
+		const inst = ctx.db.get<{ remote_id: string; work_dir: string }>("SELECT remote_id, work_dir FROM tool_sandbox_instances WHERE space_id = ? AND workspace_key = 'c21' AND state = 'ready'", space.id)!;
+		remoteId = inst.remote_id;
+		assert.equal(inst.work_dir, W);
+		// the skill stayed intact (read-only, or repaired by the per-run hash check)
+		const r1b = await sb.run({ principal, space, conversationId: 21, language: "shell", mounts: [mount], code: "cat /tmp/skills/wd-live/SKILL.md" });
+		assert.equal(r1b.stdout.trim(), "# live skill");
+
+		// the admin changes the directory: same sandbox, whole workspace uploaded again into the new directory
+		await t.json("PUT", "/api/sandbox/providers/opensandbox", { token: owner.token, json: { workDir: "/tmp/wr-work2" } });
+		const r2 = await sb.run({ principal, space, conversationId: 21, language: "shell", mounts: [mount], code: 'echo "cwd=$(pwd)"; echo "in=$(cat in.txt)"; echo "made=$(cat made.txt)"; echo "nested=$(cat deep/er/n.txt)"; echo "skill=$(cat /tmp/skills/wd-live/SKILL.md)"' });
+		assert.equal(r2.exitCode, 0, r2.stderr);
+		assert.match(r2.stdout, /^cwd=\/tmp\/wr-work2$/m);
+		assert.match(r2.stdout, /^in=from-host$/m);
+		assert.match(r2.stdout, /^made=from-remote$/m);
+		assert.match(r2.stdout, /^nested=nested$/m);
+		assert.match(r2.stderr, /沙箱工作目录已从 \/tmp\/wr-work 改为 \/tmp\/wr-work2/);
+		const inst2 = ctx.db.get<{ remote_id: string; work_dir: string }>("SELECT remote_id, work_dir FROM tool_sandbox_instances WHERE space_id = ? AND workspace_key = 'c21' AND state = 'ready'", space.id)!;
+		assert.equal(inst2.remote_id, inst.remote_id, "the same remote sandbox was reused");
+		assert.equal(inst2.work_dir, "/tmp/wr-work2");
+
+		// cleared → provider default (/work for OpenSandbox), and the run still works there
+		await t.json("PUT", "/api/sandbox/providers/opensandbox", { token: owner.token, json: { workDir: null } });
+		const r3 = await sb.run({ principal, space, conversationId: 21, language: "shell", code: 'echo "cwd=$(pwd)"; echo "in=$(cat in.txt)"' });
+		assert.equal(r3.exitCode, 0, r3.stderr);
+		assert.match(r3.stdout, /^cwd=\/work$/m);
+		assert.match(r3.stdout, /^in=from-host$/m);
+
+		provider = await createRemoteProvider({ provider: "opensandbox", endpoint: URL_, apiKey: KEY });
+	} finally {
+		try {
+			if (provider && remoteId) await provider.destroy(remoteId);
+		} catch {
+			/* best effort */
+		}
+		await t.dispose();
+		if (prevAllow === undefined) delete process.env.WORKROOM_WEBHOOK_ALLOWLIST;
+		else process.env.WORKROOM_WEBHOOK_ALLOWLIST = prevAllow;
+	}
+});

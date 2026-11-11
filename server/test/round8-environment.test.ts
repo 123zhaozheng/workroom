@@ -55,10 +55,8 @@ test("FAKE · local driver: GET reports this server, nothing to prepare, never t
 		assert.equal(e.location, "this_server");
 		assert.ok(e.kind === "local" || e.kind === "none");
 		assert.equal(e.canPrepare, false);
-		assert.equal(e.canChoose, false);
-		assert.ok(e.chooseHint && /组织/.test(e.chooseHint), "personal space: policy hint");
-		assert.equal(e.options.filter((o) => o.current).length, 1);
-		assert.equal(e.options.find((o) => o.current)!.id, "local");
+		assert.match(e.label, /^平台内置沙箱/, "round 10: the local driver is called 平台内置沙箱");
+		assert.ok(!("options" in e) && !("canChoose" in e) && !("chooseHint" in e), "round 10: no per-conversation chooser in the DTO");
 		if (e.kind === "local") assert.equal(e.state, "ready");
 		if (e.kind === "local") assert.match(e.networkText ?? "", /^(可联网|无网络（)/, "round 9: the driver's actual capability, e.g. 无网络（本机命名空间驱动的技术限制）");
 		// admin turns the sandbox off → plain, actionable failure (no raw driver text)
@@ -102,31 +100,30 @@ test("FAKE · remote GET: honest labels, no sandbox is created or connected by r
 	}
 });
 
-test("FAKE · options and canChoose follow policy (project override allowed + project.manage)", async () => {
+test("FAKE · one organisation-wide channel: project spaces report the same environment, the per-project chooser endpoints are gone", async () => {
 	const h = await setup();
 	try {
 		const { project } = await h.t.json("POST", "/api/projects", { token: h.owner.token, json: { kind: "space", name: "P" } });
 		await h.t.json("PUT", `/api/projects/${project.id}/members`, { token: h.owner.token, json: { email: "mem@env.example", role: "editor" } });
-		// override not allowed: only the environment in effect is listed, nobody can choose
-		let e = await h.get(h.owner.token, project.spaceId);
-		assert.equal(e.canChoose, false);
-		assert.equal(e.chooseHint, "由组织管理员统一设置");
-		assert.deepEqual(e.options.map((o) => o.id), ["opensandbox"]);
-		// allowed: the project owner may switch (local + enabled providers), an editor may not
-		await h.t.json("PUT", "/api/sandbox/provider-policy", { token: h.owner.token, json: { orgDefault: "opensandbox", allowProjectOverride: true } });
-		e = await h.get(h.owner.token, project.spaceId);
-		assert.equal(e.canChoose, true);
-		assert.equal(e.chooseHint, undefined);
-		assert.deepEqual(e.options.map((o) => [o.id, o.current]), [["local", false], ["opensandbox", true]]);
-		const m = await h.get(h.member.token, project.spaceId);
-		assert.equal(m.canChoose, false);
-		assert.match(m.chooseHint ?? "", /项目管理员/);
-		// switching through the existing API changes what GET reports
-		await h.t.json("PUT", `/api/projects/${project.id}/sandbox-provider`, { token: h.owner.token, json: { provider: "local" } });
-		e = await h.get(h.owner.token, project.spaceId);
-		assert.equal(e.options.find((o) => o.current)!.id, "local");
-		assert.equal(e.location, "this_server");
-		assert.equal(e.canPrepare, false);
+		for (const [tok, sp] of [[h.owner.token, project.spaceId], [h.member.token, project.spaceId], [h.owner.token, h.space.id]] as const) {
+			const e = await h.get(tok, sp);
+			assert.equal(e.id, "opensandbox");
+			assert.equal(e.kind, "remote");
+			assert.ok(!("options" in e) && !("canChoose" in e) && !("chooseHint" in e));
+		}
+		// the project override API no longer exists (GET / PUT)
+		assert.equal((await h.t.req("GET", `/api/projects/${project.id}/sandbox-provider`, { token: h.owner.token })).status, 404);
+		assert.equal((await h.t.req("PUT", `/api/projects/${project.id}/sandbox-provider`, { token: h.owner.token, json: { provider: "local" } })).status, 404);
+		// allowing overrides is refused, and nothing changes for the project
+		assert.equal((await h.t.req("PUT", "/api/sandbox/provider-policy", { token: h.owner.token, json: { orgDefault: "opensandbox", allowProjectOverride: true } })).status, 400);
+		assert.equal((await h.get(h.owner.token, project.spaceId)).id, "opensandbox");
+		// the admin chooses 平台内置沙箱: every space follows at once
+		await h.t.json("PUT", "/api/sandbox/provider-policy", { token: h.owner.token, json: { orgDefault: "local" } });
+		for (const sp of [project.spaceId, h.space.id]) {
+			const e = await h.get(h.owner.token, sp);
+			assert.equal(e.location, "this_server");
+			assert.equal(e.canPrepare, false);
+		}
 	} finally {
 		await h.t.dispose();
 	}
@@ -268,7 +265,9 @@ test("FAKE · permissions: other org 404, same-org non-member 403, GET needs rea
 test("FAKE · misconfiguration: disabled provider / no key / no driver → state failed with the plain message, never the local driver", async () => {
 	const h = await setup();
 	try {
-		await h.t.json("PUT", "/api/sandbox/providers/opensandbox", { token: h.owner.token, json: { enabled: false } });
+		// round 10: the active channel cannot be disabled through the API; a legacy / hand-edited row is still reported plainly (no fallback)
+		assert.equal((await h.t.req("PUT", "/api/sandbox/providers/opensandbox", { token: h.owner.token, json: { enabled: false } })).status, 409);
+		h.ctx.db.run("UPDATE tool_sandbox_providers SET enabled = 0 WHERE provider = 'opensandbox'");
 		let e = await h.get(h.owner.token);
 		assert.equal(e.kind, "remote");
 		assert.equal(e.state, "failed");

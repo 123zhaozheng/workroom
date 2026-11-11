@@ -222,7 +222,7 @@ export class Jobs {
 				for (const path of input.sandbox!.publish ?? []) {
 					try {
 						const f = sb.readFile(space, r.conversation_id, path);
-						outputs.push(await put(f.name, effectiveMime(undefined, f.name), f.bytes, `out:${path}`, `后台任务「${r.title}」的输出 /work/${path}`));
+						outputs.push(await put(f.name, effectiveMime(undefined, f.name), f.bytes, `out:${path}`, `后台任务「${r.title}」的输出 ${sb.shown(space, sb.relPath(space, path))}`));
 					} catch (e: any) {
 						if (run.status === "ok") throw new Error(`输出文件 ${path} 不存在或无法读取：${e?.message ?? e}`);
 					}
@@ -333,7 +333,7 @@ export function createJobsExtension(ctx: AppContext, opts: { resolveActor?: Acto
 		parameters: obj({
 			kind: oneOf(["sandbox", "browse", "generate"]),
 			title: opt(str()),
-			sandbox: opt(obj({ language: oneOf(["shell", "python", "node"]), code: str({ minLength: 1 }), publish: opt(arr(str(), { description: "Paths under /work to publish to the file library when the job ends." })) })),
+			sandbox: opt(obj({ language: oneOf(["shell", "python", "node"]), code: str({ minLength: 1 }), publish: opt(arr(str(), { description: "Paths in the sandbox working directory (relative, e.g. out/report.csv) to publish to the file library when the job ends." })) })),
 			browse: opt(obj({ url: str(), screenshot: opt(bool()) })),
 			generate: opt(obj({ format: oneOf(FORMATS), name: str(), title: opt(str()), content: opt(str()) }, { open: true })),
 			timeoutMs: opt(int({ minimum: 1000, maximum: JOB_MAX_TIMEOUT_MS })),
