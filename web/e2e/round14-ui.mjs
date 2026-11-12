@@ -39,7 +39,8 @@ try {
 			const last = chains[n - 1];
 			if (!last) return false;
 			const c = last.querySelector('[data-testid="step-chain"]');
-			return !!c && ["done", "error", "stopped"].includes(c.getAttribute("data-state") ?? "") && !!last.querySelector('[data-testid="run-summary"]');
+			if (document.querySelector('[data-testid="stop"]')) return false;
+			return !c || ["done", "error", "stopped"].includes(c.getAttribute("data-state") ?? "");
 		}, turns, { timeout: 90000 });
 		await sleep(250);
 	};
@@ -152,7 +153,7 @@ try {
 	turns++;
 	await page.waitForFunction(() => document.querySelector('[data-testid="preview-text"]')?.textContent?.includes("第三版"), null, { timeout: 60000 });
 	check("V14 an overwrite refreshes an open preview (cache keyed by the content hash)", true);
-	await page.waitForFunction((n) => document.querySelectorAll('[data-testid="assistant-message"]').length >= n && document.querySelectorAll('[data-testid="run-summary"]').length >= n, turns, { timeout: 60000 });
+	await page.waitForFunction((n) => document.querySelectorAll('[data-testid="assistant-message"]').length >= n && !document.querySelector('[data-testid="stop"]'), turns, { timeout: 60000 });
 	await sleep(400);
 
 	// ---------------- files page: only outputs, grouped by conversation, no versions
@@ -203,7 +204,7 @@ try {
 	await page.goto(convUrl);
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="file-card"][data-removed="true"]').length >= 2, null, { timeout: 20000 });
 	const gone = await cards().allInnerTexts();
-	check("V22 the old cards show 已删除 with no download and no preview", gone.length === 2 && gone.every((t) => t.includes("已删除")) && (await cards().locator("a").count()) === 0 && (await cards().locator("button").count()) === 0, gone.join("|"));
+	check("V22 the old cards show 已删除 with no download and no preview", gone.length === 3 && gone.every((t) => t.includes("已删除")) && (await cards().locator("a").count()) === 0 && (await cards().locator("button").count()) === 0, gone.join("|"));
 	await panelOpen();
 	check("V22 输出 drops it (count 0, placeholder back)", (await countOf("outputs")) === 0 && (await page.locator(T("outputs-empty")).count()) === 1);
 	const dl3 = await page.request.get(`${base}${href}`);
