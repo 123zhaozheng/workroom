@@ -1,5 +1,5 @@
 // Ops module (group E): model gateway & routing, usage ledger & budgets, automation & notifications, stats/admin APIs.
-import { defineExtension, GenerationTask, hook, ProviderDoc } from "@earendil-works/pi-durable";
+import { defineExtension, CompactionTask, GenerationTask, hook, ProviderDoc } from "@earendil-works/pi-durable";
 import type { Action, AppContext, Decision, Principal, ResourceRef, WorkroomModule } from "../core/contracts.ts";
 import type { Identity } from "../identity/module.ts";
 import { AutomationService } from "./automation.ts";
@@ -99,6 +99,33 @@ export const opsModule: WorkroomModule = {
 	},
 	extensions(ctx) {
 		const { gateway, docs } = opsState(ctx);
+		/**
+		 * Links a model request (by pi.provider sessionId) to its space / conversation / task and to the run's execution identity, so the
+		 * gateway can re-check model access per request. Round 13: when the identity cannot be established the link says so
+		 * (`unresolved`) and the gateway refuses the request — a missing identity is never treated as permission.
+		 */
+		const linkRequest = async (api: any, context: any): Promise<void> => {
+			let prov: { sessionId?: string } | undefined;
+			try {
+				prov = await api.snapshot(ProviderDoc, api.conversationId, context);
+			} catch {
+				prov = undefined;
+			}
+			if (!prov?.sessionId) return;
+			let sd: { spaceId?: string; orgId?: string } | undefined;
+			let who: { userId: string; orgId: string } | null = null;
+			let failed = false;
+			try {
+				sd = docs.SpaceDoc ? ((await api.snapshot(docs.SpaceDoc, context)) as { spaceId?: string; orgId?: string } | undefined) : undefined;
+				if (sd?.spaceId && ctx.services.has("runtime")) who = await (ctx.services.get("runtime") as unknown as { principalForRequest(a: unknown, c: unknown): Promise<{ userId: string; orgId: string } | null> }).principalForRequest(api, context);
+			} catch {
+				failed = true;
+			}
+			// A storage the runtime manages carries its `wr.space` doc: every run there acts for a person, so no identity = refused.
+			// A harness without it is not a user conversation (internal / test harness on its own storage): there is no person to check.
+			const unresolved = !who && (failed || !!sd?.spaceId);
+			gateway.link(prov.sessionId, { spaceId: sd?.spaceId || undefined, orgId: who?.orgId ?? (sd?.orgId || undefined), userId: who?.userId, ...(unresolved ? { unresolved: true } : {}), conversationId: api.conversationId as number, taskId: api.taskId as number });
+		};
 		// Links each model request (by pi.provider sessionId) to its space / conversation / task for route records.
 		return [
 			defineExtension({
@@ -106,22 +133,14 @@ export const opsModule: WorkroomModule = {
 				hooks: [
 					hook(GenerationTask, {
 						beforeRequest: async (_req, api, context) => {
-							try {
-								const prov = await api.snapshot(ProviderDoc, api.conversationId, context);
-								const sd = docs.SpaceDoc ? ((await api.snapshot(docs.SpaceDoc, context)) as { spaceId?: string; orgId?: string } | undefined) : undefined;
-								// The acting user (the run's input) so the gateway can re-check model access per request.
-								let userId: string | undefined;
-								if (ctx.services.has("runtime")) {
-									try {
-										userId = (await ctx.services.get("runtime").inputForTool(api as never, context))?.userId;
-									} catch {
-										/* no resolvable actor: the gateway then cannot enforce per-user model access (fail-open only for unattributed requests) */
-									}
-								}
-								if (prov?.sessionId) gateway.link(prov.sessionId, { spaceId: sd?.spaceId || undefined, orgId: sd?.orgId || undefined, userId, conversationId: api.conversationId as unknown as number, taskId: api.taskId as unknown as number });
-							} catch {
-								/* linkage is best-effort; import backfills by session id */
-							}
+							await linkRequest(api, context);
+							return undefined;
+						},
+					}),
+					// Compaction summaries are model requests of the same conversation: the same identity, the same per-user checks.
+					hook(CompactionTask, {
+						beforeCompact: async (_c, api, context) => {
+							await linkRequest(api, context);
 							return undefined;
 						},
 					}),

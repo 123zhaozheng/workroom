@@ -48,11 +48,29 @@ export const TeamDoc = defineDoc<{ delegations: Record<string, Mutable<SubagentD
 });
 
 /**
+ * Round 13: the execution identity of each submission that starts or joins a run — the person who pressed 发送 / 继续 / 重新生成
+ * (the operator), never inferred from who wrote older messages. Written in the SAME commit as the submission, keyed by its id.
+ * fork: "initial": a branch never inherits who acted in the original.
+ */
+export type RunActor = { userId: string; orgId: string; via: "input" | "continue" | "regenerate" | "edit" | "steer"; at: number };
+export const RunActorDoc = defineDoc<{ bySubmission: Record<string, RunActor>; order: number[] }>({
+	kind: "wr.run-actor",
+	version: 1,
+	scope: "conversation",
+	history: "latest",
+	fork: "initial",
+	initial: () => ({ bySubmission: {}, order: [] }),
+	checkpointWhen: (_v, _ops, info) => info.deltasSinceBase >= 32,
+});
+/** How many submissions the doc remembers (older runs are long settled; their actor is no longer needed). */
+export const RUN_ACTOR_KEEP = 64;
+
+/**
  * Which assistant identity this conversation runs as, and its member declarations (snapshot at creation).
  * rewindable + asOf: a fork keeps the declaration as of its fork entry.
  */
 // members/member hold MemberDeclaration values (typed loosely: interfaces are not JsonObject-assignable).
-export const AssistantDoc = defineDoc<{ assistantId: string | null; name: string; members: any[]; member?: any }>({
+export const AssistantDoc = defineDoc<{ assistantId: string | null; name: string; members: any[]; member?: any; knowledgeScope?: { kbIds: string[] } | null; tools?: string[] | null }>({
 	kind: "wr.assistant",
 	version: 1,
 	scope: "conversation",
