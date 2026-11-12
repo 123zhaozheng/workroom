@@ -231,12 +231,15 @@ test("migration: pre-round-14 agent deliverables become current library files; u
 		await files.putVersion(p, { fileId: v1.fileId, name: "周报.md", mime: "text/markdown", bytes: enc("v2"), provenance: prov("file_revise") });
 		await files.putVersion(p, { name: "截图.png", mime: "image/png", bytes: enc("png"), provenance: prov("browse") });
 		await files.putVersion(p, { name: "附件.csv", mime: "text/csv", bytes: enc("a,b"), provenance: { ...prov("upload", "upload") } });
+		// V23: a background-job output or a screenshot written NOW does not become an output on its own
+		await files.putVersion(p, { name: "任务输出.csv", mime: "text/csv", bytes: enc("x,y"), provenance: prov("job:sandbox") });
+		assert.equal((t.app.ctx.services as any).get("library").ofConversation(c.spaceId, c.conversationId).filter((i: any) => i.name === "任务输出.csv" || i.name === "截图.png").length, 0, "job outputs and screenshots are not deliveries");
 		t.app.ctx.db.run("DELETE FROM lib_items");
 		t.app.ctx.db.run("DELETE FROM lib_migrations");
 		const lib = (t.app.ctx.services as any).get("library") as Library;
 		const r = lib.migrateLegacy(t.dataDir)!;
 		assert.equal(r.migrated, 1);
-		assert.deepEqual(r.skipped, { screenshot_or_browse: 1, upload: 1 });
+		assert.deepEqual(r.skipped, { screenshot_or_browse: 1, upload: 1, job_output: 1 });
 		const items = lib.ofConversation(c.spaceId, c.conversationId);
 		assert.equal(items.length, 1);
 		assert.equal(items[0]!.name, "周报.md");

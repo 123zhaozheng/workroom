@@ -270,7 +270,7 @@ export class Library {
 	 * One-time migration (§11.1 items 2–3): deliverables produced by the agent BEFORE round 14 (file_create / file_revise / sandbox_publish /
 	 * background jobs) become the CURRENT file of their conversation's library folder (their newest version). Nothing is deleted or rewritten:
 	 * the files and all their old versions stay (old versionId links keep resolving); only library rows are added. Not migrated — and listed
-	 * in the report instead of guessed: uploads (they stay message attachments), browser screenshots, files without a conversation, and older
+	 * in the report instead of guessed: uploads (they stay message attachments), browser screenshots, background-job outputs, files without a conversation, and older
 	 * same-name files of one conversation (the newest wins). The report goes to <dataDir>/backups/r14/library-report.json and the DB.
 	 */
 	migrateLegacy(dataDir: string): { migrated: number; skipped: Record<string, number> } | null {
@@ -301,7 +301,12 @@ export class Library {
 					skip(f, "screenshot_or_browse");
 					continue;
 				}
-				if (!["file_create", "file_revise", "sandbox_publish"].includes(tool) && !tool.startsWith("job:")) {
+				if (tool.startsWith("job:")) {
+					// background-job outputs were never an explicit delivery: not published automatically (listed in the report)
+					skip(f, "job_output");
+					continue;
+				}
+				if (!["file_create", "file_revise", "sandbox_publish"].includes(tool)) {
 					skip(f, "unknown_source");
 					continue;
 				}

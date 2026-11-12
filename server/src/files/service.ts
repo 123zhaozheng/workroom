@@ -237,7 +237,8 @@ export class Files implements FileService {
 		this.#notifyKnowledge(ref, principal);
 		// Round 14: an older conversation still using a pre-round-14 deliverable tool delivers through it — the library follows (current file).
 		const tool = provenance.tool ?? "";
-		if (provenance.conversationId !== undefined && (["file_create", "file_revise", "sandbox_publish"].includes(tool) || (tool.startsWith("job:") && !tool.startsWith("job:browse"))) && (this.#ctx.services as any).has("library")) {
+		// (background-job outputs are NOT deliveries: a job is a current tool and its outputs never reach the library on their own — V23)
+		if (provenance.conversationId !== undefined && ["file_create", "file_revise", "sandbox_publish"].includes(tool) && (this.#ctx.services as any).has("library")) {
 			try {
 				((this.#ctx.services as any).get("library") as { adoptLegacy(fileId: string): void }).adoptLegacy(ref.fileId);
 			} catch (e) {
