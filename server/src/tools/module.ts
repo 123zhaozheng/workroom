@@ -30,6 +30,7 @@ import { VfsRouter } from "../vfs/router.ts";
 import { WorkBackend } from "../vfs/backends/work.ts";
 import { UploadsBackend } from "../vfs/backends/uploads.ts";
 import { LibraryBackend } from "../vfs/backends/library.ts";
+import { SkillsBackend } from "../vfs/backends/skills.ts";
 import { createVfsExtension } from "../vfs/tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
@@ -112,6 +113,7 @@ export const toolsModule: WorkroomModule = {
 		vfs.register(new WorkBackend(ctx));
 		vfs.register(new UploadsBackend(ctx));
 		vfs.register(new LibraryBackend(ctx));
+		vfs.register(new SkillsBackend(ctx));
 		(ctx.services as any).provide("vfs", vfs);
 		const sessions = new BrowserSessions(ctx);
 		ctx.services.provide("browserSessions", sessions);

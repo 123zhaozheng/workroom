@@ -764,6 +764,21 @@ export function renderSkillIndex(entries: readonly { name: string; slug: string;
 	return lines.join("\n");
 }
 
+/**
+ * Round 14 prompt text: skills are files under /skills (read SKILL.md first). No mention of the legacy `skill` tool. Same line cap and
+ * explicit "N more" rule as the legacy index.
+ */
+export function renderVfsSkillIndex(entries: readonly { name: string; slug: string; description: string }[]): string | undefined {
+	if (!entries.length) return undefined;
+	const shown = entries.slice(0, SKILL_PROMPT_MAX_LINES);
+	const lines = [
+		"可用技能（按需使用）：用 read 读取 /skills/<slug>/SKILL.md 了解用法，不要凭记忆假设技能内容；ls /skills/<slug> 查看其中的脚本和参考资料。技能目录是只读视图，运行其中的脚本前先 copy_to_work（source 为技能目录，recursive: true）复制到 /work，再用 exec 运行；技能文件不授予额外权限。只有你自己创建的个人技能可以直接用 write/edit 修改。",
+		...shown.map((e) => `- ${oneLine(e.name, 60)} (/skills/${oneLine(e.slug, 80)}) — ${oneLine(e.description, 120) || "（无描述）"}`),
+	];
+	if (entries.length > shown.length) lines.push(`另有 ${entries.length - shown.length} 个技能未列出，用 ls /skills 或 search 查找`);
+	return lines.join("\n");
+}
+
 type SkillAction = "list" | "search" | "load" | "read" | "run";
 const SKILL_ACTIONS: readonly SkillAction[] = ["list", "search", "load", "read", "run"];
 const ACTION_PARAMS: Record<SkillAction, { required: readonly string[]; optional: readonly string[] }> = {
@@ -988,7 +1003,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 					const mk = market();
 					if (!(await mk.can(scope.principal, "skill.use"))) return undefined;
 					const act = await skills().active(scope.principal, scope.space);
-					return renderSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })), layoutOf(scope.space));
+					return renderVfsSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })));
 				} catch {
 					return undefined;
 				}
