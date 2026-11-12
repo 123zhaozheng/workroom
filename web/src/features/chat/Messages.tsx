@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Tip } from "@/components/ui/overlay";
 import { AssistantAvatar } from "@/components/shell/BrandMark";
-import type { WorkTab } from "@/components/shell/panel";
 import { Markdown } from "@/features/markdown/Markdown";
 import { Citations, ErrorNote, FileCard } from "./Cards";
 import { CredentialOutcome, credentialSteps } from "./CredentialRequestCard";
@@ -157,7 +156,6 @@ export function AssistantMessage({
 	children,
 	onRegenerate,
 	onFork,
-	onOpenWork,
 	readOnly,
 	avatarState,
 }: {
@@ -165,7 +163,6 @@ export function AssistantMessage({
 	children?: ReactNode;
 	onRegenerate?: () => void;
 	onFork?: () => void;
-	onOpenWork?: (tab: WorkTab) => void;
 	readOnly?: boolean;
 	avatarState: "idle" | "working" | "waiting" | "failed";
 }) {
@@ -182,11 +179,11 @@ export function AssistantMessage({
 						{FIXTURE_LABEL}
 					</div>
 				) : null}
-				<StepChain turn={turn} onOpenWork={onOpenWork} />
+				<StepChain turn={turn} />
 				{credentialSteps(turn).map((s) => (
 					<CredentialOutcome key={s.key} step={s} />
 				))}
-				{turn.answer ? <Markdown text={turn.answer} streaming={turn.streaming} /> : turn.streaming && !turn.steps.length ? <TypingDots /> : null}
+				{turn.answer ? <Markdown text={turn.answer} streaming={turn.streaming} /> : null}
 				{turn.artifacts.length ? (
 					<div className="mt-3 flex flex-col gap-2">
 						{turn.artifacts.map((a) => (
@@ -232,15 +229,6 @@ export function AssistantMessage({
 	);
 }
 
-function TypingDots() {
-	return (
-		<div className="flex h-6 items-center gap-1" aria-label="正在生成">
-			{[0, 1, 2].map((i) => (
-				<span key={i} className="size-1.5 rounded-full bg-fg-subtle wr-pulse" style={{ animationDelay: `${i * 0.18}s` }} />
-			))}
-		</div>
-	);
-}
 
 /** "‹ 2 / 3 ›" switcher shown where conversations diverge (edit / regenerate / fork). */
 export function BranchPointSwitcher({ options, currentId, onSelect }: { options: ConversationSummary[]; currentId: number; onSelect: (c: ConversationSummary) => void }) {

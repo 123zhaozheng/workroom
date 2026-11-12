@@ -110,9 +110,11 @@ export class LocalExec {
 		this.#ctx.db.run("INSERT INTO tool_sandbox_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at", `local_exec:${p.orgId}`, JSON.stringify({ enabled }), p.userId, nowIso());
 		return this.enabled(p.orgId);
 	}
+	/** What a conversation without an explicit choice prefers. Round 12: "cloud" — the 本地环境 option is greyed out until the desktop app ships. */
+	defaultPreference: LocalExecPreference = "cloud";
 	preference(spaceId: string, conversationId: number): LocalExecPreference {
 		const r = this.#ctx.db.get<{ value: string }>("SELECT value FROM tool_sandbox_settings WHERE key = ?", `local_pref:${spaceId}:${conversationId}`);
-		return r?.value === "cloud" ? "cloud" : "local";
+		return r?.value === "local" || r?.value === "cloud" ? r.value : this.defaultPreference;
 	}
 	setPreference(p: Principal, spaceId: string, conversationId: number, pref: LocalExecPreference): LocalExecPreference {
 		if (pref !== "local" && pref !== "cloud") throw new HttpError(400, "invalid", "preference 只能是 local 或 cloud");

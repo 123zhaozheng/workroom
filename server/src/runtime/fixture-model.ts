@@ -9,12 +9,13 @@
 //   [[fail transient]]                → retryable provider error (503); pi retries after a durable backoff (settings.retry)
 //   [[fail timeout]]                  → non-retryable upstream timeout (as a provider stream timeout reports it) → run status "timeout"
 //   [[reply <text>]]                  → answer exactly "<label> <text>"
+//   [[think <text>]]                  → the answer to that input starts with a thinking block "<text>" (streamed like the rest)
 // After tool results arrive it answers with a deterministic summary that quotes every tool output of that round.
 // Without directives: heuristic demo mode (知识/资料 → kb_search, 生成/报告/文档 → a file tool) when those tools are
 // offered, else a plain labelled echo reply.
 import type { AssistantMessage, Message, TextContent, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { Provider } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 
 export const FIXTURE_PROVIDER = "fixture";
 export const FIXTURE_MODEL_ID = "workroom-fixture";
@@ -29,6 +30,8 @@ export interface Directive {
 	/** [[fail timeout]]: a non-retryable upstream timeout error. */
 	readonly failTimeout?: boolean;
 	readonly reply?: string;
+	/** [[think <text>]]: a thinking block before the answer (round 12, to exercise the thinking row). */
+	readonly think?: string;
 }
 
 /** Parse directives from a user text. Robust to JSON containing brackets (balanced-brace scan, string aware). */
@@ -39,10 +42,11 @@ export function parseDirectives(text: string): Directive {
 	let failTransient = false;
 	let failTimeout = false;
 	let reply: string | undefined;
+	let think: string | undefined;
 	let i = 0;
 	while ((i = text.indexOf("[[", i)) !== -1) {
 		const rest = text.slice(i + 2);
-		const m = /^(call|slow|fail|reply)\b\s*/.exec(rest);
+		const m = /^(call|slow|fail|reply|think)\b\s*/.exec(rest);
 		if (!m) {
 			i += 2;
 			continue;
@@ -82,11 +86,12 @@ export function parseDirectives(text: string): Directive {
 				if (arg === "transient") failTransient = true;
 				if (arg === "timeout") failTimeout = true;
 			}
+			else if (word === "think") think = arg;
 			else reply = arg;
 			i = close + 2;
 		}
 	}
-	return { calls, slowMs, fail, failTransient, failTimeout, reply };
+	return { calls, slowMs, fail, failTransient, failTimeout, reply, ...(think ? { think } : {}) };
 }
 
 /** Remove every [[call …]] / [[slow …]] / [[fail]] / [[reply …]] directive (JSON-aware), leaving the human text. */
@@ -96,7 +101,7 @@ export function stripDirectives(text: string): string {
 	for (;;) {
 		const j = text.indexOf("[[", i);
 		if (j === -1) return out + text.slice(i);
-		const m = /^(call|slow|fail|reply)\b\s*/.exec(text.slice(j + 2));
+		const m = /^(call|slow|fail|reply|think)\b\s*/.exec(text.slice(j + 2));
 		if (!m) {
 			out += text.slice(i, j + 2);
 			i = j + 2;
@@ -202,6 +207,16 @@ function callId(name: string): string {
 
 /** Pure answer function (exported for unit tests): what the fixture answers for a transcript. */
 export function fixtureAnswer(messages: readonly Message[]): { message: AssistantMessage; slowMs?: number } {
+	const out = fixtureAnswerPlain(messages);
+	const last = messages.filter((m) => m.role !== "system").at(-1);
+	if (last?.role === "user" && out.message.stopReason !== "error") {
+		const think = parseDirectives(textOfContent(last.content as TextContent[])).think;
+		if (think) out.message.content.unshift(fauxThinking(think));
+	}
+	return out;
+}
+
+function fixtureAnswerPlain(messages: readonly Message[]): { message: AssistantMessage; slowMs?: number } {
 	const visible = messages.filter((m) => m.role !== "system");
 	const last = visible.at(-1);
 	const schemas = offeredToolSchemas(messages);

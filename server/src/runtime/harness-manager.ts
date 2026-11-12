@@ -69,7 +69,8 @@ export class HarnessManager {
 		this.#ctx = ctx;
 		this.#registry = registry;
 		this.#opts = opts;
-		this.fixture = createFixtureModel();
+		// WORKROOM_FIXTURE_TPS (tests / demos only): stream the fixture model's answers at that many tokens per second instead of all at once.
+		this.fixture = createFixtureModel({ tokensPerSecond: Number(process.env.WORKROOM_FIXTURE_TPS) || undefined });
 		// Resolved at every use: group E's gateway when present (it registers the fixture provider itself),
 		// otherwise our own Models holding only the fixture provider.
 		const own = createModels();

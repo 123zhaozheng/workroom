@@ -439,13 +439,10 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 						</dd>
 					</div>
 				</dl>
-				<details className="text-xs text-fg-subtle" data-testid="credential-tech">
-					<summary className="cursor-pointer select-none hover:text-fg-muted">技术详情</summary>
-					<p className="mt-1 break-all">
-						附加方式：请求头 {req.inject.header}（{req.inject.template.replace("{secret}", "‹密钥›")}）；请求编号 {req.id}
-						{noStore && data!.store.reason ? `；${data!.store.reason}` : ""}
-					</p>
-				</details>
+				<p data-testid="credential-tech" className="break-all text-xs text-fg-subtle">
+					附加方式：请求头 {req.inject.header}（{req.inject.template.replace("{secret}", "‹密钥›")}）；请求编号 {req.id}
+					{noStore && data!.store.reason ? `；${data!.store.reason}` : ""}
+				</p>
 			</DetailsPanel>
 		</section>
 	);

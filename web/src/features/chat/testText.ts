@@ -3,7 +3,7 @@
 // server does not clean (steer chips, queued input, handoff progress, error strings) and older servers.
 import type { UserEntryDTO } from "@shared/chat";
 
-const DIRECTIVE = /^(call|slow|fail|reply)\b\s*/;
+const DIRECTIVE = /^(call|slow|fail|reply|think)\b\s*/;
 
 function scanJsonObject(text: string, start: number): number {
 	let depth = 0;

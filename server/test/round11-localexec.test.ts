@@ -247,6 +247,8 @@ async function world(t: TestApp) {
 	const svc = ctx.services.get("localExec") as LocalExec;
 	const sb = ctx.services.get("sandbox") as Sandbox;
 	const conv = `/api/conversations/${spaceId}`;
+	// These tests exercise the browser path, which round 12 keeps but no longer chooses by default (see "round 12: default preference").
+	svc.defaultPreference = "local";
 	return { a, member, spaceId, ctx, svc, sb, conv };
 }
 
@@ -586,6 +588,21 @@ test("cloud wrapper really runs on the machine's own sandbox driver: same contra
 		assert.deepEqual([pyNet.backend, pyNet.reason], ["cloud", "needs_process"]);
 		// the wrapper is plain JS (syntax check for odd code content)
 		assert.doesNotThrow(() => new Function(jsWrapper("return `a${'$'}{1}` + \"\u2028\"").replace(/^import .*$/gm, "").replace(/await /g, "")));
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("round 12: a conversation without an explicit choice prefers the cloud (本地环境 is greyed out); an explicit local choice is still honoured", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("lx-default@example.com");
+		const spaceId = t.app.ctx.services.get("identity").personalSpace(a.me.userId, a.me.orgId).id;
+		const conv = `/api/conversations/${spaceId}`;
+		assert.deepEqual(await t.json("GET", `${conv}/41/local-exec`, { token: a.token }), { enabled: true, connected: false, preference: "cloud" });
+		assert.equal((await t.json("GET", `${conv}/new/environment`, { token: a.token })).local.preference, "cloud");
+		assert.equal((await t.json("PUT", `${conv}/41/local-exec`, { token: a.token, json: { preference: "local" } })).preference, "local");
+		assert.equal((await t.json("GET", `${conv}/41/local-exec`, { token: a.token })).preference, "local");
 	} finally {
 		await t.dispose();
 	}

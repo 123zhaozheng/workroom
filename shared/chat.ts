@@ -99,6 +99,8 @@ export interface UserEntryDTO extends EntryBase {
 	readonly submission?: { readonly submissionId: number; readonly status: SubmissionStatus; readonly reason?: string; readonly answerEntryId?: number };
 	/** false = the input never reached the model (withdrawn / aborted while queued); shown as a marker of what was sent. */
 	readonly placed?: boolean;
+	/** Round 12: when the message was written (ms since epoch); absent for old entries. */
+	readonly timestamp?: number;
 }
 
 export interface ToolCallDTO {
@@ -118,7 +120,10 @@ export interface AssistantEntryDTO extends EntryBase {
 	readonly model: { readonly provider: string; readonly modelId: string };
 	readonly fixture: boolean;
 	readonly usage?: UsageDTO;
+	/** When the model request started (ms since epoch). */
 	readonly timestamp?: number;
+	/** Round 12: how long the model response took (ms), measured by pi-ai; absent for old entries. */
+	readonly durationMs?: number;
 }
 
 export interface ToolResultEntryDTO extends EntryBase {
@@ -129,6 +134,9 @@ export interface ToolResultEntryDTO extends EntryBase {
 	readonly isError: boolean;
 	readonly details?: unknown;
 	readonly diagnostics?: readonly { readonly severity: string; readonly message: string; readonly code?: string }[];
+	/** Round 12: when the result was written and how long the tool ran (ms, measured by pi-ai); absent for old entries. */
+	readonly timestamp?: number;
+	readonly durationMs?: number;
 }
 
 export interface MarkerEntryDTO extends EntryBase {
@@ -149,7 +157,23 @@ export interface OtherEntryDTO extends EntryBase {
 	readonly data?: unknown;
 }
 
-export type EntryDTO = UserEntryDTO | AssistantEntryDTO | ToolResultEntryDTO | MarkerEntryDTO | OtherEntryDTO;
+/** Round 12: one thing that was prepared for a new conversation's workspace. */
+export interface WorkspacePrepItem {
+	readonly key: "storage" | "workdir" | "stores" | "env";
+	readonly label: string;
+	readonly detail?: string;
+	readonly ok: boolean;
+}
+/** Round 12: what was prepared when the conversation was created, measured (ms = wall clock from the create request to ready). */
+export interface WorkspacePrepDTO {
+	readonly ms: number;
+	readonly items: readonly WorkspacePrepItem[];
+}
+export interface WorkspaceEntryDTO extends EntryBase, WorkspacePrepDTO {
+	readonly kind: "workspace";
+}
+
+export type EntryDTO = UserEntryDTO | AssistantEntryDTO | ToolResultEntryDTO | MarkerEntryDTO | WorkspaceEntryDTO | OtherEntryDTO;
 
 export interface EntriesPage {
 	readonly items: readonly EntryDTO[]; // ascending id order
@@ -209,7 +233,7 @@ export interface LiveDTO {
 	readonly status: RunStatus;
 	readonly busy: boolean;
 	/** Streaming partial of the current model response. */
-	readonly partial?: { readonly text: string; readonly thinking?: string; readonly toolCalls: readonly ToolCallDTO[] };
+	readonly partial?: { readonly text: string; readonly thinking?: string; readonly toolCalls: readonly ToolCallDTO[]; /** Round 12: when this model request started (ms since epoch). */ readonly startedAt?: number };
 	readonly tools: readonly LiveToolDTO[];
 	readonly turns?: number;
 	readonly retry?: { readonly at: number; readonly error: string };

@@ -242,6 +242,32 @@ html[data-reduce-motion="true"] ::after {
 		opacity: 1;
 	}
 }
+/* Round 12: activity text in the message flow — a soft highlight sweeping across the words while a step runs (DSH TextShimmer). */
+@keyframes wr-shimmer {
+	from {
+		background-position: 100% 0;
+	}
+	to {
+		background-position: 0 0;
+	}
+}
+.wr-shimmer {
+	background: linear-gradient(100deg, var(--fg-subtle) 35%, var(--fg) 50%, var(--fg-subtle) 65%) 0 0 / 300% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: wr-shimmer 1.8s linear infinite;
+}
+/* Edges of a capped, self-scrolling body: older lines fade out at the top, more below fades at the bottom. */
+.wr-fade-top {
+	mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 100%);
+}
+.wr-fade-bottom {
+	mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 24px), transparent 100%);
+}
+.wr-fade-y {
+	mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 24px), transparent 100%);
+}
 .wr-pulse {
 	animation: wr-pulse 1.4s ease-in-out infinite;
 }

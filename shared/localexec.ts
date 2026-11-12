@@ -1,7 +1,7 @@
 // Round 11 (R4): local (in-browser) execution unified with the cloud sandbox. Contracts shared by server and web.
 // Kept in its own file so the sandbox DTOs (shared/sandbox.ts) only gain one optional field.
 
-/** Conversation preference: "local" = browser first when the code qualifies (default), "cloud" = always the cloud sandbox. */
+/** Conversation preference: "local" = browser first when the code qualifies, "cloud" = always the cloud sandbox (default since round 12). */
 export type LocalExecPreference = "local" | "cloud";
 
 /** Optional block of ConversationEnvironmentDTO (`local`) and the answer of GET …/local-exec. */
@@ -10,7 +10,7 @@ export interface LocalExecStatusDTO {
 	readonly enabled: boolean;
 	/** A browser tab of THIS user is currently connected to this conversation and able to run code. */
 	readonly connected: boolean;
-	/** What this conversation prefers (default "local"). Only effective while `enabled`. */
+	/** What this conversation prefers (default "cloud"). Only effective while `enabled`. */
 	readonly preference: LocalExecPreference;
 }
 

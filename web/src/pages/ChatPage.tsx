@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronDown, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, TriangleAlert, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronRight, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, TriangleAlert, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { AbortResponse, AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, UserEntryDTO, WithdrawResponse } from "@shared/chat";
@@ -456,7 +456,6 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 											turn={t}
 											readOnly={readOnly}
 											avatarState={i === lastAssistantIdx ? avatar : "idle"}
-											onOpenWork={work}
 											onRegenerate={t.lastAssistantEntryId ? () => regenerate(t.lastAssistantEntryId!) : undefined}
 											onFork={t.lastAssistantEntryId ? () => fork(t.lastAssistantEntryId!) : undefined}
 										/>
@@ -582,7 +581,7 @@ function RunBar({
 	streamError?: string;
 	onContinue: () => void;
 	continuing: boolean;
-	/** The latest answer already shows this failure inline (with its 技术详情): the bar then carries only the status and the way out. */
+	/** The latest answer already shows this failure inline (with its raw text behind ›): the bar then carries only the status and the way out. */
 	inlineError?: boolean;
 }) {
 	// 停止就是停止：no bar, no explanation (the message and completed steps simply stay; typing a new message continues).
@@ -610,14 +609,23 @@ function RunBar({
 							重试
 						</button>
 					</div>
-					{live?.failure && detail && !(inlineError && bad) ? (
-						<details data-testid="tech-details" className="mt-1 text-[12px]">
-							<summary className="cursor-pointer text-fg-muted hover:text-fg">技术详情</summary>
-							<p className="mt-0.5 break-all font-mono text-fg-muted">{detail}</p>
-						</details>
-					) : null}
+					{live?.failure && detail && !(inlineError && bad) ? <FailureDetail detail={detail} /> : null}
 				</div>
 			) : null}
+		</div>
+	);
+}
+
+/** The raw failure text of a run, behind one chevron row (round 12: the only detail affordance in the conversation). */
+function FailureDetail({ detail }: { detail: string }) {
+	const [open, setOpen] = useState(false);
+	return (
+		<div className="mt-1 text-[12px]">
+			<button type="button" data-testid="failure-details-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1 text-left text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info">
+				<span className="min-w-0 flex-1 truncate">原因</span>
+				<ChevronRight aria-hidden className={cn("size-3.5 shrink-0 transition-transform duration-150", open && "rotate-90")} />
+			</button>
+			{open ? <p data-testid="failure-detail" className="wr-fade-in mt-0.5 break-all font-mono text-fg-muted">{detail}</p> : null}
 		</div>
 	);
 }

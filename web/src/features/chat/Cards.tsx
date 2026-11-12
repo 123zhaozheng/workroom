@@ -1,4 +1,4 @@
-import { AlertTriangle, BookMarked, ChevronDown, Download, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, OctagonAlert, Presentation, ShieldAlert, ShieldCheck, type LucideIcon } from "lucide-react";
+import { AlertTriangle, BookMarked, ChevronRight, Download, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, OctagonAlert, Presentation, ShieldAlert, ShieldCheck, type LucideIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { m } from "motion/react";
 import type { ApprovalDTO, EffectDTO } from "@shared/chat";
@@ -69,7 +69,7 @@ const RISK: Record<ApprovalDTO["risk"], { label: string; tone: "neutral" | "warn
 	high: { label: "高风险", tone: "danger", note: "可能无法撤销，请逐项核对后再允许。", Icon: OctagonAlert },
 };
 
-/** Fields of an approval's detail that are worth a labelled line (everything else stays in 技术详情). */
+/** Fields of an approval's detail that are worth a labelled line (everything else stays in the raw 参数 block). */
 const SCOPE_KEYS: [RegExp, string][] = [
 	[/^(to|recipients?|receiver|email)$/i, "收件人"],
 	[/^(cc|bcc)$/i, "抄送"],
@@ -95,7 +95,7 @@ function scopeRows(detail: unknown): { label: string; value: string }[] {
 /**
  * Pending approval, compact: the face is the title, a risk badge, the backend's own one-line summary of what will happen, and the decision
  * (允许 / 拒绝 — the only two the backend accepts — plus an optional note it passes on to the assistant). Who asked, what it touches, the
- * risk explained, the arguments and a skill draft's files / findings are behind 查看详情; nothing is dropped. Nothing is focused on open;
+ * risk explained, the arguments and a skill draft's files / findings are behind 详情 ›; nothing is dropped. Nothing is focused on open;
  * a high-risk 允许 needs a second, explicit click and keeps its one-line warning on the face.
  */
 export function ApprovalCard({ approval, base, canDecide = true }: { approval: ApprovalDTO; base: string; canDecide?: boolean }) {
@@ -264,10 +264,10 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 					) : null}
 				</dl>
 				{approval.detail !== undefined ? (
-					<details data-testid="tech-details" className="text-[12.5px]">
-						<summary className="cursor-pointer text-fg-subtle hover:text-fg">技术详情</summary>
-						<pre className="wr-scroll mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface px-2.5 py-2 font-mono text-[12px] text-fg-muted">{draft ? skillDraftTech(draft) : JSON.stringify(approval.detail, null, 2)}</pre>
-					</details>
+					<div data-testid="approval-raw" className="text-[12.5px]">
+						<div className="mb-0.5 text-xs text-fg-subtle">参数</div>
+						<pre className="wr-scroll max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface px-2.5 py-2 font-mono text-[12px] text-fg-muted">{draft ? skillDraftTech(draft) : JSON.stringify(approval.detail, null, 2)}</pre>
+					</div>
 				) : null}
 			</DetailsPanel>
 		</m.div>
@@ -327,10 +327,9 @@ export function ReconcileCard({ effect, base }: { effect: EffectDTO; base: strin
 					未生效
 				</Button>
 			</div>
-			<details data-testid="tech-details" className="mt-2 text-[12.5px]">
-				<summary className="cursor-pointer text-fg-subtle hover:text-fg">技术详情</summary>
-				<p className="mt-1 break-all font-mono text-[12px] text-fg-muted">幂等键：{effect.idempotencyKey}</p>
-			</details>
+			<p className="mt-2 break-all text-[11.5px] text-fg-subtle" title="幂等键">
+				标识 <span className="font-mono">{effect.idempotencyKey}</span>
+			</p>
 		</div>
 	);
 }
@@ -397,8 +396,10 @@ export function Citations({ citations }: { citations: CitationDTO[] }) {
 	);
 }
 
-/** A failure of the message, once, where it happened: one line (icon + plain words) with the technical text folded in the same row. */
+/** A failure of the message, once, where it happened: one line (icon + plain words); when there is raw text, the chevron on its right opens it. */
 export function ErrorNote({ text, detail }: { text: string; detail?: string }) {
+	const [open, setOpen] = useState(false);
+	const id = useId();
 	if (!detail)
 		return (
 			<div data-testid="error-note" className="mt-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-1.5 text-[13px] text-danger">
@@ -408,17 +409,16 @@ export function ErrorNote({ text, detail }: { text: string; detail?: string }) {
 		);
 	return (
 		<div data-testid="error-note" className="mt-2 rounded-lg bg-danger-soft text-[13px] text-danger">
-			<details data-testid="tech-details" className="group/err">
-				<summary className="flex cursor-pointer list-none items-start gap-2 rounded-lg px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info">
-					<AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
-					<span className="min-w-0 flex-1 break-words">{text}</span>
-					<span className="inline-flex shrink-0 items-center gap-0.5 text-xs text-fg-muted group-hover/err:text-fg">
-						技术详情
-						<ChevronDown aria-hidden className="size-3.5 transition-transform group-open/err:rotate-180" />
-					</span>
-				</summary>
-				<pre className="wr-scroll mx-3 mb-2 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-fg-muted">{detail}</pre>
-			</details>
+			<button type="button" data-testid="error-details-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)} className="flex w-full items-start gap-2 rounded-lg px-3 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info">
+				<AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
+				<span className="min-w-0 flex-1 break-words">{text}</span>
+				<ChevronRight aria-hidden className={cn("mt-0.5 size-4 shrink-0 text-danger/70 transition-transform duration-150", open && "rotate-90")} />
+			</button>
+			{open ? (
+				<pre id={id} data-testid="error-detail" className="wr-scroll wr-fade-in mx-3 mb-2 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-fg-muted">
+					{detail}
+				</pre>
+			) : null}
 		</div>
 	);
 }

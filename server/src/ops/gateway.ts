@@ -189,7 +189,7 @@ export class Gateway implements ModelGateway {
 		if (this.#ctx.config.fixtureModel) {
 			try {
 				const m = await import("../runtime/fixture-model.ts");
-				this.#fixtureProvider = m.createFixtureModel().provider;
+				this.#fixtureProvider = m.createFixtureModel({ tokensPerSecond: Number(process.env.WORKROOM_FIXTURE_TPS) || undefined }).provider;
 				this.#models.setProvider(this.wrapProvider(this.#fixtureProvider, null));
 			} catch (e) {
 				this.#fixtureDetail = `fixture script unavailable: ${(e as Error).message}`;

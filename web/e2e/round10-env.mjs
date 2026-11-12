@@ -120,7 +120,7 @@ try {
 	check("B local channel: popover says nothing but 本地环境 / 云端沙箱 (+ 准备失败 when the host has no driver); the backend name is only in the screen-reader text", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && (kind === "local" || kind === "none") && /^本地环境\s?云端沙箱\s?(准备失败)?$/.test(popText.replace(/\s?（[^）]*）/, "")), popText);
 	check("B no state line unless something failed; never a 现在准备 button, no backend label", (await pop.locator('[data-testid="env-label"]').count()) === 0 && (await pop.locator('[data-testid="env-prepare"]').count()) === 0 && ((await pop.locator('[data-testid="env-state"]').count()) === 0 || /^准备失败/.test((await pop.locator('[data-testid="env-state"]').innerText()).trim())));
 	const local = pop.locator('[data-testid="env-local"]');
-	check("B [round 11] 本地环境 is an enabled radio (org switch on by default) and the chosen one — just those four characters, no 即将推出, no explanation", (await local.getAttribute("aria-disabled")) === null && (await local.getAttribute("aria-checked")) === "true" && (await local.innerText()).trim() === "本地环境");
+	check("B [round 12] 本地环境 stays in place, greyed out (aria-disabled, not checked) — just those four characters, no 即将推出", (await local.getAttribute("aria-disabled")) === "true" && (await local.getAttribute("aria-checked")) === "false" && (await local.innerText()).trim() === "本地环境");
 	await pop.locator('[data-testid="env-cloud"]').click();
 	await admin.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
 	await local.click();

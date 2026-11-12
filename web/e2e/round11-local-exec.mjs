@@ -49,9 +49,13 @@ const api = (path, init) => page.request.fetch(`${base}/api${path}`, init);
 const json = async (path, init) => (await api(path, init)).json();
 
 // A conversation created through the API so a file can be put in its workspace before the page opens it.
-async function newConversation() {
+// Round 12: a conversation prefers the cloud unless it explicitly chose local (the 本地环境 option is greyed out in the UI); this script
+// exercises the browser path, so every conversation it makes chooses local explicitly — except the first, whose default is checked.
+async function newConversation({ local = true } = {}) {
 	const c = await json("/conversations", { method: "POST", data: {} });
-	return { spaceId: c.conversation.spaceId, id: c.conversation.conversationId };
+	const conv = { spaceId: c.conversation.spaceId, id: c.conversation.conversationId };
+	if (local) await api(`/conversations/${conv.spaceId}/${conv.id}/local-exec`, { method: "PUT", data: { preference: "local" } });
+	return conv;
 }
 const putFile = (conv, path, text) => api(`/sandbox/${conv.spaceId}/file?conversationId=${conv.id}&path=${encodeURIComponent(path)}`, { method: "PUT", data: text });
 const getFile = async (conv, path) => {
@@ -90,11 +94,12 @@ console.log(`cloud driver on this machine: ${cloudDriver}`);
 
 try {
 	// ================================================================ A. browser run
-	const a = await newConversation();
+	const a = await newConversation({ local: false });
 	await putFile(a, "in.txt", "hello from the workspace");
 	await open(a);
 	check("A the tab connects to the conversation (presence)", await connected(a));
-	check("A status: enabled by default, preference local", JSON.stringify(await status(a)) === JSON.stringify({ enabled: true, connected: true, preference: "local" }));
+	check("A status: enabled by default, preference cloud (round 12: 本地环境 is greyed out until the desktop app ships)", JSON.stringify(await status(a)) === JSON.stringify({ enabled: true, connected: true, preference: "cloud" }));
+	await api(`/conversations/${a.spaceId}/${a.id}/local-exec`, { method: "PUT", data: { preference: "local" } });
 	const codeA = "const t = await files.read('in.txt'); await files.write('out/up.txt', t.toUpperCase()); console.log('hello from', typeof window === 'undefined' ? 'a worker' : 'a window'); return { sum: [1, 2, 3].reduce((x, y) => x + y, 0), len: t.length };";
 	const ansA = await run(a, { language: "javascript", code: codeA, inputs: ["in.txt"] });
 	check("A answer says it ran in the browser", /backend: browser/.test(ansA), ansA.slice(0, 240));

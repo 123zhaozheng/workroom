@@ -1,8 +1,8 @@
 // Round 11 · R1 / R2a / R3 — the conversation environment button after the sandbox lifecycle: ONE status dot, two radio rows, no inline "preparing" line.
 //  A. [intercepted] every environment state the DTO can carry → the dot (none/lost: none; preparing/resuming: pulsing; ready; paused: grey; failed: red), its aria-label names the
 //     state, the popover fits at 390 / 1440 in light and dark (UI rendering only; nothing here claims a real sandbox).
-//  B. REAL server, local driver: choosing 本地环境 / 云端沙箱 persists across a reload (data-env-pref) and is saved through PUT …/local-exec; a choice made on the home page is kept
-//     in the tab and carried into the new conversation; with the admin switch off 本地环境 is disabled (aria-disabled, dashed) and the button follows the cloud.
+//  B. REAL server, local driver (round 12): 本地环境 is greyed out with 本地应用上线后可用 on hover and cannot be chosen; the button and the server preference are
+//     the cloud; choosing 云端沙箱 on the home page is kept in the tab; with the admin switch off it looks the same.
 //  C. LIVE (WORKROOM_TEST_OPENSANDBOX_URL / _KEY set; skipped with a message otherwise, never faked): OpenSandbox chosen as the channel through the admin page, idle pause set to the
 //     server's minimum (60 s), click 云端沙箱 → the dot goes preparing → ready with no line in the chat; a plain chat creates nothing; the reaper (60 s tick) pauses the idle
 //     sandbox → grey dot; a sandbox_exec through the fixture model resumes the SAME sandbox (same remote id, one create, one resume in the lifecycle stats).
@@ -197,18 +197,22 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 		if (r.method() === "PUT" && /\/conversations\/[^/]+\/\d+\/local-exec$/.test(path)) puts.push(r.postData());
 		if (r.method() === "POST" && /\/environment\/prepare$/.test(path)) prepares.push(path);
 	});
-	// B1. a choice on the home page is kept in the tab and applied by the new conversation's button
+	// B1. round 12: 本地环境 is greyed out until the desktop app ships — the home page shows the cloud, choosing 云端沙箱 is kept in the tab
 	await page.goto(base);
 	await page.waitForSelector(T("env-button"));
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.hasAttribute("data-env-pref"));
-	check("B1 home: the default is 本地环境 (data-env-pref=local), the org switch being on", (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "local");
+	check("B1 [round 12] home: the button shows 云端沙箱 (data-env-pref=cloud)", (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "cloud");
 	await page.locator(T("env-button")).click();
 	await page.waitForSelector(T("env-popover"));
-	check("B1 home: the popover is a radiogroup with two radios, 本地环境 checked and enabled", (await page.locator(`${T("env-popover")} [role="radiogroup"] [role="radio"]`).count()) === 2 && (await page.locator(T("env-local")).getAttribute("aria-checked")) === "true" && (await page.locator(T("env-local")).getAttribute("aria-disabled")) === null && (await page.locator(T("env-cloud")).getAttribute("aria-checked")) === "false");
+	check("B1 [round 12] home: a radiogroup with two radios — 本地环境 greyed out (aria-disabled, dashed, not checked), 云端沙箱 checked", (await page.locator(`${T("env-popover")} [role="radiogroup"] [role="radio"]`).count()) === 2 && (await page.locator(T("env-local")).getAttribute("aria-checked")) === "false" && (await page.locator(T("env-local")).getAttribute("aria-disabled")) === "true" && ((await page.locator(T("env-local")).getAttribute("class")) ?? "").includes("border-dashed") && (await page.locator(T("env-cloud")).getAttribute("aria-checked")) === "true");
+	await page.locator(T("env-local")).hover();
+	const tipB = await page.waitForSelector('[role="tooltip"]', { timeout: 3000 }).catch(() => null);
+	check("B1 [round 12] hovering 本地环境 says 本地应用上线后可用", !!tipB && (await tipB.innerText()).includes("本地应用上线后可用"));
+	await page.locator(T("env-local")).click({ force: true });
 	await page.locator(T("env-cloud")).click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
+	await sleep(300);
 	const kept = await page.evaluate(() => Object.entries(sessionStorage).filter(([k]) => k.startsWith("wr-env-pref:")).map(([, v]) => v));
-	check("B1 home: choosing 云端沙箱 only changes the icon/pref in this tab (kept in sessionStorage, no request sent, nothing created)", kept.join() === "cloud" && puts.length === 0 && prepares.length === 0 && (await page.locator(T("env-dot")).count()) === 0);
+	check("B1 home: clicking 本地环境 does nothing; choosing 云端沙箱 is kept in this tab only (no request sent, nothing created)", kept.join() === "cloud" && puts.length === 0 && prepares.length === 0 && (await page.locator(T("env-dot")).count()) === 0 && (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "cloud");
 	await page.keyboard.press("Escape");
 	await sendMessage(page, "你好，只是聊天");
 	await page.waitForURL(/\/c\//);
@@ -217,23 +221,18 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 	const [, spaceId, convNo] = /\/c\/([^/]+)\/(\d+)/.exec(page.url());
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
 	const saved = await json(`/conversations/${spaceId}/${convNo}/local-exec`);
-	check("B1 the home choice was carried into the new conversation: data-env-pref=cloud and the server holds preference cloud; the tab's pending value is consumed", saved.preference === "cloud" && puts.length === 1 && JSON.parse(puts[0]).preference === "cloud" && (await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith("wr-env-pref:")).length)) === 0, JSON.stringify({ saved, puts }));
-	// B2. persists across a reload, both ways
+	check("B1 the new conversation runs in the cloud (server preference cloud by default, nothing to save); the tab's pending value is consumed", saved.preference === "cloud" && puts.length === 0 && (await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith("wr-env-pref:")).length)) === 0, JSON.stringify({ saved, puts }));
+	// B2. a reload keeps it; 本地环境 cannot be chosen in a conversation either
 	await page.reload();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
-	check("B2 reload: still 云端沙箱 (data-env-pref=cloud; the cloud icon; aria-label says 云端沙箱)", /^执行环境：云端沙箱/.test((await page.locator(T("env-button")).getAttribute("aria-label")) ?? ""));
+	check("B2 reload: still 云端沙箱 (data-env-pref=cloud; aria-label says 云端沙箱)", /^执行环境：云端沙箱/.test((await page.locator(T("env-button")).getAttribute("aria-label")) ?? ""));
 	await page.locator(T("env-button")).click();
 	await page.waitForSelector(T("env-popover"));
-	check("B2 popover after reload: 云端沙箱 checked, 本地环境 not", (await page.locator(T("env-cloud")).getAttribute("aria-checked")) === "true" && (await page.locator(T("env-local")).getAttribute("aria-checked")) === "false");
-	await page.locator(T("env-local")).click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "local");
+	await page.locator(T("env-local")).click({ force: true });
 	await sleep(500);
-	check("B2 choosing 本地环境 is saved on the server (PUT preference local) and starts nothing", (await json(`/conversations/${spaceId}/${convNo}/local-exec`)).preference === "local" && puts.length === 2 && JSON.parse(puts[1]).preference === "local" && prepares.length === 0);
+	check("B2 clicking the greyed 本地环境 in a conversation saves nothing and starts nothing", (await json(`/conversations/${spaceId}/${convNo}/local-exec`)).preference === "cloud" && puts.length === 0 && prepares.length === 0 && (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "cloud");
+	await shotR(page, "lifecycle-local-greyed-1440");
 	await page.keyboard.press("Escape");
-	await page.reload();
-	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "local");
-	check("B2 reload: back to 本地环境 (data-env-pref=local; the laptop icon; aria-label says 本地环境)", /^执行环境：本地环境/.test((await page.locator(T("env-button")).getAttribute("aria-label")) ?? "") && (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "local");
-	await shotR(page, "lifecycle-pref-local-1440");
 	// B3. admin switch off: 本地环境 is disabled everywhere and the button follows the cloud
 	const off = await api("/sandbox/local-exec", { method: "PUT", data: { enabled: false } });
 	check("B3 setup: the admin switched local execution off", off.ok() && (await json("/sandbox/local-exec")).enabled === false);

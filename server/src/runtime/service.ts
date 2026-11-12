@@ -8,7 +8,10 @@ import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Princ
 import { HttpError, nowIso } from "../core/http.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AbortResponse, AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, PromoteResponse, SubagentDTO, SubmissionDTO, TasksResponse, WithdrawResponse } from "../../../shared/chat.ts";
-import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry } from "./docs.ts";
+import type { WorkspacePrepItem } from "../../../shared/chat.ts";
+import type { Sandbox } from "../tools/sandbox.ts";
+import { storeLabel } from "../tools/sandbox/stores.ts";
+import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
@@ -98,7 +101,42 @@ export class Runtime implements RuntimeService {
 		return this.ctx.services.get("identity").space(spaceId);
 	}
 
+	/**
+	 * Round 12: the per-conversation parts of a workspace, created now instead of on first use — the working directory and the persistent stores
+	 * (memories/, project/) this person may use here. Never starts or connects a sandbox (round 11, R2: pure chat never does). Failures are
+	 * recorded as such (ok: false with the reason), never hidden.
+	 */
+	#prepareWorkspace(p: Principal, space: Space, conversationId: number): WorkspacePrepItem[] {
+		if (!this.ctx.services.has("sandbox")) return [];
+		const sb = this.ctx.services.get("sandbox") as Sandbox;
+		const out: WorkspacePrepItem[] = [];
+		try {
+			sb.workdir(space, conversationId);
+			out.push({ key: "workdir", label: "工作目录", ok: true });
+		} catch (err) {
+			out.push({ key: "workdir", label: "工作目录", ok: false, detail: errText(err) });
+		}
+		try {
+			const names = sb.stores.mounts(p, space, conversationId).map((m) => storeLabel(m.name));
+			if (names.length) out.push({ key: "stores", label: names.join("、"), ok: true });
+		} catch (err) {
+			out.push({ key: "stores", label: "记忆与项目文件", ok: false, detail: errText(err) });
+		}
+		return out;
+	}
+	/** Round 12: which execution environment the conversation will use (from configuration only; it starts on first use). */
+	async #workspaceEnv(space: Space): Promise<WorkspacePrepItem> {
+		try {
+			if (!this.ctx.services.has("sandbox")) return { key: "env", label: "执行环境", ok: false, detail: "未启用" };
+			const info = await (this.ctx.services.get("sandbox") as Sandbox).promptInfo(space);
+			return info.usable ? { key: "env", label: "执行环境", detail: `${info.label} · 需要时启动`, ok: true } : { key: "env", label: "执行环境", detail: info.reason || "不可用", ok: false };
+		} catch (err) {
+			return { key: "env", label: "执行环境", ok: false, detail: errText(err) };
+		}
+	}
+
 	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: Context): Promise<{ conversationId: number; notice?: string }> {
+		const started = Date.now();
 		const space = this.manager.space(spaceId);
 		await this.acl.require(principal, "write", { kind: "space", id: spaceId });
 		// Round 9: a project id on a personal-space conversation must be the caller's own container project (never somebody else's, never another org's).
@@ -123,6 +161,7 @@ export class Runtime implements RuntimeService {
 		}
 		model ??= await this.defaultModel(principal);
 		const harness = await this.manager.get(spaceId);
+		const envInfo = await this.#workspaceEnv(space);
 		const conv = await harness.createConversation(
 			{
 				ownership: { kind: "ownerless" },
@@ -134,6 +173,9 @@ export class Runtime implements RuntimeService {
 				init: async (tx, id) => {
 					await tx.appendEntry(StartEntry, id, { data: { createdBy: principal.userId, at: nowIso() } });
 					if (notice) await tx.appendEntry(NoticeEntry, id, { data: notice });
+					// Round 12: the workspace of the new conversation, prepared now and shown as the first step of its first answer.
+					const items = [{ key: "storage" as const, label: "会话存储", ok: true }, ...this.#prepareWorkspace(principal, space, id as number), envInfo];
+					await tx.appendEntry(WorkspaceEntry, id, { data: { ms: Math.max(1, Date.now() - started), items } });
 					if (assistant) {
 						const d = await tx.doc(AssistantDoc, id);
 						d.assistantId = assistant.id;
@@ -1124,3 +1166,5 @@ export class Runtime implements RuntimeService {
 }
 
 export type { TaskId };
+
+const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 200);

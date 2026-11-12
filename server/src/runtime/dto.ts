@@ -97,6 +97,7 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 				...(d.knowledgeRefs?.length ? { knowledgeRefs: d.knowledgeRefs } : {}),
 				...(d.via ? { via: { kind: d.via.kind, id: d.via.automationId ?? d.via.id } } : {}),
 				...(e.kind === "wr.input-unplaced" ? { placed: false } : {}),
+				...(typeof (msg as any)?.timestamp === "number" ? { timestamp: (msg as any).timestamp } : typeof d.at === "number" ? { timestamp: d.at } : {}),
 			};
 		}
 		case "pi.user": {
@@ -116,6 +117,7 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 				fixture: !!m && isSimulated(m.provider, m.model),
 				usage: usageDTO(m?.usage, !!m && isSimulated(m.provider, m.model)),
 				timestamp: m?.timestamp,
+				...(typeof m?.durationMs === "number" ? { durationMs: m.durationMs } : {}),
 			};
 		}
 		case "pi.tool-result": {
@@ -129,10 +131,16 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 				isError: !!m?.isError,
 				...(m?.details !== undefined ? { details: m.details } : {}),
 				...((e.data as any)?.diagnostics?.length ? { diagnostics: (e.data as any).diagnostics } : {}),
+				...(typeof m?.timestamp === "number" ? { timestamp: m.timestamp } : {}),
+				...(typeof m?.durationMs === "number" ? { durationMs: m.durationMs } : {}),
 			};
 		}
 		case "wr.start":
 			return { ...base, kind: "start" };
+		case "wr.workspace": {
+			const d = (e.data ?? {}) as any;
+			return { ...base, kind: "workspace", ms: Number(d.ms) || 0, items: Array.isArray(d.items) ? d.items : [] };
+		}
 		case "wr.notice":
 			return { ...base, kind: "notice", text: String((e.data as any)?.text ?? ""), code: String((e.data as any)?.code ?? "") };
 		case "pi.reset":
@@ -189,7 +197,7 @@ export function liveDTO(live: Readonly<LiveState> | undefined, approvals: readon
 	return {
 		status: runStatus(live, pending, hasAnswer),
 		busy: !!live?.run,
-		...(partialMsg ? { partial: assistantParts(partialMsg) } : {}),
+		...(partialMsg ? { partial: { ...assistantParts(partialMsg), ...(typeof partialMsg.timestamp === "number" ? { startedAt: partialMsg.timestamp } : {}) } } : {}),
 		tools,
 		...(live?.run ? { turns: live.run.turns } : {}),
 		...(live?.generation?.retry ? { retry: { at: live.generation.retry.at, error: live.generation.retry.error } } : {}),

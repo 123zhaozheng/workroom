@@ -1,10 +1,13 @@
 // View model: pi entries (+ live partial) → user turns and assistant turns with an embedded step chain.
-import type { ApprovalDTO, AssistantEntryDTO, ConversationState, EntryDTO, LiveToolDTO, MarkerEntryDTO, SubagentDTO, ToolCallDTO, ToolResultEntryDTO, UsageDTO, UserEntryDTO } from "@shared/chat";
+import type { ApprovalDTO, AssistantEntryDTO, ConversationState, EntryDTO, LiveToolDTO, MarkerEntryDTO, SubagentDTO, ToolCallDTO, ToolResultEntryDTO, UsageDTO, UserEntryDTO, WorkspacePrepItem } from "@shared/chat";
 import type { BrowseResultDTO, FileVersionRefDTO, JobDTO } from "@shared/files";
 import type { CitationDTO } from "@shared/knowledge";
 
 export type Step =
-	| { kind: "thinking"; key: string; text: string; streaming?: boolean }
+	/** startedAt = when the model request that produced it started (real, from pi-ai); the thinking time itself is measured by the UI while it streams. */
+	| { kind: "thinking"; key: string; text: string; streaming?: boolean; startedAt?: number }
+	/** Round 12: the workspace prepared for a new conversation (first step of its first answer); ms is the server's measurement. */
+	| { kind: "workspace"; key: string; ms: number; items: readonly WorkspacePrepItem[] }
 	| { kind: "narration"; key: string; text: string }
 	| { kind: "tool"; key: string; call: ToolCallDTO; result?: ToolResultEntryDTO; live?: LiveToolDTO; approval?: ApprovalDTO; subagent?: SubagentDTO };
 
@@ -28,6 +31,9 @@ export interface AssistantTurn {
 	usage?: UsageDTO;
 	startedAt?: number;
 	endedAt?: number;
+	/** Round 12: when the message this turn answers was sent, and when the turn's last model response / tool finished (both real timestamps). */
+	requestedAt?: number;
+	finishedAt?: number;
 }
 /** What happened after a user message, for its outcome line: how many steps completed, and whether an answer eventually followed. */
 export interface UserRun {
@@ -102,12 +108,23 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 	for (const t of state?.live.tools ?? []) liveTools.set(t.callId, t);
 
 	let cur: AssistantTurn | null = null;
+	/** Round 12: the workspace record written when the conversation was created waits for the first answer it belongs to. */
+	let workspace: Extract<Step, { kind: "workspace" }> | null = null;
+	let requestedAt: number | undefined;
+	let answeredUser = false;
 	const open = (key: string): AssistantTurn => {
 		if (!cur) {
-			cur = { kind: "assistant", key, steps: [], streaming: false, artifacts: [], citations: [], jobs: [], fixture: false };
+			cur = { kind: "assistant", key, steps: [], streaming: false, artifacts: [], citations: [], jobs: [], fixture: false, requestedAt };
+			if (workspace && answeredUser) {
+				cur.steps.push(workspace);
+				workspace = null;
+			}
 			turns.push(cur);
 		}
 		return cur;
+	};
+	const finished = (t: AssistantTurn, at: number | undefined) => {
+		if (at !== undefined && Number.isFinite(at)) t.finishedAt = Math.max(t.finishedAt ?? 0, at);
 	};
 	const close = () => {
 		if (cur) finalize(cur);
@@ -119,8 +136,15 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 			case "user":
 				// A 未送达 marker (never placed, e.g. withdrawn by 停止) is display-only: it must not cut the assistant's turn in two,
 				// or the answer a later 继续 produces would be separated from the steps before it.
-				if (e.placed !== false) close();
+				if (e.placed !== false) {
+					close();
+					requestedAt = e.timestamp;
+					answeredUser = true;
+				}
 				turns.push({ kind: "user", key: `u${e.id}`, entry: e });
+				break;
+			case "workspace":
+				workspace = { kind: "workspace", key: `ws${e.id}`, ms: e.ms, items: e.items };
 				break;
 			case "assistant": {
 				const t = open(`a${e.id}`);
@@ -133,13 +157,15 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 					t.startedAt ??= e.timestamp;
 					t.endedAt = e.timestamp;
 				}
-				if (e.thinking) t.steps.push({ kind: "thinking", key: `th${e.id}`, text: e.thinking });
+				if (e.timestamp !== undefined && e.durationMs !== undefined) finished(t, e.timestamp + e.durationMs);
+				if (e.thinking) t.steps.push({ kind: "thinking", key: `th${e.id}`, text: e.thinking, startedAt: e.timestamp });
 				if (e.toolCalls.length) {
 					if (e.text.trim()) t.steps.push({ kind: "narration", key: `n${e.id}`, text: e.text });
 					for (const c of e.toolCalls) {
 						const r = results.get(c.id);
 						t.steps.push({ kind: "tool", key: `t${c.id}`, call: c, result: r, live: liveTools.get(c.id), approval: approvalsByCall.get(c.id), subagent: subagentsByCall.get(c.id) });
 						if (r) {
+							finished(t, r.timestamp);
 							t.artifacts.push(...artifactsOf(r.details));
 							t.citations.push(...citationsOf(r.details));
 							const job = isRecord(r.details) && isRecord(r.details.job) && typeof r.details.job.id === "string" ? (r.details.job as unknown as JobDTO) : null;
@@ -175,7 +201,8 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 		t.streaming = true;
 		const p = live.partial;
 		if (p) {
-			if (p.thinking) t.steps.push({ kind: "thinking", key: "live-th", text: p.thinking, streaming: true });
+			// thinking streams until the response moves on to its text or tool calls
+			if (p.thinking) t.steps.push({ kind: "thinking", key: "live-th", text: p.thinking, streaming: !p.text && !p.toolCalls.length, startedAt: p.startedAt });
 			if (p.toolCalls.length) {
 				if (p.text.trim()) t.steps.push({ kind: "narration", key: "live-n", text: p.text });
 				for (const c of p.toolCalls) t.steps.push({ kind: "tool", key: `lt${c.id}`, call: c, live: liveTools.get(c.id) ?? { callId: c.id, name: c.name, status: "pending" }, approval: approvalsByCall.get(c.id), subagent: subagentsByCall.get(c.id) });

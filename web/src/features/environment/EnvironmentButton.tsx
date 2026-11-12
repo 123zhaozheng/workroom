@@ -1,12 +1,12 @@
 // The small cloud button next to the composer's "+": where this conversation's code runs, and its state. Two options only:
-//   本地环境  light code (code_run) runs in this browser, in an isolated frame without network; anything heavier is upgraded to the cloud
-//             automatically. Disabled when the organisation switched local execution off (admin: 沙箱).
+//   本地环境  greyed out (round 12): reserved for the coming desktop app, whose commands will reach the person's own computer. Kept in
+//             place so the entry does not move when it ships; hovering says when it becomes available.
 //   云端沙箱  everything runs in the organisation's sandbox channel. Choosing it explicitly also starts (or resumes) the sandbox now
 //             (round 11, R2a) — the only place in the UI that does; a failure adds one short line with 重试 (reason on hover).
 // Round 10/11 user feedback: minimal — no headings, backend names, working directory or explanations; the sandbox lifecycle (preparing / ready /
 // paused / failed) is ONE small dot on the button, never a banner.
 // Opening the popover only READS (GET .../environment); it never creates or connects a sandbox.
-// On the home page there is no conversation yet: the choice is kept for this tab and applied when the conversation's button first mounts.
+// On the home page there is no conversation yet: choosing 云端沙箱 is kept for this tab and applied when the conversation's button first mounts.
 import { Check, Cloud, Laptop, Loader2, RotateCcw, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ConversationEnvironmentDTO } from "@shared/sandbox";
@@ -74,7 +74,6 @@ function writePending(spaceId: string, v: LocalExecPreference | null): void {
 export function EnvironmentButton({ spaceId, conversationId, active, side = "top", disabled, className }: EnvironmentButtonProps) {
 	const { env, unavailable, error, prepare, busy, retryError, reload } = useEnvironment(spaceId, conversationId, active);
 	const [open, setOpen] = useState(false);
-	const [pending, setPending] = useState<LocalExecPreference | undefined>(() => (spaceId && conversationId === undefined ? readPending(spaceId) : undefined));
 	const [saving, setSaving] = useState(false);
 	const [choiceError, setChoiceError] = useState<string>();
 	const bodyRef = useRef<HTMLDivElement>(null);
@@ -83,14 +82,14 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 	const localOn = env?.local?.enabled === true;
 	const remote = env?.kind === "remote";
 	const canStart = remote && !!env?.canPrepare && (env.state === "none" || env.state === "lost" || env.state === "paused");
-	const pref: LocalExecPreference = !localOn ? "cloud" : conversationId === undefined ? (pending ?? "local") : (env?.local?.preference ?? "local");
+	// Only a conversation that explicitly chose local in round 11 still reports "local"; everything else runs in the cloud.
+	const pref: LocalExecPreference = localOn && conversationId !== undefined && env?.local?.preference === "local" ? "local" : "cloud";
 
 	const choose = async (next: LocalExecPreference) => {
 		if (!spaceId || !env) return;
-		if (next === "local" && !localOn) return;
+		if (next === "local") return; // greyed out until the desktop app ships
 		setChoiceError(undefined);
 		if (conversationId === undefined) {
-			setPending(next);
 			writePending(spaceId, next);
 			return;
 		}
@@ -155,18 +154,12 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 						<p className="flex items-center gap-2 text-sm text-fg-muted"><Loader2 aria-hidden className="size-4 wr-spin" />读取中…</p>
 					) : (
 						<div role="radiogroup" aria-label="执行环境" className="space-y-1.5 text-sm">
-							{localOn ? (
-								<button type="button" role="radio" aria-checked={pref === "local"} data-testid="env-local" disabled={saving} onClick={() => void choose("local")} className={row(pref === "local")}>
-									<Laptop aria-hidden className="size-4 shrink-0 text-fg-muted" />
-									<span className="flex-1 font-medium">本地环境</span>
-									{pref === "local" ? <Check aria-hidden className="size-4 text-success" /> : null}
-								</button>
-							) : (
-								<button type="button" role="radio" aria-checked="false" data-testid="env-local" aria-disabled="true" onClick={(e) => e.preventDefault()} className="flex w-full cursor-not-allowed items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2.5 text-left text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+							<Tip label="本地应用上线后可用">
+								<button type="button" role="radio" aria-checked="false" aria-disabled="true" data-testid="env-local" onClick={(e) => e.preventDefault()} className="flex w-full cursor-not-allowed items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2.5 text-left text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 									<Laptop aria-hidden className="size-4 shrink-0" />
 									<span className="flex-1">本地环境</span>
 								</button>
-							)}
+							</Tip>
 							<div>
 								<button type="button" role="radio" aria-checked={pref === "cloud"} data-testid="env-cloud" disabled={saving || busy} onClick={() => void choose("cloud")} className={row(pref === "cloud")}>
 									<Cloud aria-hidden className="size-4 shrink-0 text-fg-muted" />

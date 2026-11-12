@@ -1,11 +1,11 @@
 // Progressive disclosure for the cards that ask the person to decide: the face shows what is needed to decide (what, how risky, the buttons),
-// everything else is one 查看详情 away. Nothing is dropped, only folded.
-import { ChevronDown } from "lucide-react";
+// everything else is one 详情 › away (round 12: the chevron is the only detail affordance). Nothing is dropped, only folded.
+import { ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /** The small text button that opens / closes a card's folded part. `controls` is the id of the panel it opens. */
-export function DetailsToggle({ open, onToggle, controls, testId = "approval-details-toggle", label = "查看详情", openLabel = "收起详情", className }: { open: boolean; onToggle: () => void; controls: string; testId?: string; label?: string; openLabel?: string; className?: string }) {
+export function DetailsToggle({ open, onToggle, controls, testId = "approval-details-toggle", label = "详情", openLabel = "详情", className }: { open: boolean; onToggle: () => void; controls: string; testId?: string; label?: string; openLabel?: string; className?: string }) {
 	return (
 		<button
 			type="button"
@@ -16,12 +16,12 @@ export function DetailsToggle({ open, onToggle, controls, testId = "approval-det
 			className={cn("inline-flex h-8 items-center gap-0.5 rounded-md px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info", className)}
 		>
 			{open ? openLabel : label}
-			<ChevronDown aria-hidden className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+			<ChevronRight aria-hidden className={cn("size-3.5 transition-transform duration-150", open && "rotate-90")} />
 		</button>
 	);
 }
 
-/** The folded part itself. Always in the DOM (so 技术详情 and friends can be found), hidden until opened. */
+/** The folded part itself. Always in the DOM, hidden until opened. */
 export function DetailsPanel({ id, open, testId = "approval-details", children, className }: { id: string; open: boolean; testId?: string; children: ReactNode; className?: string }) {
 	const ref = useRef<HTMLDivElement>(null);
 	// opened at the bottom of the conversation it would grow under the composer: bring it into view
