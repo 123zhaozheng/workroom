@@ -280,6 +280,8 @@ test("docker (real): service mode — MCP stdio server inside a container over s
 		assert.equal(ex.reason, "idle");
 		assert.equal(Buffer.concat(chunks).toString(), "hello\n");
 		const long = await sb.startService({ principal, space, conversationId: 4, runtime: "shell", argv: ["sleep", "1000"] });
+		// `docker run` registers the container asynchronously (slow on a freshly started daemon): wait for it rather than racing it
+		for (let i = 0; i < 100 && containers().length === 0; i++) await new Promise((r) => setTimeout(r, 100));
 		assert.equal(containers().length, 1);
 		await sb.stop();
 		assert.equal((await long.exited).reason, "shutdown");
