@@ -26,7 +26,8 @@ const start = async (msg) => {
 	await sendMessage(page, msg);
 	await page.waitForURL(/\/c\//);
 };
-const stepsDone = (n) => page.waitForFunction((n) => [...document.querySelectorAll('[data-testid="run-summary"]')].some((e) => e.textContent.includes(`已完成 ${n} 步`)), n, { timeout: 20000 });
+// round 12: while the turn runs its steps are rows; a finished step is a row in state "done"
+const stepsDone = (n) => page.waitForFunction((n) => document.querySelectorAll('[data-testid="tool-step"][data-state="done"]').length >= n, n, { timeout: 20000 });
 // nothing is announced after a stop: wait for the step chain to say 已停止 (and the stop button to be gone) instead of a bar
 const stopped = () => page.waitForFunction(() => !document.querySelector('[data-testid="stop"]') && [...document.querySelectorAll('[data-testid="run-summary"]')].some((e) => e.textContent.includes("已停止")), null, { timeout: 20000 });
 const noStopChrome = async (p = page) => (await p.locator(`${T("run-bar")}, ${T("run-bar-hint")}, ${T("stop-note")}, ${T("continue")}`).count()) === 0;
@@ -50,7 +51,7 @@ try {
 	check("stop: no 已停止 label, no 保留在对话里 sentence and no 未应用 / 没有得到回复 on the message (only the unsent one has a marker)", !outcomes.some((o) => o.kind === "stopped" || o.kind === "resumed") && !(await page.content()).includes("未应用") && !(await page.locator("body").innerText()).includes("保留在对话里"), JSON.stringify(outcomes));
 	check("stop: no bar of any kind — no run bar, hint, 继续 button or stop note", await noStopChrome());
 	const sum = await text(T("run-summary"));
-	check("stop: the step chain keeps the completed step and says 已停止 (not 失败)", sum.includes("已停止 · 已完成 1 步") && !sum.includes("失败"), sum);
+	check("stop [round 12]: the turn line says 已停止 · 1 步被截断 (not 失败); its steps stay listed", /^已停止/.test(sum.trim()) && sum.includes("1 步被截断") && !sum.includes("失败"), sum);
 	await page.locator(`${T("step-chain")} button`).first().click();
 	const stepStates = await page.locator(T("tool-step")).evaluateAll((els) => els.map((e) => `${e.getAttribute("data-tool")}:${e.getAttribute("data-state")}`));
 	check("stop: completed step = done, the cut-off step = stopped", stepStates.join() === "wr_fixture_echo:done,wr_fixture_wait:stopped", stepStates.join());

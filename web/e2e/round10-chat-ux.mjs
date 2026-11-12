@@ -2,7 +2,7 @@
 // Fixture model only (no real AI): "[[call wr_fixture_approval {...}]]" asks for approval, "[[call credential_request {...}]]" asks for a
 // credential, "[[call skill_manage {...}]]" drafts a skill, "[[call sandbox_exec {...}]]" fails against an unreachable remote sandbox, "[[fail]]" fails a run.
 //  A. approval cards (real medium / high + mocked MCP-style, skill draft, blocked draft; credential request): height, visible words and
-//     whether the decision buttons are on screen without scrolling — 1440 / 390, light / dark. Nothing removed: everything is behind 查看详情.
+//     whether the decision buttons are on screen without scrolling — 1440 / 390, light / dark. Nothing removed: everything is behind 详情 › (round 12).
 //  B. notices: one failed sandbox step = one inline explanation (no env banner / run bar repeating it); a failed run = one inline note + a slim
 //     重试 bar; the skill-saved result is one slim line; the stale-citation notice is one line.
 // Run: npm run -w web build && node web/e2e/round10-chat-ux.mjs        (port 8942)
@@ -220,10 +220,10 @@ try {
 		check("A medium 390: the risk is a small badge (名称 + 等级), the title and the one-line summary are visible", (await card.locator(T("approval-risk")).innerText()).includes("中风险") && (await card.innerText()).includes("对外发送周报") && (await card.locator(T("approval-summary")).innerText()).includes("team@example.com"));
 		check("A medium 390: compact (card ≤ 170px high)", m.h <= 170, `${m.h}px`);
 		const toggle = card.locator(T("approval-details-toggle"));
-		check("A medium 390: 查看详情 is collapsed by default and says so (aria-expanded=false)", (await toggle.count()) === 1 && (await toggle.getAttribute("aria-expanded")) === "false" && (await toggle.innerText()).includes("查看详情"));
+		check("A medium 390 [round 12]: 详情 › is collapsed by default and says so (aria-expanded=false)", (await toggle.count()) === 1 && (await toggle.getAttribute("aria-expanded")) === "false" && (await toggle.innerText()).trim() === "详情");
 		const closedText = await card.innerText();
 		check("A medium 390: folded — 请求人 / 风险说明 / 技术详情 are not on the face", !closedText.includes("请求人") && !closedText.includes("影响") && !closedText.includes("会对外部系统产生变化"), closedText.replace(/\s+/g, " "));
-		check("A medium 390: buttons are 拒绝 / 允许 / 查看详情 / 添加说明, nothing focused on open", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "拒绝|允许|查看详情|添加说明" && !["approve", "approve-confirm"].includes(await p.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "")), (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|"));
+		check("A medium 390: buttons are 拒绝 / 允许 / 详情 / 添加说明, nothing focused on open", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "拒绝|允许|详情|添加说明" && !["approve", "approve-confirm"].includes(await p.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "")), (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|"));
 		await toggle.click();
 		await sleep(250);
 		const openText = await card.innerText();
@@ -259,7 +259,7 @@ try {
 		check("A mcp 390: 展开全文 shows the whole summary", (await mc.locator(T("approval-summary")).boundingBox()).height > cutH + 10);
 		await mc.locator(T("approval-details-toggle")).click();
 		const mcText = await mc.innerText();
-		check("A mcp 390: the scope (收件人 / 标题), who asked and the raw arguments are in 查看详情 (nothing dropped)", mcText.includes("收件人") && mcText.includes("项目组") && mcText.includes("本周进展汇总") && mcText.includes("技术详情") && mcText.includes("请求人"), mcText.replace(/\s+/g, " ").slice(0, 200));
+		check("A mcp 390: the scope (收件人 / 标题), who asked and the raw arguments are in 查看详情 (nothing dropped)", mcText.includes("收件人") && mcText.includes("项目组") && mcText.includes("本周进展汇总") && mcText.includes("参数") && !mcText.includes("技术详情") && mcText.includes("请求人"), mcText.replace(/\s+/g, " ").slice(0, 200));
 		await mp.close();
 
 		// skill draft
@@ -274,7 +274,7 @@ try {
 		await sc.locator(T("approval-details-toggle")).click();
 		await sleep(250);
 		const sOpen = await sc.innerText();
-		check("A skill 390: 查看详情 shows every file, the 可执行脚本 mark, permissions, each finding and the 仅你可用 sentence", ["SKILL.md", "scripts/run.py", "templates/weekly.md", "可执行脚本", "运行代码、联网", "联网请求", "会被覆盖", "保存后仅你可用", "技术详情"].every((s) => sOpen.includes(s)), sOpen.replace(/\s+/g, " ").slice(0, 120));
+		check("A skill 390: 查看详情 shows every file, the 可执行脚本 mark, permissions, each finding and the 仅你可用 sentence", ["SKILL.md", "scripts/run.py", "templates/weekly.md", "可执行脚本", "运行代码、联网", "联网请求", "会被覆盖", "保存后仅你可用", "参数"].every((s) => sOpen.includes(s)) && !sOpen.includes("技术详情"), sOpen.replace(/\s+/g, " ").slice(0, 120));
 		await shot(sp, "approval-skill-390-details-open");
 		check("A skill 390 (details open): no horizontal scroll", await noHScroll(sp));
 		await sp.close();
@@ -301,7 +301,7 @@ try {
 		check("A credential 390: 允许的操作 / 有效期 are folded", !cFace.includes("允许的操作") && !cFace.includes("请在"), cFace.replace(/\s+/g, " "));
 		await cc.locator(T("credential-details-toggle")).click();
 		const cOpen = await cc.innerText();
-		check("A credential 390: 查看详情 shows 允许的操作 (GET, POST), 使用方式 and 有效期, and the tech details are one more level in", ["允许的操作", "GET", "POST", "使用方式", "有效期", "技术详情"].every((s) => cOpen.includes(s)));
+		check("A credential 390 [round 12]: 详情 › shows 允许的操作 (GET, POST), 使用方式, 有效期 and the header line directly (no second 技术详情 level)", ["允许的操作", "GET", "POST", "使用方式", "有效期", "请求头"].every((s) => cOpen.includes(s)) && !cOpen.includes("技术详情"));
 		check("A credential 390: the paste warning stays on the face", await cc.locator(T("credential-paste-warning")).isVisible());
 		await cp.close();
 	});
@@ -391,12 +391,16 @@ try {
 	await sec("B sandbox failure", async () => {
 		check("B sandbox failure: the reason is shown once, inline where it happened (≤ 1 visible copy outside the model's answer and folded details)", f1440.errorCopies <= 1, JSON.stringify(f1440.copiesText));
 		check("B sandbox failure: no 工作环境没有准备好 banner repeating it above the composer (the environment button carries a dot instead)", f1440.envStatus.length === 0 && (await page.locator(T("env-dot")).count()) === 1, JSON.stringify(f1440.envStatus));
-		check("B sandbox failure: the failure is still visible without opening anything — one 失败 line under the step summary", f1440.stepFailure.length === 1 && f1440.stepFailure[0] <= 44 && /沙箱提供方|创建沙箱失败/.test(await page.locator(T("step-failure")).innerText()), JSON.stringify(f1440.stepFailure));
+		check("B sandbox failure [round 12]: still visible without opening anything — the folded turn line says · 1 步失败 in red", f1440.stepNote === 1, JSON.stringify(f1440));
 		check("B sandbox failure: nothing but the composer sits below the conversation (no notice rows above it)", (f1440.aboveComposerPx ?? 99) <= 16, `${f1440.aboveComposerPx}px`);
-		// the inline line opens the step (full text, 技术详情 inside)
-		await page.locator(`${T("step-failure")} button`).first().click();
+		// round 12: the folded line opens the process; the failed row (red, 失败) opens to its 参数 and 错误 — nothing was dropped
+		if ((await page.locator(T("run-summary")).last().getAttribute("aria-expanded")) === "false") await page.locator(T("run-summary")).last().click();
 		await sleep(250);
-		check("B sandbox failure: 详情 opens the step with 技术详情 (tool / arguments / error) — nothing was dropped", (await page.locator(`${T("step-chain")} ${T("tech-details")}`).count()) >= 1);
+		const bad = page.locator(`${T("tool-step")}[data-state="error"]`).first();
+		await bad.locator("button").first().click();
+		await sleep(250);
+		const badText = await bad.innerText();
+		check("B sandbox failure: the failed row opens to its 参数 and 错误 (tool arguments and the error) — nothing was dropped", /失败/.test(badText) && badText.includes("参数") && badText.includes("错误") && /沙箱提供方|创建沙箱失败|fetch failed/.test(badText), badText.replace(/\s+/g, " ").slice(0, 200));
 		// the environment popover still offers the retry
 		await page.locator(T("env-button")).click();
 		await page.waitForSelector(T("env-popover"));
@@ -447,7 +451,7 @@ try {
 	const barText = (await page.locator(T("run-bar")).innerText()).replace(/\s+/g, " ");
 	const noteText = (await page.locator(T("error-note")).innerText()).replace(/\s+/g, " ");
 	await sec("B run failure", async () => {
-		check("B run failure: the message shows the reason once (模型调用出错 + 这一轮没有完成), with 技术详情 folded in the same line", /模型调用出错/.test(noteText) && noteText.includes("这一轮没有完成") && (await page.locator(`${T("error-note")} ${T("tech-details")}`).count()) === 1, noteText);
+		check("B run failure [round 12]: the message shows the reason once (模型调用出错 + 这一轮没有完成); the raw text is behind the note's own › row", /模型调用出错/.test(noteText) && noteText.includes("这一轮没有完成") && (await page.locator(`${T("error-note")} ${T("error-details-toggle")}`).count()) === 1, noteText);
 		check("B run failure: the bar above the composer is only the status + 重试 (one slim line, no repeated reason, no second 技术详情)", /重试/.test(barText) && !/模型出错/.test(barText) && (await page.locator(`${T("run-bar")} ${T("tech-details")}`).count()) === 0 && rf.runBar[0] <= 36, `${rf.runBar[0]}px · ${barText}`);
 		check("B run failure: the error note is one compact line (≤ 48px)", rf.errorNote[0] <= 48, `${rf.errorNote[0]}px`);
 	});

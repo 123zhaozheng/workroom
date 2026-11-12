@@ -1,6 +1,6 @@
 // Round 5 · UI group 2: agent progress in the chat.
 //  - test directives never appear as message content (displayText + 测试 badge), also in the handoff list
-//  - one run-summary line per turn, steps in human words, raw JSON only behind 「技术详情」
+//  - round 12: one folded "已完成，用时 N 秒" line per answered turn, steps in human words, raw arguments only inside the opened row
 //  - approval card: operation, scope, risk, requester; nothing focused on open, 高风险 needs a second click, 拒绝 works, keyboard
 //  - 待核对 card offers exactly 已生效 / 未生效
 //  - queued message (+ 撤销), failure → 重试, branch switcher still work
@@ -51,37 +51,37 @@ try {
 	check("display text: no [[call text visible anywhere on the page", !mainText.includes("[[call") && !mainText.includes("[[") && !(await page.locator("nav").first().innerText()).includes("[["));
 	const msgsText = (await page.locator('[data-testid="user-bubble"], [data-testid="assistant-message"]').allInnerTexts()).join("\n");
 	check("display text: no raw tool JSON in any message while collapsed", !/"format"\s*:|"name"\s*:|\{"/.test(msgsText), msgsText.slice(0, 120));
+	// round 12: a finished, answered turn folds into "已完成，用时 N 秒 ›"; rows open only through their own chevron row (参数 / 输出)
 	const sum1 = (await page.locator('[data-testid="run-summary"]').last().innerText()).trim();
-	check("run summary: one line with step count and files", sum1 === "已完成 2 步 · 生成 1 个文件", sum1);
+	check("run summary [round 12]: one folded line 已完成，用时 N 秒", /^已完成，用时 \d+ 秒$/.test(sum1), sum1);
 	check("run summary: steps hidden until expanded", (await page.locator('[data-testid="tool-step"]').count()) === 0);
-	await page.locator('[data-testid="step-chain"] > button').last().click();
+	await page.locator('[data-testid="run-summary"]').last().click();
+	await page.waitForSelector('[data-testid="tool-step"]', { timeout: 5000 });
 	await sleep(250);
 	const titles = await page.locator('[data-testid="tool-step"] > button').allInnerTexts();
 	check("steps: human wording per tool (生成文件「项目周报」 / 查看文件列表)", titles.length === 2 && titles[0].includes("生成文件「项目周报」") && titles[1].includes("查看文件列表"), titles.join(" | "));
+	check("steps: one human outcome on the row (已生成「项目周报.md」)", titles[0].includes("已生成「项目周报.md」"), titles[0]);
 	check("steps: tool names and JSON are not in the step rows", !titles.join(" ").includes("file_create") && !titles.join(" ").includes("{"));
+	check("steps [round 12]: no 技术详情 / preview / workspace links anywhere in the steps", (await page.locator('[data-testid="tool-step"] [data-testid="tech-details"]').count()) === 0 && (await page.locator('[data-testid="tool-step"]').getByRole("button", { name: /预览|在工作区|工作面板/ }).count()) === 0);
 	await page.locator('[data-testid="tool-step"] > button').first().click();
 	await sleep(200);
-	const pre = page.locator('[data-testid="tool-step"] [data-testid="tech-details"] pre').first();
-	check("技术详情: raw arguments hidden until the disclosure is opened", !(await pre.isVisible()));
-	check("steps: one human outcome line and a preview link", (await page.locator('[data-testid="tool-step"]').first().innerText()).includes("已生成「项目周报.md」") && (await page.locator('[data-testid="tool-step"]').first().getByRole("button", { name: /预览/ }).count()) === 1);
-	await page.locator('[data-testid="tool-step"] [data-testid="tech-details"] summary').first().click();
-	await sleep(150);
-	check("技术详情: opening it shows the raw arguments", (await pre.isVisible()) && (await page.locator('[data-testid="tool-step"] [data-testid="tech-details"]').first().innerText()).includes("file_create"));
+	const opened = await page.locator('[data-testid="tool-step"]').first().innerText();
+	check("steps [round 12]: opening the row shows the raw 参数 (and 输出)", opened.includes("参数") && opened.includes("项目周报") && opened.includes("输出"), opened.slice(0, 160));
 	await shot(page, "round5/after/g2-e2e-steps-expanded");
-	await page.locator('[data-testid="tool-step"]').first().getByRole("button", { name: /预览/ }).click();
+	await page.locator('[data-testid="file-card"] button').first().click();
 	await page.waitForSelector('[data-testid="side-panel"] [data-testid="preview-panel"]', { timeout: 15000 });
-	check("results: the step's preview link opens the preview panel", true);
+	check("results: the deliverable card opens the preview panel", true);
 	await page.click('[data-testid="close-panel"]');
 
 	// ------------------------------------------------------------------ 2. running summary
 	await sendMessage(page, '稍等 [[call wr_fixture_wait {"ms":5000}]]');
 	await busy(page);
-	await page.waitForFunction(() => /正在等待…/.test([...document.querySelectorAll('[data-testid="run-summary"]')].at(-1)?.textContent ?? ""), null, { timeout: 15000 });
-	const runSum = (await page.locator('[data-testid="run-summary"]').last().innerText()).trim();
-	check("run summary (running): names the current step, e.g. 正在等待…", /^正在等待…/.test(runSum), runSum);
+	// round 12: while running the current step is a shimmering row "正在等待…" (no summary line yet)
+	await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="tool-step"]')].some((el) => /正在等待…/.test(el.textContent ?? "")), null, { timeout: 15000 });
+	check("running [round 12]: the current step is a row naming it, e.g. 正在等待…", true);
 	await idle(page);
 	await sleep(300);
-	check("run summary (finished): 已完成 1 步", (await page.locator('[data-testid="run-summary"]').last().innerText()).trim() === "已完成 1 步");
+	check("run summary (finished): one row, not folded (the turn's process is a single step)", /等待 5 秒/.test((await page.locator('[data-testid="step-chain"]').last().innerText()).trim()) || /^已完成，用时 \d+ 秒$/.test((await page.locator('[data-testid="run-summary"]').last().innerText()).trim()));
 
 	// ------------------------------------------------------------------ 3. approval (medium): operation, scope, risk, default focus, deny
 	await sendMessage(page, '发送前请确认 [[call wr_fixture_approval {"title":"对外发送周报","summary":"将《项目周报》v1 发送到 team@example.com","risk":"medium"}]]');
@@ -94,9 +94,9 @@ try {
 	check("approval: the risk level is a labelled badge on the face; requester and risk note are folded", (await card.locator('[data-testid="approval-risk"]').innerText()).includes("中风险") && !cardText.includes("请求人") && !cardText.includes("代你执行"));
 	await card.locator('[data-testid="approval-details-toggle"]').click();
 	const openText = await card.innerText();
-	check("approval: 查看详情 shows the risk note and the requester", openText.includes("风险") && openText.includes("请求人") && openText.includes("代你执行"));
+	check("approval: 详情 › shows the risk note and the requester", openText.includes("风险") && openText.includes("请求人") && openText.includes("代你执行"));
 	await card.locator('[data-testid="approval-details-toggle"]').click();
-	check("approval: only 允许 / 拒绝 (+ 查看详情 and an optional note) are offered", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "拒绝|允许|查看详情|添加说明");
+	check("approval: only 允许 / 拒绝 (+ 详情 › and an optional note) are offered", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "拒绝|允许|详情|添加说明");
 	const focused = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName);
 	check("approval: default focus is not on 允许", focused !== "approve" && focused !== "approve-confirm", String(focused));
 	check("approval: no run bar above the input; the card itself is the place to act", (await page.locator('[data-testid="run-bar"]').count()) === 0 && (await card.isVisible()));
@@ -186,10 +186,10 @@ try {
 	check("failure: no second 技术详情 in the bar", (await rb.locator('[data-testid="tech-details"]').count()) === 0);
 	const note = await lastAssistant(page).locator('[data-testid="error-note"]').innerText();
 	check("failure: the message shows one plain line, not the provider text", note.includes("这一轮没有完成") && !note.includes("simulated"), note.replace(/\s+/g, " "));
-	const det = lastAssistant(page).locator('[data-testid="error-note"] pre');
-	check("failure: technical detail stays collapsed", !(await det.isVisible()));
-	await lastAssistant(page).locator('[data-testid="error-note"] summary').click();
-	check("failure: 技术详情 opens to the raw reason, still without directives", (await det.isVisible()) && !(await det.innerText()).includes("[["));
+	const det = lastAssistant(page).locator('[data-testid="error-detail"]');
+	check("failure: the raw reason stays collapsed", (await det.count()) === 0);
+	await lastAssistant(page).locator('[data-testid="error-details-toggle"]').click();
+	check("failure [round 12]: the note's own row (chevron ›) opens the raw reason, still without directives", (await det.isVisible()) && !(await det.innerText()).includes("[["));
 	await shot(page, "round5/after/g2-e2e-failure");
 	const req = page.waitForRequest((r) => r.url().endsWith("/continue") && r.method() === "POST", { timeout: 10000 });
 	await page.click('[data-testid="continue"]');
@@ -203,7 +203,7 @@ try {
 	const rc = page.locator('[data-testid="reconcile-card"]');
 	const rcText = await rc.innerText();
 	check("reconcile: says what, where and that nothing is redone automatically", rcText.includes("待核对") && rcText.includes("crm://customers") && rcText.includes("不会自动重做"), rcText.replace(/\s+/g, " ").slice(0, 160));
-	check("reconcile: only 已生效 / 未生效 are offered; the idempotency key is behind 技术详情", (await rc.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "已生效|未生效" && !rcText.includes("幂等键"));
+	check("reconcile: only 已生效 / 未生效 are offered; the idempotency key is a small 标识 line (no 技术详情)", (await rc.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "已生效|未生效" && !rcText.includes("技术详情") && rcText.includes("标识"));
 	await shot(page, "round5/after/g2-e2e-reconcile");
 	await rc.getByRole("button", { name: "未生效" }).click();
 	await page.waitForSelector('[data-testid="reconcile-card"]', { state: "detached", timeout: 15000 });

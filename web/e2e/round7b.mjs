@@ -184,9 +184,10 @@ await page.locator('[data-testid="credential-persist-save"]').check();
 check("A choosing 保存供以后使用 reveals the scope select with 仅自己 selected; a member is offered no project/org scope", (await selValue(page.locator('[data-testid="credential-scope"]'))) === "user" && (await selOptions(page.locator('[data-testid="credential-scope"]'))).length === 1);
 await page.locator('[data-testid="credential-persist-once"]').check();
 const tech = await page.locator('[data-testid="credential-tech"]').textContent();
-check("A request id / header name stay inside 技术详情 (collapsed)", !(await page.locator('[data-testid="credential-tech"]').evaluate((el) => el.open)) && /请求头/.test(tech));
-const sum = await page.locator('[data-testid="run-summary"]').innerText();
-check("A the run line says it is waiting for the person, in plain words", /等待你提供凭据|正在处理/.test(sum), sum);
+check("A request id / header name stay inside the card's 详情 (folded; round 12: no second 技术详情 level)", !(await page.locator('[data-testid="credential-tech"]').isVisible()) && /请求头/.test(tech));
+// round 12: while the run waits, the waiting step itself is the line (a shimmering row), not a separate summary
+const sum = await page.locator('[data-testid="tool-step"][data-tool="credential_request"]').innerText();
+check("A the running step says it is waiting for the person, in plain words", /等待你提供凭据|正在处理/.test(sum), sum);
 await page.evaluate(() => document.querySelector(".wr-scroll")?.scrollTo(0, 99999));
 await shotTo(page, "1440-credential-pending");
 

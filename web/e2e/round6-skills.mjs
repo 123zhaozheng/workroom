@@ -121,8 +121,8 @@ try {
 	const txtOpen = await card.innerText();
 	await card.locator('[data-testid="approval-details-toggle"]').click();
 	check("A card: the fixed sentence is one short line: 仅你可用 / 不会自动运行 (round 11: the 发布 / 商城 paragraph is gone)", txtOpen.includes("保存后仅你可用，不会自动运行。") && !txtOpen.includes("商城"));
-	check("A card: package hash and codes only inside 技术详情", !txt.includes("c0ffee") && !txt.includes("sha256") && (await card.locator('[data-testid="tech-details"]').innerHTML()).includes("packageSha256"));
-	check("A card: buttons are 不保存 / 保存 (+ 添加说明), nothing focused on open", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "不保存|保存|查看详情|添加说明" && !["approve", "approve-confirm"].includes(await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "")));
+	check("A card: package hash and codes only inside the folded 详情 (round 12: one level, 参数)", !txt.includes("c0ffee") && !txt.includes("sha256") && (await card.locator('[data-testid="approval-raw"]').innerHTML()).includes("packageSha256"));
+	check("A card: buttons are 不保存 / 保存 (+ 详情 › and 添加说明), nothing focused on open", (await card.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "不保存|保存|详情|添加说明" && !["approve", "approve-confirm"].includes(await page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "")));
 	await shot(page, "round6/draft-card-1440-light");
 	await page.locator('[data-testid="approval-card"]').scrollIntoViewIfNeeded();
 	// keyboard: Tab → 不保存, Tab → 保存

@@ -279,7 +279,7 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.hasAttribute("data-env-pref"));
 	await page.locator(T("env-button")).click();
 	await page.waitForSelector(T("env-popover"));
-	check("B3 switched back on: 本地环境 is enabled again", on.ok() && (await page.locator(T("env-local")).getAttribute("aria-disabled")) === null);
+	check("B3 [round 12] switched back on: 本地环境 stays greyed out (the desktop app has not shipped), the switch itself is saved", on.ok() && (await json("/sandbox/local-exec")).enabled === true && (await page.locator(T("env-local")).getAttribute("aria-disabled")) === "true");
 	await page.keyboard.press("Escape");
 }
 
