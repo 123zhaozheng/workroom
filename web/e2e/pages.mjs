@@ -17,7 +17,7 @@ try {
 	await page.click('[data-testid="automation-new"]');
 	await page.waitForSelector('[data-testid="automation-editor"]');
 	await page.fill("#an", "工作日早报");
-	await page.fill("#ap", '汇总昨天的进展 [[call file_create {"name":"日报","format":"md","content":"# 日报\\n- 进展正常"}]]');
+	await page.fill("#ap", '汇总昨天的进展 [[call write {"path":"/work/日报.md","content":"# 日报\\n- 进展正常"}]] [[call present_file {"source":"/work/日报.md"}]]');
 	await page.fill('[data-testid="automation-cron"]', "0 9 * * 1-5");
 	await pick(page.locator("#atz"), "Asia/Shanghai");
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation-preview"] li').length === 5, null, { timeout: 10000 });
@@ -189,7 +189,7 @@ try {
 
 	// ---------------------------------------------------------------- 能力: draft from a finished task → validate → publish
 	await page.goto(`${base}/`);
-	await sendMessage(page, '把要点整理成文件 [[call file_create {"name":"要点","format":"md","content":"# 要点\\n- 一\\n- 二"}]]');
+	await sendMessage(page, '把要点整理成文件 [[call write {"path":"/work/要点.md","content":"# 要点\\n- 一\\n- 二"}]] [[call present_file {"source":"/work/要点.md"}]]');
 	await page.waitForURL(/\/c\//);
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
 	await page.click('[data-testid="chat-more"]');

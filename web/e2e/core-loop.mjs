@@ -1,6 +1,6 @@
 // Core loop against the real integrated server with the deterministic fixture model:
 // register → home → chat (streaming + tool steps + file card) → preview open/close → approval card →
-// queued message while running → v2 via file_revise → edit → branch switch → files page v1/v2 → knowledge page.
+// queued message while running → same-name re-delivery → edit → branch switch → files page → knowledge page.
 // Screenshots: artifacts/screenshots/*.png  ·  Results: artifacts/screenshots/core-loop.results.json
 // Run: npm run -w web build && node web/e2e/core-loop.mjs
 import { join } from "node:path";
@@ -49,7 +49,7 @@ try {
 	} else check("home: model list available from E (GET /api/models)", false, "no models returned");
 
 	// ---------------------------------------------------------------- chat: tool step + file card
-	await sendMessage(page, '帮我写一份项目周报 [[call file_create {"name":"项目周报","format":"md","title":"项目周报","content":"# 本周进展\\n- 完成需求评审\\n- 完成原型\\n\\n# 风险\\n- 暂无"}]]');
+	await sendMessage(page, '帮我写一份项目周报 [[call write {"path":"/work/项目周报.md","content":"# 本周进展\\n- 完成需求评审\\n- 完成原型\\n\\n# 风险\\n- 暂无"}]] [[call present_file {"source":"/work/项目周报.md"}]]');
 	await page.waitForURL(/\/c\//);
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 20000 });
@@ -106,13 +106,13 @@ try {
 	check("queue: it was sent automatically once the current task finished", true);
 	await page.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: 30000 });
 
-	// ---------------------------------------------------------------- v2 via file_revise
-	const files = await (await page.request.get(`${base}/api/files`)).json();
-	const fileId = files.files?.[0]?.id;
-	check("files api: deliverable is in the file library", !!fileId);
-	await sendMessage(page, `补充风险后更新 [[call file_revise {"fileId":"${fileId}","changeNote":"补充风险与下周计划","content":"# 本周进展\\n- 完成需求评审\\n- 完成原型\\n\\n# 风险\\n- 接口联调可能延期\\n\\n# 下周计划\\n- 开始开发"}]]`);
-	await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="file-card"]')].some((e) => e.textContent?.includes("v2")), null, { timeout: 20000 });
-	check("chat: v2 file card", true);
+	// same-name re-delivery (write + present_file)
+	const files = await (await page.request.get(`${base}/api/library`)).json();
+	const fileId = files.items?.[0]?.fileId;
+	check("library api: the delivered output is in the file library", !!fileId);
+	await sendMessage(page, `补充风险后更新 [[call write {"path":"/work/项目周报.md","content":"# 本周进展\\n- 完成需求评审\\n- 完成原型\\n\\n# 风险\\n- 接口联调可能延期\\n\\n# 下周计划\\n- 开始开发"}]] [[call present_file {"source":"/work/项目周报.md"}]]`);
+	await page.waitForFunction(() => document.querySelectorAll('[data-testid="file-card"]').length >= 2, null, { timeout: 20000 });
+	check("chat: the re-delivery shows a card for the same file (no version badge)", (await page.locator('[data-testid="file-card"]').evaluateAll((els) => new Set(els.map((e) => e.getAttribute("data-file-id"))).size)) === 1 && (await page.locator('[data-testid="file-version"]').count()) === 0);
 	await page.waitForSelector('[data-testid="stop"]', { state: "detached", timeout: 30000 });
 
 	// ---------------------------------------------------------------- edit → new branch, switcher
@@ -138,19 +138,15 @@ try {
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 15000 });
 	check("branch: switcher returns to the original conversation with its results", page.url() === chatUrl, page.url());
 
-	// ---------------------------------------------------------------- files page: v1 / v2, provenance
+	// ---------------------------------------------------------------- files page: the delivered output, current content, no versions
 	await page.goto(`${base}/files`);
 	await page.waitForSelector('[data-testid="file-row"]');
 	await shot(page, "1440-files");
 	await page.goto(`${base}/files/${fileId}`);
-	await page.waitForSelector('[data-testid="version-item"]');
+	await page.waitForSelector('[data-testid="file-preview"]');
 	await sleep(800);
-	check("files: two versions listed", (await page.locator('[data-testid="version-item"]').count()) === 2);
-	await shot(page, "1440-file-detail-v2");
-	await page.locator('[data-testid="version-item"] button').nth(1).click();
-	await sleep(800);
-	await shot(page, "1440-file-detail-v1");
-	check("files: switched preview to v1", page.url().includes("?v="));
+	check("files: one current file, no version list", (await page.locator('[data-testid="version-item"]').count()) === 0 && (await page.locator('[data-testid="file-title"]').count()) === 1);
+	await shot(page, "1440-file-detail");
 
 	// ---------------------------------------------------------------- knowledge: processing → searchable
 	await page.goto(`${base}/knowledge`);

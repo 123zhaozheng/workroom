@@ -430,11 +430,11 @@ try {
 	await page.keyboard.type("乙");
 	check("chat keys: Shift+Enter newline, nothing sent", (await cta.inputValue()) === "甲\n乙" && (await page.locator('[data-testid="user-message"]').count()) === 1);
 	await cta.fill("");
-	await sendMessage(page, '写份周报 [[call file_create {"name":"项目周报","format":"md","title":"项目周报","content":"# 本周进展\\n- 完成需求评审"}]]');
+	await sendMessage(page, '写份周报 [[call write {"path":"/work/项目周报.md","content":"# 本周进展\\n- 完成需求评审"}]] [[call present_file {"source":"/work/项目周报.md"}]]');
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
 	const fc = page.locator('[data-testid="file-card"]').first();
 	const fcText = await fc.innerText();
-	check("deliverable card: type icon, name, version badge, size and a download link in the same visual language", /项目周报/.test(fcText) && (await fc.locator('[data-testid="file-version"]').innerText()) === "v1" && (await fc.locator('a[download], a[href*="/download"]').count()) === 1 && (await fc.locator("[data-kind], span[data-kind]").count()) >= 1, fcText.replace(/\n/g, " | "));
+	check("deliverable card: type icon, name, size and a download link in the same visual language, no version badge", /项目周报/.test(fcText) && (await fc.locator('[data-testid="file-version"]').count()) === 0 && !/\bv\d+\b/.test(fcText) && (await fc.locator('a[download], a[href*="/download"]').count()) === 1 && (await fc.locator("[data-kind], span[data-kind]").count()) >= 1, fcText.replace(/\n/g, " | "));
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 20000 });
 	await sleep(800);
 	await shot(page, "round4-1440-chat");

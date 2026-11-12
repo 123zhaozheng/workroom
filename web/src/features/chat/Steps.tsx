@@ -169,6 +169,8 @@ function Io({ label, body, tone }: { label: string; body: string; tone?: "danger
 function inputText(step: ToolStep): { label: string; body: string } | null {
 	const a = step.call.arguments as Record<string, unknown> | undefined;
 	if (CODE_TOOLS.has(step.call.name) && typeof a?.code === "string") return { label: "代码", body: a.code };
+	// exec: the command itself is the input (its stdout / stderr are the output below)
+	if (step.call.name === "exec" && typeof a?.command === "string") return { label: "命令", body: a.command };
 	if (a === undefined || a === null || (typeof a === "object" && !Object.keys(a).length)) return null;
 	return { label: "参数", body: JSON.stringify(a, null, 2) ?? "" };
 }

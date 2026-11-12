@@ -8,7 +8,8 @@ import { useApi } from "@/lib/useApi";
 import { AssistantAvatarMark } from "@/features/assistants/Assistants";
 import { cn } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
-import { usePanel, type WorkTab } from "@/components/shell/panel";
+import { usePanel } from "@/components/shell/panel";
+import { OutputsContext, outputsMap } from "@/features/chat/outputs";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip } from "@/components/ui/overlay";
 import { Button } from "@/components/ui/button";
 import { ErrorState, Spinner, Unavailable } from "@/components/ui/misc";
@@ -51,7 +52,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const { state, status: streamStatus, error: streamError } = useConversationStream(spaceId, id);
 	const { detail, parentDetail, error: detailError, reload: reloadDetail } = useConversationDetail(spaceId, id);
 	const earlier = useEarlierEntries(spaceId, id);
-	const { openWork, panel } = usePanel();
+	const { openWork, panel, close: closePanel, publishWork } = usePanel();
 	const [actionErr, setActionErr] = useState<string>();
 	const [stopping, setStopping] = useState(false);
 	const [continuing, setContinuing] = useState(false);
@@ -96,6 +97,12 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 		return out.sort((a, b) => a.id - b.id);
 	}, [earlier.earlier, state?.entries]);
 	const turns = useMemo(() => buildTurns(entries, state), [entries, state]);
+	// Delivered outputs come over the same SSE state: cards resolve through them, the right panel reads the same snapshot.
+	const outputs = useMemo(() => outputsMap(state?.work?.outputs), [state?.work?.outputs]);
+	useEffect(() => {
+		publishWork(state?.work);
+	}, [state?.work, publishWork]);
+	useEffect(() => () => publishWork(undefined), [publishWork]);
 	const { motionReduced } = usePrefs();
 	// One rail tick per question. Short strings only, so the rail re-renders when a question or an answer's first words change — not per streamed token.
 	const railItems = useMemo<RailItem[]>(() => {
@@ -254,7 +261,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 				setContinuing(false);
 			}
 		});
-	const work = useCallback((tab: WorkTab) => openWork(tab, spaceId, id), [openWork, spaceId, id]);
+	/** ☰ toggle: the right panel (输出 / 子任务 / 浏览器) opens and collapses from the same button. */
+	const toggleWork = useCallback(() => (panel?.kind === "work" ? closePanel() : openWork(spaceId, id)), [panel, closePanel, openWork, spaceId, id]);
 	/** Switch the model of this conversation. The server's answer decides what is shown: if it does not apply the change,
 	 * the switcher stays on the model that is really in use and says so (the choice still becomes the default for new chats). */
 	const changeModel = async (m: ModelInfo, thinking?: ThinkingLevel) => {
@@ -367,7 +375,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 							</MenuContent>
 						</Menu>
 						<Tip label="工作面板">
-							<button data-testid="open-work-panel" aria-label="工作面板" onClick={() => work("tasks")} className={cn("rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg", panel?.kind === "work" && "bg-surface-2 text-fg")}>
+							<button data-testid="open-work-panel" aria-label="工作面板" aria-pressed={panel?.kind === "work"} onClick={toggleWork} className={cn("rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg", panel?.kind === "work" && "bg-surface-2 text-fg")}>
 								<PanelRight className="size-[18px]" />
 							</button>
 						</Tip>
@@ -430,6 +438,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 							</div>
 						</div>
 					) : null}
+					<OutputsContext.Provider value={outputs}>
 					<CitationStatusContext.Provider value={citeStatus.data?.byChunkId}>
 					<div className="flex flex-col gap-7">
 						{turns.map((t, i) => {
@@ -463,6 +472,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						})}
 					</div>
 					</CitationStatusContext.Provider>
+					</OutputsContext.Provider>
 					{state && turns.length === 0 && !busy ? (
 						<div data-testid="chat-empty" className="flex flex-col items-center gap-2 py-24 text-center">
 							<span className="flex size-10 items-center justify-center rounded-xl bg-surface-2 text-fg-muted">

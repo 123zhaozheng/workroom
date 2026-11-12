@@ -115,27 +115,24 @@ try {
 	await waitIdle(page);
 	const workUrl = page.url();
 	await page.click('[data-testid="open-work-panel"]');
-	await page.click('[data-testid="work-tab-terminal"]');
-	await page.waitForSelector('[data-testid="sandbox-run"]', { timeout: 20000 });
-	check("terminal: real sandbox run (code, stdout/stderr, exit, duration) in the work panel", true);
+	// round 14: the right panel is 输出 / 子任务 / 浏览器 only; there is no terminal view any more
+	await page.waitForSelector('[data-testid="work-panel"]');
+	check("work panel: three blocks, no terminal tab", (await page.locator('[data-testid="work-panel"] section[data-testid^="block-"]').count()) === 3 && (await page.locator('[data-testid="work-tab-terminal"]').count()) === 0);
 	await sleep(400);
-	await shot(page, "1440-work-terminal");
+	await shot(page, "1440-work-panel");
 	await page.click('[data-testid="close-panel"]');
 	await sendMessage(page, `打开网页 ${PAGE} 看看内容`);
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="assistant-message"]').length >= 2, null, { timeout: 30000 });
 	await waitIdle(page);
-	await page.click('[data-testid="open-work-panel"]');
-	await page.click('[data-testid="work-tab-browser"]');
-	await page.waitForSelector('[data-testid="browse-result"]', { timeout: 20000 });
-	check("browser: fetched page (title, URL, screenshot, text) in the work panel", (await page.locator('[data-testid="browse-result"]').first().innerText()).includes("测试页面"));
-	await page.click('[data-testid="close-panel"]');
+	// round 14: a fetched page is not a browser session; the 浏览器 block lists live sessions only (below)
 
 	// ---------------------------------------------------------------- live browser session: watch → take over → click → release (D)
 	await sendMessage(page, `[[call browser_open {"url":"${PAGE}"}]]`);
 	await page.waitForFunction(() => document.querySelectorAll('[data-testid="assistant-message"]').length >= 3, null, { timeout: 30000 });
 	await waitIdle(page);
 	await page.click('[data-testid="open-work-panel"]');
-	await page.click('[data-testid="work-tab-browser"]');
+	await page.waitForSelector('[data-testid="browser-entry"]', { timeout: 20000 });
+	await page.locator('[data-testid="browser-entry"] > button').first().click();
 	await page.waitForSelector('[data-testid="browser-session"][data-controller="agent"]', { timeout: 20000 });
 	await page.click('[data-testid="browser-takeover"]');
 	await page.waitForSelector('[data-testid="browser-session"][data-controller="user"]', { timeout: 10000 });
@@ -207,7 +204,7 @@ try {
 		return { c, p };
 	};
 	await page.goto(`${base}/projects/${proj.id}`);
-	await sendMessage(page, '整理发布会清单 [[call file_create {"name":"发布会清单","format":"md","content":"# 清单\\n- 场地\\n- 邀请"}]]');
+	await sendMessage(page, '整理发布会清单 [[call write {"path":"/work/发布会清单.md","content":"# 清单\\n- 场地\\n- 邀请"}]] [[call present_file {"source":"/work/发布会清单.md"}]]');
 	await page.waitForURL(/\/c\//);
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 30000 });
 	await waitIdle(page);

@@ -143,19 +143,7 @@ try {
 		check(`preview ${kind}: renders (no error state) with the file name in the header`, ok, `alerts=${errs}`);
 		if (kind === "md") {
 			const txt = await panel.locator('[data-testid="preview-text"]').innerText();
-			check("preview md: shows the latest version (v2) content and a version switcher", txt.includes("下周计划") && (await panel.locator('[data-testid="version-switch"]').innerText()).includes("v2"));
-			await a.click('[data-testid="version-switch"]');
-			await sleep(400);
-			const opaque = await a.evaluate(() => {
-				const m = document.querySelector('[role="menu"]');
-				const cs = m && getComputedStyle(m);
-				const rgba = cs?.backgroundColor.match(/[\d.]+/g)?.map(Number) ?? [];
-				return { alpha: rgba[3] ?? 1, opacity: cs?.opacity };
-			});
-			check("popover: the version menu is opaque (solid background, opacity 1)", opaque.alpha === 1 && opaque.opacity === "1", JSON.stringify(opaque));
-			await a.keyboard.press("Escape");
-			await sleep(200);
-			check("preview md: Esc in the menu closes only the menu", (await a.locator('[data-testid="preview-panel"]').count()) === 1);
+			check("preview md: shows the current content, no version switcher (round 14)", txt.includes("下周计划") && (await panel.locator('[data-testid="version-switch"]').count()) === 0);
 			const dl = await panel.locator('[data-testid="preview-download"]').getAttribute("href");
 			const open = panel.locator('[data-testid="preview-open"]');
 			check("preview header: download link, open-in-new-tab link (target=_blank) and a close button", /\/download/.test(dl ?? "") && (await open.getAttribute("target")) === "_blank" && (await panel.locator('[data-testid="close-panel"]').count()) === 1);
@@ -181,65 +169,19 @@ try {
 	await a.waitForSelector('[data-testid="open-work-panel"]');
 	await a.click('[data-testid="open-work-panel"]');
 	await a.waitForSelector('[data-testid="work-panel"]');
-	await a.locator('[data-testid="work-tab-tasks"]').focus();
-	const tabs = ["terminal", "files", "browser"];
-	let keyboardOk = true;
-	for (const t of tabs) {
-		await a.keyboard.press("ArrowRight");
-		await sleep(250);
-		keyboardOk &&= (await a.locator(`[data-testid="work-tab-${t}"]`).getAttribute("data-state")) === "active" && (await a.evaluate(() => document.activeElement?.getAttribute("data-testid"))) === `work-tab-${t}`;
-	}
-	check("work panel: tabs 子任务 / 终端 / 文件 / 浏览器 are reachable with the arrow keys (focus follows)", keyboardOk);
+	check("work panel: three blocks 输出 / 子任务 / 浏览器, each header is a keyboard-reachable button with its count", (await a.locator('[data-testid="work-panel"] section[data-testid^="block-"] > button').count()) === 3);
+	await a.locator('[data-testid="block-outputs-toggle"]').focus();
+	await a.keyboard.press("Enter");
+	await sleep(200);
+	check("work panel: Enter on a block header collapses it (aria-expanded follows)", (await a.locator('[data-testid="block-outputs-toggle"]').getAttribute("aria-expanded")) === "false");
+	await a.keyboard.press("Enter");
 	await a.waitForSelector('[data-testid="browser-empty"]', { timeout: 10000 });
-	check("work panel: the browser tab has a quiet one-line empty state", (await a.locator('[data-testid="browser-empty"]').innerText()).length < 40);
-	await a.keyboard.press("Home");
-	await a.waitForSelector('[data-testid="tasks-empty"]', { timeout: 10000 });
-	check("work panel: Home returns to 子任务, which has a quiet empty state", (await a.locator('[data-testid="work-tab-tasks"]').getAttribute("data-state")) === "active");
+	check("work panel: the browser block has a quiet one-line empty state", (await a.locator('[data-testid="browser-empty"]').innerText()).length < 40);
 	await a.keyboard.press("Tab");
-	check("work panel: Tab moves from the tab list into the panel content or the close button", (await a.evaluate(() => !!document.activeElement?.closest('[data-testid="work-panel"]'))));
+	check("work panel: Tab moves on inside the panel", (await a.evaluate(() => !!document.activeElement?.closest('[data-testid="work-panel"]'))));
 	await a.keyboard.press("Escape");
 	await a.waitForSelector('[data-testid="work-panel"]', { state: "detached", timeout: 5000 });
 	check("work panel: Esc closes it when focus is inside", true);
-
-	// terminal
-	await a.click('[data-testid="open-work-panel"]');
-	await a.click('[data-testid="work-tab-terminal"]');
-	await a.waitForSelector('[data-testid="sandbox-run"]');
-	const run = await a.locator('[data-testid="sandbox-run"]').first().innerText();
-	check("terminal: a run shows the command, output and an exit status line", run.includes("已写入文件") && /退出码 0/.test(run) && !/namespaces|\[exit/.test(run), run.replace(/\s+/g, " ").slice(0, 120));
-	const tPage = await a.locator('[data-testid="work-panel"]').innerText();
-	check("terminal: no driver / isolation jargon visible", !JARGON.test(tPage), tPage.replace(/\s+/g, " ").slice(0, 120));
-
-	// files tab + delete confirmation
-	await a.click('[data-testid="work-tab-files"]');
-	await a.waitForSelector('[data-testid="ws-tree"]');
-	const entry = (p) => a.locator(`[data-testid="ws-entry"][data-path="${p}"]`);
-	await entry("temp.txt").waitFor();
-	const usage = await a.locator('[data-testid="ws-usage"]').innerText();
-	check("files tab: one-line usage indicator (count, used / quota)", /\d+ 个文件 · 已用/.test(usage) && usage.split("\n").length <= 2, usage.replace(/\s+/g, " "));
-	await entry("temp.txt").click();
-	await a.click('[data-testid="ws-menu"][data-path="temp.txt"]');
-	const menuItems = await a.locator('[role="menuitem"]').allInnerTexts();
-	check("files tab: the compact menu offers 下载 / 发布到文件库 / 删除", ["下载", "发布到文件库", "删除"].every((t) => menuItems.some((m) => m.includes(t))), menuItems.join(","));
-	await a.click('[data-testid="ws-delete"]');
-	await a.waitForSelector('[data-testid="ws-delete-dialog"]');
-	const dlgText = await a.locator('[data-testid="ws-delete-dialog"]').innerText();
-	check("delete: asks for confirmation naming the file", dlgText.includes("temp.txt") && (await entry("temp.txt").count()) === 1, dlgText.replace(/\s+/g, " ").slice(0, 100));
-	await a.click('[data-testid="ws-delete-cancel"]');
-	await a.waitForSelector('[data-testid="ws-delete-dialog"]', { state: "detached" });
-	const still = await a.request.get(`${base}/api/sandbox/${spaceId}/file?path=temp.txt&conversationId=${convId}`);
-	check("delete: cancel keeps the file (row still there, server still serves it)", (await entry("temp.txt").count()) === 1 && still.status() === 200);
-	await a.click('[data-testid="ws-menu"][data-path="temp.txt"]');
-	await a.click('[data-testid="ws-delete"]');
-	await a.click('[data-testid="ws-delete-confirm"]');
-	await a.waitForFunction(() => !document.querySelector('[data-testid="ws-entry"][data-path="temp.txt"]'), null, { timeout: 10000 });
-	const gone = await a.request.get(`${base}/api/sandbox/${spaceId}/file?path=temp.txt&conversationId=${convId}`);
-	check("delete: confirming removes the file", gone.status() === 404);
-	await entry("notes.md").click();
-	await a.waitForSelector('[data-testid="ws-preview-text"]');
-	const filesText = await a.locator('[data-testid="work-panel"]').innerText();
-	check("files tab: no jargon (/work, namespaces, sandbox) in visible text", !JARGON.test(filesText) && !/\/work/.test(filesText), filesText.replace(/\s+/g, " ").slice(0, 160));
-	await a.keyboard.press("Escape");
 
 	// ------------------------------------------------------------------ 3. files pages: plain provenance, no jargon, header never overlaps
 	await a.goto(`${base}/files`);
@@ -247,15 +189,13 @@ try {
 	const filesPage = await a.locator("main").innerText();
 	check("files page: simple list without explanatory subtitle or jargon", !JARGON.test(filesPage) && !filesPage.includes("每次修改都会保留旧版本"), filesPage.replace(/\s+/g, " ").slice(0, 120));
 	await a.goto(`${base}/files/${mdId}`);
-	await a.waitForSelector('[data-testid="version-item"]');
+	await a.waitForSelector('[data-testid="file-preview"]');
 	await a.waitForFunction(() => document.querySelector('[data-testid="provenance"]')?.textContent?.includes("「"), null, { timeout: 10000 });
-	const items = await a.locator('[data-testid="version-item"]').allInnerTexts();
 	const prov = await a.locator('[data-testid="provenance"]').allInnerTexts();
-	check("file detail: versions timeline lists v2 and v1", items.length === 2 && items[0].includes("v2") && items[1].includes("v1"), items.map((t) => t.replace(/\s+/g, " ")).join(" | "));
-	check("file detail: provenance in plain words — 由 对话「…」生成 · 引用 N 个文件", /^由 对话「.+」生成 · 引用 1 个文件$/.test(prov[0].trim()) && /^由 对话「.+」生成$/.test(prov[1].trim()), prov.join(" | "));
+	check("file detail: no version list (round 14); provenance names the conversation", (await a.locator('[data-testid="version-item"]').count()) === 0 && /对话「.+」/.test(prov[0] ?? ""), (prov[0] ?? "").trim());
 	const detail = await a.locator("main").innerText();
 	check("file detail: no run / task / tool / version ids", !JARGON.test(detail) && !/run \d|提交 \d|工具 /.test(detail), detail.replace(/\s+/g, " ").slice(0, 160));
-	check("file detail: storage and knowledge states stay separate and concise", /存储：已保存/.test(detail) && /知识库：\s*未加入/.test(detail));
+	check("file detail: knowledge state is concise", /知识库：\s*未加入/.test(detail));
 	const gap = await a.evaluate(() => ({ header: document.querySelector("main header")?.getBoundingClientRect().bottom ?? 0, title: document.querySelector('[data-testid="file-title"]')?.getBoundingClientRect().top ?? 1e9 }));
 	check("shell: the top bar never overlaps the page content", gap.header <= gap.title, JSON.stringify(gap));
 
@@ -311,17 +251,9 @@ try {
 	check("390: the close button closes the preview sheet", true);
 	// work panel on the phone
 	await p.click('[data-testid="open-work-panel"]');
-	for (const t of ["tasks", "terminal", "files"]) {
-		await p.click(`[data-testid="work-tab-${t}"]`);
-		if (t === "files") {
-			await p.waitForSelector('[data-testid="ws-tree"]');
-			await p.locator('[data-testid="ws-entry"][data-path="notes.md"]').click();
-			await p.waitForSelector('[data-testid="ws-preview-text"]');
-		}
-		if (t === "terminal") await p.waitForSelector('[data-testid="sandbox-run"]');
-		await sleep(300);
-		check(`390: work panel (${t}) has no horizontal scroll`, !(await overflowX(p)) && (await p.evaluate(() => { const el = document.querySelector('[data-testid="work-panel"]'); return el.scrollWidth <= el.clientWidth + 1; })));
-	}
+	await p.waitForSelector('[data-testid="work-panel"]');
+	await sleep(300);
+	check("390: work panel has no horizontal scroll", !(await overflowX(p)) && (await p.evaluate(() => { const el = document.querySelector('[data-testid="work-panel"]'); return el.scrollWidth <= el.clientWidth + 1; })));
 	await p.keyboard.press("Escape");
 	await p.waitForSelector('[data-testid="sheet-right"]', { state: "detached", timeout: 5000 }).catch(() => {});
 	// files pages on the phone
@@ -329,7 +261,7 @@ try {
 	await p.waitForSelector('[data-testid="file-row"]');
 	check("390: files page has no horizontal scroll", !(await overflowX(p)));
 	await p.goto(`${base}/files/${mdId}`);
-	await p.waitForSelector('[data-testid="version-item"]');
+	await p.waitForSelector('[data-testid="file-preview"]');
 	check("390: file detail has no horizontal scroll", !(await overflowX(p)));
 	// drawer: focus trap + Esc + focus return
 	await p.click('[data-testid="open-sidebar"]');
@@ -420,14 +352,9 @@ try {
 		check(`${scheme}: preview header secondary text passes WCAG AA (≥ 4.5:1)`, c1.n > 0 && c1.worst >= 4.5, JSON.stringify(c1));
 		await r.click('[data-testid="close-panel"]');
 		await r.click('[data-testid="open-work-panel"]');
-		await r.click('[data-testid="work-tab-terminal"]');
-		await r.waitForSelector('[data-testid="sandbox-run"]');
-		const c2 = await contrastOf(r, '[data-testid="work-panel"] [data-testid="sandbox-run"] *');
-		check(`${scheme}: terminal blocks (stdout, stderr, exit line) pass AA`, c2.n > 0 && c2.worst >= 4.5, JSON.stringify(c2));
-		await r.click('[data-testid="work-tab-files"]');
-		await r.waitForSelector('[data-testid="ws-tree"]');
-		const c3 = await contrastOf(r, '[data-testid="work-panel"] [data-testid="files-tab"] *');
-		check(`${scheme}: workspace files tab passes AA`, c3.n > 0 && c3.worst >= 4.5, JSON.stringify(c3));
+		await r.waitForSelector('[data-testid="work-panel"]');
+		const c2 = await contrastOf(r, '[data-testid="work-panel"] *');
+		check(`${scheme}: work panel blocks (titles, counts, placeholders) pass AA`, c2.n > 0 && c2.worst >= 4.5, JSON.stringify(c2));
 		await r.goto(`${base}/files/${mdId}`);
 		await r.waitForSelector('[data-testid="provenance"]');
 		const c4 = await contrastOf(r, "main .text-fg-muted, main .text-xs, main a");

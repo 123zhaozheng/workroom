@@ -46,6 +46,7 @@ try {
 	await idle(page);
 	await page.click('[data-testid="open-work-panel"]');
 	await page.waitForSelector('[data-testid="subagent"]', { timeout: 15000 });
+	await page.locator('[data-testid="subagent"] > button').first().click(); // details are behind the row's chevron
 	const sub = await page.locator('[data-testid="subagent"]').first().innerText();
 	check("M03-B: subagent card shows source, owner, status, result/failure and simulated cost", sub.includes("来源") && sub.includes("负责人") && /模拟用量|tokens/.test(sub) && /已完成|未完成|失败/.test(sub), sub.replace(/\s+/g, " ").slice(0, 200));
 	check("M02-C: turn-limit (timeout class) shown as its own state, not as success or a plain failure", sub.includes("达到轮数上限（超时）") && !sub.includes("已完成"), sub.split("\n").slice(0, 3).join(" | "));

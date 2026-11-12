@@ -187,7 +187,7 @@ export function AssistantMessage({
 				{turn.artifacts.length ? (
 					<div className="mt-3 flex flex-col gap-2">
 						{turn.artifacts.map((a) => (
-							<FileCard key={a.versionId} file={a} />
+							<FileCard key={a.fileId} card={a} />
 						))}
 					</div>
 				) : null}

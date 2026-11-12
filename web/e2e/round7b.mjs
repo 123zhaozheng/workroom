@@ -472,91 +472,11 @@ const memberPut = await page.evaluate(async (pid) => (await fetch(`/api/sandbox-
 check("C … and the server refuses a project write by that member (403)", memberPut === 403, String(memberPut));
 await shotTo(page, "1440-env-vars-project-readonly");
 
-// conversation scope + effective view (which scope won) in the work panel
-const W = await startConv(page, `写一个文件 ${directive("sandbox_exec", { language: "shell", code: "echo hello > notes.txt && echo done" })}`, proj.id);
-await idle(page, 90000);
-await page.click('[data-testid="open-work-panel"]');
-await page.click('[data-testid="work-tab-files"]');
-await page.waitForSelector('[data-testid="ws-env"]', { timeout: 20000 });
-await page.locator('[data-testid="ws-env"] summary').click();
-const cenv = envOf("env-vars-conversation");
-await cenv.waitFor();
-await addVar(cenv, "BUILD_MODE", "conversation-mode");
-await cenv.locator('[data-testid="env-row"][data-name="BUILD_MODE"]').waitFor({ timeout: 8000 });
-const eff = page.locator('[data-testid="env-effective"]');
-await eff.locator('[data-testid="env-effective-row"][data-name="BUILD_MODE"]').waitFor({ timeout: 15000 });
-await page.waitForFunction(() => document.querySelector('[data-testid="env-effective-row"][data-name="BUILD_MODE"]')?.getAttribute("data-from") === "conversation", null, { timeout: 15000 });
-const bm = await eff.locator('[data-testid="env-effective-row"][data-name="BUILD_MODE"]').innerText();
-check("C effective view: the conversation value wins over user, project and org, and says what it overrode", /conversation-mode/.test(bm) && /来自本对话/.test(bm) && /覆盖了/.test(bm) && /个人/.test(bm) && /项目/.test(bm) && /组织/.test(bm), bm.replace(/\s+/g, " "));
-const lockedRow = eff.locator('[data-testid="env-effective-row"][data-name="ORG_LOCKED"]');
-const lockedText = await lockedRow.innerText();
-check("C effective view: an org-LOCKED variable keeps the org value, a lower value cannot override it (and the ignored one is reported)", /org-wins/.test(lockedText) && /来自组织/.test(lockedText) && !/user-tries-to-override/.test(lockedText) && (await eff.locator('[data-testid="env-denied-row"][data-name="ORG_LOCKED"], [data-testid="env-denied-row"]').count()) >= 1, lockedText.replace(/\s+/g, " "));
-const userRow = (await eff.locator('[data-testid="env-effective-row"][data-name="TEAM_REGION"]').innerText().catch(() => ""));
-check("C effective view: a personal-only variable shows 来自个人", /来自个人/.test(userRow), userRow.replace(/\s+/g, " "));
-await page.locator('[data-testid="ws-env"]').scrollIntoViewIfNeeded();
-await shotTo(page, "1440-env-effective");
+// Round 14: the conversation-scope "effective variables" view and the workspace save status lived in the work panel's 文件 tab, which no
+// longer exists (the right panel is 输出 / 子任务 / 浏览器). Their server routes are unchanged; there is no UI to drive in the browser now.
+skip("C effective variables view (conversation scope)", "its host, the work panel's 文件 tab, was removed in round 14");
+skip("D workspace save status", "its host, the work panel's 文件 tab, was removed in round 14; the workspace save routes are covered by the server tests");
 
-// =========================================================================================================================
-// D. workspace save status (same conversation W: the command already wrote notes.txt)
-const wsKey = `c${W.cid}`;
-const wsApi = `${base}/api/workspaces/${W.sp}/${wsKey}`;
-await page.locator('[data-testid="ws-save"]').waitFor({ timeout: 20000 });
-await page.waitForFunction(() => ["saved", "dirty"].includes(document.querySelector('[data-testid="ws-save"]')?.getAttribute("data-state") ?? ""), null, { timeout: 15000 });
-const st0 = (await (await page.request.get(`${wsApi}/status`)).json()).status;
-check("D after a command that wrote a file the workspace is 已保存 with a version (saved at the end of the command)", st0.state === "saved" && st0.headVersion >= 1 && (await page.locator('[data-testid="ws-save-badge"]').innerText()) === "已保存", JSON.stringify({ state: st0.state, head: st0.headVersion }));
-check("D [round 11] the explanatory rule sentence and the driver's loss-window sentence are gone (the badge, the time and the version list say it all)", (await page.locator('[data-testid="ws-save-rule"], [data-testid="ws-loss-window"]').count()) === 0 && !(await page.locator('[data-testid="ws-save"]').innerText()).includes("运行环境可能随时到期"));
-check("D last-saved time is shown", (await page.locator('[data-testid="ws-save-time"]').innerText()).includes("上次保存"));
-check("D the versions list shows time, reason in words, file count, size and the current marker", await page.locator('[data-testid="ws-version"]').first().evaluate((el) => /版本 \d+/.test(el.textContent) && /命令结束时自动保存/.test(el.textContent) && /\d+ 个文件/.test(el.textContent) && /当前/.test(el.textContent)));
-check("D no wording that mixes the layers (no 'pi', 'durable', 'checkpoint', 'sha256', 'manifest')", !/pi-durable|durable|checkpoint|sha256|manifest/i.test(await page.locator('[data-testid="ws-save"]').innerText()));
-await page.locator('[data-testid="ws-save"]').scrollIntoViewIfNeeded();
-await shotTo(page, "1440-ws-save-saved");
-{
-	const m = await newCtx(390, 844, { storageState: await alice.ctx.storageState() });
-	const mp = await m.newPage();
-	await mp.goto(`${base}/c/${W.sp}/${W.cid}`);
-	await mp.click('[data-testid="open-work-panel"]');
-	await mp.click('[data-testid="work-tab-files"]');
-	await mp.locator('[data-testid="ws-save"]').waitFor({ timeout: 20000 });
-	await mp.locator('[data-testid="ws-save"]').scrollIntoViewIfNeeded();
-	const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-	check("D 390px: the save status fits without horizontal page scroll", overflow <= 0, `overflow ${overflow}`);
-	await shotTo(mp, "390-ws-save");
-	await m.close();
-}
-// a change that no command made (upload) → dirty, unsynced count + paths collapsed
-const upload = (name, body) => page.request.put(`${base}/api/sandbox/${W.sp}/file?path=${encodeURIComponent(name)}&conversationId=${W.cid}`, { data: Buffer.from(body), headers: { "content-type": "application/octet-stream" } });
-check("D (setup) upload extra.txt through the workspace API", (await upload("extra.txt", "extra")).ok());
-await page.waitForFunction(() => document.querySelector('[data-testid="ws-save"]')?.getAttribute("data-state") === "dirty", null, { timeout: 15000 });
-check("D a file changed outside a command → 有未保存的更改, with a count", (await page.locator('[data-testid="ws-save-badge"]').innerText()) === "有未保存的更改" && /1 个文件的更改尚未保存/.test(await page.locator('[data-testid="ws-unsynced"]').innerText()));
-check("D the unsynced paths are collapsed until asked, then listed", (await page.locator('[data-testid="ws-unsynced"] ul').count()) === 0 && (await page.locator('[data-testid="ws-unsynced"] button').click(), (await page.locator('[data-testid="ws-unsynced"] ul').innerText()).includes("extra.txt")));
-await page.locator('[data-testid="ws-save-now"]').click();
-await page.waitForFunction(() => document.querySelector('[data-testid="ws-save"]')?.getAttribute("data-state") === "saved", null, { timeout: 15000 });
-check("D 立即保存 → a new version and 已保存 (no success banner: the badge and the list change)", (await page.locator('[data-testid="ws-save-note"]').count()) === 0 && (await page.locator('[data-testid="ws-save-badge"]').innerText()) === "已保存" && (await page.locator('[data-testid="ws-version"]').count()) >= 2);
-check("D the manual save is described as 手动保存 in the versions list", (await page.locator('[data-testid="ws-versions"]').innerText()).includes("手动保存"));
-// restore refused when dirty
-check("D (setup) upload dirty.txt", (await upload("dirty.txt", "unsaved")).ok());
-await page.waitForFunction(() => document.querySelector('[data-testid="ws-save"]')?.getAttribute("data-state") === "dirty", null, { timeout: 15000 });
-const oldest = page.locator('[data-testid="ws-version"]').last();
-const oldestNo = await oldest.getAttribute("data-version");
-await oldest.locator('[data-testid="ws-restore"]').click();
-await page.locator('[data-testid="confirm-dialog"] button', { hasText: "恢复" }).last().click();
-await page.waitForSelector('[data-testid="ws-restore-dirty"]', { timeout: 10000 });
-const dirtyText = await page.locator('[data-testid="ws-restore-dirty"]').innerText();
-check("D restore while dirty is refused, explained in plain words, and offers 先保存当前内容再恢复", /尚未保存/.test(dirtyText) && /覆盖/.test(dirtyText) && (await page.locator('[data-testid="ws-restore-keep-both"]').innerText()) === "先保存当前内容再恢复" && ["dirty", "conflict"].includes((await (await page.request.get(`${wsApi}/status`)).json()).status.state), dirtyText.replace(/\s+/g, " ").slice(0, 120));
-await page.waitForSelector('[data-testid="ws-save-failure"]', { timeout: 10000 });
-check("D the sticky state after a refused restore is worded as a refusal (nothing touched), not as a failed verification", /恢复没有进行/.test(await page.locator('[data-testid="ws-save-failure"]').innerText()) && (await page.locator('[data-testid="ws-restore-result"]').count()) === 0);
-await shotTo(page, "1440-ws-restore-dirty");
-await page.locator('[data-testid="ws-restore-keep-both"]').click();
-await page.waitForFunction(() => document.querySelector('[data-testid="ws-save"]')?.getAttribute("data-state") === "restored", null, { timeout: 15000 });
-const versionsText = await page.locator('[data-testid="ws-versions"]').innerText();
-check("D keep-both restore → restored and verified; a clean restore shows no banner, and the previous content is kept as its own version in the list", (await page.locator('[data-testid="ws-save-note"]').count()) === 0 && /恢复前保存的当前内容/.test(versionsText), versionsText.replace(/\s+/g, " ").slice(0, 200));
-await page.waitForFunction(() => ["restored", "dirty", "saved"].includes(document.querySelector('[data-testid="ws-save"]')?.getAttribute("data-state") ?? ""), null, { timeout: 10000 });
-const restoredStatus = (await (await page.request.get(`${wsApi}/status`)).json()).status;
-check("D status after restore: state 已恢复 with a verified restore record (no conflicts)", restoredStatus.state === "restored" && restoredStatus.restore?.verified === true && restoredStatus.restore.conflicts.length === 0 && (await page.locator('[data-testid="ws-restore-result"]').innerText()).includes("已核对无误"), JSON.stringify({ s: restoredStatus.state, r: restoredStatus.restore }));
-const filesAfter = (await (await page.request.get(`${base}/api/sandbox/${W.sp}/files?conversationId=${W.cid}`)).json()).entries.map((e) => e.path);
-check(`D the working files really are those of version ${oldestNo}: notes.txt present, later uploads gone`, filesAfter.includes("notes.txt") && !filesAfter.includes("dirty.txt"), filesAfter.join(","));
-await shotTo(page, "1440-ws-restored");
-skip("D simulated sandbox expiry / missing working copy", "no API removes a working copy (only deleting the host directory would), so it is not faked here; the backend's restore-when-absent path is covered by server/test");
 
 // =========================================================================================================================
 // E. second server without WORKROOM_SECRET_KEY

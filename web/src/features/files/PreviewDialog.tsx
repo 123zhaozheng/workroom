@@ -1,5 +1,5 @@
 // A document preview as a large dialog (wide screens, where the page already has a list and a detail column and the global right
-// panel would squeeze them). It hosts the same PreviewPanel the chat and the files page use, so viewers, version switch,
+// panel would squeeze them). It hosts the same PreviewPanel the chat and the files page use, so viewers,
 // download and "open in new tab" behave identically.
 import { Dialog as D } from "radix-ui";
 import { lazy, Suspense } from "react";
@@ -18,7 +18,7 @@ export function PreviewDialog({ target, onClose }: { target: PreviewTarget | nul
 					className="fixed left-1/2 top-1/2 z-50 flex h-[min(82dvh,800px)] w-[min(960px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-pop wr-fade-in focus:outline-none"
 				>
 					<D.Title className="sr-only">文件预览</D.Title>
-					<D.Description className="sr-only">预览所选文件，可切换版本或下载。</D.Description>
+					<D.Description className="sr-only">预览所选文件，可下载。</D.Description>
 					{target ? (
 						<Suspense
 							fallback={
