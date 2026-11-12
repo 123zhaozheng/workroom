@@ -11,6 +11,7 @@ import { mountMetaRoutes } from "./meta-routes.ts";
 import { mountRuntimeRoutes } from "./routes.ts";
 import { SearchIndex } from "./search.ts";
 import { Runtime } from "./service.ts";
+import { createApprovalExtension } from "./effects.ts";
 import { createTeamExtension } from "./team.ts";
 
 const MIGRATIONS = [
@@ -187,7 +188,7 @@ export const runtimeModule: WorkroomModule = {
 	},
 	extensions(ctx) {
 		const { rt, effects } = runtimeState(ctx);
-		const exts = [createTeamExtension(rt, effects)];
+		const exts = [createTeamExtension(rt, effects), createApprovalExtension(rt, effects)];
 		if (fixtureToolsEnabled()) exts.push(createFixtureTools(rt, effects));
 		return exts;
 	},
