@@ -1,12 +1,13 @@
-// The right panel: exactly three blocks in one white rounded card — 输出 | 子任务 | 浏览器. Low density, thin dividers, every block
-// header is "title · count ›" (the chevron is the only expand / collapse affordance).
+// The work panel: exactly three blocks in one white rounded card — 输出 | 子任务 | 浏览器. Low density, thin dividers, every block
+// header is "title · count ›"; the chevron (the expand / collapse affordance) shows once a block has items. On sm+ the card floats over
+// the chat's top-right corner and hugs its content (AppShell positions it); below sm it is the body of a sheet.
 //  - 输出: delivered outputs only (state.work.outputs with status active). Uploads, intermediate files and screenshots never appear.
 //  - 子任务: subagents and background jobs with their running state.
 //  - 浏览器: the agent's browser sessions as preview entries.
 // Everything comes from the same server ACL as the conversation itself; the outputs / jobs / browser snapshot is the conversation's
 // SSE state (published by the chat page), subagents come from the conversation's tasks endpoint.
 import { Bot, ChevronRight, Download, ExternalLink, Globe, Loader2, Plug, Users, X, type LucideIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import type { MemberType, SubagentDTO, TasksResponse } from "@shared/chat";
 import type { ConversationWorkDTO, JobDTO, LibItemDTO } from "@shared/files";
@@ -32,7 +33,7 @@ const SUB_STATUS: Record<SubagentDTO["status"], { label: string; tone: "info" | 
 	unanswered: { label: "未完成", tone: "warning" },
 };
 
-export default function WorkPanel({ state, onClose }: { state: Extract<PanelState, { kind: "work" }>; onClose: () => void }) {
+export default function WorkPanel({ state, onClose, variant = "card" }: { state: Extract<PanelState, { kind: "work" }>; onClose: () => void; variant?: "card" | "sheet" }) {
 	const { work: published } = usePanel();
 	// The chat page publishes its SSE snapshot (outputs update live); the work endpoint is polled as well because only it carries the
 	// caller's permissions (canControl / canCancel), which the snapshot does not.
@@ -43,81 +44,83 @@ export default function WorkPanel({ state, onClose }: { state: Extract<PanelStat
 	const sessions = polled.data?.work.browserSessions ?? work?.browserSessions ?? [];
 	const tasks = useApi<TasksResponse>(`/conversations/${state.spaceId}/${state.conversationId}/tasks`, { pollMs: 2500 });
 	const subs = tasks.data?.subagents ?? [];
+	const blocks = (
+		<>
+			<Block id="outputs" title="输出" count={outputs.length} empty="暂无输出">
+				<ul className="space-y-0.5">
+					{outputs.map((o) => (
+						<OutputRow key={o.fileId} item={o} />
+					))}
+				</ul>
+			</Block>
+			<Block id="tasks" title="子任务" count={subs.length + jobs.length} empty="暂无子任务">
+				<ul className="space-y-0.5">
+					{jobs.map((j) => (
+						<JobRow key={j.id} job={j} />
+					))}
+					{subs.map((s) => (
+						<SubagentRow key={s.delegationId} s={s} spaceId={state.spaceId} />
+					))}
+				</ul>
+			</Block>
+			<Block id="browser" title="浏览器" count={sessions.length} empty="暂无网页">
+				<ul className="space-y-0.5">
+					{sessions.map((s) => (
+						<BrowserRow key={s.id} s={s} />
+					))}
+				</ul>
+			</Block>
+		</>
+	);
+	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+		if (e.key === "Escape" && !e.defaultPrevented && e.currentTarget.contains(e.target as Node)) onClose();
+	};
+	if (variant === "sheet")
+		return (
+			<div data-testid="work-panel" role="region" aria-label="工作面板" className="wr-scroll flex h-full min-h-0 flex-col overflow-y-auto bg-surface-2/60 p-3" onKeyDown={onKeyDown}>
+				<div className="mb-1 flex justify-end">
+					<button data-testid="close-panel" onClick={onClose} className="inline-flex size-9 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="关闭工作面板">
+						<X className="size-[18px]" />
+					</button>
+				</div>
+				<div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">{blocks}</div>
+			</div>
+		);
 	return (
 		<div
 			data-testid="work-panel"
 			role="region"
 			aria-label="工作面板"
-			className="wr-scroll flex h-full min-h-0 flex-col overflow-y-auto bg-surface-2/60 p-3"
-			onKeyDown={(e) => {
-				if (e.key === "Escape" && !e.defaultPrevented && e.currentTarget.contains(e.target as Node)) onClose();
-			}}
+			className="wr-scroll wr-fade-in max-h-[min(70vh,calc(100dvh-5.5rem))] divide-y divide-border overflow-y-auto overscroll-contain rounded-[18px] border border-border bg-surface shadow-pop"
+			onKeyDown={onKeyDown}
 		>
-			<div className="mb-1 flex justify-end">
-				<button data-testid="close-panel" onClick={onClose} className="inline-flex size-9 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="关闭工作面板">
-					<X className="size-[18px]" />
-				</button>
-			</div>
-			<div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
-				<Block id="outputs" title="输出" count={outputs.length} empty="创建输出内容">
-					{outputs.length ? (
-						<ul className="space-y-0.5">
-							{outputs.map((o) => (
-								<OutputRow key={o.fileId} item={o} />
-							))}
-						</ul>
-					) : null}
-				</Block>
-				<Block id="tasks" title="子任务" count={subs.length + jobs.length} empty="暂无子任务">
-					{subs.length + jobs.length ? (
-						<ul className="space-y-0.5">
-							{jobs.map((j) => (
-								<JobRow key={j.id} job={j} />
-							))}
-							{subs.map((s) => (
-								<SubagentRow key={s.delegationId} s={s} spaceId={state.spaceId} />
-							))}
-						</ul>
-					) : null}
-				</Block>
-				<Block id="browser" title="浏览器" count={sessions.length} empty="暂无网页">
-					{sessions.length ? (
-						<ul className="space-y-0.5">
-							{sessions.map((s) => (
-								<BrowserRow key={s.id} s={s} />
-							))}
-						</ul>
-					) : null}
-				</Block>
-			</div>
+			{blocks}
 		</div>
 	);
 }
 
-/** One block: "title · count ›". Collapsible; the placeholder shows while there is nothing in it. */
+/** One block: "title · count ›". Collapsible; an empty block is a single quiet line (title plus hint) without a chevron. */
 function Block({ id, title, count, empty, children }: { id: string; title: string; count: number; empty: string; children: ReactNode }) {
 	const [open, setOpen] = useState(true);
 	return (
-		<section data-testid={`block-${id}`} data-count={count} className="px-4 py-3.5">
-			<button type="button" data-testid={`block-${id}-toggle`} aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex h-7 w-full items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-				<span className="text-[14px] font-medium">{title}</span>
+		<section data-testid={`block-${id}`} data-count={count} className="px-4 py-2.5">
+			<button type="button" data-testid={`block-${id}-toggle`} aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex h-7 w-full items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+				<span className="text-[13.5px] font-medium text-fg-muted">{title}</span>
 				<span data-testid={`block-${id}-count`} className="text-[13px] tabular-nums text-fg-subtle">
 					· {count}
 				</span>
 				<span className="flex-1" />
-				<ChevronRight aria-hidden className={cn("size-4 text-fg-subtle transition-transform duration-150", open && "rotate-90")} />
-			</button>
-			{open ? (
-				<div className="mt-1.5">
-					{count === 0 ? (
-						<p data-testid={`${id === "outputs" ? "outputs" : id}-empty`} className="py-2 text-[13px] text-fg-subtle">
+				{count === 0 ? (
+					open ? (
+						<span data-testid={`${id}-empty`} className="truncate text-[13px] text-fg-subtle">
 							{empty}
-						</p>
-					) : (
-						children
-					)}
-				</div>
-			) : null}
+						</span>
+					) : null
+				) : (
+					<ChevronRight aria-hidden className={cn("size-4 text-fg-subtle transition-transform duration-150", open && "rotate-90")} />
+				)}
+			</button>
+			{count > 0 && open ? <div className="mt-1">{children}</div> : null}
 		</section>
 	);
 }

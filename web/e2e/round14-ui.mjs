@@ -1,5 +1,5 @@
 // Round 14 · delivery UI (docs/r14-virtual-backend.md §3, requirement §7.4), checked in a real browser against the fixture model:
-//  right panel   three blocks 输出 | 子任务 | 浏览器 in one card, counts, empty state 创建输出内容, ☰ toggle, 390px without horizontal scroll
+//  right panel   three blocks 输出 | 子任务 | 浏览器 in one card, counts, empty state 暂无输出, ☰ toggle, 390px without horizontal scroll
 //  V08  an upload shows on its message and is NOT in 输出 / cards / the files page
 //  V12+V21  present_file → card (name, type, size, preview, download), preview and download show the same content, no version text
 //  V14  the same name delivered again updates the same card and the same 输出 entry (no duplicate)
@@ -68,9 +68,9 @@ try {
 	const heads = await page.locator(`${T("work-panel")} section[data-testid^="block-"] > button`).allInnerTexts();
 	check("panel: each header is title · count with a chevron", heads.length === 3 && /^输出\s*· 0/.test(heads[0]) && /^子任务\s*· 0/.test(heads[1]) && /^浏览器\s*· 0/.test(heads[2]), heads.join(" | "));
 	check("panel: no old tabs (子任务 / 终端 / 文件 / 浏览器)", (await page.locator('[data-testid^="work-tab-"]').count()) === 0 && !(await page.locator(T("work-panel")).innerText()).includes("终端"));
-	check("panel: 输出 is empty → the grey placeholder 创建输出内容", (await page.locator(T("outputs-empty")).innerText()).trim() === "创建输出内容");
-	const oneCard = await page.locator(`${T("work-panel")} > div`).last().evaluate((el) => ({ rounded: getComputedStyle(el).borderRadius, n: el.children.length }));
-	check("panel: the three blocks live in ONE rounded card", oneCard.n === 3 && parseFloat(oneCard.rounded) >= 12, JSON.stringify(oneCard));
+	check("panel: 输出 is empty → the quiet one-line hint 暂无输出", (await page.locator(T("outputs-empty")).innerText()).trim() === "暂无输出");
+	const oneCard = await page.locator(T("block-outputs")).evaluate((el) => ({ rounded: getComputedStyle(el.parentElement).borderRadius, n: el.parentElement.children.length, w: el.parentElement.getBoundingClientRect().width }));
+	check("panel: the three blocks live in ONE rounded floating card (≤380px wide, chat not narrowed)", oneCard.n === 3 && parseFloat(oneCard.rounded) >= 12 && oneCard.w <= 380, JSON.stringify(oneCard));
 	await shot(page, "panel-empty");
 	await page.click(T("block-outputs-toggle"));
 	check("panel: a block collapses and expands through its header", (await page.locator(T("outputs-empty")).count()) === 0);

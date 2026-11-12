@@ -4,6 +4,8 @@ import type { Action, AppContext, Decision, Principal, ResourceRef, WorkroomModu
 import type { Identity } from "../identity/module.ts";
 import { AutomationService } from "./automation.ts";
 import { Gateway } from "./gateway.ts";
+import { HarnessInspect } from "./harness-inspect.ts";
+import { registerHarnessInspectRoutes } from "./harness-inspect-routes.ts";
 import { bootstrapModels } from "./models-bootstrap.ts";
 import { NotifyService } from "./notify.ts";
 import { registerOpsRoutes } from "./routes.ts";
@@ -19,6 +21,7 @@ export interface OpsState {
 	automation: AutomationService;
 	docs: RuntimeDocs;
 	trace: TraceService;
+	inspect: HarnessInspect;
 }
 const states = new WeakMap<AppContext, OpsState>();
 export function opsState(ctx: AppContext): OpsState {
@@ -62,13 +65,16 @@ export const opsModule: WorkroomModule = {
 		usage.docs = docs;
 		gateway.onRequestFinished = (l) => usage.markDirty(l.spaceId, l.conversationId);
 		const trace = new TraceService(ctx);
-		states.set(ctx, { gateway, usage, notify, automation, docs, trace });
+		const inspect = new HarnessInspect(ctx);
+		gateway.inspector = inspect;
+		states.set(ctx, { gateway, usage, notify, automation, docs, trace, inspect });
 		ctx.services.provide("models", gateway);
 		ctx.services.provide("budget", usage);
 		ctx.services.provide("usage", usage);
 		ctx.services.provide("automation", automation);
 		ctx.services.provide("notify", notify);
 		ctx.services.provide("trace", trace);
+		ctx.services.provide("harnessInspect", inspect);
 
 		const id = ctx.services.get("identity") as Identity;
 		// Model ACL: a model (resource id = platform id "<provider>/<modelId>") may be read/used when it is in the principal's list;
@@ -96,6 +102,7 @@ export const opsModule: WorkroomModule = {
 	},
 	routes(api, ctx) {
 		registerOpsRoutes(api, ctx, opsState(ctx));
+		registerHarnessInspectRoutes(api, ctx, opsState(ctx).inspect);
 	},
 	extensions(ctx) {
 		const { gateway, docs } = opsState(ctx);

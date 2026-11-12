@@ -22,6 +22,7 @@ import { EnvVarsEditor } from "@/features/settings/EnvVars";
 import { Budgets } from "@/features/admin/BudgetsTab";
 import { Audit } from "@/features/admin/AuditTab";
 import { Trace } from "@/features/admin/TraceTab";
+import { HarnessInspectAdmin } from "@/features/inspect";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 
 interface NavItem {
@@ -62,6 +63,7 @@ const GROUPS: NavGroup[] = [
 		items: [
 			{ value: "audit", label: "审计日志", any: ["audit.view"] },
 			{ value: "trace", label: "问题排查", any: ["trace.view"] },
+			{ value: "harness", label: "Harness 检视", any: ["harness.inspect", "org.security.manage"] },
 		],
 	},
 ];
@@ -143,6 +145,7 @@ export default function AdminPage() {
 							{tab === "budgets" ? <Budgets /> : null}
 							{tab === "audit" ? <Audit /> : null}
 							{tab === "trace" ? <Trace /> : null}
+							{tab === "harness" ? <HarnessInspectAdmin /> : null}
 						</main>
 					</div>
 				</Page>

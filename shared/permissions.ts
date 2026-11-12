@@ -87,6 +87,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	p("audit.view", "audit", "查看审计日志", "查询组织的审计记录"),
 	p("audit.export", "audit", "导出审计日志", "导出审计 CSV（导出本身会被审计）", O, "sensitive"),
 	p("trace.view", "audit", "请求链路排查", "按请求/运行/自动化 ID 查询模型路由、工具调用、检索等链路", O, "sensitive"),
+	p("harness.inspect", "audit", "Harness 检视", "开启后，查看每一轮发给模型的完整请求（系统提示词、工具、全部消息）；内容可能含对话原文", O, "critical"),
 	// ---- 统计
 	p("stats.personal.view", "stats", "查看个人统计", "查看自己的用量与效果统计"),
 	p("stats.project.view", "stats", "查看项目统计", "查看项目维度的统计（项目所有者默认可看自己的项目）", OP),
@@ -245,7 +246,7 @@ export const LEGACY_ROLE_TO_BUILTIN: Readonly<Record<string, string>> = { owner:
 export const BASE_ROLE_IDS: readonly string[] = ["builtin:owner", "builtin:admin", "builtin:member", "builtin:guest"];
 
 /** Permissions that let a viewer into the admin console at all (used for tab gating in the UI). */
-export const ADMIN_CONSOLE_PERMISSIONS: readonly string[] = ["org.settings.manage", "member.view", "member.invite", "dept.manage", "dept.member.manage", "role.view", "role.manage", "role.assign", "grant.manage", "model.manage", "model.provider.manage", "budget.view", "budget.manage", "billing.view", "audit.view", "trace.view", "member.session.manage"];
+export const ADMIN_CONSOLE_PERMISSIONS: readonly string[] = ["org.settings.manage", "member.view", "member.invite", "dept.manage", "dept.member.manage", "role.view", "role.manage", "role.assign", "grant.manage", "model.manage", "model.provider.manage", "budget.view", "budget.manage", "billing.view", "audit.view", "trace.view", "harness.inspect", "member.session.manage"];
 
 /** Does a viewer holding `permissions` (from `/api/me` `permissionsAnywhere`) get the admin console (组织管理)? True for auditors, billing admins, department admins... not only owner/admin. */
 export function hasAdminConsoleAccess(permissions: Iterable<string> | undefined): boolean {

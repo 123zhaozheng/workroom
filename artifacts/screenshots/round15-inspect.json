@@ -1,0 +1,30 @@
+{
+  "at": "2026-11-12T08:06:28.139Z",
+  "results": [
+    {
+      "name": "switch off: no bug button on the reply",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "switch on: the reply has a bug button",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "drawer: a tool-using reply has at least two rounds",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "drawer: shows 系统提示词 / 工具 / 消息",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "work card floats (≤380px wide)",
+      "ok": true,
+      "detail": "360"
+    }
+  ]
+}

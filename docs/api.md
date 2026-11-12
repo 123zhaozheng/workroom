@@ -38,3 +38,9 @@ pi-durable 的 id（conversation/entry/task/submission）是数字，在 API 中
 
 ## 工具（D） — `/connectors`、`/skills`、`/sandbox/:spaceId/...`
 ## 运营（E） — `/models`、`/admin/*`、`/usage`、`/stats`、`/automations`、`/notifications`
+
+## Harness 检视（E） — DTO：`shared/harness-inspect.ts`，详见 `docs/harness-inspect.md`
+- `GET /harness-inspect/status` → `{enabled, canInspect, canManage, retentionDays, maxRoundsPerConversation}`
+- `PUT /admin/settings/harness-inspect {enabled}`（`org.security.manage`；关闭时清除已存记录，记审计）
+- `GET /conversations/:spaceId/:id/harness/rounds?from=&to=&limit=` → `{enabled, rounds, builds}`（需 `harness.inspect` + 会话读权限；未开启时 `enabled:false` 且为空）
+- `GET /conversations/:spaceId/:id/harness/rounds/:roundId` → `{round}`（系统提示词、工具、全部消息、请求选项、用量）

@@ -41,7 +41,7 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | PUT `/admin/members/:id/grants` · DELETE `/:grantId` | `grant.manage` | 直接允许/禁止（带范围、理由） |
 | GET/POST `/admin/groups` · PATCH/DELETE `/:id` · GET/PUT `/:id/members` | `role.view` · `group.manage` | 用户组（可选） |
 | GET `/admin/departments/overview` | 任意成员 | 部门树 + 负责人 + 部门管理员 + 当前用户可做的操作 |
-| 成员/邀请/部门/会话/审计 | `member.*` `dept.*` `member.session.manage` `audit.view/export` | 见 `identity/routes.ts` |
+| 成员/邀请/部门/会话/审计 | `member.*` `dept.*` `member.session.manage` `audit.view/export` `harness.inspect`（Harness 检视，见 `docs/harness-inspect.md`） | 见 `identity/routes.ts` |
 | 其他模块的 `/admin/*` | 见 `identity/policy.ts` 路由权限表 | 表内路由由中间件统一校验；表外由各模块处理 |
 
 ## 权限目录（自动生成自 `shared/permissions.ts`）
