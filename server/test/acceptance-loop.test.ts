@@ -1,5 +1,5 @@
 // Integrator acceptance (X-LOOP, X-ISO): the user-facing loop through the public HTTP API only, with a real restart.
-// Goal → upload source → add to project KB explicitly → cite it → approval → generate file v1 → download → revise v2 →
+// Goal → upload source → add to project KB explicitly → cite it → approval → deliver a file (present_file) → download → re-deliver in place →
 // restart server on the same data dir → history, files, branch still there and conversation continues.
 // Plus: second user isolation / viewer / revocation, and same-name file isolation across projects.
 process.env.WORKROOM_FIXTURE_TOOLS = "1"; // test-only approval tool (never installed in a normal deployment)
@@ -37,7 +37,7 @@ async function idle(t: TestApp, token: string, spaceId: string, id: number, what
 
 const toolResults = (s: any, name: string) => s.entries.filter((e: any) => e.kind === "tool_result" && e.toolName === name);
 
-test("X-LOOP: goal → knowledge citation → approval → file v1 → v2 → restart → continue; X-ISO isolation", { timeout: 180_000 }, async () => {
+test("X-LOOP: goal → knowledge citation → approval → deliver → re-deliver in place → restart → continue; X-ISO isolation", { timeout: 180_000 }, async () => {
 	let t = await startTestApp();
 	const dataDir = t.dataDir;
 	try {
@@ -68,11 +68,16 @@ test("X-LOOP: goal → knowledge citation → approval → file v1 → v2 → re
 		await send(t, alice.token, sp, cid, "你好，先简单聊两句");
 		let plain = await idle(t, alice.token, sp, cid, "plain chat");
 		assert.ok(plain.entries.some((e: any) => e.kind === "assistant" && e.text && e.toolCalls.length === 0), "plain chat answered without tools");
-		await send(t, alice.token, sp, cid, `看看附件 [[call file_read {"versionId":"${src.version.versionId}"}]]`, { attachments: [{ fileId: src.file.id, versionId: src.version.versionId, name: "销售数据说明.md" }] });
+		await send(t, alice.token, sp, cid, `看看附件 [[call ls {"path":"/uploads"}]]`, { attachments: [{ fileId: src.file.id, versionId: src.version.versionId, name: "销售数据说明.md" }] });
 		plain = await idle(t, alice.token, sp, cid, "attachment run");
 		const att = plain.entries.filter((e: any) => e.kind === "user").at(-1);
 		assert.equal(att.attachments?.[0]?.versionId, src.version.versionId, "attachment recorded on the user message");
-		assert.match(toolResults(plain, "file_read")[0].text, /87\.5%/, "agent read the attached file");
+		// Round 14: attachments are read under /uploads/<message>/<name> (ls finds the message directory, read returns the content).
+		const msgDir = /\[目录\] (m\d+)\//.exec(toolResults(plain, "ls")[0].text)?.[1];
+		assert.ok(msgDir, toolResults(plain, "ls")[0].text);
+		await send(t, alice.token, sp, cid, `[[call read {"path":"/uploads/${msgDir}/销售数据说明.md"}]]`);
+		plain = await idle(t, alice.token, sp, cid, "read attachment run");
+		assert.match(toolResults(plain, "read")[0].text, /87\.5%/, "agent read the attached file");
 		await send(t, alice.token, sp, cid, `帮我做一份华东区复盘 [[call kb_search {"query":"回款率"}]]`, { knowledgeRefs: [{ kbId: kb.id, name: "复盘资料" }] });
 		let s = await idle(t, alice.token, sp, cid, "kb_search run");
 		const kr = toolResults(s, "kb_search")[0];
@@ -90,29 +95,27 @@ test("X-LOOP: goal → knowledge citation → approval → file v1 → v2 → re
 		s = await idle(t, alice.token, sp, cid, "approval run");
 		assert.match(toolResults(s, "wr_fixture_approval")[0].text, /decision: approved/);
 
-		// 4. Deliverable v1 (real docx), provenance back to this conversation, downloadable.
-		await send(t, alice.token, sp, cid, `[[call file_create {"name":"华东区复盘","format":"docx","title":"华东区 Q3 复盘","content":"# 结论\\n\\n回款率 87.5%。","inputVersionIds":["${src.version.versionId}"]}]]`);
-		s = await idle(t, alice.token, sp, cid, "file_create run");
-		const v1 = (toolResults(s, "file_create")[0].details as any).artifact;
-		assert.equal(v1.versionNo, 1);
-		const d1 = await t.req("GET", `/api/files/${v1.fileId}/versions/${v1.versionId}/download`, { token: alice.token });
+		// 4. Deliverable (round 14: write to /work + present_file; no versions), downloadable through the library item.
+		await send(t, alice.token, sp, cid, `[[call write {"path":"/work/华东区复盘.md","content":"# 结论\\n\\n回款率 87.5%。"}]] [[call present_file {"source":"/work/华东区复盘.md"}]]`);
+		s = await idle(t, alice.token, sp, cid, "present run");
+		const out1 = (toolResults(s, "present_file")[0].details as any);
+		assert.equal(out1.kind, "wr.presented");
+		assert.equal(out1.status, "created");
+		const item = out1.item;
+		const d1 = await t.req("GET", item.downloadUrl, { token: alice.token });
 		assert.equal(d1.status, 200);
-		const v1Bytes = new Uint8Array(await d1.arrayBuffer());
-		assert.equal(Buffer.from(v1Bytes.slice(0, 2)).toString(), "PK", "docx is a zip container");
+		const v1Text = await d1.text();
+		assert.equal(v1Text, "# 结论\n\n回款率 87.5%。");
 
-		// 5. Revise → v2; v1 unchanged and still downloadable.
-		await send(t, alice.token, sp, cid, `[[call file_revise {"fileId":"${v1.fileId}","changeNote":"补充风险","format":"docx","title":"华东区 Q3 复盘","content":"# 结论\\n\\n回款率 87.5%。\\n\\n# 风险\\n\\n账期延长。"}]]`);
-		s = await idle(t, alice.token, sp, cid, "file_revise run");
-		const v2 = (toolResults(s, "file_revise")[0].details as any).artifact;
-		assert.equal(v2.versionNo, 2);
-		assert.equal(v2.fileId, v1.fileId);
-		const detail = await t.json("GET", `/api/files/${v1.fileId}`, { token: alice.token });
-		assert.equal(detail.versions.length, 2);
-		const pv1 = detail.versions.find((v: any) => v.versionNo === 1);
-		const pv2 = detail.versions.find((v: any) => v.versionNo === 2);
-		assert.equal(pv2.changeNote, "补充风险");
-		assert.equal(pv1.provenance.conversationId, cid, "v1 provenance links the source conversation");
-		assert.ok(pv1.provenance.inputVersionIds?.includes(src.version.versionId), "v1 provenance lists input material");
+		// 5. Same-name re-delivery updates the same file in place (no second row, no version list).
+		await send(t, alice.token, sp, cid, `[[call write {"path":"/work/华东区复盘.md","content":"# 结论\\n\\n回款率 87.5%。\\n\\n# 风险\\n\\n账期延长。"}]] [[call present_file {"source":"/work/华东区复盘.md"}]]`);
+		s = await idle(t, alice.token, sp, cid, "present again run");
+		const out2 = (toolResults(s, "present_file")[1].details as any);
+		assert.equal(out2.status, "updated");
+		assert.equal(out2.item.fileId, item.fileId);
+		const lib = await t.json("GET", `/api/library?spaceId=${sp}&conversationId=${cid}`, { token: alice.token });
+		assert.equal(lib.items.length, 1, "one output, updated in place");
+		assert.match(await (await t.req("GET", item.downloadUrl, { token: alice.token })).text(), /# 风险/);
 
 		// 6. Branch from the first assistant answer; original untouched.
 		const firstAnswer = s.entries.find((e: any) => e.kind === "assistant");
@@ -134,19 +137,19 @@ test("X-LOOP: goal → knowledge citation → approval → file v1 → v2 → re
 		const bob = await t.user("bob@acme.test", { inviteCode: code });
 		assert.equal(bob.me.orgId, alice.me.orgId);
 		await t.json("GET", `/api/conversations/${sp}/${cid}/state`, { token: bob.token, expect: 403 });
-		assert.equal((await t.req("GET", `/api/files/${v1.fileId}/versions/${v1.versionId}/download`, { token: bob.token })).status, 403);
+		assert.equal((await t.req("GET", item.downloadUrl, { token: bob.token })).status, 403);
 		assert.equal((await t.json("POST", "/api/kb/search", { token: bob.token, json: { query: "回款率" } })).citations.length, 0, "non-member retrieval leak");
 
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@acme.test", role: "viewer" } });
 		await t.json("GET", `/api/conversations/${sp}/${cid}/state`, { token: bob.token });
-		assert.equal((await t.req("GET", `/api/files/${v1.fileId}/versions/${v1.versionId}/download`, { token: bob.token })).status, 200);
+		assert.equal((await t.req("GET", item.downloadUrl, { token: bob.token })).status, 200);
 		const bobSend = await t.req("POST", `/api/conversations/${sp}/${cid}/messages`, { token: bob.token, json: { text: "viewer 不应能发消息", requestId: randomUUID() } });
 		assert.equal(bobSend.status, 403, "viewer must not write");
 		assert.ok((await t.json("POST", "/api/kb/search", { token: bob.token, json: { query: "回款率" } })).citations.length > 0, "viewer can retrieve project knowledge");
 
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@acme.test", role: null } });
 		await t.json("GET", `/api/conversations/${sp}/${branch.conversationId}/state`, { token: bob.token, expect: 403 });
-		assert.equal((await t.req("GET", `/api/files/${v1.fileId}/versions/${v1.versionId}/download`, { token: bob.token })).status, 403);
+		assert.equal((await t.req("GET", item.downloadUrl, { token: bob.token })).status, 403);
 		assert.equal((await t.json("POST", "/api/kb/search", { token: bob.token, json: { query: "回款率" } })).citations.length, 0, "revoked retrieval leak");
 
 		// 9. Restart on the same data dir: everything is still there and the conversation continues.
@@ -155,8 +158,7 @@ test("X-LOOP: goal → knowledge citation → approval → file v1 → v2 → re
 		const login = await t.json("POST", "/api/auth/login", { json: { email: "alice@acme.test", password: "password123" } });
 		const after = await state(t, login.token, sp, cid);
 		assert.equal(after.entries.length, originalCount, "history survives restart");
-		const d1b = new Uint8Array(await (await t.req("GET", `/api/files/${v1.fileId}/versions/${v1.versionId}/download`, { token: login.token })).arrayBuffer());
-		assert.deepEqual(d1b, v1Bytes, "v1 bytes identical after restart");
+		assert.match(await (await t.req("GET", item.downloadUrl, { token: login.token })).text(), /# 风险/, "the delivered file is identical after restart");
 		const { conversation: br } = await t.json("GET", `/api/conversations/${sp}/${branch.conversationId}`, { token: login.token });
 		assert.ok(br, "branch survives restart");
 		await send(t, login.token, sp, cid, "继续：总结三条行动项");

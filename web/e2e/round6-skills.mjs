@@ -32,7 +32,7 @@ const start = async (page, text) => {
 	await sendMessage(page, text);
 	await page.waitForURL(/\/c\//);
 };
-const wf = (path, content) => `[[call sandbox_write_file ${JSON.stringify({ path, content })}]]`;
+const wf = (path, content) => `[[call write ${JSON.stringify({ path: `/work/${path}`, content })}]]`;
 const skillMd = (name, desc) => `---\nname: ${name}\ndescription: ${desc}\nversion: 1.0.0\nentry: scripts/run.py\n---\n# ${name}\n\n运行 scripts/run.py，输出一行问候。\n`;
 const SCRIPT = 'import sys\nprint("hello from skill", sys.stdin.read().strip(), " ".join(sys.argv[1:]))\n';
 const writeSkill = (dir, name, desc) => `${wf(`${dir}/SKILL.md`, skillMd(name, desc))} ${wf(`${dir}/scripts/run.py`, SCRIPT)}`;
@@ -198,7 +198,7 @@ try {
 	check("B card: shows name, 用途, files and 可执行脚本", t1.includes("first-skill") && (await c1.locator('[data-testid="skill-draft-desc"]').innerText()).includes("问候") && t1o.includes("SKILL.md") && t1o.includes("scripts/run.py") && t1o.includes("可执行脚本") && t1.includes("可执行脚本"));
 	check("B card: a risk/检查结果 line is present", (await c1.locator('[data-testid="skill-draft-risk"]').innerText()).trim().length > 0);
 	const bubbles = (await page.locator('[data-testid="user-bubble"]').allInnerTexts()).join("\n");
-	check("B display: test directives and file contents are not shown as user text", !bubbles.includes("[[") && !bubbles.includes("sandbox_write_file") && !bubbles.includes("hello from skill") && bubbles.includes("帮我创建一个技能"));
+	check("B display: test directives and file contents are not shown as user text", !bubbles.includes("[[") && !bubbles.includes("call write") && !bubbles.includes("hello from skill") && bubbles.includes("帮我创建一个技能"));
 	check("B display: the approval mentions no raw tool names", !t1o.includes("skill_manage") && !t1o.includes("submit_draft"));
 	await shot(page, "round6/draft-card-real-1440-light");
 	await page.locator('[data-testid="reject"]').click();
@@ -249,25 +249,25 @@ try {
 	await card2.getByText("已全部授予").waitFor({ timeout: 15000 });
 	check("B use: the person grants the skill's permission in 我的技能 (执行需要授权)", true);
 
-	// use it: load + run
-	await start(page, '用它 [[call skill {"action":"load","name":"second-skill"}]]');
+	// use it (round 14: no skill tool — the skill is a directory under /skills; copy_to_work it and run its script with exec)
+	await start(page, '用它 [[call read {"path":"/skills/second-skill/SKILL.md"}]]');
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 60000 });
 	await idle(page);
-	await sendMessage(page, '运行 [[call skill {"action":"run","name":"second-skill","input":"林夏"}]]');
+	await sendMessage(page, '运行 [[call copy_to_work {"source":"/skills/second-skill","destination":"/work/second-skill","recursive":true}]] [[call exec {"command":"echo 林夏 | python3 second-skill/scripts/run.py"}]]');
 	await nth(page, 2);
 	const answer = await lastAssistant(page).innerText();
-	check("B use: the run result (hello from skill) is shown", answer.includes("hello from skill"), answer.slice(0, 200));
+	check("B use: the run result (hello from skill) is shown", answer.includes("hello from skill") && answer.includes("林夏"), answer.slice(0, 200));
 	await page.locator('[data-testid="step-chain"] > button').last().click();
 	await sleep(250);
 	const stepTitles = (await page.locator('[data-testid="tool-step"] > button').allInnerTexts()).join(" | ");
-	check("B use: steps are in human words (运行技能「second-skill」), no tool names", stepTitles.includes("运行技能「second-skill」") && !stepTitles.includes("skill_") && !/\bskill\b/.test(stepTitles.replace(/second-skill/g, "")), stepTitles);
+	check("B use: steps are in human words (复制「second-skill」到工作区, 运行命令), no tool names", stepTitles.includes("复制「second-skill」到工作区") && stepTitles.includes("运行命令") && !/copy_to_work|\bexec\b|skill_/.test(stepTitles), stepTitles);
 
 	// malicious dirs
 	await start(page, '[[call skill_manage {"action":"submit_draft","dir":"../x"}]]');
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 60000 });
 	await idle(page);
 	check("B malicious: ../x gives the agent an error and no card", (await page.locator('[data-testid="approval-card"]').count()) === 0 && (await lastAssistant(page).innerText()).includes("失败"));
-	await start(page, `做个坏技能 ${writeSkill("evil", "evil-skill", "x")} [[call sandbox_exec {"language":"shell","code":"ln -s /etc evil/etc-link"}]]`);
+	await start(page, `做个坏技能 ${writeSkill("evil", "evil-skill", "x")} [[call exec {"command":"ln -s /etc evil/etc-link"}]]`);
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 60000 });
 	await idle(page);
 	await sendMessage(page, '提交 [[call skill_manage {"action":"submit_draft","dir":"evil"}]]');

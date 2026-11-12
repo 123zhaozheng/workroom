@@ -32,7 +32,7 @@ try {
 	const kb = (await (await api.post(`${base}/api/kb`, { data: { name: "报销制度库", scope: "personal" } })).json()).kb;
 	const up = await (await api.post(`${base}/api/files`, { multipart: { spaceId: sp, file: { name: "报销制度.md", mimeType: "text/markdown", buffer: Buffer.from("# 报销制度\n\n差旅报销需在 30 天内提交。\n") } } })).json();
 	await api.post(`${base}/api/kb/${kb.id}/docs`, { data: { fileId: up.file.id, versionId: up.version.versionId } });
-	await api.post(`${base}/api/memory`, { data: { content: "周报使用简体中文", kind: "preference", scope: "private" } }).catch(() => {});
+	await api.post(`${base}/api/memory/topics`, { data: { scope: "personal", title: "周报偏好" } }).catch(() => {});
 	await api.post(`${base}/api/automations`, { data: { name: "工作日早报", prompt: "整理昨日进展", trigger: { kind: "manual" }, timezone: "Asia/Shanghai" } }).catch(() => {});
 
 	await page.goto(base + "/");

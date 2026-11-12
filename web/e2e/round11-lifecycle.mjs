@@ -5,7 +5,7 @@
 //     the cloud; choosing 云端沙箱 on the home page is kept in the tab; with the admin switch off it looks the same.
 //  C. LIVE (WORKROOM_TEST_OPENSANDBOX_URL / _KEY set; skipped with a message otherwise, never faked): OpenSandbox chosen as the channel through the admin page, idle pause set to the
 //     server's minimum (60 s), click 云端沙箱 → the dot goes preparing → ready with no line in the chat; a plain chat creates nothing; the reaper (60 s tick) pauses the idle
-//     sandbox → grey dot; a sandbox_exec through the fixture model resumes the SAME sandbox (same remote id, one create, one resume in the lifecycle stats).
+//     sandbox → grey dot; an exec through the fixture model resumes the SAME sandbox (same remote id, one create, one resume in the lifecycle stats).
 // Run: npm run build:web && node web/e2e/round11-lifecycle.mjs        (port 8976; the live part takes about 3 minutes: it waits for the real reaper, bounded)
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -96,7 +96,7 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 		const dots = await p.locator(T("env-dot")).count();
 		const aria = (await btn.getAttribute("aria-label")) ?? "";
 		if (!dot) {
-			check(`A [intercepted] state ${state}: no dot, aria-label just names the channel`, dots === 0 && /^执行环境：本地环境（OpenSandbox）$/.test(aria), `dots=${dots} aria=${aria}`);
+			check(`A [intercepted] state ${state}: no dot, aria-label just names the channel`, dots === 0 && /^执行环境：云端沙箱（OpenSandbox）$/.test(aria), `dots=${dots} aria=${aria}`);
 		} else {
 			const d = p.locator(T("env-dot"));
 			check(`A [intercepted] state ${state}: exactly one dot, data-dot=${dot}, ${cls === "wr-pulse" ? "pulsing" : "class " + cls}; aria-label mentions 「${label}」`, dots === 1 && (await d.getAttribute("data-dot")) === dot && ((await d.getAttribute("class")) ?? "").includes(cls) && aria.includes(`，${label}）`), aria);
@@ -275,7 +275,7 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 }
 
 // ================================================================== C. LIVE OpenSandbox: prepare → idle pause → resume
-if (!LIVE_URL || !LIVE_KEY) skip("C [live] OpenSandbox: explicit start, idle pause by the reaper, resume by a sandbox_exec", "WORKROOM_TEST_OPENSANDBOX_URL / WORKROOM_TEST_OPENSANDBOX_KEY not set (no real OpenSandbox available)");
+if (!LIVE_URL || !LIVE_KEY) skip("C [live] OpenSandbox: explicit start, idle pause by the reaper, resume by an exec", "WORKROOM_TEST_OPENSANDBOX_URL / WORKROOM_TEST_OPENSANDBOX_KEY not set (no real OpenSandbox available)");
 else {
 	const liveCtx = await ctxOf(1440, "light", cookies);
 	// Records, inside the page, every distinct value of the button's dot and whether an inline environment line (or the removed wording) ever existed.
@@ -398,7 +398,7 @@ else {
 		const s2 = await stats();
 		check("C [live] lifecycle stats: one idle pause recorded, still one create", s2.idlePauses === 1 && s2.creates === 1, JSON.stringify({ p: s2.idlePauses, c: s2.creates }));
 
-		// ---- resume by a sandbox_exec (the fixture model calls the tool); sampled both from the API and in the page
+		// ---- resume by an exec (the fixture model calls the tool); sampled both from the API and in the page
 		const apiStates2 = [];
 		sampling = true;
 		const t1 = Date.now();
@@ -409,7 +409,7 @@ else {
 				await sleep(80);
 			}
 		})();
-		await sendMessage(lp, `在沙箱里跑一下 ${directive("sandbox_exec", { language: "shell", code: "echo resumed-ok; uname -s" })}`);
+		await sendMessage(lp, `在沙箱里跑一下 ${directive("exec", { command: "echo resumed-ok; uname -s" })}`);
 		await lp.waitForSelector(T("stop"), { timeout: 20000 });
 		await idle(lp, 180000);
 		await sleep(1500);
@@ -421,7 +421,7 @@ else {
 		}
 		const seq2 = apiStates2.map((x) => x.s);
 		const dots2 = await lp.evaluate(() => window.__dots.slice());
-		check("C [live] the sandbox_exec resumed it: the server's state went paused → (resuming) → ready, ending ready", seq2[0] === "paused" && seq2.at(-1) === "ready", JSON.stringify(apiStates2));
+		check("C [live] the exec resumed it: the server's state went paused → (resuming) → ready, ending ready", seq2[0] === "paused" && seq2.at(-1) === "ready", JSON.stringify(apiStates2));
 		console.log(`INFO  resume window: API states ${JSON.stringify(apiStates2)}; page dot sequence after reload ${JSON.stringify(dots2)} (resuming is only caught when its ~1 s window meets a poll; not asserted)`);
 		check("C [live] the button ends with the green dot again; no inline line at any moment of the resume", (await lp.locator(T("env-dot")).getAttribute("data-dot")) === "ready" && (await lp.evaluate(() => window.__line)) === false);
 		check("C [live] the answer carries the real output of the resumed sandbox", (await lp.locator(T("assistant-message")).last().innerText()).includes("resumed-ok"));

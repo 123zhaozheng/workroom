@@ -144,6 +144,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 		description: "创建或覆盖一个文本文件（自动创建上级目录）。可写范围由各目录决定：/work 可写；/memory 中你的记忆可写；/skills 只有你自己的个人技能可写；/library 与 /uploads 不可写（交付用 present_file）。expected_etag 可防止覆盖别人刚做的修改。",
 		parameters: obj({ path: str({ minLength: 1 }), content: str(), expected_etag: opt(str()) }),
 		replay: "safe",
+		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
 		async execute(args, api, context) {
 			return run("write", api, { path: args.path, bytes: args.content.length }, context, async (v) => {
 				const path = normalizeVirtual(args.path);
@@ -162,6 +163,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 		description: "在文本文件中把 old_text 精确替换为 new_text。old_text 必须在文件中恰好出现一次；找不到或出现多次都会失败（请给出更长、唯一的片段）。expected_etag 不一致时失败，不会覆盖并发修改。",
 		parameters: obj({ path: str({ minLength: 1 }), old_text: str({ minLength: 1 }), new_text: str(), expected_etag: opt(str()) }),
 		replay: "safe",
+		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
 		async execute(args, api, context) {
 			return run("edit", api, { path: args.path }, context, async (v) => {
 				const path = normalizeVirtual(args.path);
@@ -203,6 +205,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 		description: "删除文件（/work、你的 /memory、你自己的技能）。删除目录必须显式传 recursive: true。在 /library 中表示撤回已交付的成果（卡片会显示已删除）。/uploads 与已安装技能不可删除。",
 		parameters: obj({ path: str({ minLength: 1 }), recursive: opt(bool()) }),
 		replay: "safe",
+		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
 		async execute(args, api, context) {
 			return run("remove", api, args, context, async (v) => {
 				const path = normalizeVirtual(args.path);
@@ -258,6 +261,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 			"只有调用本工具才算交付：写文件、exec 生成文件都不会自动展示。同一会话同名交付会覆盖当前文件（不创建版本）。不要交付上传附件、中间文件或日志。",
 		parameters: obj({ source: str({ minLength: 1 }), name: opt(str({ minLength: 1, maxLength: 180 })), description: opt(str({ maxLength: 500 })) }),
 		replay: "safe",
+		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
 		async execute(args, api, context) {
 			return run("present_file", api, args, context, async (v, a) => {
 				await ctx.services.get("acl").require(a.principal, "write", { kind: "space", id: a.space.id });
@@ -304,6 +308,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 			"复制技能目录需 recursive: true。destination 默认 /work/<文件名>；目标已存在且内容不同会失败，除非 overwrite: true。",
 		parameters: obj({ source: str({ minLength: 1 }), destination: opt(str()), overwrite: opt(bool()), recursive: opt(bool()) }),
 		replay: "safe",
+		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
 		async execute(args, api, context) {
 			return run("copy_to_work", api, args, context, async (v, a) => {
 				await ctx.services.get("acl").require(a.principal, "write", { kind: "space", id: a.space.id });

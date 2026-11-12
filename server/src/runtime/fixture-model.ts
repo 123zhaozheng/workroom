@@ -11,7 +11,7 @@
 //   [[reply <text>]]                  → answer exactly "<label> <text>"
 //   [[think <text>]]                  → the answer to that input starts with a thinking block "<text>" (streamed like the rest)
 // After tool results arrive it answers with a deterministic summary that quotes every tool output of that round.
-// Without directives: heuristic demo mode (知识/资料 → kb_search, 生成/报告/文档 → a file tool) when those tools are
+// Without directives: heuristic demo mode (知识/资料 → kb_search, 生成/报告/文档 → write + present_file, 运行/执行/代码 → exec) when those tools are
 // offered, else a plain labelled echo reply.
 import type { AssistantMessage, Message, TextContent, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { Provider } from "@earendil-works/pi-ai/models";
@@ -224,6 +224,15 @@ function fixtureAnswerPlain(messages: readonly Message[]): { message: AssistantM
 	if (!last) return { message: fauxAssistantMessage(`${FIXTURE_LABEL} 没有可回答的内容。`) };
 
 	if (last.role === "toolResult") {
+		// Demo mode (no directives): a write of /work/report.md for a 生成/报告/文档 request continues with present_file.
+		const lastUser = [...visible].reverse().find((m) => m.role === "user");
+		const lastRes = last as ToolResultMessage;
+		if (lastUser && lastRes.toolName === "write" && !lastRes.isError && tools.has("present_file")) {
+			const ut = textOfContent(lastUser.content as TextContent[]);
+			if (parseDirectives(ut).calls.length === 0 && /生成|报告|文档/.test(ut.replace(/\[\[[^\]]*\]\]/g, "")) && /\/work\/report\.md/.test(textOfContent(lastRes.content as TextContent[]))) {
+				return { message: fauxAssistantMessage([fauxToolCall("present_file", { source: "/work/report.md", name: "report.md" }, { id: callId("present_file") })], { stopReason: "toolUse" }) };
+			}
+		}
 		// Summarize the latest tool round: every result after the last assistant message.
 		const results: ToolResultMessage[] = [];
 		for (let k = visible.length - 1; k >= 0; k--) {
@@ -254,16 +263,21 @@ function fixtureAnswerPlain(messages: readonly Message[]): { message: AssistantM
 			const args = { ...demoArgs(schemas.get("kb_search"), { title: plain.slice(0, 40), query: plain.slice(0, 200), content: plain.slice(0, 200) }), query: plain.slice(0, 200) };
 			return { message: fauxAssistantMessage([fauxToolCall("kb_search", args as ToolCall["arguments"], { id: callId("kb_search") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
 		}
-		// 运行/执行/代码/终端/命令 → sandbox_exec (fills the terminal panel with a real run); the command is a fixed,
-		// harmless demo script, never text taken from the message.
-		if (/运行|执行|代码|终端|命令/.test(plain) && tools.has("sandbox_exec")) {
-			const args = { language: "shell", code: "echo '【测试模型·演示】sandbox ok'; uname -s; date -u +%Y-%m-%dT%H:%M:%SZ" };
-			return { message: fauxAssistantMessage([fauxToolCall("sandbox_exec", args, { id: callId("sandbox_exec") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+		// 运行/执行/代码/终端/命令 → exec (a real sandbox run); the command is a fixed, harmless demo script, never text taken from the message.
+		if (/运行|执行|代码|终端|命令/.test(plain) && tools.has("exec")) {
+			const args = { command: "echo '【测试模型·演示】sandbox ok'; uname -s; date -u +%Y-%m-%dT%H:%M:%SZ" };
+			return { message: fauxAssistantMessage([fauxToolCall("exec", args, { id: callId("exec") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
 		}
 		// 网页/浏览/打开 + an explicit http(s) URL in the message → browse (fills the browser panel).
 		const url = /https?:\/\/[^\s"'<>，。]+/.exec(plain)?.[0];
 		if (url && /网页|浏览|打开|访问/.test(plain) && tools.has("browse")) {
 			return { message: fauxAssistantMessage([fauxToolCall("browse", { url, screenshot: true }, { id: callId("browse") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
+		}
+		// 生成/报告/文档 → write to /work, then (next turn, see the toolResult branch) present_file.
+		if (/生成|报告|文档/.test(plain) && tools.has("write") && tools.has("present_file")) {
+			const title = plain.slice(0, 40) || "报告";
+			const args = { path: "/work/report.md", content: `# ${title}\n\n${FIXTURE_LABEL} 生成的示例内容（演示，非真实 AI 撰写）。\n` };
+			return { message: fauxAssistantMessage([fauxToolCall("write", args, { id: callId("write") })], { stopReason: "toolUse" }), slowMs: d.slowMs };
 		}
 		if (/生成|报告|文档/.test(plain)) {
 			const fileTool = FILE_TOOL_PREFERENCE.find((n) => tools.has(n)) ?? [...tools].find((n) => /(create|generate).*(file|doc)|(file|doc).*(create|generate)/i.test(n));

@@ -76,26 +76,42 @@ try {
 	const email = `g4-${Date.now()}@example.com`;
 	await register(a, base, { email, name: "林夏" });
 	const md = "# 本周进展\n- 完成需求评审\n- 完成原型\n\n| 事项 | 负责人 |\n|---|---|\n| 需求评审 | 王明 |";
+	// Round 14: the agent writes files into /work and delivers each with present_file; only those become cards / library outputs.
+	// Text files are written by the agent; the binary formats (docx/xlsx/pptx/pdf, built with the product's own generators) are placed in
+	// the conversation's /work through the workspace file API (too large for a chat message) and then presented by the agent.
+	const { generate } = await import(join(ROOT, "server/src/files/generate.ts"));
 	await sendMessage(
 		a,
 		"生成成果 " +
 			[
-				d("file_create", { name: "项目周报", format: "md", title: "项目周报", content: md }),
-				d("file_create", { name: "合同意见", format: "docx", title: "合同意见", content: "# 总体意见\n建议修改第 3 条付款节点。\n\n| 条款 | 建议 |\n|---|---|\n| 第 3 条 | 调整付款节点 |" }),
-				d("file_create", { name: "销售汇总", format: "xlsx", sheets: [{ name: "销售", columns: ["月份", "收入"], rows: [["1月", 120], ["2月", 150]] }] }),
-				d("file_create", { name: "发布会", format: "pptx", title: "发布会", slides: [{ title: "发布会", bullets: ["春季新品"] }, { title: "亮点", bullets: ["更快", "更省"] }] }),
-				d("file_create", { name: "会议纪要", format: "pdf", title: "会议纪要", content: "# 会议纪要\n- 预算通过\n- 排期下周确认" }),
-				d("file_create", { name: "客户名单", format: "csv", table: { columns: ["客户", "城市"], rows: [["甲公司", "上海"], ["乙公司", "北京"]] } }),
+				`${d("write", { path: "/work/项目周报.md", content: md })} ${d("present_file", { source: "/work/项目周报.md" })}`,
+				`${d("write", { path: "/work/客户名单.csv", content: "客户,城市\n甲公司,上海\n乙公司,北京\n" })} ${d("present_file", { source: "/work/客户名单.csv" })}`,
 			].join(" "),
 	);
 	await a.waitForURL(/\/c\//);
 	await a.waitForSelector('[data-testid="file-card"]', { timeout: 60000 });
 	await idle(a);
+	{
+		const [sp, cv] = new URL(a.url()).pathname.split("/").slice(2, 4);
+		const bins = [
+			["合同意见.docx", "docx", { title: "合同意见", content: "# 总体意见\n建议修改第 3 条付款节点。\n\n| 条款 | 建议 |\n|---|---|\n| 第 3 条 | 调整付款节点 |" }],
+			["销售汇总.xlsx", "xlsx", { sheets: [{ name: "销售", columns: ["月份", "收入"], rows: [["1月", 120], ["2月", 150]] }] }],
+			["发布会.pptx", "pptx", { title: "发布会", slides: [{ title: "发布会", bullets: ["春季新品"] }, { title: "亮点", bullets: ["更快", "更省"] }] }],
+			["会议纪要.pdf", "pdf", { title: "会议纪要", content: "# 会议纪要\n- 预算通过\n- 排期下周确认" }],
+		];
+		for (const [name, fmt, spec] of bins) {
+			const r = await a.request.put(`${base}/api/sandbox/${sp}/file?path=${encodeURIComponent(name)}&conversationId=${cv}`, { data: Buffer.from((await generate(fmt, spec)).bytes) });
+			if (!r.ok()) throw new Error(`workspace put ${name}: ${r.status()}`);
+		}
+		await sendMessage(a, "交付 " + bins.map(([n]) => d("present_file", { source: `/work/${n}` })).join(" "));
+		await sleep(1500);
+		await idle(a);
+	}
 	const chatUrl = a.url();
 	const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 	const listFiles = async () => (await (await a.request.get(`${base}/api/files`)).json()).files;
 	const mdId = (await listFiles()).find((f) => f.name.startsWith("项目周报")).id;
-	await sendMessage(a, `补充风险 ${d("file_revise", { fileId: mdId, changeNote: "补充风险与下周计划", content: md + "\n\n## 下周计划\n- 开始开发" })}`);
+	await sendMessage(a, `补充风险 ${d("write", { path: "/work/项目周报.md", content: md + "\n\n## 下周计划\n- 开始开发" })} ${d("present_file", { source: "/work/项目周报.md" })}`);
 	await sleep(1500);
 	await idle(a);
 	const py = [
@@ -114,11 +130,10 @@ try {
 		"open('temp.txt','w').write('临时')",
 		"print('已写入文件')",
 	].join("\n");
-	await sendMessage(a, `整理数据 ${d("sandbox_exec", { language: "python", code: py })}`);
+	await sendMessage(a, `整理数据 ${d("exec", { command: `python3 - <<'PYEOF'\n${py}\nPYEOF` })} ${d("present_file", { source: "/work/out/chart.png" })}`);
 	await sleep(1500);
 	await idle(a);
-	const pub = await a.request.post(`${base}/api/sandbox/${spaceId}/publish`, { data: { conversationId: Number(convId), path: "out/chart.png" } });
-	check("setup: deliverables (md v2, docx, xlsx, pptx, pdf, csv) and an image published from the workspace", pub.ok() && (await listFiles()).length === 7, `${pub.status()}`);
+	check("setup: deliverables (md rewritten in place, docx, xlsx, pptx, pdf, csv) and an image presented from /work; temp files are not outputs", (await listFiles()).length === 7, String((await listFiles()).length));
 
 	// ------------------------------------------------------------------ 1. every preview type renders, header is clean
 	const TYPES = [

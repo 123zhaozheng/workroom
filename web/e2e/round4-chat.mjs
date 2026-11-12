@@ -580,7 +580,7 @@ try {
 	await shot(lp, "round4-1366-home");
 	await lp.setInputFiles('[data-testid="file-input"]', [{ name: "销售数据.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from("PK fake") }, { name: "封面.png", mimeType: "image/png", buffer: PNG }]);
 	await allReady(lp, 2);
-	await sendMessage(lp, '整理一下 [[call file_create {"name":"销售汇总","format":"md","title":"销售汇总","content":"# 汇总\\n- 数据已整理"}]]');
+	await sendMessage(lp, '整理一下 [[call write {"path":"/work/销售汇总.md","content":"# 汇总\\n- 数据已整理"}]] [[call present_file {"source":"/work/销售汇总.md"}]]');
 	await lp.waitForURL(/\/c\//);
 	await lp.waitForSelector('[data-testid="file-card"]', { timeout: 40000 }).catch(async (e) => {
 		console.log("DEBUG lp page:", (await lp.locator("main").innerText()).slice(0, 600));

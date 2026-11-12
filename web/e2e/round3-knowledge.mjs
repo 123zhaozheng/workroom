@@ -185,14 +185,18 @@ try {
 	await shot(b, "1440-citation-forbidden");
 
 	// ---------------------------------------------------------------- M08-C: storage state vs knowledge state, explicit add
+	// Round 14: the files page lists delivered outputs only (no upload button), so the file comes from the agent: write + present_file.
+	await a.goto(`${base}/`);
+	await sendMessage(a, '交付计划 [[call write {"path":"/work/季度计划.md","content":"# 季度计划\\n\\n第四季度重点：渠道拓展。\\n"}]] [[call present_file {"source":"/work/季度计划.md"}]]');
+	await a.waitForURL(/\/c\//);
+	await idle(a);
 	await a.goto(`${base}/files`);
-	await a.setInputFiles('input[type="file"]', { name: "季度计划.md", mimeType: "text/markdown", buffer: Buffer.from("# 季度计划\n\n第四季度重点：渠道拓展。\n") });
 	await a.waitForSelector('[data-testid="file-row"]:has-text("季度计划.md")', { timeout: 10000 });
 	await a.locator('[data-testid="file-row"]', { hasText: "季度计划.md" }).locator("a").click();
 	await a.waitForSelector('[data-testid="knowledge-status"]');
 	await sleep(800);
 	const k0 = await a.locator('[data-testid="knowledge-status"]').innerText();
-	check("M08-C: after upload the file is stored but NOT in any knowledge base (explicit step)", k0.includes("未加入") && (await a.locator("main").innerText()).includes("存储：已保存"), k0);
+	check("M08-C: a delivered file is in the library but NOT in any knowledge base (explicit step)", k0.includes("未加入") && (await a.locator("main").innerText()).includes("季度计划.md"), k0);
 	await shot(a, "1440-file-storage-vs-knowledge");
 	await a.getByRole("button", { name: "加入知识库" }).click();
 	await pick(a.locator('[data-wr-select][aria-label="知识库"]'), { label: "个人笔记" });
@@ -204,40 +208,40 @@ try {
 	check("M08-C: after the explicit add, knowledge state moves to 可检索 separately from storage", true);
 	await shot(a, "1440-file-knowledge-ready");
 
-	// ---------------------------------------------------------------- M10-A / M10-C: memory with source & scope, edit, correct, delete
+	// ---------------------------------------------------------------- M10-A / M10-C (round 14): memory is Markdown files the agent and the user both edit
+	// (replaces the DB memory list: source/scope badges, 纠正 with before/after, revisions)
 	await a.goto(`${base}/`);
-	await sendMessage(a, '记住我的偏好 [[call memory_save {"content":"周报使用英文","scope":"private","kind":"preference"}]]');
+	await sendMessage(a, '记住我的偏好 [[call write {"path":"/memory/周报偏好.md","content":"# 周报偏好\\n- 周报使用英文\\n"}]]');
 	await a.waitForURL(/\/c\//);
 	await idle(a);
+	const memConv = a.url();
 	await a.goto(`${base}/memory`);
-	await a.fill('textarea[placeholder^="例如"]', "汇报对象是销售总监");
-	await a.getByRole("button", { name: "添加" }).click();
-	await a.waitForFunction(() => document.querySelectorAll('[data-testid="memory-item"]').length === 2, null, { timeout: 10000 });
-	const items = await a.locator('[data-testid="memory-item"]').allInnerTexts();
-	check("M10-A: memories show source (manual / extracted from a conversation, with link) and scope", items.some((t) => t.includes("从对话提取") && t.includes("来源对话")) && items.some((t) => t.includes("手动添加")) && items.every((t) => t.includes("仅自己")), items.map((t) => t.replace(/\s+/g, " ").slice(0, 60)).join(" | "));
-	const extracted = a.locator('[data-testid="memory-item"]', { hasText: "周报使用英文" });
-	await extracted.locator('[data-testid="memory-correct"]').click();
-	await extracted.locator('textarea[aria-label="纠正后的内容"]').fill("周报使用中文");
-	await extracted.locator('input[placeholder^="为什么纠正"]').fill("团队统一用中文");
-	await extracted.locator('[data-testid="memory-correct-save"]').click();
-	await a.waitForSelector('[data-testid="memory-correction-result"]', { timeout: 10000 });
-	const res = await a.locator('[data-testid="memory-correction-result"]').innerText();
-	check("M10-C: correction shows 已纠正 with before / after (round 11: no explanatory 被替代 / 按新内容理解 sentences)", res.includes("已纠正") && res.includes("周报使用英文") && res.includes("周报使用中文") && !res.includes("被替代") && !res.includes("按新内容理解"), res.replace(/\s+/g, " "));
-	await shot(a, "1440-memory-correction");
-	const manual = a.locator('[data-testid="memory-item"]', { hasText: "汇报对象是销售总监" });
-	await manual.getByRole("button", { name: "编辑" }).click();
-	const editingItem = a.locator('[data-testid="memory-item"]:has(textarea)');
-	await editingItem.locator("textarea").fill("汇报对象是销售副总裁");
-	await editingItem.getByRole("button", { name: "保存" }).click();
-	await a.waitForFunction(() => document.body.innerText.includes("汇报对象是销售副总裁"), null, { timeout: 10000 });
+	await a.waitForSelector('[data-testid="memory-file"]', { timeout: 10000 });
+	await a.locator('[data-testid="memory-file"]', { hasText: "周报偏好" }).click();
+	await a.waitForFunction(() => document.querySelector('[data-testid="memory-view"]')?.textContent?.includes("周报使用英文"), null, { timeout: 10000 });
+	check("M10-A: what the agent wrote to /memory shows up as a Markdown file on the memory page, with its last-modified time", (await a.locator('[data-testid="memory-mtime"]').innerText()).includes("最后修改"));
+	await shot(a, "1440-memory-file");
+	await a.click('[data-testid="memory-edit"]');
+	await a.fill('[data-testid="memory-text"]', "# 周报偏好\n- 周报使用中文\n");
+	await a.click('[data-testid="memory-save"]');
+	await a.waitForFunction(() => document.querySelector('[data-testid="memory-view"]')?.textContent?.includes("周报使用中文"), null, { timeout: 10000 });
+	check("M10-C: the user edits the agent's memory file and the new content is shown", !(await a.locator('[data-testid="memory-view"]').innerText()).includes("周报使用英文"));
+	// the agent reads back what the user saved (same file, no copy)
+	await a.goto(memConv);
+	await a.waitForSelector('[data-testid="composer-input"]', { timeout: 15000 });
+	await sendMessage(a, '[[call read {"path":"/memory/周报偏好.md"}]]');
+	await idle(a);
+	await a.waitForFunction(() => document.body.innerText.includes("周报使用中文"), null, { timeout: 15000 });
+	check("M10-C: the agent reads the user's edit from /memory", true);
+	await a.goto(`${base}/memory`);
+	await a.click('[data-testid="memory-new"]');
+	await a.fill('input[aria-label="主题名称"]', "汇报对象");
+	await a.getByRole("button", { name: "创建" }).click();
+	await a.waitForSelector('[data-testid="memory-file"]:has-text("汇报对象")', { timeout: 10000 });
 	a.once("dialog", (d) => d.accept());
-	await a.locator('[data-testid="memory-item"]', { hasText: "汇报对象是销售副总裁" }).getByRole("button", { name: "删除" }).click();
-	await a.waitForFunction(() => !document.body.innerText.includes("汇报对象是销售副总裁"), null, { timeout: 10000 });
-	check("M10-A: edit and delete work from the memory page", true);
-	const corrected = a.locator('[data-testid="memory-item"]', { hasText: "周报使用中文" });
-	await corrected.locator('[data-testid="memory-history"]').click();
-	await a.waitForSelector('[data-testid="memory-revisions"] li', { timeout: 10000 });
-	check("M10-C: history of the memory is visible", (await a.locator('[data-testid="memory-revisions"]').innerText()).length > 0);
+	await a.click('[data-testid="memory-delete"]');
+	await a.waitForFunction(() => ![...document.querySelectorAll('[data-testid="memory-file"]')].some((e) => e.textContent?.includes("汇报对象")), null, { timeout: 10000 });
+	check("M10-A: a new topic can be created and deleted from the memory page", true);
 	await ctxA.close();
 	await ctxB.close();
 } catch (e) {
