@@ -100,8 +100,8 @@ codemode 仍可编排工具，只作编排用，不再作为计算后端。
    - `mem_items` 保留但不再读取，不会被重新导入。
    - 原 `stores/memories/<user>` 目录中非 Markdown 的文件不移动、不删除，迁移报告中列出它们的位置。
 2. **历史成果 → 当前文件**
-   - Agent 产出的文件（origin 为 agent 或 automation，来自 file_create、file_revise、sandbox_publish、job:*）按会话写入 `lib_items`，取每个文件的最新版本作为当前内容，目录名由会话标题生成。
-   - 用户上传（origin 为 upload）、浏览器截图（tool 为 browse）不进入文件库。来源无法判断的文件不自动公开，记入报告。
+   - Agent 用 file_create、file_revise、sandbox_publish 交付的文件按会话写入 `lib_items`，取每个文件的最新版本作为当前内容，目录名由会话标题生成；同一会话里同名的多个旧文件只收最新的一个，其余记入报告。
+   - 不进入文件库的：用户上传（origin 为 upload）、浏览器截图（tool 为 browse）、后台任务的输出（job:*，属于中间产物，V23）、不属于任何会话的文件。来源无法判断的文件不自动公开。以上全部记入报告 `<dataDir>/backups/r14/library-report.json`。
    - 旧的 versionId 链接继续可以解析。
 3. **上传附件**：不搬运数据，直接从历史消息的 `AttachmentRef` 映射到 `/uploads`。
 4. **浏览器执行**：删除浏览器执行的代码、路由、设置、界面、Pyodide 依赖和 SSE 事件。已有的待领取任务，在 broker 删除前不会再有标签页领取，相关工具调用以 `unclaimed` 失败收尾，不会自动换环境重跑。`local_exec:*` 和 `local_pref:*` 设置项保留但不再读取。
