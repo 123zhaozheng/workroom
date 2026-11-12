@@ -686,19 +686,15 @@ export function createSkillManageExtension(ctx: AppContext, opts: { resolveActor
 	const skillManage = defineTool({
 		name: "skill_manage",
 		description:
-			"Create a skill, or update an existing one, from files in the conversation workspace. Workflow: (1) to UPDATE an installed skill, call action \"checkout\" with its `name` (name or slug) or `skillId` and optionally `dir` (default: the slug) — " +
-			"it writes the skill's current approved files into /work/<dir> (do not copy the read-only skills directory by hand); to CREATE a new one, just start writing files. (2) Edit or write SKILL.md (frontmatter: name, description, version) and any scripts/references in /work/<dir> " +
-			"with write / edit (sandbox_write_file in older conversations); keep `name` unchanged when updating, and raise `version` above the skill's current highest version (e.g. 1.0.0 → 1.0.1) — an unchanged version or identical content is rejected immediately. " +
-			"(3) call action \"submit_draft\" with that relative dir. The package is checked and frozen, then the user is asked to confirm; only after they confirm it is saved: a new personal skill, or a NEW VERSION of the existing skill of that name " +
-			"(your personal skill, or a market/org skill the user is author/admin of — its new version is submitted for review and others keep the old version until approved). Nothing is run. " +
-			"If the name belongs to a market skill the user may not update, submit_draft refuses at once (no approval) and tells you to choose another name (e.g. <name>-custom, saved as a personal copy) or ask the author. " +
-			"If the result lists errors, fix the files and submit again. action \"get_draft\" reads a draft you submitted earlier.",
+			"创建或更新技能（走用户确认）。更新已有技能：checkout 把当前批准版本取到 /work/<dir>；新建则直接在 /work/<dir> 写文件。" +
+			"改 SKILL.md（frontmatter 含 name、description、version）与脚本，更新时 name 不变且 version 要高于现有版本；然后 submit_draft：包被校验并冻结，用户确认后保存为新技能或新版本（市场/组织技能的新版本需审核，期间他人仍用旧版）。" +
+			"name 属于无权更新的市场技能时会直接拒绝，请换名（如 <name>-custom）。结果有错误就改完再提交；get_draft 查看已提交草稿。自己的个人技能也可直接写 /skills，无需草稿。",
 		parameters: obj({
 			action: oneOf(["submit_draft", "get_draft", "checkout"]),
-			dir: opt(str({ description: "Directory under the sandbox working directory (relative, e.g. weekly-report): the package to submit (submit_draft), or where to put the checked-out files (checkout; default: the skill's slug)" })),
+			dir: opt(str({ description: "/work 下的相对目录：submit_draft 的技能包，或 checkout 的目标（默认技能 slug）" })),
 			draftId: opt(str()),
-			name: opt(str({ description: "checkout: the skill's name or slug" })),
-			skillId: opt(str({ description: "checkout: the skill's id (alternative to name)" })),
+			name: opt(str({ description: "checkout：技能名或 slug" })),
+			skillId: opt(str({ description: "checkout：技能 id（可替代 name）" })),
 		}),
 		// Idempotent by construction: snapshot keyed by callId, approval keyed by callId, save adopts an existing identical version; checkout rewrites identical files and refuses to overwrite edits.
 		replay: "safe",

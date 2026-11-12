@@ -207,7 +207,7 @@ export function createBrowserExtension(ctx: AppContext, opts: { resolveActor?: A
 	const resolve = opts.resolveActor ?? runtimeActorResolver(ctx);
 	const browse = defineTool({
 		name: "browse",
-		description: "Open a public web page in a server-side headless browser and return its title and visible text; optionally save a screenshot to the file library. Private/internal addresses are blocked.",
+		description: "一次性读取公开网页：返回标题和可见文本，可选保存截图（中间文件，不会自动交付）。内网地址被拦截；需要点击、填表等交互用 browser_open / browser_act。",
 		parameters: obj({ url: str(), screenshot: opt(bool()), maxChars: opt(int({ minimum: 500, maximum: 100000 })) }),
 		// GET of a page is safe to repeat; the screenshot write is idempotent per tool call.
 		replay: "safe",
@@ -218,7 +218,7 @@ export function createBrowserExtension(ctx: AppContext, opts: { resolveActor?: A
 				if (args.screenshot) await ctx.services.get("acl").require(actor.principal, "write", { kind: "space", id: actor.space.id });
 				return (ctx.services.get("browser") as BrowserService).browse({ url: args.url, screenshot: args.screenshot, maxChars: args.maxChars, principal: actor.principal, space: actor.space, save: { conversationId: actor.conversationId, taskId: actor.taskId, callId: actor.callId, idempotencyKey: toolCallKey(actor, "screenshot") } });
 			}, (x) => `${x.status} ${x.finalUrl}`);
-			const text = `# ${r.title || "(无标题)"}\nURL: ${r.finalUrl}${r.status ? `（HTTP ${r.status}）` : ""}${r.blocked.length ? `\n已拦截 ${r.blocked.length} 个内网/禁止的请求` : ""}${r.screenshot ? `\n截图已保存：${r.screenshot.name}（versionId=${r.screenshot.versionId}）` : ""}\n\n${r.text}`;
+			const text = `# ${r.title || "(无标题)"}\nURL: ${r.finalUrl}${r.status ? `（HTTP ${r.status}）` : ""}${r.blocked.length ? `\n已拦截 ${r.blocked.length} 个内网/禁止的请求` : ""}${r.screenshot ? `\n截图已保存为中间文件（未交付给用户）：${r.screenshot.name}` : ""}\n\n${r.text}`;
 			return { output: [{ type: "text", text }], details: { url: r.url, finalUrl: r.finalUrl, title: r.title, status: r.status ?? null, ...(r.screenshot ? { screenshot: { ...r.screenshot }, artifact: { ...r.screenshot } } : {}) } };
 		},
 	});

@@ -18,6 +18,28 @@ const VIEWPORT = { width: 1280, height: 800 };
 export const SESSION_IDLE_MS = Number(process.env.WORKROOM_BROWSER_IDLE_MS ?? 15 * 60_000);
 const MAX_SESSIONS = Number(process.env.WORKROOM_BROWSER_MAX_SESSIONS ?? 20);
 
+export interface ObservedElement {
+	tag: string;
+	type?: string;
+	label: string;
+	x: number;
+	y: number;
+	focused?: boolean;
+}
+
+/** What the model sees after every open/act: what was just done, where the page is now, the clickable elements with coordinates, and the visible text. */
+export function renderObservation(s: { title?: string; url: string; version: number; lastAction?: string; controller: { kind: string; name?: string; userId?: string }; blocked: readonly unknown[] }, text: string, elements: readonly ObservedElement[]): string {
+	const els = elements.length
+		? elements.map((e, i) => `${i + 1}. ${e.tag}${e.type ? `[${e.type}]` : ""} “${e.label}” (${e.x},${e.y})${e.focused ? " ←焦点" : ""}`).join("\n")
+		: "（视口内没有可点击元素；可 scroll 或查看正文）";
+	return [
+		`# ${s.title || "(无标题)"}\nURL: ${s.url}`,
+		`刚才的操作：${s.lastAction ?? "—"}；控制者：${s.controller.kind === "agent" ? "Agent" : `用户（${s.controller.name ?? s.controller.userId}）`}；截图版本 v${s.version}${s.blocked.length ? `；已拦截 ${s.blocked.length} 个请求` : ""}`,
+		`视口内可点击元素（点击用括号里的坐标；操作后以新结果核对 URL、标题和正文是否符合预期）：\n${els}`,
+		`正文：\n${text}`,
+	].join("\n\n");
+}
+
 interface Session {
 	id: string;
 	spaceId: string;
@@ -241,6 +263,27 @@ export class BrowserSessions {
 		this.#sessions.delete(id);
 		await s?.context.close().catch(() => {});
 	}
+	/** Visible interactive elements with their click coordinates (viewport 1280×800), so clicks are made on what was observed, not guessed. */
+	async elements(s: Session, max = 40): Promise<ObservedElement[]> {
+		const found = await s.page
+			.evaluate((cap: number) => {
+				const sel = "a[href],button,input,textarea,select,summary,[role=button],[role=link],[role=tab],[role=checkbox],[role=menuitem],[onclick]";
+				const out: { tag: string; type?: string; label: string; x: number; y: number; focused?: boolean }[] = [];
+				for (const el of Array.from(document.querySelectorAll(sel)) as HTMLElement[]) {
+					const r = el.getBoundingClientRect();
+					const st = getComputedStyle(el);
+					if (r.width < 4 || r.height < 4 || st.visibility === "hidden" || st.display === "none") continue;
+					if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
+					const input = el as HTMLInputElement;
+					const label = (el.getAttribute("aria-label") || el.innerText || input.placeholder || input.value || el.getAttribute("title") || input.name || "").replace(/\s+/g, " ").trim().slice(0, 60);
+					out.push({ tag: el.tagName.toLowerCase(), ...(input.type && el.tagName !== "BUTTON" ? { type: input.type } : {}), label, x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), ...(el === document.activeElement ? { focused: true } : {}) });
+					if (out.length >= cap) break;
+				}
+				return out;
+			}, max)
+			.catch(() => []);
+		return found as ObservedElement[];
+	}
 	async text(s: Session, max = 4000): Promise<string> {
 		const t: string = await s.page.evaluate(() => (document.body ? (document.body as HTMLElement).innerText : "")).catch(() => "");
 		return t.length > max ? `${t.slice(0, max)}…` : t;
@@ -252,8 +295,8 @@ export function createBrowserSessionExtension(ctx: AppContext, opts: { resolveAc
 	const sessions = () => ctx.services.get("browserSessions") as BrowserSessions;
 	const log = () => ctx.services.get("toolCalls") as ToolCallLog;
 	const result = async (s: any) => {
-		const text = await sessions().text(s);
-		return { output: [{ type: "text" as const, text: `# ${s.title || "(无标题)"}\nURL: ${s.url}\n控制者：${s.controller.kind === "agent" ? "Agent" : `用户（${s.controller.name ?? s.controller.userId}）`}；截图版本 v${s.version}${s.blocked.length ? `；已拦截 ${s.blocked.length} 个请求` : ""}\n\n${text}` }], details: { browserSession: JSON.parse(JSON.stringify(sessions().dto(s))) } };
+		const [text, elements] = await Promise.all([sessions().text(s), sessions().elements(s)]);
+		return { output: [{ type: "text" as const, text: renderObservation(s, text, elements) }], details: { browserSession: JSON.parse(JSON.stringify(sessions().dto(s))) } };
 	};
 	const withActor = async <T>(tool: string, api: any, args: unknown, context: Context, fn: (a: any) => Promise<T>) => {
 		const actor = await resolve(api, context);
@@ -265,14 +308,14 @@ export function createBrowserSessionExtension(ctx: AppContext, opts: { resolveAc
 	};
 	const open = defineTool({
 		name: "browser_open",
-		description: "Open a page in this conversation's live browser session (the user can watch and take over). Returns title and visible text.",
+		description: "在本会话的实时浏览器中打开页面（用户可观看并接管）。返回标题、URL、视口内可点击元素（带坐标）和正文。",
 		parameters: obj({ url: str() }),
 		replay: "safe",
 		execute: async (args, api, context) => withActor("browser_open", api, args, context, async (a) => result(await sessions().open(a.principal, a.space.id, a.conversationId, args.url, "agent"))),
 	});
 	const act = defineTool({
 		name: "browser_act",
-		description: "Act in this conversation's live browser session: click (x,y in the 1280×800 viewport), type text, press a key, scroll, navigate, back/forward/reload. Refused while a user has taken over.",
+		description: "在实时浏览器中操作：click（x,y 取自上次结果里的元素坐标，视口 1280×800）、type（输入到当前焦点，先 click 输入框）、press、scroll、navigate、back/forward/reload。每次都返回新页面观察，据此核对结果；用户接管时被拒绝。",
 		parameters: obj({ type: oneOf(["navigate", "click", "type", "press", "scroll", "back", "forward", "reload"]), url: opt(str()), x: opt(int()), y: opt(int()), text: opt(str()), key: opt(str()), deltaY: opt(int()) }),
 		// Clicks and typing can submit forms on the remote site: never repeated after a crash.
 		replay: "unsafe",
@@ -285,7 +328,7 @@ export function createBrowserSessionExtension(ctx: AppContext, opts: { resolveAc
 	});
 	const close = defineTool({
 		name: "browser_close",
-		description: "Close this conversation's live browser session.",
+		description: "关闭本会话的实时浏览器。",
 		parameters: obj({}),
 		replay: "safe",
 		execute: async (_args, api, context) =>

@@ -124,7 +124,7 @@ export function knowledgeExtension(ctx: AppContext, store: KnowledgeStore, mem: 
 	const kbSearch = defineTool({
 		name: "kb_search",
 		description:
-			"在用户有权访问的知识库中检索资料，返回带编号的引用片段（文件、版本、页码/章节）。回答涉及企业制度、项目资料或用户上传的知识时先调用。用户在输入中引用了知识库时，默认只检索这些知识库。",
+			"检索用户有权访问的知识库，返回带编号的引用片段（文件、版本、页码）。回答涉及企业制度、项目资料或用户知识时先用。kbIds 取自“当前可检索的知识库”段，可省略（默认用户引用的库或当前空间范围）；无结果就如实说没有依据。",
 		parameters: obj({
 			query: str({ description: "检索词或问题（中文/英文均可）", minLength: 1 }),
 			kbIds: opt(arr(str(), { description: "限定检索的知识库 id；省略时使用用户引用的知识库或当前空间的默认范围" })),
