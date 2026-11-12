@@ -294,7 +294,7 @@ export class Effects implements EffectsApi {
 			const d = await tx.doc(ApprovalsDoc, target);
 			const it = d.items[approvalId]!;
 			if (it.status === "cancelled") throw new HttpError(409, "approval_cancelled", "该审批已取消（对应的调用已结束），这一步没有执行", { status: it.status });
-				if (it.status !== "pending") throw new HttpError(409, "already_decided", "该审批已处理", { status: it.status });
+			if (it.status !== "pending") throw new HttpError(409, "already_decided", "该审批已处理", { status: it.status });
 			if (it.approverUserIds?.length && !it.approverUserIds.includes(p.userId)) throw new HttpError(403, "not_approver", "你不是该审批的指定审批人");
 			it.status = body.decision;
 			it.decidedBy = p.userId;
