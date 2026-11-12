@@ -1,79 +1,130 @@
-import { Brain, History, Pencil, Plus, Trash2, Wand2 } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router";
-import type { MemoryCorrectionResult, MemoryDTO, MemoryKind, MemoryRevisionDTO, MemoryScope } from "@shared/knowledge";
-import { del, errorText, patch, post } from "@/lib/api";
+// Memory page (round 14): the long-term memory IS a set of Markdown files. This page reads and writes the same files the agent maintains
+// (GET/PUT/DELETE /api/memory/file, If-Match = the etag we last read, so an agent edit made meanwhile is never overwritten silently).
+import { Brain, Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { MemoryFileContentDTO, MemoryFileDTO, MemoryScopeDTO } from "@shared/knowledge";
+import { api, del, errorText, get, post, qs } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { fullTime, relTime } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Badge, EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
-import { listOf } from "@/features/chat/pickers";
+import { EmptyState, Loadable, Page, PageHeader } from "@/components/ui/misc";
+import { Markdown } from "@/features/markdown/Markdown";
 
-const SCOPE: Record<MemoryScope, string> = { private: "仅自己", project: "项目共享", org: "企业" };
-const KIND: Record<MemoryKind, string> = { preference: "偏好", fact: "事实", constraint: "约束", background: "背景" };
-const SOURCE = { user: "手动添加", extracted: "从对话提取", corrected: "纠正后" } as const;
+const INDEX = "MEMORY.md";
+const fileName = (f: MemoryFileDTO) => (f.path === INDEX ? "索引 MEMORY.md" : f.path);
 
 export default function MemoryPage() {
-	const res = useApi<unknown>("/memory");
-	const list = listOf<MemoryDTO>(res.data, "memories", "memory").filter((m) => m.status === "active");
-	const [draft, setDraft] = useState("");
-	const [kind, setKind] = useState<MemoryKind>("preference");
+	const scopes = useApi<{ scopes: MemoryScopeDTO[] }>("/memory/scopes");
+	const [scope, setScope] = useState("personal");
+	const list = useApi<{ files: MemoryFileDTO[] }>(`/memory/files${qs({ scope })}`);
+	const [path, setPath] = useState<string>();
+	const files = list.data?.files ?? [];
+	const cur = scopes.data?.scopes.find((s) => s.id === scope);
+	// default selection: the index (when it exists), else the first file
+	useEffect(() => {
+		if (!list.data) return;
+		if (path && files.some((f) => f.path === path)) return;
+		setPath((files.find((f) => f.path === INDEX) ?? files[0])?.path);
+	}, [list.data, scope]); // eslint-disable-line react-hooks/exhaustive-deps
+	const [creating, setCreating] = useState(false);
+	const [title, setTitle] = useState("");
 	const [err, setErr] = useState<string>();
-	const [lastCorrection, setLastCorrection] = useState<MemoryCorrectionResult>();
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<TopBar />
 			<div className="wr-scroll min-h-0 flex-1 overflow-y-auto">
-				<Page>
+				<Page wide>
 					<PageHeader title="记忆" />
-					{!res.unavailable ? (
-						<form
-							className="mb-6 rounded-xl border border-border bg-surface p-3"
-							onSubmit={async (e) => {
-								e.preventDefault();
-								setErr(undefined);
-								try {
-									await post("/memory", { content: draft, scope: "private", kind });
-									setDraft("");
-									res.reload();
-								} catch (e) {
-									setErr(errorText(e));
-								}
-							}}
-						>
-							<Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} placeholder="例如：周报用简体中文，结论放在最前面" className="border-0 px-1 focus:border-0" />
-							<div className="mt-2 flex items-center gap-2">
-								<Select aria-label="记忆类型" value={kind} onChange={(e) => setKind(e.target.value as MemoryKind)} className="h-8 text-[13px]">
-									{Object.entries(KIND).map(([k, l]) => (
-										<option key={k} value={k}>
-											{l}
-										</option>
-									))}
-								</Select>
-								<span className="text-xs text-fg-subtle">范围：仅自己</span>
-								<span className="flex-1" />
-								<Button type="submit" size="sm" variant="primary" disabled={!draft.trim()}>
-									<Plus />
-									添加
-								</Button>
-							</div>
-							{err ? <p className="mt-1 text-[13px] text-danger">{err}</p> : null}
-						</form>
-					) : null}
-					{lastCorrection ? <CorrectionResult r={lastCorrection} /> : null}
-					<Loadable state={res} what="记忆" need="C 组：GET /api/memory">
-						{list.length === 0 ? (
-							<EmptyState icon={<Brain />} title="还没有记忆" />
-						) : (
-							<ul className="space-y-2">
-								{list.map((m) => (
-									<MemoryItem key={m.id} m={m} onChanged={res.reload} onCorrected={setLastCorrection} />
-								))}
-							</ul>
-						)}
+					<Loadable state={scopes} what="记忆" need="GET /api/memory/scopes">
+						<div className="mb-3 flex flex-wrap gap-1.5" role="tablist" aria-label="记忆范围">
+							{(scopes.data?.scopes ?? []).map((s) => (
+								<button
+									key={s.id}
+									role="tab"
+									aria-selected={s.id === scope}
+									data-testid="memory-scope"
+									onClick={() => {
+										setScope(s.id);
+										setPath(undefined);
+										setCreating(false);
+										setErr(undefined);
+									}}
+									className={`rounded-full border px-3 py-1 text-[13px] ${s.id === scope ? "border-fg bg-surface-2 text-fg" : "border-border text-fg-muted hover:bg-surface-2"}`}
+								>
+									{s.label}
+								</button>
+							))}
+						</div>
+						<div className="grid gap-4 md:grid-cols-[240px_1fr]">
+							<aside>
+								<Loadable state={list} what="记忆文件">
+									{files.length === 0 ? <EmptyState icon={<Brain />} title="还没有记忆文件" /> : null}
+									<ul className="space-y-0.5" data-testid="memory-files">
+										{files.map((f) => (
+											<li key={f.path}>
+												<button
+													onClick={() => setPath(f.path)}
+													data-testid="memory-file"
+													className={`w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] ${f.path === path ? "bg-surface-2 text-fg" : "text-fg-muted hover:bg-surface-2"}`}
+												>
+													<div className="truncate">{fileName(f)}</div>
+													<div className="text-xs text-fg-subtle" title={fullTime(f.mtime)}>
+														{relTime(f.mtime)}
+													</div>
+												</button>
+											</li>
+										))}
+									</ul>
+								</Loadable>
+								{cur?.writable ? (
+									creating ? (
+										<form
+											className="mt-2 flex gap-1.5"
+											onSubmit={async (e) => {
+												e.preventDefault();
+												setErr(undefined);
+												try {
+													const r = await post<{ file: MemoryFileDTO }>("/memory/topics", { scope, title });
+													setCreating(false);
+													setTitle("");
+													setPath(r.file.path);
+													list.reload();
+												} catch (x) {
+													setErr(errorText(x));
+												}
+											}}
+										>
+											<Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="主题名称" aria-label="主题名称" className="h-8 text-[13px]" autoFocus />
+											<Button type="submit" size="sm" variant="primary" disabled={!title.trim()}>
+												创建
+											</Button>
+										</form>
+									) : (
+										<Button size="sm" variant="ghost" className="mt-2" onClick={() => setCreating(true)} data-testid="memory-new">
+											<Plus />
+											新建主题
+										</Button>
+									)
+								) : null}
+								{err ? <p className="mt-1 text-[13px] text-danger">{err}</p> : null}
+							</aside>
+							<section className="min-w-0">
+								{path ? (
+									<FileView
+										key={`${scope}:${path}`}
+										scope={scope}
+										path={path}
+										onChanged={list.reload}
+										onDeleted={() => {
+											setPath(undefined);
+											list.reload();
+										}}
+									/>
+								) : null}
+							</section>
+						</div>
 					</Loadable>
 				</Page>
 			</div>
@@ -81,84 +132,48 @@ export default function MemoryPage() {
 	);
 }
 
-const CHANGE: Record<MemoryRevisionDTO["change"], string> = { create: "创建", edit: "修改", correct: "纠正", supersede: "被替代", delete: "删除" };
-
-function MemoryItem({ m, onChanged, onCorrected }: { m: MemoryDTO; onChanged: () => void; onCorrected: (r: MemoryCorrectionResult) => void }) {
+function FileView({ scope, path, onChanged, onDeleted }: { scope: string; path: string; onChanged: () => void; onDeleted: () => void }) {
+	const [data, setData] = useState<MemoryFileContentDTO>();
+	const [text, setText] = useState("");
 	const [editing, setEditing] = useState(false);
-	const [text, setText] = useState(m.content);
 	const [err, setErr] = useState<string>();
-	const [correcting, setCorrecting] = useState(false);
-	const [fix, setFix] = useState(m.content);
-	const [note, setNote] = useState("");
-	const [showHistory, setShowHistory] = useState(false);
-	const history = useApi<{ revisions?: MemoryRevisionDTO[]; history?: MemoryRevisionDTO[] } | MemoryRevisionDTO[]>(showHistory ? `/memory/${m.id}/history` : null);
-	const revs = listOf<MemoryRevisionDTO>(history.data, "revisions", "history");
+	const [conflict, setConflict] = useState(false);
+	const q = qs({ scope, path });
+	const load = async () => {
+		try {
+			const d = await get<MemoryFileContentDTO>(`/memory/file${q}`);
+			setData(d);
+			setText(d.content);
+			setErr(undefined);
+			setConflict(false);
+		} catch (e) {
+			setErr(errorText(e));
+		}
+	};
+	useEffect(() => {
+		void load();
+	}, [scope, path]); // eslint-disable-line react-hooks/exhaustive-deps
+	if (!data) return err ? <p className="text-[13px] text-danger">{err}</p> : null;
 	return (
-		<li data-testid="memory-item" className="rounded-xl border border-border bg-surface p-3">
-			{editing ? (
-				<>
-					<Textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} />
-					<div className="mt-2 flex justify-end gap-2">
-						<Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-							取消
-						</Button>
-						<Button
-							size="sm"
-							variant="primary"
-							onClick={async () => {
-								try {
-									await patch(`/memory/${m.id}`, { content: text });
-									setEditing(false);
-									onChanged();
-								} catch (e) {
-									setErr(errorText(e));
-								}
-							}}
-						>
-							保存
-						</Button>
-					</div>
-				</>
-			) : (
-				<p className="whitespace-pre-wrap text-sm">{m.content}</p>
-			)}
-			<div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-fg-subtle">
-				<Badge>{KIND[m.kind]}</Badge>
-				<Badge>{SCOPE[m.scope]}</Badge>
-				<span>
-					{SOURCE[m.source]}
-					{m.sourceRef ? (
-						<>
-							{" · "}
-							<Link className="text-info hover:underline" to={`/c/${m.sourceRef.spaceId}/${m.sourceRef.conversationId}`}>
-								来源对话
-							</Link>
-						</>
-					) : null}
-					{" · "}v{m.version} · {relTime(m.updatedAt)}
-				</span>
+		<div data-testid="memory-view">
+			<div className="mb-2 flex items-center gap-2 text-xs text-fg-subtle">
+				<span className="font-medium text-fg">{path}</span>
+				<span data-testid="memory-mtime">最后修改 {fullTime(data.file.mtime)}</span>
 				<span className="flex-1" />
-				{m.permissions.edit && !editing ? (
-					<button aria-label="编辑" onClick={() => setEditing(true)} className="rounded p-1 hover:bg-surface-2 hover:text-fg">
+				{data.writable && !editing ? (
+					<button aria-label="编辑" data-testid="memory-edit" onClick={() => setEditing(true)} className="rounded p-1 hover:bg-surface-2 hover:text-fg">
 						<Pencil className="size-3.5" />
 					</button>
 				) : null}
-				{m.permissions.edit && !correcting ? (
-					<button aria-label="纠正" data-testid="memory-correct" onClick={() => setCorrecting(true)} className="rounded p-1 hover:bg-surface-2 hover:text-fg" title="纠正（保留历史并说明改了什么）">
-						<Wand2 className="size-3.5" />
-					</button>
-				) : null}
-				<button aria-label="历史" onClick={() => setShowHistory((x) => !x)} className="rounded p-1 hover:bg-surface-2 hover:text-fg" title="变更历史" data-testid="memory-history">
-					<History className="size-3.5" />
-				</button>
-				{m.permissions.delete ? (
+				{data.writable ? (
 					<button
 						aria-label="删除"
+						data-testid="memory-delete"
 						onClick={async () => {
-							if (!confirm("删除这条记忆？")) return;
+							if (!confirm(`删除 ${path}？${path === INDEX ? "" : "索引中对应的链接也会一并移除。"}`)) return;
 							try {
-								await del(`/memory/${m.id}`);
-								onChanged();
+								await del(`/memory/file${q}`);
+								onDeleted();
 							} catch (e) {
 								setErr(errorText(e));
 							}
@@ -169,66 +184,60 @@ function MemoryItem({ m, onChanged, onCorrected }: { m: MemoryDTO; onChanged: ()
 					</button>
 				) : null}
 			</div>
-			{correcting ? (
-				<div className="mt-2 space-y-2 rounded-lg bg-surface-2 p-2" data-testid="memory-correct-form">
-					<Textarea value={fix} onChange={(e) => setFix(e.target.value)} rows={2} aria-label="纠正后的内容" />
-					<Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="为什么纠正（可选）" className="h-8 text-[13px]" />
-					<div className="flex justify-end gap-2">
-						<Button size="sm" variant="ghost" onClick={() => setCorrecting(false)}>
+			{editing ? (
+				<>
+					<Textarea value={text} onChange={(e) => setText(e.target.value)} rows={18} className="font-mono text-[13px]" aria-label="记忆内容" data-testid="memory-text" />
+					<div className="mt-2 flex items-center justify-end gap-2">
+						{conflict ? (
+							<Button size="sm" variant="ghost" data-testid="memory-reload" onClick={() => void load()}>
+								重新载入最新内容
+							</Button>
+						) : null}
+						<Button
+							size="sm"
+							variant="ghost"
+							onClick={() => {
+								setText(data.content);
+								setEditing(false);
+								setErr(undefined);
+								setConflict(false);
+							}}
+						>
 							取消
 						</Button>
 						<Button
 							size="sm"
 							variant="primary"
-							data-testid="memory-correct-save"
-							disabled={!fix.trim() || fix === m.content}
+							data-testid="memory-save"
+							disabled={text === data.content}
 							onClick={async () => {
 								try {
-									onCorrected(await post<MemoryCorrectionResult>(`/memory/${m.id}/correct`, { content: fix, ...(note ? { note } : {}) }));
-									setCorrecting(false);
+									const r = await api<{ file: MemoryFileDTO }>(`/memory/file${q}`, { method: "PUT", headers: { "If-Match": data.file.etag }, body: { content: text } });
+									setData({ ...data, file: r.file, content: text });
+									setEditing(false);
+									setErr(undefined);
+									setConflict(false);
 									onChanged();
 								} catch (e) {
 									setErr(errorText(e));
+									setConflict((e as { code?: string }).code === "memory_conflict");
 								}
 							}}
 						>
-							确认纠正
+							保存
 						</Button>
 					</div>
-				</div>
+				</>
+			) : data.file.markdown ? (
+				<Markdown text={data.content} document />
+			) : (
+				<pre className="whitespace-pre-wrap text-[13px]">{data.content}</pre>
+			)}
+			{err ? (
+				<p className="mt-2 text-[13px] text-danger" data-testid="memory-error">
+					{err}
+				</p>
 			) : null}
-			{showHistory ? (
-				<ol className="mt-2 space-y-1 border-l border-border pl-3 text-xs text-fg-muted" data-testid="memory-revisions">
-					{revs.map((r) => (
-						<li key={`${r.version}-${r.at}`}>
-							v{r.version} · {CHANGE[r.change]} · {fullTime(r.at)}：{r.content}
-							{r.note ? `（${r.note}）` : ""}
-						</li>
-					))}
-				</ol>
-			) : null}
-			{err ? <p className="mt-1 text-xs text-danger">{err}</p> : null}
-		</li>
-	);
-}
-
-/** Visible result of a correction: what was believed before, what is used from now on. */
-function CorrectionResult({ r }: { r: MemoryCorrectionResult }) {
-	return (
-		<div className="mb-4 rounded-lg border border-success/40 bg-success-soft/40 p-3 text-xs" data-testid="memory-correction-result">
-			<div className="mb-1 font-medium text-success">已纠正</div>
-			<div>
-				<span className="text-fg-subtle">之前：</span>
-				<s>{r.change.before}</s>
-			</div>
-			<div>
-				<span className="text-fg-subtle">现在：</span>
-				{r.change.after}
-			</div>
-			<div className="mt-0.5 text-fg-subtle">
-				{fullTime(r.change.at)}
-				{r.change.note ? ` · ${r.change.note}` : ""}
-			</div>
 		</div>
 	);
 }
