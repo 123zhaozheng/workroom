@@ -58,7 +58,7 @@ export function registerSandboxStatsRoutes(api: Hono<AppEnv>, ctx: AppContext): 
 		if (!ctx.db.get("SELECT 1 AS x FROM rt_conversations WHERE space_id = ? AND conversation_id = ?", spaceId, conversationId)) throw new HttpError(404, "conversation_not_found", "会话不存在");
 		const costVisible = await canViewOrgStats(ctx, p);
 		const r = conversationSandboxStats(ctx, p.orgId, spaceId, conversationId, costVisible);
-		const body: SandboxConversationStatsResponse = { spaceId, conversationId, stats: r.stats, codeRun: r.codeRun, costVisible };
+		const body: SandboxConversationStatsResponse = { spaceId, conversationId, stats: r.stats, costVisible };
 		return c.json(body);
 	});
 

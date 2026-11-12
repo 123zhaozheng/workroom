@@ -6,7 +6,7 @@
 //   everything else      -> the conversation workspace, as before.
 //
 // This file is the ONE place that decides where a path goes and whether the caller may read/write it (`WorkspaceStores.route`). Every host
-// file operation of `Sandbox` (list / preview / read / write / mkdir / delete / move, the file tools, code_run inputs and outputs, publish)
+// file operation of `Sandbox` (list / preview / read / write / mkdir / delete / move, the file tools, publish)
 // goes through it; the drivers only receive the resolved store directories (`StoreMount`).
 //
 // Stores live on the host under `<dataDir>/orgs/<orgId>/stores/…`, outside every conversation directory and never as symlinks (the workspace
