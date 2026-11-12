@@ -39,7 +39,7 @@ async function upload(t: TestApp, token: string, c: Conv, name: string, content:
 	return { fileId: j.file.id, versionId: j.version.versionId, name };
 }
 
-test("V01/V08/V09/V10/V11/V12/V14: new conversations get the unified tools; upload → copy_to_work → exec → present_file → library", { skip: probeIsolation().ok ? false : probeIsolation().detail, timeout: 180_000 }, async () => {
+test("V01/V08/V09/V10/V11/V12/V14/V22: new conversations get the unified tools; upload → copy_to_work → exec → present_file → library", { skip: probeIsolation().ok ? false : probeIsolation().detail, timeout: 180_000 }, async () => {
 	const t = await startTestApp();
 	try {
 		const a = await t.user("vfs-chain@example.com");
@@ -116,6 +116,19 @@ test("V01/V08/V09/V10/V11/V12/V14: new conversations get the unified tools; uplo
 		const other = (await results(t, c2, "present_file"))[0]!;
 		assert.notEqual(other.details.item.fileId, item.fileId);
 		assert.equal(await (await t.req("GET", item.downloadUrl, { token: a.token })).text(), "# 报告\n合计 51\n");
+
+		// V22: the agent withdraws the delivery with remove on its /library path → gone from the library and /library, download refused;
+		// the working copy in /work is untouched; the other conversation's same-name output is unaffected
+		await say(t, a.token, c, call("remove", { path: item.path }));
+		const rm = (await results(t, c, "remove")).at(-1)!;
+		assert.ok(!rm.isError, rm.text);
+		const lib3 = (await t.json("GET", `/api/library?spaceId=${c.spaceId}&conversationId=${c.conversationId}`, { token: a.token })).items;
+		assert.equal(lib3.filter((x: any) => x.status !== "removed").length, 0, JSON.stringify(lib3));
+		assert.equal((await t.req("GET", item.downloadUrl, { token: a.token })).status, 404, "a withdrawn output is no longer downloadable");
+		await say(t, a.token, c, `${call("ls", { path: item.path.slice(0, item.path.lastIndexOf("/")) })} ${call("read", { path: "/work/report.md" })}`);
+		assert.doesNotMatch((await results(t, c, "ls")).at(-1)!.text, /销售报告\.md/);
+		assert.match((await results(t, c, "read")).at(-1)!.text, /合计 51/);
+		assert.equal((await t.req("GET", other.details.item.downloadUrl, { token: a.token })).status, 200);
 	} finally {
 		await t.dispose();
 	}
