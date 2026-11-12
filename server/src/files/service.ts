@@ -235,6 +235,15 @@ export class Files implements FileService {
 		}
 		const ref = this.refOf(this.versionRow(versionId)!);
 		this.#notifyKnowledge(ref, principal);
+		// Round 14: an older conversation still using a pre-round-14 deliverable tool delivers through it — the library follows (current file).
+		const tool = provenance.tool ?? "";
+		if (provenance.conversationId !== undefined && (["file_create", "file_revise", "sandbox_publish"].includes(tool) || (tool.startsWith("job:") && !tool.startsWith("job:browse"))) && (this.#ctx.services as any).has("library")) {
+			try {
+				((this.#ctx.services as any).get("library") as { adoptLegacy(fileId: string): void }).adoptLegacy(ref.fileId);
+			} catch (e) {
+				console.error("[files] library adoption failed", e);
+			}
+		}
 		return ref;
 	}
 

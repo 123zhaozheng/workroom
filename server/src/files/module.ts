@@ -48,6 +48,11 @@ export const filesModule: WorkroomModule = {
 	extensions(ctx) {
 		return [createFilesExtension(ctx)];
 	},
+	async start(ctx) {
+		// Round 14: one-time migration of pre-round-14 deliverables into the library (current file per conversation folder); report on disk.
+		const r = ((ctx.services as any).get("library") as Library).migrateLegacy(ctx.config.dataDir);
+		if (r && (r.migrated || Object.keys(r.skipped).length)) console.log(`[library] migrated ${r.migrated} earlier outputs; not migrated: ${JSON.stringify(r.skipped)}`);
+	},
 	routes(api, ctx) {
 		const files = ctx.services.get("files") as unknown as Files;
 		// ACL for ResourceRef kind "file": decided by the file's space against current membership.

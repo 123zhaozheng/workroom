@@ -4,7 +4,8 @@
 import { pinnedRequest } from "../tools/netpolicy.ts";
 import { VfsError } from "./types.ts";
 
-export const URL_MAX_BYTES = Number(process.env.WORKROOM_FETCH_MAX_MB ?? 50) * 1024 * 1024;
+/** Download size limit (MB, env WORKROOM_FETCH_MAX_MB, default 50), read at each use. */
+export const urlMaxBytes = (): number => Number(process.env.WORKROOM_FETCH_MAX_MB ?? 50) * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 
 export interface Fetched {
@@ -30,7 +31,7 @@ function dispositionName(h: string | undefined): string | undefined {
 }
 
 export async function fetchBytes(raw: string, opts: { maxBytes?: number; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<Fetched> {
-	const max = opts.maxBytes ?? URL_MAX_BYTES;
+	const max = opts.maxBytes ?? urlMaxBytes();
 	let url = raw;
 	for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
 		let res;

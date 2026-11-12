@@ -7,6 +7,8 @@
 // receipt and returns the same result (no second save, no second card); a call that crashed after saving but before its receipt is made
 // idempotent by the file service's idempotency key; an OLDER call replayed after a newer delivery never moves the item back (monotonic
 // internal revision number). The pi-durable side only needs the tool result, which a replay reconstructs from the receipt.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AppContext, Principal, Space } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
 import { HttpError, nowIso } from "../core/http.ts";
@@ -68,6 +70,11 @@ CREATE TABLE lib_events (
   at TEXT NOT NULL
 );
 CREATE INDEX lib_events_conv ON lib_events(space_id, conversation_id, id);
+CREATE TABLE lib_migrations (
+  name TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  report TEXT NOT NULL
+);
 `,
 	},
 ];
@@ -257,6 +264,106 @@ export class Library {
 		const out: LibItemDTO[] = [];
 		for (const r of rows) if ((await this.#files.decide(p, "read", r.file_id)).allow) out.push(this.dto(r));
 		return out;
+	}
+
+	/**
+	 * One-time migration (§11.1 items 2–3): deliverables produced by the agent BEFORE round 14 (file_create / file_revise / sandbox_publish /
+	 * background jobs) become the CURRENT file of their conversation's library folder (their newest version). Nothing is deleted or rewritten:
+	 * the files and all their old versions stay (old versionId links keep resolving); only library rows are added. Not migrated — and listed
+	 * in the report instead of guessed: uploads (they stay message attachments), browser screenshots, files without a conversation, and older
+	 * same-name files of one conversation (the newest wins). The report goes to <dataDir>/backups/r14/library-report.json and the DB.
+	 */
+	migrateLegacy(dataDir: string): { migrated: number; skipped: Record<string, number> } | null {
+		if (this.#db.get("SELECT 1 FROM lib_migrations WHERE name = 'legacy-outputs'")) return null;
+		type Cand = { id: string; org_id: string; space_id: string; project_id: string | null; name: string; created_by: string; created_at: string; updated_at: string; latest_version_id: string; origin: string };
+		const files = this.#db.all<Cand>("SELECT id, org_id, space_id, project_id, name, created_by, created_at, updated_at, latest_version_id, origin FROM file_files WHERE deleted_at IS NULL AND latest_version_id IS NOT NULL ORDER BY updated_at DESC");
+		const skipped: Record<string, number> = {};
+		const notes: { fileId: string; name: string; reason: string }[] = [];
+		const skip = (f: Cand, reason: string) => {
+			skipped[reason] = (skipped[reason] ?? 0) + 1;
+			if (notes.length < 2000) notes.push({ fileId: f.id, name: f.name, reason });
+		};
+		let migrated = 0;
+		this.#db.tx(() => {
+			for (const f of files) {
+				if (this.#db.get("SELECT 1 FROM lib_items WHERE file_id = ?", f.id)) continue;
+				const v = this.#db.get<{ id: string; version_no: number; mime: string; size: number; sha256: string; tool: string | null; origin: string; conversation_id: number | null; created_by: string; created_at: string }>("SELECT id, version_no, mime, size, sha256, tool, origin, conversation_id, created_by, created_at FROM file_versions WHERE id = ?", f.latest_version_id);
+				if (!v) {
+					skip(f, "no_version");
+					continue;
+				}
+				if (f.origin === "upload" || v.origin === "upload") {
+					skip(f, "upload");
+					continue;
+				}
+				const tool = v.tool ?? "";
+				if (tool === "browse" || tool.startsWith("job:browse")) {
+					skip(f, "screenshot_or_browse");
+					continue;
+				}
+				if (!["file_create", "file_revise", "sandbox_publish"].includes(tool) && !tool.startsWith("job:")) {
+					skip(f, "unknown_source");
+					continue;
+				}
+				const conv = v.conversation_id ?? this.#db.get<{ c: number | null }>("SELECT conversation_id AS c FROM file_versions WHERE file_id = ? AND conversation_id IS NOT NULL ORDER BY version_no DESC LIMIT 1", f.id)?.c ?? null;
+				if (conv === null) {
+					skip(f, "no_conversation");
+					continue;
+				}
+				const key = nameKey(f.name);
+				if (this.#db.get("SELECT 1 FROM lib_items WHERE space_id = ? AND conversation_id = ? AND name_key = ? AND status = 'active'", f.space_id, conv, key)) {
+					skip(f, "older_same_name");
+					continue;
+				}
+				const space = { id: f.space_id, orgId: f.org_id, projectId: f.project_id ?? undefined } as Space;
+				const folder = this.folder(space, conv);
+				this.#db.run(
+					"INSERT INTO lib_items (file_id, org_id, space_id, project_id, conversation_id, folder, name, name_key, mime, size, sha256, version_id, rev, description, source, status, presented_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'active', ?, ?, ?)",
+					f.id, f.org_id, f.space_id, f.project_id, conv, folder, f.name, key, v.mime, v.size, v.sha256, v.id, v.version_no, `migrated:${tool}`, v.created_by, f.created_at, f.updated_at,
+				);
+				migrated++;
+			}
+			const report = { at: nowIso(), migrated, skipped, notes };
+			this.#db.run("INSERT INTO lib_migrations (name, at, report) VALUES ('legacy-outputs', ?, ?)", report.at, JSON.stringify(report));
+		});
+		try {
+			const dir = join(dataDir, "backups", "r14");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "library-report.json"), this.#db.get<{ report: string }>("SELECT report FROM lib_migrations WHERE name = 'legacy-outputs'")!.report);
+		} catch (e) {
+			console.error("[library] could not write the migration report file (it is kept in lib_migrations)", e);
+		}
+		return { migrated, skipped };
+	}
+
+	/** A deliverable written by a legacy tool of an older conversation: make (or move) its library row to the file's newest content. */
+	adoptLegacy(fileId: string): void {
+		const f = this.#db.get<{ id: string; org_id: string; space_id: string; project_id: string | null; name: string; latest_version_id: string; created_at: string; updated_at: string }>("SELECT id, org_id, space_id, project_id, name, latest_version_id, created_at, updated_at FROM file_files WHERE id = ? AND deleted_at IS NULL", fileId);
+		if (!f) return;
+		const v = this.#db.get<{ id: string; version_no: number; mime: string; size: number; sha256: string; tool: string | null; conversation_id: number | null; created_by: string }>("SELECT id, version_no, mime, size, sha256, tool, conversation_id, created_by FROM file_versions WHERE id = ?", f.latest_version_id);
+		if (!v || v.conversation_id === null) return;
+		const now = nowIso();
+		const cur = this.row(fileId);
+		if (cur) {
+			if (cur.status === "active" && v.version_no > cur.rev) {
+				this.#db.run("UPDATE lib_items SET name = ?, name_key = ?, mime = ?, size = ?, sha256 = ?, version_id = ?, rev = ?, updated_at = ? WHERE file_id = ?", f.name, nameKey(f.name), v.mime, v.size, v.sha256, v.id, v.version_no, now, fileId);
+				this.#db.run("INSERT INTO lib_events (space_id, conversation_id, file_id, kind, at) VALUES (?, ?, ?, 'file.updated', ?)", cur.space_id, cur.conversation_id, fileId, now);
+				this.#notify(cur.space_id, cur.conversation_id);
+			}
+			return;
+		}
+		const key = nameKey(f.name);
+		const space = { id: f.space_id, orgId: f.org_id, projectId: f.project_id ?? undefined } as Space;
+		this.#db.tx(() => {
+			// a same-name output of this conversation is withdrawn in favour of the newer one (one current file per name)
+			this.#db.run("UPDATE lib_items SET status = 'removed', removed_at = ?, removed_by = ? WHERE space_id = ? AND conversation_id = ? AND name_key = ? AND status = 'active'", now, v.created_by, f.space_id, v.conversation_id, key);
+			this.#db.run(
+				"INSERT INTO lib_items (file_id, org_id, space_id, project_id, conversation_id, folder, name, name_key, mime, size, sha256, version_id, rev, description, source, status, presented_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'active', ?, ?, ?)",
+				fileId, f.org_id, f.space_id, f.project_id, v.conversation_id, this.folder(space, v.conversation_id!), f.name, key, v.mime, v.size, v.sha256, v.id, v.version_no, `legacy:${v.tool ?? ""}`, v.created_by, f.created_at, now,
+			);
+			this.#db.run("INSERT INTO lib_events (space_id, conversation_id, file_id, kind, at) VALUES (?, ?, ?, 'file.presented', ?)", f.space_id, v.conversation_id, fileId, now);
+		});
+		this.#notify(f.space_id, v.conversation_id);
 	}
 
 	#notify(spaceId: string, conversationId: number): void {

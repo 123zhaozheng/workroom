@@ -6,6 +6,7 @@
 // Replay (pi-durable): reads are "safe". write / edit / copy_to_work record their plan in a first-writer-wins memo BEFORE touching anything,
 // so a replay recognizes its own completed effect instead of failing or applying it twice; present_file is made idempotent by its receipt.
 // exec is "unsafe": a command cut off by a crash is reported as interrupted (outcome unknown), never silently run again.
+import { existsSync, writeFileSync } from "node:fs";
 import type { Context } from "@earendil-works/chord/context";
 import { defineExtension, defineTool, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { bool, int, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
@@ -282,6 +283,13 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 				if (!bytes.length) throw new VfsError("bad_path", "文件是空的，没有交付");
 				const lib = (ctx.services as any).get("library") as Library;
 				const out = await lib.present(a.principal, { space: a.space, conversationId: a.conversationId, name, bytes, ...(mime ? { mime } : {}), ...(args.description ? { description: args.description } : {}), source, callKey: toolCallKey(a, "present") });
+				// Test seam (inert unless the env var names a marker file): die right after the library commit and before pi-durable stores the
+				// tool result — the crash window of V15. Used by server/test/r14-replay.test.ts only.
+				const killMarker = process.env.WORKROOM_TEST_KILL_AFTER_PRESENT;
+				if (killMarker && !existsSync(killMarker)) {
+					writeFileSync(killMarker, "1");
+					process.kill(process.pid, "SIGKILL");
+				}
 				const details: PresentedDetailsDTO = { kind: "wr.presented", status: out.status, item: out.item };
 				const verb = out.superseded ? "已有更新的同名交付，未覆盖" : out.status === "created" ? "已交付" : out.status === "updated" ? "已更新（同名覆盖）" : "内容未变化";
 				return { text: `${verb}：${out.item.path}（${sizeText(out.item.size)}，${out.item.mime}）`, details };
