@@ -49,7 +49,7 @@ export function UserMessage({ entry, run, onEdit, onFork, onRestore, readOnly }:
 	const shown = userTextOf(entry);
 	const [draft, setDraft] = useState(entry.text);
 	const [busy, setBusy] = useState(false);
-	const via = entry.via?.kind === "subagent_report" ? "子任务回报" : entry.via?.kind === "automation" ? "自动化触发" : entry.via?.kind === "delegate" ? "委派" : null;
+	const via = entry.via?.kind === "subagent_report" ? "子任务回报" : entry.via?.kind === "automation" ? "自动化触发" : entry.via?.kind === "delegate" ? "委派" : entry.via?.kind === "approval_resume" ? "审批结果" : null;
 	return (
 		<div data-testid="user-message" data-entry-id={entry.id} className="group flex flex-col items-end">
 			{editing ? (

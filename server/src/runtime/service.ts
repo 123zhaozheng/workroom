@@ -11,6 +11,7 @@ import type { AbortResponse, AgentDTO, ApprovalDTO, AssistantDTO, ConversationKi
 import type { WorkspacePrepItem } from "../../../shared/chat.ts";
 import type { Sandbox } from "../tools/sandbox.ts";
 import { storeLabel } from "../tools/sandbox/stores.ts";
+import { closeDeadWork } from "./lifecycle.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
@@ -910,7 +911,10 @@ export class Runtime implements RuntimeService {
 		const queued = ((await harness.snapshot(InboxDoc, conv.id, context))?.items ?? []).filter((i) => i.mode !== "write").map((i) => ({ id: i.id as number, entry: (i as any).entry }));
 		await conv.abort(context, body.background ? { background: true } : undefined);
 		const unsent = await this.recordUnplaced(harness, conv, queued, context);
-		const cancelledApprovals = await this.#cancelPendingApprovals(harness, conv.id, context);
+		// Everything the kernel actually cancelled: this conversation and the subagent children whose carrier task ended
+		// (foreground children always; background ones only with "stop all"). A kept background child keeps its approvals.
+		const closed = await closeDeadWork(harness, conversationId, { stopped: true }, context);
+		const cancelledApprovals = closed.cancelledApprovals;
 		await this.#flagCutOffEffects(harness, conv.id, context);
 		// A run aborted during a tool call made no model request: tell the usage ledger (group E) to re-import.
 		if (this.ctx.services.has("usage")) (this.ctx.services.get("usage") as { markDirty?: (s: string, c: number) => void }).markDirty?.(spaceId, conversationId);
@@ -933,24 +937,6 @@ export class Runtime implements RuntimeService {
 				it.updatedAt = nowIso();
 				it.history = [...(it.history ?? []), "stopped"];
 			}
-		}, context);
-	}
-
-	/** After a stop no tool call of this conversation is waiting any more: its pending approvals are settled as cancelled (no decider, nothing executed). */
-	async #cancelPendingApprovals(harness: Harness, conversationId: ConversationId, context: Context): Promise<number> {
-		const pending = Object.values((await harness.snapshot(ApprovalsDoc, conversationId, context))?.items ?? {}).filter((a) => a.status === "pending");
-		if (!pending.length) return 0;
-		return harness.commit(async (tx) => {
-			const d = await tx.doc(ApprovalsDoc, conversationId);
-			let n = 0;
-			for (const it of Object.values(d.items)) {
-				if (it.status !== "pending") continue;
-				it.status = "cancelled";
-				it.decidedAt = nowIso();
-				it.note = "已随「停止」取消：这一步没有执行";
-				n++;
-			}
-			return n;
 		}, context);
 	}
 
@@ -1184,8 +1170,17 @@ export class Runtime implements RuntimeService {
 	async docs(harness: Harness, conversationId: number, context: Context): Promise<{ approvals: ApprovalDTO[]; effects: EffectDTO[]; subagents: SubagentDTO[] }> {
 		const id = cid(conversationId);
 		const [ap, ef, team] = await Promise.all([harness.snapshot(ApprovalsDoc, id, context), harness.snapshot(EffectsDoc, id, context), harness.snapshot(TeamDoc, id, context)]);
-		const approvals = Object.values(ap?.items ?? {}) as ApprovalDTO[];
-		const subagents = Object.values(team?.delegations ?? {}) as SubagentDTO[];
+		let approvals = Object.values(ap?.items ?? {}) as ApprovalDTO[];
+		let subagents = Object.values(team?.delegations ?? {}) as SubagentDTO[];
+		// Recovery reconcile: an approval/delegation whose carrier task ended (stop, restart limit, crash) is closed here.
+		if (approvals.some((a) => a.status === "pending") || subagents.some((s) => s.status === "running")) {
+			const closed = await closeDeadWork(harness, conversationId, { stopped: false }, context).catch(() => undefined);
+			if (closed && (closed.cancelledApprovals || closed.endedDelegations)) {
+				const [ap2, team2] = await Promise.all([harness.snapshot(ApprovalsDoc, id, context), harness.snapshot(TeamDoc, id, context)]);
+				approvals = Object.values(ap2?.items ?? {}) as ApprovalDTO[];
+				subagents = Object.values(team2?.delegations ?? {}) as SubagentDTO[];
+			}
+		}
 		// Surface approvals that subagent children are waiting on (the user decides them from the parent's view).
 		for (const s of subagents) {
 			if (s.childConversationId === undefined || s.status !== "running") continue;

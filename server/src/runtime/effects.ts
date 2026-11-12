@@ -11,11 +11,12 @@
 import { createHash } from "node:crypto";
 import type { Context } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/pi-ai";
-import { LiveDoc, type ConversationId, type Harness } from "@earendil-works/pi-durable";
+import { DEFAULT_RESTART_LIMIT, LiveDoc, defineExtension, defineTask, type ConversationId, type Extension, type Harness } from "@earendil-works/pi-durable";
 import type { ApprovalDecision, ApprovalRequest, EffectOutcome, EffectsApi, Principal, ToolApiLike } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import type { ApprovalDTO, EffectDTO } from "../../../shared/chat.ts";
-import { ApprovalsDoc, EffectsDoc, TeamDoc } from "./docs.ts";
+import { ApprovalsDoc, EffectsDoc, InputEntry, TeamDoc } from "./docs.ts";
+import { closeDeadWork, taskLive } from "./lifecycle.ts";
 import type { Runtime } from "./service.ts";
 
 /** Throw from `perform` when the target definitively refused (nothing happened) — recorded as `failed`, not reconciliation. */
@@ -25,6 +26,29 @@ export class EffectRejected extends Error {
 
 export function stableId(prefix: string, ...parts: (string | number)[]): string {
 	return `${prefix}_${createHash("sha256").update(parts.join("\u0000")).digest("hex").slice(0, 20)}`;
+}
+
+/**
+ * pi-durable 1.5.0 counts every crash that finds a tool call `running` against `settings.restartLimit` and a tool call
+ * cannot park (no checkpoint of its own), so an in-process approval wait would eventually be ended by `restart_limit`.
+ * After this many crashes the call stops waiting in-process (see `ApprovalParked`) while it still has attempts to spare.
+ */
+export const PARK_AFTER_RESTARTS = Math.max(1, DEFAULT_RESTART_LIMIT - 2);
+/** How often the durable watcher re-reads a parked approval (a sleeping task holds no invocation in between). */
+export const APPROVAL_POLL_MS = 2000;
+
+/**
+ * Thrown by `requestApproval` when the wait was handed to a durable watcher task (the call must end now, without
+ * executing anything). The tool result tells the model what happens next; the watcher posts the decision as a follow-up
+ * input, and the re-issued call consumes the recorded decision instead of asking again.
+ */
+export class ApprovalParked extends Error {
+	readonly code = "approval_parked";
+	readonly approvalId: string;
+	constructor(approvalId: string, title: string) {
+		super(`「${title}」正在等待用户审批（${approvalId}），本次调用没有执行任何操作。审批结果会以新消息通知你；收到批准后，请用完全相同的参数重新调用该工具（已批准的审批不会再次询问）。现在请先告诉用户需要审批，不要重试。`);
+		this.approvalId = approvalId;
+	}
 }
 
 const plain = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -42,9 +66,30 @@ export class Effects implements EffectsApi {
 	readonly #rt: Runtime;
 	/** Hook for tests / ops: called right before perform() (after dispatching is durable). */
 	onDispatch?: (effectId: string) => void;
+	/** The durable watcher task of parked approvals; set when the approvals extension is created. */
+	watchTask?: ReturnType<typeof createApprovalWatch>;
 
 	constructor(rt: Runtime) {
 		this.#rt = rt;
+	}
+
+	/**
+	 * Hand a pending approval's wait to a durable watcher task (its own checkpoints; it sleeps between polls, so it is
+	 * never a running tool call). Created in the same commit that marks the approval parked.
+	 */
+	async #park(api: ToolApiLike, approvalId: string, title: string, requestedFor: string | undefined, context: Context): Promise<void> {
+		const actor = await this.#rt.actorForTool(api, "", context);
+		const watch = this.watchTask;
+		if (!watch) throw new Error("approval watcher task is not registered");
+		await api.commit(async (tx) => {
+			const d = await tx.doc(ApprovalsDoc, api.conversationId);
+			const it = d.items[approvalId];
+			if (!it || it.status !== "pending" || (it.deferred && it.watchTaskId !== undefined)) return;
+			const watcher = await tx.createTask(watch, { approvalId, userId: requestedFor ?? actor.principal.userId, orgId: actor.principal.orgId, title, ...(it.toolName ? { toolName: it.toolName } : {}) }, { ownership: { kind: "conversation" }, background: true });
+			it.deferred = true;
+			it.watchTaskId = watcher as number;
+			it.parkedAt = nowIso();
+		}, context);
 	}
 
 	/** Best effort audit (group E's `audit` service); never breaks the tool or the route. */
@@ -76,14 +121,27 @@ export class Effects implements EffectsApi {
 			// The principal lost access: refuse to even ask.
 			throw err;
 		}
-		const existing = await api.commit(async (tx) => {
+		const fingerprint = stableId("fp", conversationId as number, toolName ?? "", request.title, request.summary, JSON.stringify(request.detail ?? null), request.risk);
+		const found = await api.commit(async (tx) => {
 			const d = await tx.doc(ApprovalsDoc, conversationId);
 			const cur = d.items[approvalId];
-			if (cur) return plain(cur) as ApprovalDTO;
-			const item: ApprovalDTO = {
+			if (cur) return { kind: "own" as const, item: plain(cur) as ApprovalDTO & Record<string, any> };
+			// A parked approval for this very request: a decided one is consumed once by the re-issued call; a still pending one is awaited, not asked twice.
+			const same = Object.values(d.items).filter((x) => x.deferred && x.fingerprint === fingerprint);
+			const grant = same.find((x) => (x.status === "approved" || x.status === "rejected") && !x.consumedAt);
+			if (grant) {
+				grant.consumedAt = nowIso();
+				grant.consumedByCallId = api.callId;
+				return { kind: "grant" as const, item: plain(grant) as ApprovalDTO & Record<string, any> };
+			}
+			const waiting = same.find((x) => x.status === "pending");
+			if (waiting) return { kind: "parked" as const, item: plain(waiting) as ApprovalDTO & Record<string, any> };
+			const item: ApprovalDTO & Record<string, any> = {
 				approvalId,
 				conversationId: conversationId as number,
 				callId: api.callId,
+				taskId: api.taskId as number,
+				fingerprint,
 				...(toolName ? { toolName } : {}),
 				title: request.title,
 				summary: request.summary,
@@ -95,9 +153,19 @@ export class Effects implements EffectsApi {
 				...(request.approverUserIds?.length ? { approverUserIds: [...request.approverUserIds] } : {}),
 			};
 			d.items[approvalId] = item as any;
-			return undefined;
+			return { kind: "created" as const, item: undefined };
 		}, context);
+		if (found.kind === "grant") return decisionOf(found.item);
+		if (found.kind === "parked") throw new ApprovalParked(found.item.approvalId, found.item.title);
+		const existing = found.item;
+		if (existing && existing.status === "cancelled") throw new Error(`审批已取消（${existing.note ?? "调用已结束"}）`);
 		if (existing && existing.status !== "pending") return decisionOf(existing);
+		// Cut off often enough that the kernel would soon end this call: hand the wait to a durable task instead.
+		const self = await api.getTask(api.taskId, context);
+		if ((self?.restarts ?? 0) >= PARK_AFTER_RESTARTS) {
+			await this.#park(api, approvalId, request.title, requestedFor, context);
+			throw new ApprovalParked(approvalId, request.title);
+		}
 
 		const watch = await api.watchDoc(ApprovalsDoc, conversationId, context);
 		if (!watch) throw new Error("approvals document missing");
@@ -213,10 +281,20 @@ export class Effects implements EffectsApi {
 		const { harness } = await this.#rt.access(p, "write", spaceId, conversationId, context);
 		const target = await this.#locate(harness, conversationId, approvalId, context);
 		if (target === undefined) throw new HttpError(404, "approval_not_found", "审批不存在");
+		// The call this approval belongs to must still exist: never approve a call that was stopped, cut off or has ended.
+		const snap = (await harness.snapshot(ApprovalsDoc, target, context))?.items[approvalId];
+		if (snap?.status === "pending") {
+			const carrier = snap.deferred ? snap.watchTaskId : snap.taskId;
+			if (carrier !== undefined && !(await taskLive(harness, carrier, context))) {
+				await closeDeadWork(harness, conversationId, { stopped: false }, context);
+				throw new HttpError(409, "approval_task_ended", "该审批对应的调用已结束（已停止或已中断），不能再批准或拒绝；这一步没有执行", { status: "cancelled" });
+			}
+		}
 		const decided = await harness.commit(async (tx) => {
 			const d = await tx.doc(ApprovalsDoc, target);
 			const it = d.items[approvalId]!;
-			if (it.status !== "pending") throw new HttpError(409, "already_decided", "该审批已处理", { status: it.status });
+			if (it.status === "cancelled") throw new HttpError(409, "approval_cancelled", "该审批已取消（对应的调用已结束），这一步没有执行", { status: it.status });
+				if (it.status !== "pending") throw new HttpError(409, "already_decided", "该审批已处理", { status: it.status });
 			if (it.approverUserIds?.length && !it.approverUserIds.includes(p.userId)) throw new HttpError(403, "not_approver", "你不是该审批的指定审批人");
 			it.status = body.decision;
 			it.decidedBy = p.userId;
@@ -250,4 +328,55 @@ export class Effects implements EffectsApi {
 
 function decisionOf(a: ApprovalDTO): ApprovalDecision {
 	return { decision: a.status === "approved" ? "approved" : "rejected", by: a.decidedBy ?? "", at: a.decidedAt ?? "", ...(a.note ? { note: a.note } : {}) };
+}
+
+// ------------------------------------------------------------------ durable watcher of parked approvals
+
+type WatchInput = { approvalId: string; userId: string; orgId: string; title: string; toolName?: string };
+type WatchState = { phase: "watch" } | { phase: "notify"; status: "approved" | "rejected" };
+
+/**
+ * One durable task per parked approval: poll the approval document with a checkpoint and a sleep (no invocation is held
+ * in between, and each sleep is progress, so crashes never add up to the restart limit), then post the decision to the
+ * conversation as a follow-up input (request id derived from the task: restart-safe). A cancelled approval (stop,
+ * ended call) just ends the task.
+ */
+function createApprovalWatch(rt: Runtime) {
+	return defineTask<WatchInput, WatchState, null>({
+		name: "wr.approval-watch",
+		version: 1,
+		initial: () => ({ phase: "watch" }),
+		phases: {
+			watch: async (task, runtime, ctx) => {
+				const it = (await runtime.snapshot(ApprovalsDoc, runtime.conversationId, ctx))?.items[task.input.approvalId];
+				if (!it || it.status === "cancelled") return runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), ctx);
+				if (it.status === "pending") return runtime.sleepUntil(runtime.now() + APPROVAL_POLL_MS, { phase: "watch" }, ctx);
+				const status = it.status === "approved" ? "approved" : "rejected";
+				return runtime.commit(() => ({ status: "running", checkpoint: { phase: "notify", status } }), ctx);
+			},
+			notify: async (task, runtime, ctx) => {
+				const { approvalId, title, toolName, userId, orgId } = task.input;
+				const it = (await runtime.snapshot(ApprovalsDoc, runtime.conversationId, ctx))?.items[approvalId];
+				const principal = await rt.ctx.services.get("identity").principalFor(userId, orgId);
+				if (it && principal) {
+					const note = it.note ? `（${String(it.note).slice(0, 300)}）` : "";
+					const text =
+						task.state.checkpoint.status === "approved"
+							? `[审批结果] 用户已批准「${title}」（${approvalId}）${note}。请用与之前完全相同的参数重新调用${toolName ? `工具 ${toolName}` : "该工具"}来完成这一步；该审批已记录，不会再次询问。`
+							: `[审批结果] 用户拒绝了「${title}」（${approvalId}）${note}。这一步不会执行，请据此调整方案或告知用户。`;
+					const requestId = `approval-resume:${task.id}`;
+					const conv = (await runtime.conversation(runtime.conversationId, ctx))!;
+					await conv.submit({ type: "input", content: text, whenBusy: "followUp", requestId, entry: { kind: InputEntry.kind, data: { text, userId, orgId, requestId, via: { kind: "approval_resume", id: approvalId } } as any } }, ctx);
+				}
+				await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), ctx);
+			},
+		},
+		abort: (_t, runtime, ctx) => runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), ctx),
+	});
+}
+
+export function createApprovalExtension(rt: Runtime, effects: Effects): Extension {
+	const Watch = createApprovalWatch(rt);
+	effects.watchTask = Watch;
+	return defineExtension({ name: "wr-approvals", tasks: [Watch] });
 }

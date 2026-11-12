@@ -703,6 +703,11 @@ export class McpManager {
 			log.finish(recId, { status: result.isError ? "error" : "ok", error: result.isError ? text.slice(0, 500) : undefined, result: text.slice(0, 300), secrets });
 			return { output: output.length ? output : [{ type: "text", text: "（无输出）" }], isError: result.isError, details: { connectorId: serverId, connector: row.name, tool, policy: effective } };
 		} catch (e: any) {
+			// The approval wait was handed to a durable watcher (the call must end without executing): not a failure of the connector.
+			if (e?.code === "approval_parked") {
+				log.finish(recId, { status: "denied", error: "等待审批（已转入后台等待），未执行", secrets });
+				throw e;
+			}
 			const msg = redactText(String(e?.message ?? e), secrets);
 			log.finish(recId, { status: "error", error: msg, secrets });
 			return { output: [{ type: "text", text: `调用连接「${row.name}」的 ${tool} 失败：${msg}` }], isError: true, details: { connectorId: serverId, tool, status: this.row(serverId)?.status ?? "error" } };

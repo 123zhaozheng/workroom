@@ -90,7 +90,7 @@ export interface UserEntryDTO extends EntryBase {
 	readonly attachments?: readonly AttachmentRef[];
 	readonly knowledgeRefs?: readonly KnowledgeRef[];
 	/** Set for inputs written by the runtime itself (subagent report, automation). */
-	readonly via?: { readonly kind: "automation" | "subagent_report" | "delegate"; readonly id?: string };
+	readonly via?: { readonly kind: "automation" | "subagent_report" | "delegate" | "approval_resume"; readonly id?: string };
 	/**
 	 * Outcome of the submission this message belongs to (M02-C), re-read from pi-durable on every load:
 	 * applied (run working on it) · done · unanswered (+reason: aborted, model_error, turn_limit, …) · withdrawn.
@@ -366,6 +366,10 @@ export interface ApprovalDTO {
 	readonly approvalId: string;
 	readonly conversationId: number;
 	readonly callId: string;
+	/** The task waiting for this decision (the tool call; once parked, see `deferred`, its durable watcher). Decisions are refused once it is no longer live. */
+	readonly taskId?: number;
+	/** The call stopped waiting in-process (cut off repeatedly); a durable watcher posts the decision as a follow-up input. */
+	readonly deferred?: boolean;
 	readonly toolName?: string;
 	readonly title: string;
 	/** Exactly what will happen if approved. */
