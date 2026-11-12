@@ -75,13 +75,13 @@ async function actorFor(t: TestApp, u: { me: any }, sp: string, cid: number, cal
 	return { principal, space: t.app.ctx.services.get("identity").space(sp)!, conversationId: cid, taskId: 1, callId };
 }
 
-test("happy path: agent writes the skill with sandbox_write_file → approval with the frozen detail → approve → personal skill, installed, usable; later workspace edits change nothing", async () => {
+test("happy path: agent writes the skill with write (/work) → approval with the frozen detail → approve → personal skill, installed, usable; later workspace edits change nothing", async () => {
 	const { t, alice } = await setup();
 	try {
 		const { sp, cid } = await newConv(t, alice.token);
-		await send(t, alice.token, sp, cid, `[[call sandbox_write_file ${JSON.stringify({ path: "weekly/SKILL.md", content: skillMd() })}]]`);
+		await send(t, alice.token, sp, cid, `[[call write ${JSON.stringify({ path: "/work/weekly/SKILL.md", content: skillMd() })}]]`);
 		await idle(t, alice.token, sp, cid, "write SKILL.md");
-		await send(t, alice.token, sp, cid, `[[call sandbox_write_file ${JSON.stringify({ path: "weekly/references/format.md", content: "# 格式\n三段式。\n" })}]]`);
+		await send(t, alice.token, sp, cid, `[[call write ${JSON.stringify({ path: "/work/weekly/references/format.md", content: "# 格式\n三段式。\n" })}]]`);
 		await idle(t, alice.token, sp, cid, "write reference");
 
 		await submit(t, alice.token, sp, cid, "/work/weekly");
@@ -808,7 +808,7 @@ test("end to end (the user's bug): checkout the org skill → edit → bump vers
 		assert.match(co.text, /保存为该技能的新版本并提交审核/);
 		// edit through the normal workspace tool, bump the version
 		const edited = skillMd({ version: "1.0.1", body: "# 周报\n按「本周完成 / 下周计划 / 风险」三段写，并附上数据来源。" });
-		await send(t, alice.token, sp, cid, `[[call sandbox_write_file ${JSON.stringify({ path: "weekly-report/SKILL.md", content: edited })}]]`);
+		await send(t, alice.token, sp, cid, `[[call write ${JSON.stringify({ path: "/work/weekly-report/SKILL.md", content: edited })}]]`);
 		await idle(t, alice.token, sp, cid, "edit");
 		await submit(t, alice.token, sp, cid, "weekly-report");
 		const ap = await pendingApproval(t, alice.token, sp, cid);

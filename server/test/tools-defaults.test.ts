@@ -32,7 +32,7 @@ async function results(t: TestApp, c: Conv, name: string) {
 	return items.filter((e) => e.kind === "pi.tool-result" && e.model?.[0]?.toolName === name).map((e) => ({ text: e.model[0].content.map((x: any) => x.text ?? "").join(""), isError: !!e.model[0].isError }));
 }
 
-test("default conversation offers sandbox/codemode/browser/jobs/files tools; they run with per-call ACL; org policy switches groups off", { skip: probeIsolation().ok ? false : probeIsolation().detail }, async () => {
+test("default conversation offers exec/codemode/browser/jobs/unified file tools; they run with per-call ACL; org policy switches groups off", { skip: probeIsolation().ok ? false : probeIsolation().detail }, async () => {
 	const t = await startTestApp();
 	try {
 		const admin = await t.user("defaults@example.com");
@@ -40,15 +40,16 @@ test("default conversation offers sandbox/codemode/browser/jobs/files tools; the
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: member.token, json: { title: "默认工具" } })).conversation;
 		const detail = await t.json("GET", base(c), { token: member.token });
 		const offered: string[] = detail.agent.tools;
-		for (const name of ["sandbox_exec", "sandbox_publish", "codemode", "browse", "browser_open", "browser_act", "job_start", "job_status", "file_create", "file_read", "skill", "tool_search"]) assert.ok(offered.includes(name), `${name} not offered: ${offered.join(",")}`);
+		for (const name of ["exec", "present_file", "read", "write", "ls", "codemode", "browse", "browser_open", "browser_act", "job_start", "job_status", "tool_search"]) assert.ok(offered.includes(name), `${name} not offered: ${offered.join(",")}`);
+		for (const name of ["sandbox_exec", "sandbox_publish", "file_create", "file_read", "code_run", "skill"]) assert.ok(!offered.includes(name), `round 14: ${name} is replaced in new conversations`);
 		assert.ok(!offered.some((n) => n.startsWith("mcp__")), "connector tools stay deferred");
 		assert.ok(!offered.some((n) => /^skill_(list|load|read|run)$/.test(n)), "legacy skill_* tools are deferred, not offered");
 
-		await say(t, member.token, c, `[[call sandbox_exec {"language":"python","code":"print(6*7)"}]]`);
-		assert.match((await results(t, c, "sandbox_exec"))[0]!.text, /stdout:\n42/);
+		await say(t, member.token, c, `[[call exec {"command":"python3 -c 'print(6*7)'"}]]`);
+		assert.match((await results(t, c, "exec"))[0]!.text, /\b42\b/);
 		const runs = await t.json("GET", `/api/sandbox/${c.spaceId}/runs?conversationId=${c.conversationId}`, { token: member.token });
 		assert.equal(runs.runs[0].stdout.trim(), "42"); // the work panel's terminal data is real
-		await say(t, member.token, c, `[[call codemode {"code":"const r = await tools.sandbox_exec({language:'shell', code:'echo via-codemode'}); console.log(r.output ?? r)"}]]`);
+		await say(t, member.token, c, `[[call codemode {"code":"const r = await tools.exec({command:'echo via-codemode'}); console.log(r.output ?? r)"}]]`);
 		assert.match((await results(t, c, "codemode"))[0]!.text, /via-codemode/);
 
 		// Policy: members cannot change it; the admin switches the sandbox group off → model-issued and nested calls blocked.
@@ -56,11 +57,11 @@ test("default conversation offers sandbox/codemode/browser/jobs/files tools; the
 		const pol = await t.json("PUT", "/api/tools/policy", { token: admin.token, json: { groups: { sandbox: false } } });
 		assert.equal(pol.groups.find((g: any) => g.id === "sandbox").enabled, false);
 		assert.equal((await t.json("GET", "/api/tools/capabilities", { token: member.token })).sandbox.status, "disabled_by_admin");
-		await say(t, member.token, c, `[[call sandbox_exec {"language":"shell","code":"echo should-not-run"}]]`);
-		const blocked = (await results(t, c, "sandbox_exec"))[1]!;
+		await say(t, member.token, c, `[[call exec {"command":"echo should-not-run"}]]`);
+		const blocked = (await results(t, c, "exec"))[1]!;
 		assert.equal(blocked.isError, true);
 		assert.match(blocked.text, /组织管理员已关闭/);
-		await say(t, member.token, c, `[[call codemode {"code":"try { await tools.sandbox_exec({language:'shell', code:'echo nested'}); console.log('ran') } catch (e) { console.log('nested blocked: ' + e) }"}]]`);
+		await say(t, member.token, c, `[[call codemode {"code":"try { await tools.exec({command:'echo nested'}); console.log('ran') } catch (e) { console.log('nested blocked: ' + e) }"}]]`);
 		const nested = (await results(t, c, "codemode"))[1]!;
 		assert.match(nested.text, /nested blocked/);
 		assert.doesNotMatch(nested.text, /\bran\b/);
@@ -70,7 +71,7 @@ test("default conversation offers sandbox/codemode/browser/jobs/files tools; the
 
 		// Per-call ACL: another org's user cannot drive this conversation at all.
 		const other = await t.user("defaults-other@example.com");
-		await t.json("POST", `${base(c)}/messages`, { token: other.token, json: { text: "[[call sandbox_exec {\"language\":\"shell\",\"code\":\"id\"}]]", requestId: randomUUID() }, expect: 403 });
+		await t.json("POST", `${base(c)}/messages`, { token: other.token, json: { text: "[[call exec {\"command\":\"id\"}]]", requestId: randomUUID() }, expect: 403 });
 	} finally {
 		await t.dispose();
 	}

@@ -10,6 +10,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
 import { probeIsolation } from "../src/tools/sandbox.ts";
 import { CODE_RUN_REMOVED } from "../src/vfs/legacy-code-run.ts";
+import { oldConversation } from "./helpers/legacy-conversation.ts";
 
 type Conv = { spaceId: string; conversationId: number };
 const base = (c: Conv) => `/api/conversations/${c.spaceId}/${c.conversationId}`;
@@ -30,19 +31,6 @@ async function results(t: TestApp, c: Conv, name: string) {
 	const conv = (await h.conversation(c.conversationId as any, BACKGROUND_CONTEXT))!;
 	const items = (await conv.entries({ order: "ascending" }, 500, undefined, BACKGROUND_CONTEXT)).items as any[];
 	return items.filter((e) => e.kind === "pi.tool-result" && e.model?.[0]?.toolName === name).map((e) => ({ text: e.model[0].content.map((x: any) => x.text ?? "").join(""), isError: !!e.model[0].isError }));
-}
-
-/** An "old" conversation: created without the round 14 removal of the legacy extensions/tools, as conversations of earlier rounds were. */
-async function oldConversation(t: TestApp, userId: string, orgId: string, title: string): Promise<Conv> {
-	const rt = t.app.ctx.services.get("runtime") as any;
-	const space = t.app.ctx.services.get("identity").personalSpace(userId, orgId);
-	const principal = { userId, orgId } as any;
-	const model = await rt.defaultModel(principal);
-	const harness = await rt.manager.get(space.id);
-	const conv = await harness.createConversation({ ownership: { kind: "ownerless" }, agent: { model: { provider: model.provider, modelId: model.modelId } } }, BACKGROUND_CONTEXT);
-	const now = new Date().toISOString();
-	t.app.ctx.db.run("INSERT INTO rt_conversations (space_id, conversation_id, created_by, title, project_id, kind, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'chat', 0, ?, ?)", space.id, conv.id as number, userId, title, space.projectId ?? null, now, now);
-	return { spaceId: space.id, conversationId: conv.id as number };
 }
 
 const skip = probeIsolation().ok ? false : probeIsolation().detail;

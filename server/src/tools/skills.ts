@@ -581,8 +581,8 @@ export class Skills {
 		const tools = [...new Set(ok.map((c) => c.tool as string))].filter((t) => !t.startsWith("skill_"));
 		const perms = new Set<string>();
 		for (const t of tools) {
-			if (t === "sandbox_exec") perms.add("sandbox.exec");
-			else if (["file_create", "file_revise", "sandbox_publish"].includes(t)) perms.add("file.write");
+			if (t === "sandbox_exec" || t === "exec") perms.add("sandbox.exec");
+			else if (["file_create", "file_revise", "sandbox_publish", "present_file"].includes(t)) perms.add("file.write");
 			else if (t.startsWith("mcp__") || t === "browse") perms.add(`tool:${t}`);
 		}
 		const lastRun = runs[runs.length - 1];
@@ -659,8 +659,8 @@ export class Skills {
 		const missing = tools.filter((t) => !known.has(t));
 		add("所需工具可用", missing.length === 0, missing.length ? `缺少：${missing.join(", ")}` : tools.join(", ") || "（无）");
 		const usesTool = (t: string) => tools.includes(t);
-		if (usesTool("sandbox_exec") || r.kind === "executable") add("声明 sandbox.exec", perms.includes("sandbox.exec"));
-		if (usesTool("file_create") || usesTool("file_revise")) add("声明 file.write", perms.includes("file.write"));
+		if (usesTool("sandbox_exec") || usesTool("exec") || r.kind === "executable") add("声明 sandbox.exec", perms.includes("sandbox.exec"));
+		if (usesTool("file_create") || usesTool("file_revise") || usesTool("present_file")) add("声明 file.write", perms.includes("file.write"));
 		// Round 9: a declared `network` permission stays a user grant item; whether the sandbox can reach a network depends on its driver / provider (no Workroom switch).
 		if (perms.includes("network")) add("联网权限已声明", true, "使用者需单独授权；沙箱能否联网取决于所用的执行环境");
 		const sample = r.sample ? JSON.parse(r.sample) : { input: "" };

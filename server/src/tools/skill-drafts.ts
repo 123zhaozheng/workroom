@@ -580,7 +580,7 @@ export class SkillDrafts {
 	// ------------------------------------------------------------ checkout (current files of an accessible skill → /work/<dir>)
 	/**
 	 * Write the current approved version of a skill the user can read into the conversation workspace through the same host write path
-	 * as sandbox_write_file (workspace rules, quota, no symlinks), so the agent can edit it and submit_draft the result as a new version.
+	 * as the `write` tool on /work (workspace rules, quota, no symlinks), so the agent can edit it and submit_draft the result as a new version.
 	 * An existing non-empty directory is only reused when it is an UNMODIFIED earlier checkout of the same skill; anything else is refused.
 	 */
 	async checkout(actor: ToolActor, input: { name?: string; skillId?: string; dir?: string }): Promise<{ text: string; details: Record<string, string | number | boolean> }> {
@@ -659,9 +659,9 @@ export class SkillDrafts {
 			const canSubmit = writable && (skill.scope === "personal" || (await this.#market.canSubmitTo(p, skill.scope, skill.scope_ref)));
 			const where = skill.scope === "personal" ? "个人技能" : `市场技能（${skill.scope === "org" ? "组织" : skill.scope === "department" ? "部门" : "项目"}）`;
 			const next = canSubmit
-				? `下一步：用 sandbox_read_file / sandbox_write_file 修改 ${W}/${rel} 里的文件；把 SKILL.md 里的 version 提高到大于 ${sem ?? "现有版本"}${sem ? `（例如 ${bumpPatch(sem)}）` : ""}，name 保持 ${slug} 不变；然后调用 skill_manage { action: "submit_draft", dir: "${rel}" }。用户确认后会保存为该技能的新版本${skill.scope === "personal" ? "" : "并提交审核，通过审核之前使用者仍用旧版本"}。`
+				? `下一步：用 read / edit / write 修改 /work/${rel} 里的文件（较早的会话里对应 sandbox_read_file / sandbox_write_file，路径 ${W}/${rel}）；把 SKILL.md 里的 version 提高到大于 ${sem ?? "现有版本"}${sem ? `（例如 ${bumpPatch(sem)}）` : ""}，name 保持 ${slug} 不变；然后调用 skill_manage { action: "submit_draft", dir: "${rel}" }。用户确认后会保存为该技能的新版本${skill.scope === "personal" ? "" : "并提交审核，通过审核之前使用者仍用旧版本"}。`
 				: `注意：用户没有更新这个${where}的权限（只有作者或市场管理员可以）。这些文件只能作为参考；若要基于它做自己的版本，把 SKILL.md 的 name 改成 ${this.#freeCopyName(p, slug)}（或别的名称）再 submit_draft，会保存为用户的个人副本，原技能不受影响。`;
-			const text = `已把${where}「${skill.name}」${sem ? ` ${sem}` : ""}（版本 ${v.version_no}）的 ${files.length} 个文件写入 ${W}/${rel}：${files.map((f) => f.path).join("、")}。${stale.length ? `（已移除旧检出里不再存在的文件：${stale.join("、")}）` : ""}\n${next}`;
+			const text = `已把${where}「${skill.name}」${sem ? ` ${sem}` : ""}（版本 ${v.version_no}）的 ${files.length} 个文件写入 /work/${rel}：${files.map((f) => f.path).join("、")}。${stale.length ? `（已移除旧检出里不再存在的文件：${stale.join("、")}）` : ""}\n${next}`;
 			return { text, details: { skillId: skill.id, versionNo: v.version_no, dir: rel, files: files.length, canUpdate: canSubmit } };
 		});
 	}
@@ -687,8 +687,8 @@ export function createSkillManageExtension(ctx: AppContext, opts: { resolveActor
 		name: "skill_manage",
 		description:
 			"Create a skill, or update an existing one, from files in the conversation workspace. Workflow: (1) to UPDATE an installed skill, call action \"checkout\" with its `name` (name or slug) or `skillId` and optionally `dir` (default: the slug) — " +
-			"it writes the skill's current approved files into <dir> under the sandbox working directory (see the system prompt) without sandbox_exec (do not copy the read-only skills directory by hand); to CREATE a new one, just start writing files. (2) Edit or write SKILL.md (frontmatter: name, description, version) and any scripts/references in /work/<dir> " +
-			"with sandbox_write_file; keep `name` unchanged when updating, and raise `version` above the skill's current highest version (e.g. 1.0.0 → 1.0.1) — an unchanged version or identical content is rejected immediately. " +
+			"it writes the skill's current approved files into /work/<dir> (do not copy the read-only skills directory by hand); to CREATE a new one, just start writing files. (2) Edit or write SKILL.md (frontmatter: name, description, version) and any scripts/references in /work/<dir> " +
+			"with write / edit (sandbox_write_file in older conversations); keep `name` unchanged when updating, and raise `version` above the skill's current highest version (e.g. 1.0.0 → 1.0.1) — an unchanged version or identical content is rejected immediately. " +
 			"(3) call action \"submit_draft\" with that relative dir. The package is checked and frozen, then the user is asked to confirm; only after they confirm it is saved: a new personal skill, or a NEW VERSION of the existing skill of that name " +
 			"(your personal skill, or a market/org skill the user is author/admin of — its new version is submitted for review and others keep the old version until approved). Nothing is run. " +
 			"If the name belongs to a market skill the user may not update, submit_draft refuses at once (no approval) and tells you to choose another name (e.g. <name>-custom, saved as a personal copy) or ask the author. " +

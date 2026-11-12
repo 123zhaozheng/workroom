@@ -387,21 +387,21 @@ test("FAKE · log loop: an exec marks the fired prewarm (and the message that le
 	}
 });
 
-test("FAKE · a real sandbox_exec tool call marks the log (end to end through the chat), and the first call still creates the sandbox on demand (tier c)", async () => {
+test("FAKE · a real exec tool call marks the log (end to end through the chat), and the first call still creates the sandbox on demand (tier c)", async () => {
 	process.env.WORKROOM_FIXTURE_TOOLS = "1";
 	const h = await setup();
 	try {
 		// off: only the exec creates the sandbox
 		await h.t.json("PUT", "/api/sandbox/prewarm", { token: h.owner.token, json: { enabled: false } });
 		const c1 = await h.conv();
-		await h.send(c1, '[[call sandbox_exec {"language":"shell","code":"echo hi"}]]');
+		await h.send(c1, '[[call exec {"command":"echo hi"}]]');
 		await waitFor(async () => (h.fake.created === 1 ? true : undefined), { timeoutMs: 20_000, what: "exec created the sandbox" });
 		await h.answered(c1);
 		assert.deepEqual(h.triggers, [], "no prepare call: the driver created it on the first tool call");
 		// on: intent message prewarms, the exec in the same conversation then marks the log row used
 		await h.t.json("PUT", "/api/sandbox/prewarm", { token: h.owner.token, json: { enabled: true } });
 		const c2 = await h.conv();
-		await h.send(c2, '帮我运行一下这个命令 [[call sandbox_exec {"language":"shell","code":"echo ok"}]]');
+		await h.send(c2, '帮我运行一下这个命令 [[call exec {"command":"echo ok"}]]');
 		await waitFor(async () => (logRows(h.t).some((r) => r.conversation_id === c2.conversationId && r.used_at) ? true : undefined), { timeoutMs: 20_000, what: "exec marked the prewarm row" });
 		await h.idle();
 		assert.equal(h.fake.created, 2, "one sandbox per conversation: prewarm and exec shared it");
