@@ -14,6 +14,7 @@ import type { Sandbox } from "../tools/sandbox.ts";
 import { storeLabel } from "../tools/sandbox/stores.ts";
 import { closeDeadWork } from "./lifecycle.ts";
 import { LEGACY_EXTENSIONS, LEGACY_TOOLS, LEGACY_TOOL_MAP } from "../vfs/legacy.ts";
+import { ONDEMAND_TOOLS } from "../tools/ondemand.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
@@ -151,6 +152,12 @@ export class Runtime implements RuntimeService {
 		return [...want].flatMap((n) => (byName.has(n) ? [byName.get(n)!] : []));
 	}
 
+	/** Round 16: tools a NEW default conversation starts without; tool_search loads them (see tools/ondemand.ts). */
+	#onDemandRemoval(): { remove: any[] } {
+		const byName = new Map(this.manager.registry.snapshot().tools().map((t) => [t.tool.name, t.tool] as const));
+		return { remove: ONDEMAND_TOOLS.flatMap((n) => (byName.has(n) ? [byName.get(n)!] : [])) };
+	}
+
 	/**
 	 * Round 14: what a NEW conversation's agent leaves out — the extensions and tools replaced by the unified file/exec tools (they stay
 	 * installed for older conversations and their persisted tasks).
@@ -202,6 +209,9 @@ export class Runtime implements RuntimeService {
 					// model is offered AND what nested calls (Code Mode) can reach. Unset = product default; [] = no tools; a list = exactly those.
 					...(this.#legacyRemoval().extensions ? { extensions: this.#legacyRemoval().extensions } : {}),
 					...(allowed ? { tools: allowed } : this.#legacyRemoval().tools ? { tools: this.#legacyRemoval().tools } : {}),
+					// Round 16: an allowlist offers exactly its tools (on-demand ones included); the default agent starts without the on-demand tools
+					// (tool_search loads them, and they stay offered in this conversation).
+					modelTools: allowed ?? this.#onDemandRemoval(),
 				},
 				init: async (tx, id) => {
 					await tx.appendEntry(StartEntry, id, { data: { createdBy: principal.userId, at: nowIso() } });

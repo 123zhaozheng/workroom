@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
+import { offerAllTools } from "./helpers/ondemand.ts";
 import { isSettled, sseReader, waitFor } from "../src/runtime/testing.ts";
 import type { ConversationState, EntryDTO, SubmissionDTO } from "../../shared/chat.ts";
 
@@ -454,7 +455,7 @@ test("default toolset policy: a default conversation gets every product tool (AC
 			// round 14: the unified file/exec tools replace file_* / sandbox_* / code_run in new conversations
 			...(s.has("vfs") ? ["ls", "read", "write", "edit", "search", "remove", "present_file", "copy_to_work"] : []),
 			...(s.has("knowledge") ? ["kb_search"] : []),
-			...(s.has("sandbox") ? ["exec", "codemode"] : []),
+			...(s.has("sandbox") ? ["exec"] : []), // round 16: codemode, job_*, browser_*, credential_*, skill_manage are on demand (tool_search)
 			...(s.has("browser") ? ["browse"] : []),
 			...(s.has("mcp") ? ["tool_search"] : []),
 			"delegate",
@@ -483,6 +484,7 @@ test("work (D): SSE state carries jobs from the work service and re-emits on wr.
 		if (!t.app.ctx.services.has("work") || !t.app.ctx.services.has("sandbox")) return tc.skip("tools module (work/sandbox) not loaded");
 		const a = await t.user("rt-work@example.com");
 		const c = await newChat(t, a.token);
+		await offerAllTools(t, c);
 		const sse = sseReader(await t.req("GET", `${base(c)}/events`, { token: a.token }));
 		const snap: ConversationState = (await sse.next((e) => e.event === "snapshot")).data;
 		assert.deepEqual(snap.work?.jobs ?? [], []);

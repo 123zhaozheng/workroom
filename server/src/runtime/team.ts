@@ -12,7 +12,7 @@
 //   approval before any data leaves; no third-party connector exists in this build, so the call ends `blocked`.
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { AssistantEntry, configure, defineExtension, defineTask, defineTool, UsageDoc, type ConversationHandle, type ConversationId, type Extension, type TaskId, type ToolExecutionApi, type ToolRegistration, type Tx } from "@earendil-works/pi-durable";
+import { AssistantEntry, configure, defineExtension, defineTask, defineTool, section, UsageDoc, type ConversationHandle, type ConversationId, type Extension, type TaskId, type ToolExecutionApi, type ToolRegistration, type Tx } from "@earendil-works/pi-durable";
 import { obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import type { MemberDeclaration, SubagentDTO, UsageDTO } from "../../../shared/chat.ts";
 import { nowIso } from "../core/http.ts";
@@ -30,6 +30,15 @@ function answerText(m: AssistantMessage | undefined): string {
 async function membersOf(api: { snapshot: ToolExecutionApi["snapshot"]; conversationId: ConversationId }, context: Context): Promise<readonly MemberDeclaration[]> {
 	const ad = await api.snapshot(AssistantDoc, api.conversationId, context);
 	return ad?.members?.length ? ad.members : BUILTIN_MEMBERS;
+}
+
+/** The `team` prompt section: the members `delegate` accepts, by id. Nothing for a member's own child, or where the allowlist leaves delegate out. */
+export function renderTeamSection(ad: { member?: unknown; members?: readonly any[]; tools?: readonly string[] | null } | null | undefined): string | undefined {
+	if (ad?.member) return undefined;
+	const members: readonly MemberDeclaration[] = ad?.members?.length ? ad.members : ad?.tools ? [] : BUILTIN_MEMBERS;
+	if (!members.length) return undefined;
+	const tag = { builtin_subagent: "", external_tool: "（外部工具，不可委派）", third_party_agent: "（第三方 Agent，需用户批准）" } as const;
+	return ["## 团队成员（delegate 的 member 填 id）", ...members.slice(0, 12).map((m) => `- ${m.id}：${m.name}${tag[m.type]}${m.description ? `，${m.description.slice(0, 80)}` : ""}`)].join("\n");
 }
 
 function overBudget(m: MemberDeclaration, u: UsageDTO): string | undefined {
@@ -164,7 +173,7 @@ export function createTeamExtension(rt: Runtime, effects: Effects): Extension {
 	const delegate = defineTool({
 		name: "delegate",
 		description:
-			"把一个自包含的子任务交给团队成员（子 Agent）。member：成员 id；task：完整任务描述；mode：foreground 等待结果（默认）或 background 后台执行、完成后自动回报。成员只能使用其声明的工具。",
+			"把自包含的子任务交给团队成员（成员 id 见“团队成员”段）。task 写完整，成员看不到本对话；mode：foreground 等结果（默认）或 background 后台执行、完成后自动回报。成员只能用其声明的工具，返回结果要自行核对后再汇总。",
 		parameters: obj({ member: str(), task: str(), mode: opt(oneOf(["foreground", "background"])) }),
 		replay: "safe", // a rerun after a crash finds the same delegation record / child conversation / submission by id
 		execute: async (args, api, context) => {
@@ -264,7 +273,15 @@ export function createTeamExtension(rt: Runtime, effects: Effects): Extension {
 		},
 	});
 
-	return defineExtension({ name: "wr-team", tools: [delegate], tasks: [Anchor, Reporter] });
+	// The model must know WHO it can delegate to: ids and one-line purposes, only where delegate is actually available (not in a member's own child conversation).
+	const teamSection = section("team", async (input, context) => {
+		const scope = await rt.promptScope(input, context).catch(() => null);
+		if (!scope) return undefined;
+		const h = await rt.manager.get(scope.space.id);
+		return renderTeamSection(await h.snapshot(AssistantDoc, input.conversationId, context).catch(() => null));
+	});
+
+	return defineExtension({ name: "wr-team", tools: [delegate], tasks: [Anchor, Reporter], sections: [teamSection] });
 }
 
 export type { TaskId };

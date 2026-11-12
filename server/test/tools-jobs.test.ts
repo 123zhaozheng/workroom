@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
+import { offerAllTools } from "./helpers/ondemand.ts";
 import { orgMember } from "./fixtures/util.ts";
 import { probeIsolation } from "../src/tools/sandbox.ts";
 
@@ -55,6 +56,7 @@ test("jobs: background sandbox job, chat stays usable, results published, cancel
 		const { project } = await t.json("POST", "/api/projects", { token: u.token, json: { kind: "space", name: "Jobs" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: u.token, json: { email: "jobs-viewer@example.com", role: "viewer" } });
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: u.token, json: { spaceId: project.spaceId, title: "后台任务" } })).conversation;
+		await offerAllTools(t, c);
 
 		const t0 = Date.now();
 		const s1 = await say(t, u.token, c, startJob({ kind: "sandbox", title: "慢统计", sandbox: { language: "shell", code: "sleep 3; echo 'a,b' > out.csv; echo finished", publish: ["out.csv"] }, timeoutMs: 60_000 }));
@@ -118,6 +120,7 @@ test("jobs across a server restart: restartPolicy=rerun reruns and publishes; re
 	try {
 		const u = await t.user("restart-jobs@example.com");
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: u.token, json: { title: "重启" } })).conversation;
+		await offerAllTools(t, c);
 		await say(t, u.token, c, startJob({ kind: "sandbox", title: "可重跑", restartPolicy: "rerun", sandbox: { language: "shell", code: "echo run >> runs.log; sleep 3; cp runs.log result.txt", publish: ["result.txt"] } }));
 		await say(t, u.token, c, startJob({ kind: "sandbox", title: "不可重跑", sandbox: { language: "shell", code: "echo charge >> side-effects.log; sleep 3953" } }));
 		await waitFor(async () => (await jobsOf(t, u.token, c)).filter((j) => j.status === "running").length === 2, "both running");

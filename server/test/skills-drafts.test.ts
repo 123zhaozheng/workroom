@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
+import { offerAllTools } from "./helpers/ondemand.ts";
 import { orgMember } from "./fixtures/util.ts";
 import { waitFor } from "../src/runtime/testing.ts";
 import { createSkillManageExtension, SKILL_DRAFT_MIGRATIONS, registerSkillDraftRoutes, skillDraftsFor, snapshotDir } from "../src/tools/skill-drafts.ts";
@@ -48,6 +49,7 @@ const decide = (t: TestApp, token: string, sp: string, id: number, approvalId: s
 
 async function newConv(t: TestApp, token: string) {
 	const { conversation } = await t.json("POST", "/api/conversations", { token, json: {} });
+	await offerAllTools(t, conversation);
 	return { sp: conversation.spaceId as string, cid: conversation.conversationId as number };
 }
 const workdirOf = (t: TestApp, sp: string, cid: number) => (t.app.ctx.services.get("sandbox") as Sandbox).workdir(t.app.ctx.services.get("identity").space(sp)!, cid);

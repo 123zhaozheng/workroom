@@ -49,7 +49,9 @@ export type VfsErrorCode =
 	| "quota"
 	| "unavailable"
 	| "binary"
-	| "fetch_failed";
+	| "fetch_failed"
+	| "etag_required"
+	| "secret_refused";
 
 export class VfsError extends Error {
 	readonly code: VfsErrorCode;

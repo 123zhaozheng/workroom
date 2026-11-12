@@ -139,7 +139,7 @@ try {
 	check("branch: switcher returns to the original conversation with its results", page.url() === chatUrl, page.url());
 
 	// ---------------------------------------------------------------- files page: the delivered output, current content, no versions
-	await page.goto(`${base}/files`);
+	await page.goto(`${base}/files?view=list`);
 	await page.waitForSelector('[data-testid="file-row"]');
 	await shot(page, "1440-files");
 	await page.goto(`${base}/files/${fileId}`);
