@@ -30,8 +30,6 @@ async function say(t: TestApp, token: string, c: Conv, text: string) {
 	}, { timeoutMs: 60_000, what: "submission settles" });
 }
 async function results(t: TestApp, c: Conv, name: string) {
-	const s = await t.json("GET", `${base(c)}/state?limit=200`, { token: (t as any).__token });
-	void s;
 	const h = await t.app.ctx.services.get("runtime").harness(c.spaceId, BACKGROUND_CONTEXT);
 	const conv = (await h.conversation(c.conversationId as any, BACKGROUND_CONTEXT))!;
 	const items = (await conv.entries({ order: "ascending" }, 500, undefined, BACKGROUND_CONTEXT)).items as any[];
