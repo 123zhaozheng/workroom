@@ -54,6 +54,7 @@ test("V13: a URL delivery saves the real bytes (still downloadable after the URL
 	const up = await serve((p) => (p === "/report.pdf" ? { status: 200, body: pdf, headers: { "content-type": "application/pdf" } } : p === "/redirect" ? { status: 302, headers: { location: "/report.pdf" } } : p === "/big" ? { status: 200, body: Buffer.alloc(3 * 1024 * 1024, 1) } : { status: 404 }));
 	process.env.WORKROOM_URL_ALLOWLIST = `127.0.0.1:${up.port}`;
 	const t = await startTestApp();
+	const servers: Server[] = [up.server];
 	try {
 		const a = await t.user("r14-url@example.com");
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: a.token, json: { title: "URL 交付" } })).conversation;
@@ -63,9 +64,11 @@ test("V13: a URL delivery saves the real bytes (still downloadable after the URL
 		assert.equal(r.details.item.name, "研究报告.pdf");
 		assert.equal(r.details.item.size, pdf.length);
 		await new Promise<void>((x) => up.server.close(() => x()));
+		servers.shift();
 		const dl = await t.req("GET", r.details.item.downloadUrl, { token: a.token });
 		assert.deepEqual(Buffer.from(await dl.arrayBuffer()), pdf, "the saved bytes outlive the URL");
 		const again = await serve((p) => (p === "/big" ? { status: 200, body: Buffer.alloc(3 * 1024 * 1024, 1) } : { status: 404 }));
+		servers.push(again.server);
 		process.env.WORKROOM_URL_ALLOWLIST = `127.0.0.1:${again.port}`;
 		process.env.WORKROOM_FETCH_MAX_MB = "1";
 		await say(t, a.token, c, call("present_file", { source: `${again.url}/missing.pdf` }));
@@ -78,8 +81,11 @@ test("V13: a URL delivery saves the real bytes (still downloadable after the URL
 		delete process.env.WORKROOM_URL_ALLOWLIST;
 		await say(t, a.token, c, call("present_file", { source: `${again.url}/big` }));
 		assert.match((await results(t, c, "present_file")).at(-1)!.text, /内网|url_blocked|不允许/);
-		await new Promise<void>((x) => again.server.close(() => x()));
 	} finally {
+		for (const sv of servers) {
+			sv.closeAllConnections?.();
+			await new Promise<void>((x) => sv.close(() => x()));
+		}
 		delete process.env.WORKROOM_FETCH_MAX_MB;
 		delete process.env.WORKROOM_URL_ALLOWLIST;
 		await t.dispose();
