@@ -172,7 +172,7 @@ try {
 	}
 	// image deliverable (published from the workspace) opened from the files page
 	await a.goto(`${base}/files`);
-	await a.waitForSelector('[data-testid="file-row"]');
+	await a.waitForSelector('[data-testid="files-folder"]');
 	await a.click('button[aria-label="预览 chart.png"]');
 	await a.waitForSelector('[data-testid="preview-image"]');
 	await a.waitForFunction(() => { const i = document.querySelector('[data-testid="preview-image"]'); return i && i.complete && i.naturalWidth === 320; }, null, { timeout: 10000 });
@@ -199,7 +199,7 @@ try {
 	check("work panel: Esc closes it when focus is inside", true);
 
 	// ------------------------------------------------------------------ 3. files pages: plain provenance, no jargon, header never overlaps
-	await a.goto(`${base}/files`);
+	await a.goto(`${base}/files?view=list`);
 	await a.waitForSelector('[data-testid="file-row"]');
 	const filesPage = await a.locator("main").innerText();
 	check("files page: simple list without explanatory subtitle or jargon", !JARGON.test(filesPage) && !filesPage.includes("每次修改都会保留旧版本"), filesPage.replace(/\s+/g, " ").slice(0, 120));
@@ -272,7 +272,7 @@ try {
 	await p.keyboard.press("Escape");
 	await p.waitForSelector('[data-testid="sheet-right"]', { state: "detached", timeout: 5000 }).catch(() => {});
 	// files pages on the phone
-	await p.goto(`${base}/files`);
+	await p.goto(`${base}/files?view=list`);
 	await p.waitForSelector('[data-testid="file-row"]');
 	check("390: files page has no horizontal scroll", !(await overflowX(p)));
 	await p.goto(`${base}/files/${mdId}`);

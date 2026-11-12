@@ -158,7 +158,7 @@ try {
 
 	// ---------------- files page: only outputs, grouped by conversation, no versions
 	const convUrl = chatUrl();
-	await page.goto(`${base}/files`);
+	await page.goto(`${base}/files?view=list`);
 	await page.waitForSelector(T("file-row"), { timeout: 15000 });
 	const rows = await page.locator(T("file-row")).allInnerTexts();
 	check("V12 the files page lists the delivered output once, under its conversation folder", rows.length === 1 && rows[0].includes("a.md") && (await page.locator(T("files-folder")).count()) === 1 && /--c\d+/.test((await page.locator(T("files-folder")).getAttribute("data-folder")) ?? ""), rows.join("|"));
@@ -187,13 +187,13 @@ try {
 	await shot(page, "panel-390");
 	await page.keyboard.press("Escape");
 	await page.goto(`${base}/files`);
-	await page.waitForSelector(T("file-row"), { timeout: 15000 });
+	await page.waitForSelector(T("files-folder"), { timeout: 15000 });
 	check("390px: the files page has no horizontal scroll", (await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 0);
 	await page.setViewportSize({ width: 1280, height: 860 });
 	await sleep(300);
 
 	// ---------------- V22: withdraw from the files page
-	await page.goto(`${base}/files`);
+	await page.goto(`${base}/files?view=list`);
 	await page.waitForSelector(T("file-row"));
 	await page.locator(T("file-delete")).first().click();
 	await page.waitForSelector(T("remove-output-dialog"));

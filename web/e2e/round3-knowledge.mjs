@@ -190,7 +190,7 @@ try {
 	await sendMessage(a, '交付计划 [[call write {"path":"/work/季度计划.md","content":"# 季度计划\\n\\n第四季度重点：渠道拓展。\\n"}]] [[call present_file {"source":"/work/季度计划.md"}]]');
 	await a.waitForURL(/\/c\//);
 	await idle(a);
-	await a.goto(`${base}/files`);
+	await a.goto(`${base}/files?view=list`);
 	await a.waitForSelector('[data-testid="file-row"]:has-text("季度计划.md")', { timeout: 10000 });
 	await a.locator('[data-testid="file-row"]', { hasText: "季度计划.md" }).locator("a").click();
 	await a.waitForSelector('[data-testid="knowledge-status"]');
