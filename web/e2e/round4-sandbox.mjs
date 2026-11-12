@@ -68,6 +68,7 @@ const pyWrite = [
 	"print('已写入 4 个文件')",
 	"print(sorted(os.listdir('.')))",
 ].join("\n");
+const py = (code) => `python3 - <<'PYEOF'\n${code}\nPYEOF`;
 const pyFail = "import sys\nprint('处理到一半')\nsys.stderr.write('Traceback: boom\\n')\nsys.exit(3)";
 
 try {
@@ -82,7 +83,7 @@ try {
 	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { kind: "space", name: "数据分析" } })).json()).project;
 	await a.request.put(`${base}/api/projects/${proj.id}/members`, { data: { email: viewer.email, role: "viewer" } });
 	await a.goto(`${base}/projects/${proj.id}`);
-	await sendMessage(a, `整理数据 ${directive("sandbox_exec", { language: "python", code: pyWrite })} ${directive("sandbox_exec", { language: "python", code: pyFail })}`);
+	await sendMessage(a, `整理数据 ${directive("exec", { command: py(pyWrite) })} ${directive("exec", { command: py(pyFail) })}`);
 	await a.waitForURL(/\/c\//);
 	await a.waitForSelector('[data-testid="assistant-message"]', { timeout: 60000 });
 	await idle(a);

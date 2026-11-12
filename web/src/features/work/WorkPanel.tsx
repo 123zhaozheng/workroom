@@ -34,12 +34,13 @@ const SUB_STATUS: Record<SubagentDTO["status"], { label: string; tone: "info" | 
 
 export default function WorkPanel({ state, onClose }: { state: Extract<PanelState, { kind: "work" }>; onClose: () => void }) {
 	const { work: published } = usePanel();
-	// The chat page publishes its SSE snapshot; without it (a deep link opened the panel first) poll the work endpoint.
-	const polled = useApi<{ work: ConversationWorkDTO }>(published ? null : `/work/${state.spaceId}/${state.conversationId}`, { pollMs: 2000 });
+	// The chat page publishes its SSE snapshot (outputs update live); the work endpoint is polled as well because only it carries the
+	// caller's permissions (canControl / canCancel), which the snapshot does not.
+	const polled = useApi<{ work: ConversationWorkDTO }>(`/work/${state.spaceId}/${state.conversationId}`, { pollMs: 2000 });
 	const work = published ?? polled.data?.work;
 	const outputs = (work?.outputs ?? []).filter((o) => o.status === "active");
-	const jobs = work?.jobs ?? [];
-	const sessions = work?.browserSessions ?? [];
+	const jobs = polled.data?.work.jobs ?? work?.jobs ?? [];
+	const sessions = polled.data?.work.browserSessions ?? work?.browserSessions ?? [];
 	const tasks = useApi<TasksResponse>(`/conversations/${state.spaceId}/${state.conversationId}/tasks`, { pollMs: 2500 });
 	const subs = tasks.data?.subagents ?? [];
 	return (

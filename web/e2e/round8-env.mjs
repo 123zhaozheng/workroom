@@ -230,7 +230,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 		return gets === g0;
 	})()));
 	// a running turn with a sandbox call (sleep keeps the turn busy so the poll can observe state)
-	await sendMessage(p, `跑一下 ${directive("sandbox_exec", { language: "shell", code: "sleep 7; echo done" })}`);
+	await sendMessage(p, `跑一下 ${directive("exec", { command: "sleep 7; echo done" })}`);
 	await p.waitForSelector('[data-testid="stop"]', { timeout: 20000 });
 	await sleep(3200);
 	phase = "preparing";
@@ -348,7 +348,7 @@ else {
 			await sleep(120);
 		}
 	})();
-	await sendMessage(page, `在沙箱里跑一下 ${directive("sandbox_exec", { language: "shell", code: "echo live-env-ok; uname -s" })}`);
+	await sendMessage(page, `在沙箱里跑一下 ${directive("exec", { command: "echo live-env-ok; uname -s" })}`);
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 20000 });
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-state") === "ready", null, { timeout: 180000 });
 	await idle(page, 180000);

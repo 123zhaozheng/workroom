@@ -158,6 +158,7 @@ try {
 	await page.click('[data-testid="open-work-panel"]');
 	await page.waitForSelector('[data-testid="job"]', { timeout: 10000 });
 	await shot(page, "1440-job-running");
+	await page.locator('[data-testid="job"] > button').first().click(); // round 14: the row's details (and 取消) sit behind its chevron
 	await page.click('[data-testid="job-cancel"]');
 	await page.waitForSelector('[data-testid="job"][data-status="cancelled"]', { timeout: 30000 });
 	check("job: cancel → 已取消 (panel and in-message chip)", true);
