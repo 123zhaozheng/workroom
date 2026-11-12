@@ -410,6 +410,8 @@ export interface BrowserSessionListResponse {
 export interface ConversationWorkDTO {
 	readonly jobs: JobDTO[];
 	readonly browserSessions: BrowserSessionDTO[];
+	/** Round 14: delivered outputs of this conversation (present_file), removed ones included so old cards can show 已删除. */
+	readonly outputs?: readonly LibItemDTO[];
 }
 
 // ---------------- skills & MCP marketplace (round 4, MARKETPLACE group) ----------------

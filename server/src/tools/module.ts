@@ -117,7 +117,12 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("browserSessions", sessions);
 		// Work items of a conversation (for ConversationState.work — see docs/requests/D.md).
 		ctx.services.provide("work", {
-			forConversation: (spaceId: string, conversationId: number): ConversationWorkDTO => ({ jobs: (ctx.services.get("jobs") as Jobs).forConversation(spaceId, conversationId), browserSessions: sessions.forConversation(spaceId, conversationId) }),
+			forConversation: (spaceId: string, conversationId: number): ConversationWorkDTO => ({
+				jobs: (ctx.services.get("jobs") as Jobs).forConversation(spaceId, conversationId),
+				browserSessions: sessions.forConversation(spaceId, conversationId),
+				// round 14: the conversation's delivered outputs — the single source of chat file cards and the side panel's 输出
+				outputs: (ctx.services as any).has("library") ? ((ctx.services as any).get("library") as { ofConversation(s: string, c: number): ConversationWorkDTO["outputs"] }).ofConversation(spaceId, conversationId) : [],
+			}),
 		});
 	},
 	extensions(ctx) {
