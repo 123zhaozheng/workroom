@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:27:02.570Z",
+  "at": "2026-11-12T01:54:41.850Z",
   "results": [
     {
       "name": "setup: deliverables (md v2, docx, xlsx, pptx, pdf, csv) and an image published from the workspace",
@@ -99,12 +99,12 @@
     {
       "name": "terminal: a run shows the command, output and an exit status line",
       "ok": true,
-      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 125 ms"
+      "detail": "python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 134 ms"
     },
     {
       "name": "terminal: no driver / isolation jargon visible",
       "ok": true,
-      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 125 ms"
+      "detail": "子任务 终端 文件 浏览器 运行记录 · 1 次 python3 main.py 成功 刚刚 已写入文件 退出码 0 · 用时 134 ms"
     },
     {
       "name": "files tab: one-line usage indicator (count, used / quota)",
@@ -259,7 +259,7 @@
     {
       "name": "stats: demo organisation seeded",
       "ok": true,
-      "detail": "demo org org_0mwc9uvc80ff3b70b6838a4ab flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2255 runs, 11477 ledger rows (demo=1, simulated), 678 knowledge searches, 341 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8898 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
+      "detail": "demo org org_0mwcwa1o90529131a77a43086 flagged (ops_demo_orgs) live: 4 conversations driven through the API with the fixture model backfill: 2356 runs, 12022 ledger rows (demo=1, simulated), 664 knowledge searches, 372 file versions, 138 automation runs over 120 days Demo org ready. Sign in at http://127.0.0.1:8893 as demo-admin@demo.workroom.example / demo-password-2026, open 统计 -> 范围: 组织. "
     },
     {
       "name": "stats: demo banner kept and 模拟 labels kept",

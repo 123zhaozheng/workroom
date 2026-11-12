@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:37:33.557Z",
+  "at": "2026-11-12T02:05:48.719Z",
   "results": [
     {
       "name": "A [intercepted] state none: no dot, aria-label just names the channel",
@@ -212,42 +212,37 @@
       "detail": "{\"x\":73,\"y\":667,\"width\":240,\"height\":108}"
     },
     {
-      "name": "B1 home: the default is 本地环境 (data-env-pref=local), the org switch being on",
+      "name": "B1 [round 12] home: the button shows 云端沙箱 (data-env-pref=cloud)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "B1 home: the popover is a radiogroup with two radios, 本地环境 checked and enabled",
+      "name": "B1 [round 12] home: a radiogroup with two radios — 本地环境 greyed out (aria-disabled, dashed, not checked), 云端沙箱 checked",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "B1 home: choosing 云端沙箱 only changes the icon/pref in this tab (kept in sessionStorage, no request sent, nothing created)",
+      "name": "B1 [round 12] hovering 本地环境 says 本地应用上线后可用",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "B1 the home choice was carried into the new conversation: data-env-pref=cloud and the server holds preference cloud; the tab's pending value is consumed",
-      "ok": true,
-      "detail": "{\"saved\":{\"enabled\":true,\"connected\":true,\"preference\":\"cloud\"},\"puts\":[\"{\\\"preference\\\":\\\"cloud\\\"}\"]}"
-    },
-    {
-      "name": "B2 reload: still 云端沙箱 (data-env-pref=cloud; the cloud icon; aria-label says 云端沙箱)",
+      "name": "B1 home: clicking 本地环境 does nothing; choosing 云端沙箱 is kept in this tab only (no request sent, nothing created)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "B2 popover after reload: 云端沙箱 checked, 本地环境 not",
+      "name": "B1 the new conversation runs in the cloud (server preference cloud by default, nothing to save); the tab's pending value is consumed",
+      "ok": true,
+      "detail": "{\"saved\":{\"enabled\":true,\"connected\":true,\"preference\":\"cloud\"},\"puts\":[]}"
+    },
+    {
+      "name": "B2 reload: still 云端沙箱 (data-env-pref=cloud; aria-label says 云端沙箱)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "B2 choosing 本地环境 is saved on the server (PUT preference local) and starts nothing",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B2 reload: back to 本地环境 (data-env-pref=local; the laptop icon; aria-label says 本地环境)",
+      "name": "B2 clicking the greyed 本地环境 in a conversation saves nothing and starts nothing",
       "ok": true,
       "detail": ""
     },
@@ -277,7 +272,7 @@
       "detail": "{\"x\":73,\"y\":667,\"width\":240,\"height\":108}"
     },
     {
-      "name": "B3 switched back on: 本地环境 is enabled again",
+      "name": "B3 [round 12] switched back on: 本地环境 stays greyed out (the desktop app has not shipped), the switch itself is saved",
       "ok": true,
       "detail": ""
     },
@@ -299,7 +294,7 @@
     {
       "name": "C [live] 云端沙箱 on a conversation with no sandbox: the server reported none → preparing → ready (sampled from the API), the button ends with the green dot",
       "ok": true,
-      "detail": "[{\"s\":\"none\",\"at\":4},{\"s\":\"preparing\",\"at\":438},{\"s\":\"ready\",\"at\":6854}]"
+      "detail": "[{\"s\":\"none\",\"at\":5},{\"s\":\"preparing\",\"at\":430},{\"s\":\"ready\",\"at\":6270}]"
     },
     {
       "name": "C [live] the button showed the pulsing dot while it was being prepared: dot sequence ends … preparing → ready",
@@ -332,9 +327,9 @@
       "detail": ""
     },
     {
-      "name": "C [live] the reaper paused the idle sandbox by itself (state paused, resume mode provider = the vendor kept it) after 75 s of waiting",
+      "name": "C [live] the reaper paused the idle sandbox by itself (state paused, resume mode provider = the vendor kept it) after 72 s of waiting",
       "ok": true,
-      "detail": "{\"id\":\"sbi_0mwca6thcd3fed54102d68954\",\"provider\":\"opensandbox\",\"spaceId\":\"sp_0mwca5z3h49ee0f26859b4a14\",\"workspaceKey\":\"c28\",\"remoteId\":\"daac362c-424f-4aa4-aa13-390377dec78c\",\"state\":\"paused\",\"resumeMode\":\"provider\",\"createdAt\":\"2026-11-11T15:35:53.280Z\",\"lastUsedAt\":\"2026-11-11T15:35:59.728Z\"}"
+      "detail": "{\"id\":\"sbi_0mwcwmujt8843c84fa1396ead\",\"provider\":\"opensandbox\",\"spaceId\":\"sp_0mwcwly2o1d332bb14f5a38a6\",\"workspaceKey\":\"c31\",\"remoteId\":\"3a9dd6eb-c0a0-47a6-aee8-edf0aab17f2e\",\"state\":\"paused\",\"resumeMode\":\"provider\",\"createdAt\":\"2026-11-12T02:04:12.713Z\",\"lastUsedAt\":\"2026-11-12T02:04:18.537Z\"}"
     },
     {
       "name": "C [live] the environment DTO says paused with resumeMode fast",
@@ -354,7 +349,7 @@
     {
       "name": "C [live] the sandbox_exec resumed it: the server's state went paused → (resuming) → ready, ending ready",
       "ok": true,
-      "detail": "[{\"s\":\"paused\",\"at\":5},{\"s\":\"resuming\",\"at\":89},{\"s\":\"preparing\",\"at\":4254},{\"s\":\"ready\",\"at\":8332}]"
+      "detail": "[{\"s\":\"paused\",\"at\":5},{\"s\":\"resuming\",\"at\":195},{\"s\":\"preparing\",\"at\":4253},{\"s\":\"ready\",\"at\":8389}]"
     },
     {
       "name": "C [live] the button ends with the green dot again; no inline line at any moment of the resume",

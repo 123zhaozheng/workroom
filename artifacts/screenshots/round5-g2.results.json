@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:25:59.381Z",
+  "at": "2026-11-12T01:53:38.611Z",
   "results": [
     {
       "name": "display text: the message bubble shows only what the person wrote",
@@ -19,12 +19,12 @@
     {
       "name": "display text: no raw tool JSON in any message while collapsed",
       "ok": true,
-      "detail": "帮我写周报\n测试模型（非真实 AI）\n已完成 2 步 · 生成 1 个文件\n\n【测试模型·非真实AI】 工具执行完成，结果如下：\n\nfile_create: 已生成「项目周报.md」v1（text/markdown，53 字节）。fileI"
+      "detail": "帮我写周报\n测试模型（非真实 AI）\n已完成，用时 1 秒\n\n【测试模型·非真实AI】 工具执行完成，结果如下：\n\nfile_create: 已生成「项目周报.md」v1（text/markdown，53 字节）。fileId=file_0"
     },
     {
-      "name": "run summary: one line with step count and files",
+      "name": "run summary [round 12]: one folded line 已完成，用时 N 秒",
       "ok": true,
-      "detail": "已完成 2 步 · 生成 1 个文件"
+      "detail": "已完成，用时 1 秒"
     },
     {
       "name": "run summary: steps hidden until expanded",
@@ -34,7 +34,12 @@
     {
       "name": "steps: human wording per tool (生成文件「项目周报」 / 查看文件列表)",
       "ok": true,
-      "detail": "生成文件「项目周报」 | 查看文件列表"
+      "detail": "生成文件「项目周报」\n·已生成「项目周报.md」v1\n7 ms | 查看文件列表\n8 ms"
+    },
+    {
+      "name": "steps: one human outcome on the row (已生成「项目周报.md」)",
+      "ok": true,
+      "detail": "生成文件「项目周报」\n·已生成「项目周报.md」v1\n7 ms"
     },
     {
       "name": "steps: tool names and JSON are not in the step rows",
@@ -42,32 +47,27 @@
       "detail": ""
     },
     {
-      "name": "技术详情: raw arguments hidden until the disclosure is opened",
+      "name": "steps [round 12]: no 技术详情 / preview / workspace links anywhere in the steps",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "steps: one human outcome line and a preview link",
+      "name": "steps [round 12]: opening the row shows the raw 参数 (and 输出)",
+      "ok": true,
+      "detail": "生成文件「项目周报」\n·已生成「项目周报.md」v1\n7 ms\n参数\n{\n  \"name\": \"项目周报\",\n  \"format\": \"md\",\n  \"title\": \"项目周报\",\n  \"content\": \"# 本周进展\\n- 完成需求评审\"\n}\n输出\n已生成「项目周报.md」v1（text/markdown，53"
+    },
+    {
+      "name": "results: the deliverable card opens the preview panel",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "技术详情: opening it shows the raw arguments",
+      "name": "running [round 12]: the current step is a row naming it, e.g. 正在等待…",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "results: the step's preview link opens the preview panel",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "run summary (running): names the current step, e.g. 正在等待…",
-      "ok": true,
-      "detail": "正在等待…"
-    },
-    {
-      "name": "run summary (finished): 已完成 1 步",
+      "name": "run summary (finished): one row, not folded (the turn's process is a single step)",
       "ok": true,
       "detail": ""
     },
@@ -82,12 +82,12 @@
       "detail": ""
     },
     {
-      "name": "approval: 查看详情 shows the risk note and the requester",
+      "name": "approval: 详情 › shows the risk note and the requester",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "approval: only 允许 / 拒绝 (+ 查看详情 and an optional note) are offered",
+      "name": "approval: only 允许 / 拒绝 (+ 详情 › and an optional note) are offered",
       "ok": true,
       "detail": ""
     },
@@ -129,7 +129,7 @@
     {
       "name": "approval: the run summary says the step was refused",
       "ok": true,
-      "detail": "已完成 1 步 · 1 步被拒绝"
+      "detail": "已完成，用时 1 秒 · 1 步被拒绝"
     },
     {
       "name": "high risk: labelled 高风险 and says it may be irreversible",
@@ -194,15 +194,15 @@
     {
       "name": "failure: the message shows one plain line, not the provider text",
       "ok": true,
-      "detail": "模型调用出错，这一轮没有完成。 技术详情"
+      "detail": "模型调用出错，这一轮没有完成。"
     },
     {
-      "name": "failure: technical detail stays collapsed",
+      "name": "failure: the raw reason stays collapsed",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "failure: 技术详情 opens to the raw reason, still without directives",
+      "name": "failure [round 12]: the note's own row (chevron ›) opens the raw reason, still without directives",
       "ok": true,
       "detail": ""
     },
@@ -214,10 +214,10 @@
     {
       "name": "reconcile: says what, where and that nothing is redone automatically",
       "ok": true,
-      "detail": "待核对：外部操作结果不确定 fixture write crm-sync for g2-1794410730060@example.com 目标 crm://customers 情况 执行被中断，不会自动重做。请到目标系统确认后选择： 已生效 未生效 技术详情"
+      "detail": "待核对：外部操作结果不确定 fixture write crm-sync for g2-1794448388869@example.com 目标 crm://customers 情况 执行被中断，不会自动重做。请到目标系统确认后选择： 已生效 未生效 标识 ef_4e2eeec22273eb78cb1f"
     },
     {
-      "name": "reconcile: only 已生效 / 未生效 are offered; the idempotency key is behind 技术详情",
+      "name": "reconcile: only 已生效 / 未生效 are offered; the idempotency key is a small 标识 line (no 技术详情)",
       "ok": true,
       "detail": ""
     },

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:34:51.299Z",
+  "at": "2026-11-12T02:03:07.423Z",
   "results": [
     {
       "name": "A the tab connects to the conversation (presence)",
@@ -7,19 +7,19 @@
       "detail": ""
     },
     {
-      "name": "A status: enabled by default, preference local",
+      "name": "A status: enabled by default, preference cloud (round 12: 本地环境 is greyed out until the desktop app ships)",
       "ok": true,
       "detail": ""
     },
     {
       "name": "A answer says it ran in the browser",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 1 ms stdout: hello from a worker return: {\"sum\":6,\"len\":24} files written: out/up.txt (24 B) 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 1 秒 准备工作空间 24 ms 运行代码（JavaScript） 68 ms 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 1 ms stdout: hello from a worker return: {\"sum\":6,\"len\":24} files written: out/up.txt "
     },
     {
       "name": "A stdout and the return value are in the answer",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 1 ms stdout: hello from a worker return: {\"sum\":6,\"len\":24} files written: out/up.txt (24 B) 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 1 秒 准备工作空间 24 ms 运行代码（JavaScript） 68 ms 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 1 ms stdout: hello from a worker return: {\"sum\":6,\"len\":24} files written: out/up.txt (24 B) 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "A the output file was written to the HOST workspace",
@@ -39,7 +39,7 @@
     {
       "name": "B the probe ran in the browser runtime (static scan does not see the obfuscated calls)",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 3 ms return: {\"fetch-api\":\"blocked TypeError\",\"fetch-health\":\"blocked TypeError\",\"fetch-counter\":\"blocked TypeError\",\"xhr-counter\":\"blocked Error\",\"websocket\":\"blocked Error\",\"beacon\":\"blocked Error\",\"import-script\":\"blocked NetworkError\",\"localStorage\":\"undefined\",\"document\":\"undefined\",\"cookie\":\"undefined\",\"rtc\":\"undefined\",\"origin\":\"null\",\"href\":\"blob:\"} 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 1 秒 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 3 ms return: {\"fetch-api\":\"blocked TypeError\",\"fetch-health\":\"blocked TypeError\",\"fetch-counter\":\"blocked TypeError\",\"xhr-counter\":\"blocked Error\",\"websocket\":\"blocked Error\",\"beacon\":\"blocked Error\",\"import-script\":\"blocked NetworkError\",\"localStorage\":\"undefined\",\"document\":\"undefined\",\"cookie\":\"undefined\",\"rtc\":\"undefined\",\"origin\":\"null\",\"href\":\"blob:\"} 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "B fetch-api is blocked inside the runtime",
@@ -94,7 +94,7 @@
     {
       "name": "C code that needs the network is sent to the cloud (static check), although a tab is connected",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 · 1 步失败 运行代码（JavaScript）失败：backend: cloud（云端沙箱；代码需要联网（fetch(）） 详情 【测试模型·非真实AI】 工具执行完成，结果如下： code_run（失败）: backend: cloud（云端沙箱；代码需要联网（fetch(）） status: error (exit 1), 394 ms stderr: TypeError: fetch failed at node:internal/deps/undici/undic"
+      "detail": "测试模型（非真实 AI） 已完成，用时 1 秒 · 1 步失败 准备工作空间 3 ms 运行代码（JavaScript） ·backend: cloud（云端沙箱；代码需要联网（fetch(）） 失败 【测试模型·非真实AI】 工具执行完成，结果如下： code_run（失败）: backend: cloud（云端沙箱；代码需要联网（fetch(）） status: error (exit 1), 290 ms stderr: TypeError: fetch failed at node:internal/dep"
     },
     {
       "name": "C two tabs of the same person: exactly one claim won (200), the other got 409",
@@ -109,7 +109,7 @@
     {
       "name": "C preference 云端 → cloud (reason shown), the code really ran there",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；该对话设置为只用云端沙箱） status: ok (exit 0), 137 ms return: \"pref\" 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 1 秒 运行代码（JavaScript） 164 ms 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；该对话设置为只用云端沙箱） status: ok (exit 0), 160 ms return: \"pref\" 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "C admin 沙箱 tab shows the 本地执行 switch, on by default",
@@ -124,7 +124,7 @@
     {
       "name": "C with the switch off the same snippet runs in the cloud (管理员未启用本地执行)",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；管理员未启用本地执行） status: ok (exit 0), 150 ms return: \"off\" 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 1 秒 运行代码（JavaScript） 168 ms 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；管理员未启用本地执行） status: ok (exit 0), 163 ms return: \"off\" 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "C switched back on",
@@ -134,17 +134,17 @@
     {
       "name": "D no tab connected → cloud (没有可用的浏览器标签页), and the code ran there (return 42)",
       "ok": true,
-      "detail": "{\"items\":[{\"id\":93,\"conversationId\":84,\"kind\":\"start\"},{\"id\":94,\"conversationId\":84,\"kind\":\"user\",\"text\":\"[[call code_run {\\\"language\\\":\\\"javascript\\\",\\\"code\\\":\\\"return 6 * 7\\\"}]]\",\"displayText\":\"\",\"hasTestDirectives\":true,\"userId\":\"usr_0mwca4uv2e2db6fa631052d8f\",\"authorName\":\"本地执行\",\"submission\":{\"s"
+      "detail": "{\"items\":[{\"id\":99,\"conversationId\":90,\"kind\":\"start\"},{\"id\":100,\"conversationId\":90,\"kind\":\"workspace\",\"ms\":2,\"items\":[{\"key\":\"storage\",\"label\":\"会话存储\",\"ok\":true},{\"key\":\"workdir\",\"label\":\"工作目录\",\"ok\":true},{\"key\":\"stores\",\"label\":\"记忆目录（memories/）\",\"ok\":true},{\"key\":\"env\",\"label\":\"执行环境\",\"detail\":\"平台内"
     },
     {
       "name": "D a browser run that times out is retried in the cloud once, with a note",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（超时）） note: 浏览器内运行失败（超时），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 142 ms return: \"finished in object\" 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 2 秒 准备工作空间 2 ms 运行代码（JavaScript） 2.2 秒 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（超时）） note: 浏览器内运行失败（超时），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 165 ms return: \"finished in object\" 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "D the hard timeout fired near timeoutSec (not after the server's own grace)",
       "ok": true,
-      "detail": "2384 ms"
+      "detail": "2438 ms"
     },
     {
       "name": "D the runtime iframe of the timed-out run is gone",
@@ -154,7 +154,7 @@
     {
       "name": "D code that needs Node but looked light fails in the browser as 'unsupported' and is upgraded",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（浏览器内不支持所需的模块或接口）） note: 浏览器内运行失败（浏览器内不支持所需的模块或接口），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 161 ms return: \"string\" 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 1 秒 运行代码（JavaScript） 212 ms 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（浏览器内不支持所需的模块或接口）） note: 浏览器内运行失败（浏览器内不支持所需的模块或接口），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 169 ms return: \"string\" 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "D stop → the running browser job is cancelled and its runtime iframe removed",
@@ -169,7 +169,7 @@
     {
       "name": "E python runs IN THE BROWSER (Pyodide), reads the input and writes an output file",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 2416 ms stdout: 10 emscripten files written: out/py.txt (8 B) 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 2 秒 准备工作空间 2 ms 运行代码（Python） 2.4 秒 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 2201 ms stdout: 10 emscripten files written: out/py.txt (8 B) 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "E the python output file landed in the host workspace",
@@ -184,7 +184,7 @@
     {
       "name": "E the python probe ran in the browser runtime",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 2492 ms stdout: {\"socket\": \"blocked OSError\", \"urllib\": \"blocked URLError\", \"js.fetch\": \"blocked JsException\", \"pyfetch\": \"blocked AbortError\", \"xhr\": \"blocked JsException\", \"workroom-api\": \"blocked JsException\", \"js.eval-fetch\": \"blocked JsException\", \"importScripts\": \"blocked JsException\", \"localStorage\": \"undefined\", \"document\": \"undefined\", \"origin\": \"null\"} 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 3 秒 运行代码（Python） 2.5 秒 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: browser（在用户浏览器的隔离环境内运行；轻量任务，在浏览器内运行） status: ok, 2483 ms stdout: {\"socket\": \"blocked OSError\", \"urllib\": \"blocked URLError\", \"js.fetch\": \"blocked JsException\", \"pyfetch\": \"blocked AbortError\", \"xhr\": \"blocked JsException\", \"workroom-api\": \"blocked JsException\", \"js.eval-fetch\": \"blocked JsException\", \"importScripts\": \"blocked JsException\", \"localStorage\": \"undefined\", \"document\": \"undefined\", \"origin\": \"null\"} 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "E python urllib is blocked inside the runtime",
@@ -244,17 +244,17 @@
     {
       "name": "E a package Pyodide does not ship (numpy) fails in the browser as 'unsupported' and is upgraded to the cloud",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（浏览器内不支持所需的模块或接口）） note: 浏览器内运行失败（浏览器内不支持所需的模块或接口），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 195 ms stdout: numpy ok 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 2 秒 运行代码（Python） 2.4 秒 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（浏览器内不支持所需的模块或接口）） note: 浏览器内运行失败（浏览器内不支持所需的模块或接口），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 199 ms stdout: numpy ok 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "E a python run that times out in the browser is retried in the cloud once",
       "ok": true,
-      "detail": "测试模型（非真实 AI） 已完成 1 步 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（超时）） note: 浏览器内运行失败（超时），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 120 ms stdout: finished on linux 测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI） 已完成，用时 6 秒 运行代码（Python） 5.7 秒 【测试模型·非真实AI】 工具执行完成，结果如下： code_run: backend: cloud（云端沙箱；浏览器内运行失败（超时）） note: 浏览器内运行失败（超时），已自动改在云端沙箱重新运行一次 status: ok (exit 0), 147 ms stdout: finished on linux 测试模型 · 模拟用量，不计费"
     },
     {
       "name": "E the python hard timeout counts from the code start, not from the runtime boot",
       "ok": true,
-      "detail": "5559 ms"
+      "detail": "5870 ms"
     }
   ]
 }

@@ -1,10 +1,10 @@
 {
-  "at": "2026-11-11T15:19:55.344Z",
+  "at": "2026-11-12T01:47:27.340Z",
   "results": [
     {
       "name": "M02-C: main-run timeout shown as its own terminal state (已超时), not 已完成/失败/已取消",
       "ok": true,
-      "detail": "已超时 · 模型出错 重试 技术详情"
+      "detail": "已超时 · 模型出错 重试 原因"
     },
     {
       "name": "M02-C: a plain model error is shown as failed, distinct from timeout",

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:34:11.217Z",
+  "at": "2026-11-12T02:02:26.913Z",
   "results": [
     {
       "name": "A tab is called 沙箱 and the section 当前使用的沙箱渠道 is one radio group: 平台内置沙箱 + OpenSandbox + E2B + Daytona",
@@ -82,79 +82,9 @@
       "detail": ""
     },
     {
-      "name": "B [round 11] 本地环境 is an enabled radio (org switch on by default) and the chosen one — just those four characters, no 即将推出, no explanation",
+      "name": "B [round 12] 本地环境 stays in place, greyed out (aria-disabled, not checked) — just those four characters, no 即将推出",
       "ok": true,
       "detail": ""
-    },
-    {
-      "name": "B on the home page (no conversation yet) choosing a row only switches the icon/pref in this tab: popover stays open, no environment request sent",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B 本地环境 has no explaining tooltip (指你自己的电脑 / 还没有实现 are gone)",
-      "ok": true,
-      "detail": "[\"本地环境云端沙箱（平台内置沙箱）\"]"
-    },
-    {
-      "name": "B the clutter is gone: no isolation text, location/network badges, option list, 切换, project/conversation chooser hints, 详细说明",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B no working directory and no admin link in the popover (not even for an admin)",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B a member sees the same two options: 云端沙箱 and 本地环境",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B OpenSandbox chosen as the channel (unreachable address: real failure path)",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B button: remote, nothing created just by showing it",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B OpenSandbox: still just the two options — no backend label, no state line, no 现在准备 (nothing to retry yet), no working directory",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "B a real failure: one short line 「准备失败」 + 重试 (the reason is on hover, not printed), a red dot on the button, never a fallback to the host",
-      "ok": true,
-      "detail": "准备失败 重试"
-    },
-    {
-      "name": "B [intercepted] a ready E2B channel with a workDir in the data: the popover still shows only 云端沙箱 / 本地环境 (no 工作目录, no E2B label, no 已就绪, no 重试 / 现在准备)",
-      "ok": true,
-      "detail": "本地环境 云端沙箱 （E2B，就绪）"
-    },
-    {
-      "name": "B 1440px light: popover fully opaque, inside the viewport with gutters, no horizontal scroll",
-      "ok": true,
-      "detail": "{\"x\":565,\"y\":513,\"width\":240,\"height\":108}"
-    },
-    {
-      "name": "B 1440px dark: popover fully opaque, inside the viewport with gutters, no horizontal scroll",
-      "ok": true,
-      "detail": "{\"x\":565,\"y\":513,\"width\":240,\"height\":108}"
-    },
-    {
-      "name": "B 390px light: popover fully opaque, inside the viewport with gutters, no horizontal scroll",
-      "ok": true,
-      "detail": "{\"x\":73,\"y\":667,\"width\":240,\"height\":108}"
-    },
-    {
-      "name": "B 390px dark: popover fully opaque, inside the viewport with gutters, no horizontal scroll",
-      "ok": true,
-      "detail": "{\"x\":73,\"y\":667,\"width\":240,\"height\":108}"
     }
   ]
 }

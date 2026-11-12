@@ -1,10 +1,10 @@
 {
-  "at": "2026-11-11T15:39:05.612Z",
+  "at": "2026-11-12T02:07:32.031Z",
   "results": [
     {
       "name": "A home: cloud button next to the composer, aria-label '执行环境：<label>'",
       "ok": true,
-      "detail": "执行环境：本地环境（平台内置沙箱）"
+      "detail": "执行环境：云端沙箱（平台内置沙箱）"
     },
     {
       "name": "A home: local environment uses the local icon variant (kind local/none, not remote)",
@@ -32,7 +32,7 @@
       "detail": "本地环境 云端沙箱 （平台内置沙箱）"
     },
     {
-      "name": "A popover [round 11]: 本地环境 is a real, enabled radio (the org switch is on by default) and the chosen one (data-env-pref=local) — just those four characters, no 即将推出, no explanation; no switch buttons, no chooser hint",
+      "name": "A popover [round 12]: 本地环境 is a radio kept in place but greyed out (aria-disabled, not checked); the button is 云端沙箱 (data-env-pref=cloud) — just those four characters, no 即将推出; no switch buttons, no chooser hint",
       "ok": true,
       "detail": ""
     },
@@ -54,7 +54,7 @@
     {
       "name": "A opening the popover creates no sandbox instance and sends no prepare",
       "ok": true,
-      "detail": "GET /api/conversations/sp_0mwca90h90f7b62171190dd96/new/environment"
+      "detail": "GET /api/conversations/sp_0mwcwp7ey16930a40c5d7c038/new/environment"
     },
     {
       "name": "A plain chat: still no sandbox instance and no prepare request",
@@ -74,7 +74,7 @@
     {
       "name": "A phone 390: popover fits the screen (>=8px gutters)",
       "ok": true,
-      "detail": "{\"x\":73,\"y\":669.5504150390625,\"width\":240,\"height\":108}"
+      "detail": "{\"x\":73,\"y\":669.5521240234375,\"width\":240,\"height\":108}"
     },
     {
       "name": "A phone 390 conversation: button present, no horizontal scroll",
@@ -124,7 +124,7 @@
     {
       "name": "B 重试 sends exactly one explicit prepare request",
       "ok": true,
-      "detail": "POST /api/conversations/sp_0mwca90h90f7b62171190dd96/3/environment/prepare"
+      "detail": "POST /api/conversations/sp_0mwcwp7ey16930a40c5d7c038/3/environment/prepare"
     },
     {
       "name": "B phone 390: failure line fits (no horizontal scroll)",
@@ -229,7 +229,7 @@
     {
       "name": "D [live] the server reported none → preparing → ready while the real sandbox was created for the tool call (sampled directly from the API)",
       "ok": true,
-      "detail": "[{\"s\":\"none\",\"at\":8},{\"s\":\"preparing\",\"at\":133},{\"s\":\"ready\",\"at\":10802}]"
+      "detail": "[{\"s\":\"none\",\"at\":8},{\"s\":\"preparing\",\"at\":138},{\"s\":\"ready\",\"at\":9980}]"
     },
     {
       "name": "D [live] the UI followed: button reached ready with the ready dot; if the window was long enough for its 1 s poll it showed the preparing dot — and never an inline line (round 11 R1)",
@@ -239,7 +239,7 @@
     {
       "name": "D [live] exactly one live instance now, and the run output arrived",
       "ok": true,
-      "detail": "[{\"s\":\"ready\",\"ws\":\"c43\",\"rid\":\"f10832dd\"},{\"s\":\"error\",\"ws\":\"c3\",\"rid\":\"\"},{\"s\":\"error\",\"ws\":\"c3\",\"rid\":\"\"}]"
+      "detail": "[{\"s\":\"ready\",\"ws\":\"c45\",\"rid\":\"9519af34\"},{\"s\":\"error\",\"ws\":\"c3\",\"rid\":\"\"},{\"s\":\"error\",\"ws\":\"c3\",\"rid\":\"\"}]"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:27:30.462Z",
+  "at": "2026-11-12T01:55:09.795Z",
   "results": [
     {
       "name": "A card: title 保存为个人技能, name/title and 版本",
@@ -37,12 +37,12 @@
       "detail": ""
     },
     {
-      "name": "A card: package hash and codes only inside 技术详情",
+      "name": "A card: package hash and codes only inside the folded 详情 (round 12: one level, 参数)",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "A card: buttons are 不保存 / 保存 (+ 添加说明), nothing focused on open",
+      "name": "A card: buttons are 不保存 / 保存 (+ 详情 › and 添加说明), nothing focused on open",
       "ok": true,
       "detail": ""
     },
@@ -154,12 +154,12 @@
     {
       "name": "B use: the run result (hello from skill) is shown",
       "ok": true,
-      "detail": "测试模型（非真实 AI）\n已完成 1 步\n\n【测试模型·非真实AI】 工具执行完成，结果如下：\n\nskill: 技能「second-skill」v1：ok（exit 0） stdout: hello from skill 林夏\n测试模型 · 模拟用量，不计费"
+      "detail": "测试模型（非真实 AI）\n已完成，用时 1 秒\n运行技能「second-skill」\n150 ms\n\n【测试模型·非真实AI】 工具执行完成，结果如下：\n\nskill: 技能「second-skill」v1：ok（exit 0） stdout: hello from skill 林夏\n测试模型 · 模拟用量，不计费"
     },
     {
       "name": "B use: steps are in human words (运行技能「second-skill」), no tool names",
       "ok": true,
-      "detail": "运行技能「second-skill」"
+      "detail": "运行技能「second-skill」\n150 ms"
     },
     {
       "name": "B malicious: ../x gives the agent an error and no card",

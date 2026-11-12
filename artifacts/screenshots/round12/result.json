@@ -1,0 +1,110 @@
+{
+  "at": "2026-11-12T02:06:00.446Z",
+  "results": [
+    {
+      "name": "A 本地环境 is still there, greyed out (aria-disabled, not selected)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A the button shows the cloud",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A hovering 本地环境 says 本地应用上线后可用",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A clicking it changes nothing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B the first answer starts with 准备工作空间 (done, with a measured time)",
+      "ok": true,
+      "detail": "准备工作空间\n24 ms"
+    },
+    {
+      "name": "B it is the first row of the turn",
+      "ok": true,
+      "detail": "workspace-step"
+    },
+    {
+      "name": "C thinking shows as 思考中 while it streams",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C the thinking window is capped and follows the newest line",
+      "ok": true,
+      "detail": "{\"h\":120,\"sh\":180,\"top\":60,\"cls\":\"ml-[22px] max-h-[7.5rem] overflow-hidden whitespace-pre-wrap break-words text-[12.5px] leading-5 text-fg-subtle wr-fade-top\"}"
+    },
+    {
+      "name": "C the thinking row shows elapsed seconds",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C running text shimmers",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C thinking + tools form one group while running",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C the running tool row is visible as running",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D the finished turn folds into one line 已完成，用时 N 秒",
+      "ok": true,
+      "detail": "已完成，用时 5 秒"
+    },
+    {
+      "name": "D folded: no step rows visible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D thinking folded to one line with its measured time",
+      "ok": true,
+      "detail": "已思考 2 秒\n·第 1 步：先弄清楚用户要的结果，再决定用哪个工具，最后核对输出是否完整。"
+    },
+    {
+      "name": "D a tool row: one line, name + duration, chevron, closed",
+      "ok": true,
+      "detail": "回显内容\n1 ms"
+    },
+    {
+      "name": "D opening the row shows 参数 and 输出",
+      "ok": true,
+      "detail": "回显内容\n1 ms\n参数\n{\n  \"text\": \"第一次\"\n}\n输出\necho(十二): 第一次"
+    },
+    {
+      "name": "D no misc detail entries (技术详情 / 查看详情 / 工作区中打开 / 工作面板中查看)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D2 a failed step is counted in red on the folded line",
+      "ok": true,
+      "detail": "已完成，用时 1 秒\n· 1 步失败"
+    },
+    {
+      "name": "D2 the failed row is red with 失败",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "E 390px: no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

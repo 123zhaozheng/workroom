@@ -1,10 +1,10 @@
 {
-  "at": "2026-11-11T15:35:11.788Z",
+  "at": "2026-11-12T02:03:28.334Z",
   "results": [
     {
       "name": "setup: organisation id and two conversations",
       "ok": true,
-      "detail": "org_0mwca5jal9d66dcb5feba3a72"
+      "detail": "org_0mwcwlhvf245da7203f0d4272"
     },
     {
       "name": "seeded: 16 events, 1 running sandbox, 8 prewarm decisions, 5 code_run records",
@@ -29,7 +29,7 @@
     {
       "name": "[A] running time = closed intervals (110 min) + the sandbox running now (about 1 h)",
       "ok": true,
-      "detail": "10200402 / open 3600402"
+      "detail": "10200431 / open 3600431"
     },
     {
       "name": "[A] creates tile",
@@ -109,12 +109,12 @@
     {
       "name": "[B] cost = running hours x price, equal to the API and to the page",
       "ok": true,
-      "detail": "0.66695 / $0.67"
+      "detail": "0.666964 / $0.67"
     },
     {
       "name": "[B] both priced: complete cost = sum of both providers, label without '部分'",
       "ok": true,
-      "detail": "2.542134"
+      "detail": "2.542154"
     },
     {
       "name": "[B] per-provider row shows price and cost (E2B 1.25 USD/h x 1.5 h = $1.88)",
@@ -174,12 +174,12 @@
     {
       "name": "[F live] one more create, trigger explicit, cold start recorded",
       "ok": true,
-      "detail": "{\"duration_ms\":632,\"trigger\":\"explicit\",\"provider\":\"opensandbox\"}"
+      "detail": "{\"duration_ms\":611,\"trigger\":\"explicit\",\"provider\":\"opensandbox\"}"
     },
     {
       "name": "[F live] the new conversation is listed with its cold start and a running sandbox",
       "ok": true,
-      "detail": "{\"n\":1,\"p50\":632,\"p95\":632}"
+      "detail": "{\"n\":1,\"p50\":611,\"p95\":611}"
     },
     {
       "name": "[F live] the page shows the same creates number as the API",

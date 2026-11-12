@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:33:16.721Z",
+  "at": "2026-11-12T02:13:07.637Z",
   "results": [
     {
       "name": "A medium 390-light: no horizontal scroll",
@@ -67,24 +67,24 @@
       "detail": "112px"
     },
     {
-      "name": "A medium 390: 查看详情 is collapsed by default and says so (aria-expanded=false)",
+      "name": "A medium 390 [round 12]: 详情 › is collapsed by default and says so (aria-expanded=false)",
       "ok": true,
       "detail": ""
     },
     {
       "name": "A medium 390: folded — 请求人 / 风险说明 / 技术详情 are not on the face",
       "ok": true,
-      "detail": "需要你确认： 对外发送周报 中风险 将《项目周报》v1 发送到 team@example.com 拒绝 允许 查看详情 添加说明"
+      "detail": "需要你确认： 对外发送周报 中风险 将《项目周报》v1 发送到 team@example.com 拒绝 允许 详情 添加说明"
     },
     {
-      "name": "A medium 390: buttons are 拒绝 / 允许 / 查看详情 / 添加说明, nothing focused on open",
+      "name": "A medium 390: buttons are 拒绝 / 允许 / 详情 / 添加说明, nothing focused on open",
       "ok": true,
-      "detail": "拒绝|允许|查看详情|添加说明"
+      "detail": "拒绝|允许|详情|添加说明"
     },
     {
       "name": "A medium 390: 查看详情 opens everything that was folded (请求人 / 代你执行 / 风险说明)",
       "ok": true,
-      "detail": "需要你确认： 对外发送周报 中风险 将《项目周报》v1 发送到 team@example.com 拒绝 允许 收起详情 添加说明 风险 会对外部系统产生变化，请核对内容。 请求人 助手（代你执行） · 刚刚"
+      "detail": "需要你确认： 对外发送周报 中风险 将《项目周报》v1 发送到 team@example.com 拒绝 允许 详情 添加说明 风险 会对外部系统产生变化，请核对内容。 请求人 助手（代你执行） · 刚刚"
     },
     {
       "name": "A medium 390 (details open): no horizontal scroll",
@@ -124,7 +124,7 @@
     {
       "name": "A mcp 390: the scope (收件人 / 标题), who asked and the raw arguments are in 查看详情 (nothing dropped)",
       "ok": true,
-      "detail": "需要你确认： 确认外部操作：飞书 / 发送消息 中风险 将向飞书群「项目组」发送一条消息，内容是本周进展汇总：已完成需求评审、接口联调，下周开始灰度发布。消息发出后所有群成员都能看到，无法撤回。 收起 拒绝 允许 收起详情 添加说明 收件人 项目组 标题 本周进展汇总 风险 会对外部系统产生变化，请核对内容。 请求人 助手（代你执行） · 刚刚 技术详情"
+      "detail": "需要你确认： 确认外部操作：飞书 / 发送消息 中风险 将向飞书群「项目组」发送一条消息，内容是本周进展汇总：已完成需求评审、接口联调，下周开始灰度发布。消息发出后所有群成员都能看到，无法撤回。 收起 拒绝 允许 详情 添加说明 收件人 项目组 标题 本周进展汇总 风险 会对外部系统产生变化，请核对内容。 请求人 助手（代你执行） · 刚刚 参数 { \"to\": \"项目组\", \"subject\":"
     },
     {
       "name": "A skill 390: the draft card is compact (≤ 230px) with 保存 / 不保存 on screen",
@@ -134,7 +134,7 @@
     {
       "name": "A skill 390: face = title, name, 用途, a files/permissions line and a 检查 count; the long file list / sentence are folded",
       "ok": true,
-      "detail": "需要你确认： 保存为个人技能 中风险 周报助手 周报助手weekly-report版本 1.0.0 把本周的工作记录整理成一页周报，按项目分组，并在末尾列出下周计划和需要协调的事项。 3 个文件（含 1 个可执行脚本） · 权限：运行代码、联网 · 2 条提醒 不保存 保存 查看详情 添加说明"
+      "detail": "需要你确认： 保存为个人技能 中风险 周报助手 周报助手weekly-report版本 1.0.0 把本周的工作记录整理成一页周报，按项目分组，并在末尾列出下周计划和需要协调的事项。 3 个文件（含 1 个可执行脚本） · 权限：运行代码、联网 · 2 条提醒 不保存 保存 详情 添加说明"
     },
     {
       "name": "A skill 390: 查看详情 shows every file, the 可执行脚本 mark, permissions, each finding and the 仅你可用 sentence",
@@ -159,10 +159,10 @@
     {
       "name": "A credential 390: 允许的操作 / 有效期 are folded",
       "ok": true,
-      "detail": "助手想使用「GitHub」的密钥 用途：读取你的项目列表，用来汇总进度 等待你填写 只会发往这些网站 api.github.com 不要在聊天里粘贴密钥；请只在此处填写。 密钥 保存方式 仅本次使用 保存供以后使用 用完即弃，不会出现在「我的凭据」里。 提交 拒绝 查看详情"
+      "detail": "助手想使用「GitHub」的密钥 用途：读取你的项目列表，用来汇总进度 等待你填写 只会发往这些网站 api.github.com 不要在聊天里粘贴密钥；请只在此处填写。 密钥 保存方式 仅本次使用 保存供以后使用 用完即弃，不会出现在「我的凭据」里。 提交 拒绝 详情"
     },
     {
-      "name": "A credential 390: 查看详情 shows 允许的操作 (GET, POST), 使用方式 and 有效期, and the tech details are one more level in",
+      "name": "A credential 390 [round 12]: 详情 › shows 允许的操作 (GET, POST), 使用方式, 有效期 and the header line directly (no second 技术详情 level)",
       "ok": true,
       "detail": ""
     },
@@ -194,12 +194,12 @@
     {
       "name": "B sandbox failure 390: same — one inline copy, no horizontal scroll",
       "ok": true,
-      "detail": "[\"运行代码（命令行）失败：沙箱提供方 OpenSandbox 创建沙箱失败：OpenSandbox 创建沙箱失败：fetc\"]"
+      "detail": "[]"
     },
     {
       "name": "B sandbox failure: the reason is shown once, inline where it happened (≤ 1 visible copy outside the model's answer and folded details)",
       "ok": true,
-      "detail": "[\"运行代码（命令行）失败：沙箱提供方 OpenSandbox 创建沙箱失败：OpenSandbox 创建沙箱失败：fetc\"]"
+      "detail": "[]"
     },
     {
       "name": "B sandbox failure: no 工作环境没有准备好 banner repeating it above the composer (the environment button carries a dot instead)",
@@ -207,9 +207,9 @@
       "detail": "[]"
     },
     {
-      "name": "B sandbox failure: the failure is still visible without opening anything — one 失败 line under the step summary",
+      "name": "B sandbox failure [round 12]: still visible without opening anything — the folded turn line says · 1 步失败 in red",
       "ok": true,
-      "detail": "[20]"
+      "detail": "{\"errorCopies\":0,\"copiesText\":[],\"envStatus\":[],\"runBar\":[],\"errorNote\":[],\"stepFailure\":[],\"stepNote\":1,\"aboveComposerPx\":0}"
     },
     {
       "name": "B sandbox failure: nothing but the composer sits below the conversation (no notice rows above it)",
@@ -217,9 +217,9 @@
       "detail": "0px"
     },
     {
-      "name": "B sandbox failure: 详情 opens the step with 技术详情 (tool / arguments / error) — nothing was dropped",
+      "name": "B sandbox failure: the failed row opens to its input (参数, or 代码 for code tools) and 错误 — nothing was dropped",
       "ok": true,
-      "detail": ""
+      "detail": "运行代码（命令行） ·沙箱提供方 OpenSandbox 创建沙箱失败：OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行） 失败 代码 echo hi 错误 <harness> [error] 沙箱提供方 OpenSandbox 创建沙箱失败：OpenSandbox 创建沙箱失败：fetch failed（不会回退到本机执行） </harness> 沙箱提供方 O"
     },
     {
       "name": "B sandbox failure: the environment popover shows 准备失败 and offers 重试",
@@ -237,9 +237,9 @@
       "detail": "40px"
     },
     {
-      "name": "B run failure: the message shows the reason once (模型调用出错 + 这一轮没有完成), with 技术详情 folded in the same line",
+      "name": "B run failure [round 12]: the message shows the reason once (模型调用出错 + 这一轮没有完成); the raw text is behind the note's own › row",
       "ok": true,
-      "detail": "模型调用出错，这一轮没有完成。 技术详情"
+      "detail": "模型调用出错，这一轮没有完成。"
     },
     {
       "name": "B run failure: the bar above the composer is only the status + 重试 (one slim line, no repeated reason, no second 技术详情)",

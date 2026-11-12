@@ -400,7 +400,7 @@ try {
 		await bad.locator("button").first().click();
 		await sleep(250);
 		const badText = await bad.innerText();
-		check("B sandbox failure: the failed row opens to its 参数 and 错误 (tool arguments and the error) — nothing was dropped", /失败/.test(badText) && badText.includes("参数") && badText.includes("错误") && /沙箱提供方|创建沙箱失败|fetch failed/.test(badText), badText.replace(/\s+/g, " ").slice(0, 200));
+		check("B sandbox failure: the failed row opens to its input (参数, or 代码 for code tools) and 错误 — nothing was dropped", /失败/.test(badText) && (badText.includes("参数") || badText.includes("代码")) && badText.includes("错误") && /沙箱提供方|创建沙箱失败|fetch failed/.test(badText), badText.replace(/\s+/g, " ").slice(0, 200));
 		// the environment popover still offers the retry
 		await page.locator(T("env-button")).click();
 		await page.waitForSelector(T("env-popover"));

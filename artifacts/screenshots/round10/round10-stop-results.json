@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:34:19.706Z",
+  "at": "2026-11-12T02:02:36.006Z",
   "results": [
     {
       "name": "stop: the message the person sent is still in the conversation",
@@ -17,9 +17,9 @@
       "detail": ""
     },
     {
-      "name": "stop: the step chain keeps the completed step and says 已停止 (not 失败)",
+      "name": "stop [round 12]: the turn line says 已停止 · 1 步被截断 (not 失败); its steps stay listed",
       "ok": true,
-      "detail": "已停止 · 已完成 1 步"
+      "detail": "已停止 · 1 步被截断"
     },
     {
       "name": "stop: completed step = done, the cut-off step = stopped",

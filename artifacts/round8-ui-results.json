@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-11T15:29:57.586Z",
+  "at": "2026-11-12T01:57:41.912Z",
   "results": [
     {
       "name": "density: members page shows fewer words than before",
@@ -74,7 +74,7 @@
     {
       "name": "select: a 30+ item list scrolls inside the popover and stays inside the viewport (1440×900)",
       "ok": true,
-      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.137939453125,\"h\":352}"
+      "detail": "{\"sh\":1164,\"ch\":350,\"y\":228.1382598876953,\"h\":351.99998474121094}"
     },
     {
       "name": "select @390: the popover is opaque and inside the viewport",

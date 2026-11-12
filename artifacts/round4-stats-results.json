@@ -1,10 +1,10 @@
 {
-  "at": "2026-11-11T15:22:55.254Z",
+  "at": "2026-11-12T01:50:30.644Z",
   "results": [
     {
       "name": "seed-demo.mjs runs against a live server",
       "ok": true,
-      "detail": "live: 4 conversations driven through the API with the fixture model | backfill: 7208 runs, 37301 ledger rows (demo=1, simulated), 2070 knowledge searches, 1106 file versions, 418 automation runs over 365 days"
+      "detail": "live: 4 conversations driven through the API with the fixture model | backfill: 7054 runs, 36492 ledger rows (demo=1, simulated), 2139 knowledge searches, 1110 file versions, 418 automation runs over 365 days"
     },
     {
       "name": "fresh real org: no records and an explanatory note",
@@ -19,7 +19,7 @@
     {
       "name": "lazy chunks load on /stats (page + Recharts)",
       "ok": true,
-      "detail": "StatsPage-BeIAgIbf.js, StatsPage-DMDFVS2t.css, RechartsPanels-BPoGB-KI.js"
+      "detail": "StatsPage-B_ooYNs2.js, StatsPage-DMDFVS2t.css, RechartsPanels-BdscrcXq.js"
     },
     {
       "name": "real org: no demo banner",
@@ -109,7 +109,7 @@
     {
       "name": "punch card: 7 x 24 dots, size varies with volume",
       "ok": true,
-      "detail": "168 dots, 150 with data, 76 sizes"
+      "detail": "168 dots, 148 with data, 79 sizes"
     },
     {
       "name": "waffle: 100 dots, legend counts add up to the API total",
@@ -164,7 +164,7 @@
     {
       "name": "calendar tooltip shows the day and its counts",
       "ok": true,
-      "detail": "12月29日 周一 运行 33 模型请求 68 工具调用 47 Token 43.1万 失败/超时运行 3"
+      "detail": "12月23日 周二 运行 35 模型请求 54 工具调用 34 Token 26.6万 失败/超时运行 2"
     },
     {
       "name": "punch card tooltip shows weekday and hour",
