@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationDetailResponse, ConversationState, EntriesPage, EntryDTO, SubmissionDTO } from "@shared/chat";
 import { ApiError, get, post } from "@/lib/api";
-import { localExecBus, localStreamQuery } from "@/features/localexec/bus";
 
 export type StreamStatus = "connecting" | "live" | "reconnecting" | "offline" | "closed";
 
@@ -24,7 +23,7 @@ export function useConversationStream(spaceId: string, conversationId: number) {
 		let attempts = 0;
 		let disposed = false;
 		const connect = () => {
-			es = new EventSource(`/api/conversations/${spaceId}/${conversationId}/events${localStreamQuery()}`, { withCredentials: true });
+			es = new EventSource(`/api/conversations/${spaceId}/${conversationId}/events`, { withCredentials: true });
 			const onState = (ev: MessageEvent<string>) => {
 				try {
 					setState(JSON.parse(ev.data) as ConversationState);
@@ -36,9 +35,6 @@ export function useConversationStream(spaceId: string, conversationId: number) {
 				}
 			};
 			es.addEventListener("snapshot", onState);
-			// Round 11 (R4): code_run jobs for this tab (see features/localexec).
-			es.addEventListener("localjob", (ev) => { try { localExecBus.emit({ kind: "job", job: JSON.parse((ev as MessageEvent<string>).data) }); } catch { /* ignore */ } });
-			es.addEventListener("localjob-cancel", (ev) => { try { localExecBus.emit({ kind: "cancel", cancel: JSON.parse((ev as MessageEvent<string>).data) }); } catch { /* ignore */ } });
 			es.addEventListener("state", onState);
 			es.addEventListener("error", (ev) => {
 				const data = (ev as MessageEvent<string>).data;

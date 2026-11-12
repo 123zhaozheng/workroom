@@ -325,8 +325,6 @@ export interface ConversationEnvironmentDTO {
 	readonly workDir?: string;
 	/** Round 10: where read-only skills are mounted inside the sandbox ("/skills" for local drivers, next to the working directory for a remote provider). */
 	readonly skillsDir?: string;
-	/** Round 11 (R4): local (browser) execution of this conversation — organisation switch, whether a tab of this user is connected, the conversation's preference. */
-	readonly local?: import("./localexec.ts").LocalExecStatusDTO;
 }
 
 /** Explicit sandbox size an admin sets per provider (round 10). */

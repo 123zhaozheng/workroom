@@ -1,5 +1,5 @@
 // Round 11 (R6): sandbox lifecycle statistics — percentiles, running time (closed + open intervals), cost with / without a price, prewarm what-if table,
-// wasted prewarms, code_run backend counts, permissions and organisation isolation. Events / logs are SEEDED into the real tables (the lifecycle that
+// wasted prewarms, permissions and organisation isolation. Events / logs are SEEDED into the real tables (the lifecycle that
 // writes them is covered by sandbox-lifecycle.test.ts and sandbox-prewarm.test.ts); everything else goes through the real HTTP API.
 //   node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/test/r11-sandbox-stats.test.ts
 import { test } from "node:test";
@@ -15,9 +15,7 @@ import type { DriverRunSpec } from "../src/tools/sandbox/driver.ts";
 import { orgMember } from "./fixtures/util.ts";
 import { answer, call, fixedActor, toolHarness } from "./fixtures/tool-harness.ts";
 import { recordSandboxEvent, sandboxEventsOf, type SandboxEventKind, type SandboxEventTrigger } from "../src/tools/sandbox/lifecycle-events.ts";
-import { codeRunStats, nearestRank, parseRange, percentiles, sandboxStats } from "../src/tools/sandbox/lifecycle-stats.ts";
-import { createLocalExecExtension } from "../src/tools/localexec/extension.ts";
-import type { LocalExec } from "../src/tools/localexec/service.ts";
+import { nearestRank, parseRange, percentiles, sandboxStats } from "../src/tools/sandbox/lifecycle-stats.ts";
 import type { SandboxConversationStatsResponse, SandboxPricesDTO, SandboxStatsDTO } from "../../shared/sandbox-stats.ts";
 
 const MIN = 60_000;
@@ -396,53 +394,6 @@ test("wasted prewarms: fired, and the sandbox was paused / destroyed before any 
 		assert.equal(p.wasted, 3);
 		assert.equal(p.wastedRunningMs, 4 * MIN + 5 * MIN + MIN);
 		assert.equal(p.pending, 1);
-	} finally {
-		await w.t.dispose();
-	}
-});
-
-// ------------------------------------------------------------------ code_run backends (R4)
-test("code_run backend counts come from the tool-call records; the real tool writes '<backend> <status> <reason>'", async () => {
-	const w = await world();
-	try {
-		const ctx = w.t.app.ctx;
-		const space = ctx.services.get("identity").personalSpace(w.owner.me.userId, w.orgId);
-		const svc = ctx.services.get("localExec") as LocalExec;
-		svc.setCloudRunner(async () => ({ id: "run_fake", status: "ok", exitCode: 0, stdout: "x", stderr: "", durationMs: 3 }));
-		// round 12: a conversation prefers the cloud by default (本地环境 is greyed out) -> every call runs in the cloud (reasons pref_cloud / forced_cloud)
-		const h = await toolHarness([createLocalExecExtension(ctx, { resolveActor: fixedActor(ctx, w.owner.me.userId, w.orgId, space.id) })], [
-			call("code_run", { language: "javascript", code: "return 1" }, "c1"),
-			call("code_run", { language: "javascript", code: "return 2", backend: "cloud" }, "c2"),
-			answer("done"),
-		]);
-		await h.run("go");
-		await h.close();
-		const rows = ctx.db.all<{ result_summary: string }>("SELECT result_summary FROM tool_calls WHERE tool = 'code_run' ORDER BY started_at, rowid");
-		assert.deepEqual(rows.map((r) => r.result_summary), ["cloud ok pref_cloud", "cloud ok forced_cloud"]);
-		assert.deepEqual(codeRunStats(ctx, w.orgId, "", "9999"), { browser: 0, cloud: 2, upgraded: 0 });
-
-		// records of the other shapes (browser run, upgraded run, an older record without a reason, a failed run) and another organisation / conversation
-		const ins = (org: string, c: Conv, summary: string | null, status = "ok", n = 0) =>
-			ctx.db.run(
-				"INSERT INTO tool_calls (id, tool, org_id, user_id, space_id, conversation_id, task_id, call_id, args_summary, status, result_summary, started_at, started_ms) VALUES (?, 'code_run', ?, 'u', ?, ?, 1, ?, '{}', ?, ?, ?, 0)",
-				`tc_seed_${n}_${Math.random().toString(36).slice(2)}`, org, c.spaceId, c.conversationId, `s${n}`, status, summary, new Date().toISOString(),
-			);
-		ins(w.orgId, w.m, "browser ok ok", "ok", 1);
-		ins(w.orgId, w.m, "browser ok ok", "ok", 2);
-		ins(w.orgId, w.m, "browser error ok", "ok", 3);
-		ins(w.orgId, w.m, "cloud ok browser_failed upgraded", "ok", 4);
-		ins(w.orgId, w.b, "cloud error needs_network", "ok", 5);
-		ins(w.orgId, w.b, "browser ok", "ok", 6); // older format
-		ins(w.orgId, w.b, null, "error", 7); // threw: no backend known
-		ins(w.stranger.me.orgId, w.x, "browser ok ok", "ok", 8);
-		const s = await w.stats(w.owner.token);
-		assert.deepEqual(s.codeRun, { browser: 4, cloud: 4, upgraded: 1 });
-		// the member's conversation lives in another space than the tool harness conversation, so its numbers are exactly the four seeded records
-		const conv = await w.t.json<SandboxConversationStatsResponse>("GET", `/api/conversations/${w.m.spaceId}/${w.m.conversationId}/sandbox-stats`, { token: w.member.token });
-		assert.deepEqual(conv.codeRun, { browser: 3, cloud: 1, upgraded: 1 });
-		// outside the range nothing is counted
-		const old = await w.stats(w.owner.token, `?from=${iso(Date.now() - 20 * 24 * HOUR)}&to=${iso(Date.now() - 10 * 24 * HOUR)}`);
-		assert.deepEqual(old.codeRun, { browser: 0, cloud: 0, upgraded: 0 });
 	} finally {
 		await w.t.dispose();
 	}

@@ -151,7 +151,7 @@ export function FlowRow({ icon, title, summary, trailing, tone, running, open, e
 
 // ------------------------------------------------------------------ tool
 
-const CODE_TOOLS = new Set(["sandbox_exec", "code_run"]);
+const CODE_TOOLS = new Set(["sandbox_exec"]);
 const MAX_SHOWN = 20_000;
 
 function Io({ label, body, tone }: { label: string; body: string; tone?: "danger" }) {

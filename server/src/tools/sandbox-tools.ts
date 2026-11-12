@@ -40,7 +40,7 @@ export function createSandboxTools(ctx: AppContext, opts: { resolveActor?: Actor
 	const exec = defineTool({
 		name: "sandbox_exec",
 		description:
-			`Run shell, Python 3 or Node.js code in an isolated sandbox (always the cloud sandbox: use it for shell, package installs, network, services or long jobs; for quick pure computation prefer code_run). The sandbox working directory persists for this conversation (its absolute path is in the system prompt; it is the cwd of every command, so prefer relative paths) ` +
+			`Run shell, Python 3 or Node.js code in an isolated sandbox (always the cloud sandbox: use it for shell, package installs, network, services or long jobs). The sandbox working directory persists for this conversation (its absolute path is in the system prompt; it is the cwd of every command, so prefer relative paths) ` +
 			`(files idle for ${RETENTION_HOURS} h are deleted — publish results with sandbox_publish or file_create; bring library files in with sandbox_import). No network access by default. ` +
 			`Limits: wall time timeoutMs (default 30 s, max ${MAX_TIMEOUT_MS / 1000} s), 512 MB memory, 64 MB per file. Only the working directory is writable (/tmp is a small scratch disk). Read-only mounts such as the skills directory (see the system prompt) may exist.`,
 		parameters: obj({ language: oneOf(["shell", "python", "node"]), code: str({ minLength: 1 }), timeoutMs: opt(int({ minimum: 1000, maximum: MAX_TIMEOUT_MS })) }),

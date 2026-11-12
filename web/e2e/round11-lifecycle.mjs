@@ -126,17 +126,13 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 	// 云端沙箱 starts a sandbox only when the state is none / lost / paused; with a sandbox that is ready it changes nothing but the preference
 	for (const [state, expectPrepare] of [["none", 1], ["lost", 1], ["paused", 1], ["ready", 0], ["preparing", 0], ["failed", 0]]) {
 		posts.length = 0;
-		current = dto({ state, ...(state === "failed" ? { error: LONG } : {}), local: { enabled: true, connected: false, preference: "local" } });
+		current = dto({ state, ...(state === "failed" ? { error: LONG } : {}) });
 		await p.unroute(envUrl);
 		const puts = [];
-		await p.route(/\/local-exec$/, (r) => {
-			if (r.request().method() === "PUT") puts.push(r.request().postData());
-			return r.fulfill({ json: { enabled: true, connected: false, preference: "cloud" } });
-		});
 		await p.route(envUrl, (r) => {
 			if (r.request().method() === "POST") {
 				posts.push(r.request().postData());
-				return r.fulfill({ json: dto({ state: "ready", local: { enabled: true, connected: false, preference: "cloud" } }) });
+				return r.fulfill({ json: dto({ state: "ready" }) });
 			}
 			return r.fulfill({ json: current });
 		});
@@ -146,8 +142,7 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 		await p.waitForSelector(T("env-popover"));
 		await p.locator(T("env-cloud")).click();
 		await sleep(700);
-		check(`A [intercepted] clicking 云端沙箱 while ${state}: ${expectPrepare ? "exactly one POST …/prepare with { trigger: \"explicit\" }" : "no prepare"}; the preference is saved (PUT local-exec { preference: \"cloud\" })`, posts.length === expectPrepare && (!expectPrepare || JSON.parse(posts[0] ?? "{}").trigger === "explicit") && puts.length === 1 && JSON.parse(puts[0] ?? "{}").preference === "cloud", `posts=${JSON.stringify(posts)} puts=${JSON.stringify(puts)}`);
-		await p.unroute(/\/local-exec$/);
+		check(`A [intercepted] clicking 云端沙箱 while ${state}: ${expectPrepare ? "exactly one POST …/prepare with { trigger: \"explicit\" }" : "no prepare"}; no local-exec request (round 14: removed)`, posts.length === expectPrepare && (!expectPrepare || JSON.parse(posts[0] ?? "{}").trigger === "explicit") && puts.length === 0, `posts=${JSON.stringify(posts)} puts=${JSON.stringify(puts)}`);
 		await p.keyboard.press("Escape").catch(() => {});
 	}
 	await p.unroute(envUrl);
@@ -194,7 +189,7 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 	const prepares = [];
 	page.on("request", (r) => {
 		const path = new URL(r.url()).pathname;
-		if (r.method() === "PUT" && /\/conversations\/[^/]+\/\d+\/local-exec$/.test(path)) puts.push(r.postData());
+		if (/local-exec/.test(path)) puts.push(path); // round 14: any local-exec request is a failure
 		if (r.method() === "POST" && /\/environment\/prepare$/.test(path)) prepares.push(path);
 	});
 	// B1. round 12: 本地环境 is greyed out until the desktop app ships — the home page shows the cloud, choosing 云端沙箱 is kept in the tab
@@ -220,8 +215,7 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 	await idle(page);
 	const [, spaceId, convNo] = /\/c\/([^/]+)\/(\d+)/.exec(page.url());
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
-	const saved = await json(`/conversations/${spaceId}/${convNo}/local-exec`);
-	check("B1 the new conversation runs in the cloud (server preference cloud by default, nothing to save); the tab's pending value is consumed", saved.preference === "cloud" && puts.length === 0 && (await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith("wr-env-pref:")).length)) === 0, JSON.stringify({ saved, puts }));
+	check("B1 the new conversation runs in the cloud (nothing to save); the tab's pending value is consumed", puts.length === 0 && (await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith("wr-env-pref:")).length)) === 0, JSON.stringify({ puts }));
 	// B2. a reload keeps it; 本地环境 cannot be chosen in a conversation either
 	await page.reload();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
@@ -230,19 +224,17 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 	await page.waitForSelector(T("env-popover"));
 	await page.locator(T("env-local")).click({ force: true });
 	await sleep(500);
-	check("B2 clicking the greyed 本地环境 in a conversation saves nothing and starts nothing", (await json(`/conversations/${spaceId}/${convNo}/local-exec`)).preference === "cloud" && puts.length === 0 && prepares.length === 0 && (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "cloud");
+	check("B2 clicking the greyed 本地环境 in a conversation saves nothing and starts nothing", puts.length === 0 && prepares.length === 0 && (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "cloud");
 	await shotR(page, "lifecycle-local-greyed-1440");
 	await page.keyboard.press("Escape");
-	// B3. admin switch off: 本地环境 is disabled everywhere and the button follows the cloud
-	const off = await api("/sandbox/local-exec", { method: "PUT", data: { enabled: false } });
-	check("B3 setup: the admin switched local execution off", off.ok() && (await json("/sandbox/local-exec")).enabled === false);
+	// B3. the disabled row
 	await page.reload();
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
 	await page.locator(T("env-button")).click();
 	await page.waitForSelector(T("env-popover"));
 	const local = page.locator(T("env-local"));
 	const cls = (await local.getAttribute("class")) ?? "";
-	check("B3 switch off: 本地环境 is disabled (aria-disabled, dashed, not checked), just those four characters; 云端沙箱 is the checked one", (await local.getAttribute("aria-disabled")) === "true" && cls.includes("border-dashed") && (await local.getAttribute("aria-checked")) === "false" && (await local.innerText()).trim() === "本地环境" && (await page.locator(T("env-cloud")).getAttribute("aria-checked")) === "true");
+	check("B3 本地环境 is disabled (aria-disabled, dashed, not checked), just those four characters; 云端沙箱 is the checked one", (await local.getAttribute("aria-disabled")) === "true" && cls.includes("border-dashed") && (await local.getAttribute("aria-checked")) === "false" && (await local.innerText()).trim() === "本地环境" && (await page.locator(T("env-cloud")).getAttribute("aria-checked")) === "true");
 	const putsBefore = puts.length;
 	await local.click({ force: true });
 	await sleep(500);
@@ -252,7 +244,7 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 	await page.goto(base);
 	await page.waitForSelector(T("env-button"));
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.hasAttribute("data-env-pref"));
-	check("B3 home with the switch off: the button is 云端沙箱 too, 本地环境 disabled", (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "cloud" && (await (async () => {
+	check("B3 home: the button is 云端沙箱 too, 本地环境 disabled", (await page.locator(T("env-button")).getAttribute("data-env-pref")) === "cloud" && (await (async () => {
 		await page.locator(T("env-button")).click();
 		await page.waitForSelector(T("env-popover"));
 		return (await page.locator(T("env-local")).getAttribute("aria-disabled")) === "true";
@@ -273,13 +265,12 @@ const popText = async (p) => (await p.locator(T("env-popover")).innerText()).rep
 		await shotR(pg, "lifecycle-local-disabled-390-dark");
 		await c.close();
 	}
-	const on = await api("/sandbox/local-exec", { method: "PUT", data: { enabled: true } });
 	await page.reload();
 	await page.waitForSelector(T("env-button"));
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.hasAttribute("data-env-pref"));
 	await page.locator(T("env-button")).click();
 	await page.waitForSelector(T("env-popover"));
-	check("B3 [round 12] switched back on: 本地环境 stays greyed out (the desktop app has not shipped), the switch itself is saved", on.ok() && (await json("/sandbox/local-exec")).enabled === true && (await page.locator(T("env-local")).getAttribute("aria-disabled")) === "true");
+	check("B3 本地环境 stays greyed out (reserved for the desktop app)", (await page.locator(T("env-local")).getAttribute("aria-disabled")) === "true");
 	await page.keyboard.press("Escape");
 }
 

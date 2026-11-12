@@ -44,14 +44,6 @@ export interface SandboxConversationStatsDTO extends SandboxLifecycleStatsDTO {
 	readonly title: string | null;
 }
 
-/** Where code_run ran (R4): logged in the tool call record ("<backend> <status> <reason>[ upgraded]"). */
-export interface SandboxCodeRunStatsDTO {
-	readonly browser: number;
-	readonly cloud: number;
-	/** Browser runs that failed for a capacity reason and were retried in the cloud (counted under `cloud` as well). */
-	readonly upgraded: number;
-}
-
 export interface SandboxPrewarmTuningDTO {
 	readonly threshold: number;
 	readonly enabled: boolean;
@@ -83,7 +75,6 @@ export interface SandboxStatsDTO {
 	readonly byProvider: readonly SandboxProviderStatsDTO[];
 	/** Top conversations by running time (at most 20). */
 	readonly conversations: readonly SandboxConversationStatsDTO[];
-	readonly codeRun: SandboxCodeRunStatsDTO;
 	readonly prewarm: SandboxPrewarmTuningDTO;
 }
 
@@ -92,7 +83,6 @@ export interface SandboxConversationStatsResponse {
 	readonly spaceId: string;
 	readonly conversationId: number;
 	readonly stats: SandboxLifecycleStatsDTO;
-	readonly codeRun: SandboxCodeRunStatsDTO;
 	readonly costVisible: boolean;
 }
 

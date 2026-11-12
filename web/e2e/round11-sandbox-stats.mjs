@@ -1,5 +1,5 @@
 // Round 11 · R6 — sandbox lifecycle statistics on the stats page. REAL browser, REAL server (fixture model, no real AI).
-//  A. SEEDED: lifecycle events, instances, prewarm decisions and code_run records are written into the server's database (the real lifecycle that writes
+//  A. SEEDED: lifecycle events, instances, and prewarm decisions are written into the server's database (the real lifecycle that writes
 //     them is covered by server/test/sandbox-lifecycle.test.ts and, below, by section F against a live OpenSandbox when WORKROOM_TEST_OPENSANDBOX_URL is set).
 //     Checks: the 沙箱 section renders on the organisation scope only; every KPI equals the API; no cost tile while no price is configured.
 //  B. price per provider-hour set through the REAL admin UI (admin › 沙箱): the cost tile and the per-provider cost appear and match the API; clearing removes them.
@@ -75,10 +75,7 @@ db.prepare("INSERT INTO tool_sandbox_instances (id, provider, space_id, workspac
 // prewarm decisions: score, fired, reason, used  (precision 3/4, recall 3/4 at 0.3)
 [[0.95, 1, "fired", 1], [0.65, 1, "fired", 1], [0.45, 1, "fired", 0], [0.35, 1, "fired", 1], [0.25, 0, "below", 1], [0.15, 0, "below", 0], [0.05, 0, "below", 0], [0.5, 0, "ready", 1]].forEach(([score, fired, reason, used], i) =>
 	db.prepare("INSERT INTO tool_sandbox_prewarm_log (org_id, space_id, conversation_id, at, score, threshold, fired, reason, signals, used_at) VALUES (?, ?, ?, ?, ?, 0.3, ?, ?, '', ?)").run(orgId, A.spaceId, 100 + i, iso(now - 2 * HOUR), score, fired, reason, used ? iso(now - HOUR) : null));
-// code_run records: browser 3, cloud 2 (one of them an upgrade)
-["browser ok ok", "browser ok ok", "browser error ok", "cloud ok no_tab", "cloud ok browser_failed upgraded"].forEach((summary, i) =>
-	db.prepare("INSERT INTO tool_calls (id, tool, org_id, user_id, space_id, conversation_id, task_id, call_id, args_summary, status, result_summary, started_at, started_ms) VALUES (?, 'code_run', ?, 'u', ?, ?, 1, ?, '{}', 'ok', ?, ?, 0)").run(`tc_seed_${i}`, orgId, A.spaceId, A.conversationId, `s${i}`, summary, iso(now - 4 * HOUR)));
-check("seeded: 16 events, 1 running sandbox, 8 prewarm decisions, 5 code_run records", db.prepare("SELECT COUNT(*) AS n FROM tool_sandbox_events").get().n === 16 && db.prepare("SELECT COUNT(*) AS n FROM tool_sandbox_prewarm_log").get().n === 8);
+check("seeded: 16 events, 1 running sandbox, 8 prewarm decisions", db.prepare("SELECT COUNT(*) AS n FROM tool_sandbox_events").get().n === 16 && db.prepare("SELECT COUNT(*) AS n FROM tool_sandbox_prewarm_log").get().n === 8);
 
 const statsUrl = `${base}/stats?scope=org&range=30d`;
 /** Open the organisation stats page and return the sandbox API response the section itself fetched. */
@@ -102,7 +99,6 @@ check("[A] creates tile", (await kpi(page, "creates")) === "6");
 check("[A] cold start P50 / P95 tiles equal the API", (await kpi(page, "coldP50")) === fmtMs(d.total.coldStart.p50) && (await kpi(page, "coldP95")) === fmtMs(d.total.coldStart.p95), `${await kpi(page, "coldP50")} / ${await kpi(page, "coldP95")}`);
 check("[A] resume P50 / P95 tiles equal the API", (await kpi(page, "resumeP50")) === fmtMs(d.total.resume.p50) && (await kpi(page, "resumeP95")) === fmtMs(d.total.resume.p95));
 check("[A] idle pauses and running-time tiles equal the API", (await kpi(page, "idlePauses")) === "3" && (await kpi(page, "running")) === fmtRunning(d.total.runningMs), await kpi(page, "running"));
-check("[A] code_run tile shows browser / cloud and the upgrade", (await kpi(page, "codeRun")) === "3 / 2" && /升级 1/.test(await page.locator(`${T("sandbox-stats")} [data-kpi="codeRun"]`).innerText()));
 check("[A] no price configured: NO cost tile and '—' per provider (nothing invented)", (await hasKpi(page, "cost")) === 0 && (await page.locator(T("sbx-provider-row")).count()) === 2 && (await page.locator(T("sbx-provider-row")).allInnerTexts()).every((t) => t.split("\t").slice(-2).every((c) => c.trim() === "—")));
 const rows = await page.locator(T("sbx-provider-row")).evaluateAll((els) => els.map((e) => [e.dataset.provider, [...e.querySelectorAll("td")].map((c) => c.textContent.trim())]));
 const os = rows.find((r) => r[0] === "opensandbox")[1];
