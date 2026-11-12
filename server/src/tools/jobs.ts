@@ -41,7 +41,7 @@ CREATE INDEX tool_jobs_conv ON tool_jobs(space_id, conversation_id, created_at);
 const TERMINAL: readonly JobStatus[] = ["done", "failed", "cancelled", "timeout"];
 
 /** Conversation mirror of job status (fork: "initial": a branch does not inherit the original's jobs). */
-export const JobsDoc = defineDoc<{ jobs: Record<string, { status: string; title: string; kind: string; updatedAt: string }> }>({
+export const JobsDoc = defineDoc<{ jobs: Record<string, { status: string; title: string; kind: string; updatedAt: string }>; tasks?: Record<string, number> }>({
 	kind: "wr.jobs",
 	version: 1,
 	scope: "conversation",
@@ -163,6 +163,9 @@ export class Jobs {
 		);
 		return this.row(id)!;
 	}
+	/** Test seam: awaited by job_start right after the task+mapping commit and before the projection write (simulates a crash window). */
+	afterTaskCommitted?: (jobId: string) => Promise<void>;
+	/** Projection write: tool_jobs.task_id mirrors the durable mapping `JobsDoc.tasks[jobId]`; safe to repeat, rebuilt on replay / task start. */
 	attachTask(id: string, taskId: number): void {
 		this.#ctx.db.run("UPDATE tool_jobs SET task_id = COALESCE(task_id, ?) WHERE id = ?", taskId, id);
 	}
@@ -287,7 +290,11 @@ export function createJobsExtension(ctx: AppContext, opts: { resolveActor?: Acto
 				const id = task.input.jobId;
 				let r = j.row(id);
 				const done = async (status: JobStatus) => runtime.commit(async (tx) => (await mirror(tx, runtime.conversationId, j.row(id)), { status: "terminal", outcome: { status: "completed", result: { status } } }), context);
-				if (!r || (r.task_id !== null && r.task_id !== (task.id as number))) return void (await done(r?.status ?? "failed")); // duplicate task of a replayed job_start
+				// Ownership: the durable mapping (written atomically with this task's creation) decides, not the app-db projection.
+				let owner: number | undefined;
+				await runtime.commit(async (tx) => void (owner = (await tx.doc(JobsDoc, runtime.conversationId)).tasks?.[id]), context);
+				if (!r || owner !== (task.id as unknown as number) || (r.task_id !== null && r.task_id !== (task.id as number))) return void (await done(r?.status ?? "failed")); // not this job's task
+				j.attachTask(id, task.id as number); // rebuild the projection if the starter crashed before writing it
 				if (TERMINAL.includes(r.status)) return void (await done(r.status));
 				// Attempt bookkeeping in durable memos: a memo that already exists means a previous process ran this attempt.
 				let attempt = 1;
@@ -350,8 +357,18 @@ export function createJobsExtension(ctx: AppContext, opts: { resolveActor?: Acto
 				if (args.kind === "browse") await requirePermission(ctx, actor.principal, "sandbox.browser");
 				const row = jobs().create(actor.principal, actor.space, actor.conversationId, `${actor.conversationId}:${actor.taskId}:${actor.callId}`, args as JobInput);
 				if (row.task_id === null) {
-					const remembered = await api.memo<number>("jobTask", context);
-					const taskId = remembered ?? (await api.memo<number>("jobTask", (await api.createTask(JobTask, { jobId: row.id }, { ownership: { kind: "conversation" }, background: true }, context)) as unknown as number, context));
+					// One durable commit: create the task AND record job -> task in the conversation doc. A replay (same call id, so same job id)
+					// finds the mapping and returns the existing task instead of creating a second one.
+					const taskId = await api.commit(async (tx) => {
+						const doc = await tx.doc(JobsDoc, actor.conversationId as any);
+						const existing = doc.tasks?.[row.id];
+						if (existing !== undefined) return existing;
+						const created = (await tx.createTask(JobTask, { jobId: row.id }, { ownership: { kind: "conversation" }, conversationId: actor.conversationId as any, background: true })) as unknown as number;
+						doc.tasks ??= {};
+						doc.tasks[row.id] = created;
+						return created;
+					}, context);
+					await jobs().afterTaskCommitted?.(row.id);
 					jobs().attachTask(row.id, taskId);
 				}
 				return jobs().row(row.id)!;
