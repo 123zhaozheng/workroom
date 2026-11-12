@@ -3,7 +3,7 @@
 // spaceId, createdBy, title, projectId, kind, archived, createdAt/updatedAt.
 import { randomUUID } from "node:crypto";
 import { type Context } from "@earendil-works/chord/context";
-import { configure, ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi, type PromptInput, type Extension } from "@earendil-works/pi-durable";
+import { configure, ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, UsageDoc, AgentDoc, type Conversation, type ConversationId, type EntryId, type EntryRecord, type Harness, type SubmissionDraft, type SubmissionId, type ConversationRecord, type TaskId, type ToolExecutionApi, type PromptInput, type Extension } from "@earendil-works/pi-durable";
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -11,7 +11,8 @@ import type { AbortResponse, AgentDTO, ApprovalDTO, AssistantDTO, ConversationKi
 import type { WorkspacePrepItem } from "../../../shared/chat.ts";
 import type { Sandbox } from "../tools/sandbox.ts";
 import { storeLabel } from "../tools/sandbox/stores.ts";
-import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry } from "./docs.ts";
+import { closeDeadWork } from "./lifecycle.ts";
+import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
@@ -135,6 +136,17 @@ export class Runtime implements RuntimeService {
 		}
 	}
 
+	/**
+	 * Round 13: the registered tools for an assistant's allowlist (names → registrations). Names that are not installed are left out
+	 * (they cannot be offered anyway). An assistant with team members keeps `delegate`, the way its members are reached.
+	 */
+	#toolsByName(names: readonly string[], withDelegate: boolean) {
+		const byName = new Map(this.manager.registry.snapshot().tools().map((t) => [t.tool.name, t.tool] as const));
+		const want = new Set(names.map(String));
+		if (withDelegate) want.add("delegate");
+		return [...want].flatMap((n) => (byName.has(n) ? [byName.get(n)!] : []));
+	}
+
 	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: Context): Promise<{ conversationId: number; notice?: string }> {
 		const started = Date.now();
 		const space = this.manager.space(spaceId);
@@ -162,6 +174,7 @@ export class Runtime implements RuntimeService {
 		model ??= await this.defaultModel(principal);
 		const harness = await this.manager.get(spaceId);
 		const envInfo = await this.#workspaceEnv(space);
+		const allowed = assistant?.tools ? this.#toolsByName(assistant.tools, assistant.members.length > 0) : undefined;
 		const conv = await harness.createConversation(
 			{
 				ownership: { kind: "ownerless" },
@@ -169,6 +182,9 @@ export class Runtime implements RuntimeService {
 					model: { provider: model.provider, modelId: model.modelId },
 					...(model.thinkingLevel ? { thinkingLevel: model.thinkingLevel } : {}),
 					...(assistant?.instructions ? { instructions: assistant.instructions } : {}),
+					// Round 13: the assistant's tool allowlist is the conversation's ENABLED tool set (pi-durable `tools`): it filters what the
+					// model is offered AND what nested calls (Code Mode) can reach. Unset = product default; [] = no tools; a list = exactly those.
+					...(allowed ? { tools: allowed } : {}),
 				},
 				init: async (tx, id) => {
 					await tx.appendEntry(StartEntry, id, { data: { createdBy: principal.userId, at: nowIso() } });
@@ -181,6 +197,9 @@ export class Runtime implements RuntimeService {
 						d.assistantId = assistant.id;
 						d.name = assistant.name;
 						d.members = structuredClone(assistant.members) as any;
+						// Round 13: the assistant's knowledge scope and tool allowlist, recorded for the tools that enforce them and for audit
+						d.knowledgeScope = assistant.knowledge?.kbIds ? { kbIds: assistant.knowledge.kbIds.map(String) } : null;
+						d.tools = assistant.tools ? [...assistant.tools] : null;
 					}
 				},
 			},
@@ -252,10 +271,78 @@ export class Runtime implements RuntimeService {
 		return null;
 	}
 
-	/** The user a run acts for (see inputOfRun). */
+	/**
+	 * Round 13: submit on behalf of `p` and record `p` as the execution identity of that submission in the SAME commit
+	 * (RunActorDoc). Every run-starting / run-joining submission of the runtime goes through here.
+	 */
+	async #submitAs(harness: Harness, conv: Conversation, p: Pick<Principal, "userId" | "orgId">, via: RunActor["via"], draft: SubmissionDraft, context: Context) {
+		const sid = await harness.commit(async (tx) => {
+			const id = await conv.submit(tx, draft);
+			const d = await tx.doc(RunActorDoc, conv.id);
+			const key = String(id as number);
+			// a replayed requestId returns the existing submission: its recorded actor stays as it was
+			if (!d.bySubmission[key]) {
+				d.bySubmission[key] = { userId: p.userId, orgId: p.orgId, via, at: Date.now() };
+				d.order.push(id as number);
+				while (d.order.length > RUN_ACTOR_KEEP) delete d.bySubmission[String(d.order.shift())];
+			}
+			return id;
+		}, context);
+		const sub = await harness.submission(sid, context);
+		if (!sub) throw new HttpError(500, "submit_failed", "提交未能记录");
+		return sub;
+	}
+
+	/**
+	 * Round 13: the execution identity of the current run of a conversation — whose permissions, models, knowledge and credentials it
+	 * uses. Never guessed from who wrote older messages:
+	 *  1. the newest input placed into the run (whoever gave the latest instruction is responsible for what follows), by the actor
+	 *     recorded with its submission, else by the author stored on its entry;
+	 *  2. a run without placed inputs (a 继续 / 重新生成 run, or an answered run finishing its afterRun work): the newest recorded
+	 *     submission of this conversation that is no longer queued — the operator who started it;
+	 *  3. a task-owned child conversation (subagent): its owner's run, transitively.
+	 * Otherwise null: the caller refuses (no identity, no permissions).
+	 */
+	async actorOfRun(harness: Harness, conversationId: number, context: Context, depth = 0): Promise<RunActor | { userId: string; orgId: string; via: "owner" } | null> {
+		if (depth > 8) return null;
+		const live = await harness.snapshot(LiveDoc, cid(conversationId), context);
+		const run = live?.run;
+		const recorded = await harness.snapshot(RunActorDoc, cid(conversationId), context);
+		if (run) {
+			for (const sid of [...run.inputs].reverse()) {
+				const a = recorded?.bySubmission[String(sid as number)];
+				if (a) return a;
+				const sub = await harness.submission(sid, context);
+				const rec = sub ? await sub.status(context) : undefined;
+				const entryId = (rec as { entry?: EntryId } | undefined)?.entry;
+				if (entryId === undefined) continue;
+				const e = await harness.commit((tx) => tx.entry(InputEntry, entryId), context);
+				if (e?.data?.userId) return { userId: e.data.userId, orgId: e.data.orgId, via: "input", at: 0 };
+			}
+			for (const sid of [...(recorded?.order ?? [])].reverse()) {
+				const a = recorded?.bySubmission[String(sid)];
+				if (!a) continue;
+				const sub = await harness.submission(sid as SubmissionId, context);
+				const rec = sub ? await sub.status(context) : undefined;
+				if (rec && rec.status !== "queued") return a;
+			}
+		}
+		const conv = await harness.commit((tx) => tx.conversation(cid(conversationId)), context);
+		if (conv?.owner) return this.actorOfRun(harness, conv.owner.conversationId as number, context, depth + 1);
+		return null;
+	}
+
+	/** The user a run acts for (see actorOfRun). */
 	async principalOfRun(harness: Harness, conversationId: number, context: Context): Promise<{ userId: string; orgId: string } | null> {
-		const input = await this.inputOfRun(harness, conversationId, context);
-		return input ? { userId: input.userId, orgId: input.orgId } : null;
+		const a = await this.actorOfRun(harness, conversationId, context);
+		return a ? { userId: a.userId, orgId: a.orgId } : null;
+	}
+
+	/** Round 13: the execution identity behind a model request / compaction of a run (for the model gateway's per-user checks). */
+	async principalForRequest(api: { conversationId: unknown; snapshot: ToolExecutionApi["snapshot"] }, context: Context): Promise<{ userId: string; orgId: string } | null> {
+		const spaceId = (await api.snapshot(SpaceDoc, context))?.spaceId;
+		if (!spaceId) return null;
+		return this.principalOfRun(await this.manager.get(spaceId), api.conversationId as number, context);
 	}
 
 	// ------------------------------------------------------------------ extras used by C / D (duck-typed there)
@@ -682,7 +769,11 @@ export class Runtime implements RuntimeService {
 		(data as any).requestId = input.requestId;
 		let sub;
 		try {
-			sub = await conv.submit(
+			sub = await this.#submitAs(
+				harness,
+				conv,
+				p,
+				"input",
 				{
 					type: "input",
 					content: this.composeContent(input),
@@ -803,7 +894,8 @@ export class Runtime implements RuntimeService {
 			e = user;
 		}
 		const { conv: fork, summary } = await this.#branch(p, spaceId, harness, conv, row, e.id, undefined, context);
-		const sub = await fork.submit({ type: "continue", requestId: `regenerate:${conversationId}:${e.id}:${fork.id}` }, context);
+		// Round 13: the new answer runs as the person who pressed 重新生成 (recorded with the submission), never as the original author.
+		const sub = await this.#submitAs(harness, fork, p, "regenerate", { type: "continue", requestId: `regenerate:${conversationId}:${e.id}:${fork.id}` }, context);
 		return { conversation: summary, submissionId: sub.id as number };
 	}
 
@@ -819,7 +911,10 @@ export class Runtime implements RuntimeService {
 		const queued = ((await harness.snapshot(InboxDoc, conv.id, context))?.items ?? []).filter((i) => i.mode !== "write").map((i) => ({ id: i.id as number, entry: (i as any).entry }));
 		await conv.abort(context, body.background ? { background: true } : undefined);
 		const unsent = await this.recordUnplaced(harness, conv, queued, context);
-		const cancelledApprovals = await this.#cancelPendingApprovals(harness, conv.id, context);
+		// Everything the kernel actually cancelled: this conversation and the subagent children whose carrier task ended
+		// (foreground children always; background ones only with "stop all"). A kept background child keeps its approvals.
+		const closed = await closeDeadWork(harness, conversationId, { stopped: true }, context);
+		const cancelledApprovals = closed.cancelledApprovals;
 		await this.#flagCutOffEffects(harness, conv.id, context);
 		// A run aborted during a tool call made no model request: tell the usage ledger (group E) to re-import.
 		if (this.ctx.services.has("usage")) (this.ctx.services.get("usage") as { markDirty?: (s: string, c: number) => void }).markDirty?.(spaceId, conversationId);
@@ -845,28 +940,11 @@ export class Runtime implements RuntimeService {
 		}, context);
 	}
 
-	/** After a stop no tool call of this conversation is waiting any more: its pending approvals are settled as cancelled (no decider, nothing executed). */
-	async #cancelPendingApprovals(harness: Harness, conversationId: ConversationId, context: Context): Promise<number> {
-		const pending = Object.values((await harness.snapshot(ApprovalsDoc, conversationId, context))?.items ?? {}).filter((a) => a.status === "pending");
-		if (!pending.length) return 0;
-		return harness.commit(async (tx) => {
-			const d = await tx.doc(ApprovalsDoc, conversationId);
-			let n = 0;
-			for (const it of Object.values(d.items)) {
-				if (it.status !== "pending") continue;
-				it.status = "cancelled";
-				it.decidedAt = nowIso();
-				it.note = "已随「停止」取消：这一步没有执行";
-				n++;
-			}
-			return n;
-		}, context);
-	}
-
 	async continue(p: Principal, spaceId: string, conversationId: number, body: { requestId?: string }, context: Context): Promise<SubmissionDTO> {
 		const { harness, conv } = await this.access(p, "write", spaceId, conversationId, context);
 		try {
-			const sub = await conv.submit({ type: "continue", ...(body.requestId ? { requestId: body.requestId } : {}) }, context);
+			// Round 13: a continue runs as the person who pressed 继续 / 重试.
+			const sub = await this.#submitAs(harness, conv, p, "continue", { type: "continue", ...(body.requestId ? { requestId: body.requestId } : {}) }, context);
 			return this.submissionStatus(harness, conversationId, sub.id, context);
 		} catch (err) {
 			if (err instanceof ConversationBusy) throw new HttpError(409, "busy", "会话正在运行，无法继续");
@@ -994,7 +1072,7 @@ export class Runtime implements RuntimeService {
 			data.requestId = nowRid;
 			let nowSub;
 			try {
-				nowSub = await conv.submit({ type: "input", content: this.composeContent(data), requestId: nowRid, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
+				nowSub = await this.#submitAs(harness, conv, p, "steer", { type: "input", content: this.composeContent(data), requestId: nowRid, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
 			} catch (err) {
 				await this.recordUnplaced(harness, conv, [{ id: submissionId, entry: item.entry }], context).catch(() => {});
 				clearIntent();
@@ -1092,8 +1170,17 @@ export class Runtime implements RuntimeService {
 	async docs(harness: Harness, conversationId: number, context: Context): Promise<{ approvals: ApprovalDTO[]; effects: EffectDTO[]; subagents: SubagentDTO[] }> {
 		const id = cid(conversationId);
 		const [ap, ef, team] = await Promise.all([harness.snapshot(ApprovalsDoc, id, context), harness.snapshot(EffectsDoc, id, context), harness.snapshot(TeamDoc, id, context)]);
-		const approvals = Object.values(ap?.items ?? {}) as ApprovalDTO[];
-		const subagents = Object.values(team?.delegations ?? {}) as SubagentDTO[];
+		let approvals = Object.values(ap?.items ?? {}) as ApprovalDTO[];
+		let subagents = Object.values(team?.delegations ?? {}) as SubagentDTO[];
+		// Recovery reconcile: an approval/delegation whose carrier task ended (stop, restart limit, crash) is closed here.
+		if (approvals.some((a) => a.status === "pending") || subagents.some((s) => s.status === "running")) {
+			const closed = await closeDeadWork(harness, conversationId, { stopped: false }, context).catch(() => undefined);
+			if (closed && (closed.cancelledApprovals || closed.endedDelegations)) {
+				const [ap2, team2] = await Promise.all([harness.snapshot(ApprovalsDoc, id, context), harness.snapshot(TeamDoc, id, context)]);
+				approvals = Object.values(ap2?.items ?? {}) as ApprovalDTO[];
+				subagents = Object.values(team2?.delegations ?? {}) as SubagentDTO[];
+			}
+		}
 		// Surface approvals that subagent children are waiting on (the user decides them from the parent's view).
 		for (const s of subagents) {
 			if (s.childConversationId === undefined || s.status !== "running") continue;

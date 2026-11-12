@@ -40,7 +40,8 @@ export async function memberKnowledgeScope(read: { snapshot: (...a: any[]) => Pr
 	try {
 		const { AssistantDoc } = await import("../runtime/docs.ts");
 		const ad = await read.snapshot(AssistantDoc, conversationId, context);
-		const ks = ad?.member?.knowledgeScope?.kbIds;
+		// a subagent member's own scope, else (round 13) the conversation's assistant scope recorded at creation
+		const ks = ad?.member?.knowledgeScope?.kbIds ?? ad?.knowledgeScope?.kbIds;
 		return Array.isArray(ks) ? ks.map(String) : undefined;
 	} catch {
 		return undefined;

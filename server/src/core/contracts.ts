@@ -109,7 +109,7 @@ export interface InputEntryData {
 	readonly attachments?: readonly { fileId: string; versionId: string; name: string }[];
 	/** Knowledge bases / docs referenced with chips. */
 	readonly knowledgeRefs?: readonly { kbId: string; docId?: string; name: string }[];
-	readonly via?: { kind: "automation"; automationId: string; runId: string } | { kind: "delegate" | "subagent_report"; id: string };
+	readonly via?: { kind: "automation"; automationId: string; runId: string } | { kind: "delegate" | "subagent_report" | "approval_resume"; id: string };
 }
 
 /** Who a tool call acts for: resolved from the run's inputs, then re-checked against current ACL. */

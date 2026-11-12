@@ -11,6 +11,7 @@ import { mountMetaRoutes } from "./meta-routes.ts";
 import { mountRuntimeRoutes } from "./routes.ts";
 import { SearchIndex } from "./search.ts";
 import { Runtime } from "./service.ts";
+import { createApprovalExtension } from "./effects.ts";
 import { createTeamExtension } from "./team.ts";
 
 const MIGRATIONS = [
@@ -164,7 +165,7 @@ export const runtimeModule: WorkroomModule = {
 	init(ctx) {
 		const registry = createRegistry();
 		const ttl = envNum("WORKROOM_LEASE_TTL_MS", 30_000);
-		const manager = new HarnessManager(ctx, registry, { leaseTtlMs: ttl, heartbeatMs: Math.max(200, Math.floor(ttl / 3)), settings, idleMs: envNum("WORKROOM_RT_IDLE_MS", 10 * 60_000), idleSweepMs: envNum("WORKROOM_RT_IDLE_SWEEP_MS", 60_000) });
+		const manager = new HarnessManager(ctx, registry, { leaseTtlMs: ttl, heartbeatMs: Math.max(200, Math.floor(ttl / 3)), settings, idleMs: envNum("WORKROOM_RT_IDLE_MS", 10 * 60_000), idleSweepMs: envNum("WORKROOM_RT_IDLE_SWEEP_MS", 60_000), resumeSweepMs: envNum("WORKROOM_RT_RESUME_SWEEP_MS", 30_000), resumeRetryBaseMs: envNum("WORKROOM_RT_RESUME_RETRY_BASE_MS", 1000), resumeRetryMax: envNum("WORKROOM_RT_RESUME_RETRY_MAX", 6) });
 		const rt = new Runtime(ctx, manager);
 		const effects = new Effects(rt);
 		const assistants = new AssistantStore(ctx);
@@ -187,7 +188,7 @@ export const runtimeModule: WorkroomModule = {
 	},
 	extensions(ctx) {
 		const { rt, effects } = runtimeState(ctx);
-		const exts = [createTeamExtension(rt, effects)];
+		const exts = [createTeamExtension(rt, effects), createApprovalExtension(rt, effects)];
 		if (fixtureToolsEnabled()) exts.push(createFixtureTools(rt, effects));
 		return exts;
 	},

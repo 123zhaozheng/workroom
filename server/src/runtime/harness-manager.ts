@@ -6,7 +6,7 @@
 // of writing. Wake state (rt_space_runtime) mirrors HarnessOptions.onWake so start() can resume spaces with pending
 // work and arm timers for future sleeps.
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, existsSync, writeFileSync, rmSync } from "node:fs";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { Harness, type Extension, type Registry, type Report, type Storage, type Wake, type HarnessSettings, type ConversationRecord, type Tx } from "@earendil-works/pi-durable";
@@ -50,7 +50,16 @@ export interface HarnessManagerOptions {
 	readonly idleMs?: number;
 	/** How often idle harnesses are looked for. */
 	readonly idleSweepMs?: number;
+	/** Period of the pending-work sweep (open spaces whose wake mirror says active; repair failed mirror writes). 0 disables. Default 30 s. */
+	readonly resumeSweepMs?: number;
+	/** Base of the exponential backoff for retrying a space whose lease is held by another instance. Default 1 s. */
+	readonly resumeRetryBaseMs?: number;
+	/** Max retries scheduled per space before the periodic sweep takes over. Default 6. */
+	readonly resumeRetryMax?: number;
 }
+
+/** Marker file in a space dir: its wake mirror (rt_space_runtime) could not be written and must be repaired. */
+const MIRROR_DIRTY_MARKER = ".wake-mirror-dirty";
 
 export class HarnessManager {
 	readonly #ctx: AppContext;
@@ -64,6 +73,12 @@ export class HarnessManager {
 	#sweep?: NodeJS.Timeout;
 	readonly #wakeTimers = new Set<NodeJS.Timeout>();
 	#stopping = false;
+	#resumeSweep?: NodeJS.Timeout;
+	#sweeping = false;
+	/** Retry timers for spaces skipped because another live instance holds the lease (cancelled on stop). */
+	readonly #retryTimers = new Map<string, NodeJS.Timeout>();
+	/** Spaces whose wake-mirror write failed; repaired by the sweep, and across restarts through a marker file in the space dir. */
+	readonly #mirrorDirty = new Set<string>();
 
 	constructor(ctx: AppContext, registry: Registry, opts: HarnessManagerOptions) {
 		this.#ctx = ctx;
@@ -247,6 +262,19 @@ export class HarnessManager {
 	#onWake(entry: Entry, wake: Wake): void {
 		if (this.#stopping || entry.closing) return;
 		entry.wake = wake;
+		this.#writeMirror(entry);
+		if (entry.sleepTimer) clearTimeout(entry.sleepTimer);
+		entry.sleepTimer = undefined;
+		if (wake.at !== undefined) this.#armSleep(entry, wake.at);
+	}
+
+	/**
+	 * Write entry.wake to rt_space_runtime. rt_space_runtime is a scheduling index, not a source of truth (the durable
+	 * storage is), so a failed write is recorded as repairable: in memory, plus a marker file in the space dir that
+	 * survives a crash. The sweep retries it; start-up scans the markers and reopens those spaces (opening re-reports wake).
+	 */
+	#writeMirror(entry: Entry): boolean {
+		const wake = entry.wake;
 		try {
 			this.#ctx.db.run(
 				"INSERT INTO rt_space_runtime (space_id, wake_active, wake_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(space_id) DO UPDATE SET wake_active = excluded.wake_active, wake_at = excluded.wake_at, updated_at = excluded.updated_at",
@@ -256,11 +284,50 @@ export class HarnessManager {
 				Date.now(),
 			);
 		} catch (err) {
-			console.error("[runtime] onWake persist failed", err);
+			console.error("[runtime] onWake persist failed; will repair", err);
+			this.#markMirrorDirty(entry.spaceId);
+			return false;
 		}
-		if (entry.sleepTimer) clearTimeout(entry.sleepTimer);
-		entry.sleepTimer = undefined;
-		if (wake.at !== undefined) this.#armSleep(entry, wake.at);
+		if (this.#mirrorDirty.delete(entry.spaceId)) this.#clearMarker(entry.spaceId);
+		return true;
+	}
+
+	#markerPath(spaceId: string): string | undefined {
+		try {
+			return join(this.space(spaceId).dir, MIRROR_DIRTY_MARKER);
+		} catch {
+			return undefined;
+		}
+	}
+	#markMirrorDirty(spaceId: string): void {
+		this.#mirrorDirty.add(spaceId);
+		const m = this.#markerPath(spaceId);
+		if (!m) return;
+		try {
+			mkdirSync(join(m, ".."), { recursive: true });
+			writeFileSync(m, String(Date.now()));
+		} catch (err) {
+			console.error(`[runtime] could not write mirror-repair marker for ${spaceId}`, err);
+		}
+	}
+	#clearMarker(spaceId: string): void {
+		const m = this.#markerPath(spaceId);
+		if (m) rmSync(m, { force: true });
+	}
+	/** Spaces whose dir carries a repair marker (a mirror write failed in an earlier process). Cheap: readdir of org/space dirs only. */
+	#scanMarkers(): string[] {
+		const out: string[] = [];
+		const orgs = join(this.#ctx.config.dataDir, "orgs");
+		try {
+			for (const org of readdirSync(orgs)) {
+				const spaces = join(orgs, org, "spaces");
+				if (!existsSync(spaces)) continue;
+				for (const id of readdirSync(spaces)) if (existsSync(join(spaces, id, MIRROR_DIRTY_MARKER))) out.push(id);
+			}
+		} catch {
+			/* no data dir layout yet */
+		}
+		return out;
 	}
 
 	/**
@@ -369,33 +436,118 @@ export class HarnessManager {
 		if (why !== "lease_lost") this.#releaseLease(spaceId);
 	}
 
-	/** Spaces with pending work according to rt_space_runtime: wake_active, or a due sleep. Future sleeps get timers. */
+	/**
+	 * Spaces with pending work according to rt_space_runtime: wake_active, or a due sleep. Future sleeps get timers.
+	 * A space whose lease another live instance still holds (space_busy) is retried after that lease's expiry, and the
+	 * periodic sweep (started here) keeps converging: start-up is not the only chance to resume.
+	 */
 	async resumePending(): Promise<{ resumed: string[]; armed: string[]; skipped: { spaceId: string; reason: string }[] }> {
 		const now = Date.now();
 		const rows = this.#ctx.db.all<{ space_id: string; wake_active: number; wake_at: number | null }>("SELECT space_id, wake_active, wake_at FROM rt_space_runtime WHERE wake_active = 1 OR wake_at IS NOT NULL");
 		const resumed: string[] = [];
 		const armed: string[] = [];
 		const skipped: { spaceId: string; reason: string }[] = [];
+		const tryOpen = async (spaceId: string): Promise<void> => {
+			try {
+				await this.get(spaceId);
+				resumed.push(spaceId);
+			} catch (err: any) {
+				skipped.push({ spaceId, reason: err?.code ?? err?.message ?? String(err) });
+				if (err instanceof LeaseHeld) this.#scheduleRetry(spaceId, 0);
+			}
+		};
+		// Spaces whose wake mirror could not be written in an earlier process: reopening re-reports their wake and repairs it.
+		for (const id of this.#scanMarkers()) {
+			this.#mirrorDirty.add(id);
+			if (!rows.some((r) => r.space_id === id)) await tryOpen(id);
+		}
 		for (const r of rows) {
-			if (r.wake_active === 1 || (r.wake_at !== null && r.wake_at <= now)) {
-				try {
-					await this.get(r.space_id);
-					resumed.push(r.space_id);
-				} catch (err: any) {
-					skipped.push({ spaceId: r.space_id, reason: err?.code ?? err?.message ?? String(err) });
-				}
-			} else if (r.wake_at !== null) {
+			if (r.wake_active === 1 || (r.wake_at !== null && r.wake_at <= now) || this.#mirrorDirty.has(r.space_id)) await tryOpen(r.space_id);
+			else if (r.wake_at !== null) {
 				this.#armWake(r.space_id, r.wake_at);
 				armed.push(r.space_id);
 			}
 		}
+		this.#startResumeSweep();
 		return { resumed, armed, skipped };
+	}
+
+	/** Retry opening a space after its foreign lease expires: expiry + exponential backoff + jitter, at most resumeRetryMax times. */
+	#scheduleRetry(spaceId: string, attempt: number): void {
+		if (this.#stopping || this.#retryTimers.has(spaceId)) return;
+		const max = this.#opts.resumeRetryMax ?? 6;
+		if (attempt >= max) return; // the periodic sweep takes over
+		const base = this.#opts.resumeRetryBaseMs ?? 1000;
+		let untilExpiry = 0;
+		try {
+			const row = this.#ctx.db.get<{ expires_at: number }>("SELECT expires_at FROM rt_space_leases WHERE space_id = ?", spaceId);
+			if (row) untilExpiry = Math.max(0, row.expires_at - Date.now());
+		} catch {
+			/* db closing */
+		}
+		const backoff = Math.min(base * 2 ** attempt, 60_000);
+		const delay = Math.min(untilExpiry + backoff + Math.random() * backoff * 0.5, 2_147_000_000);
+		const t = setTimeout(() => {
+			this.#retryTimers.delete(spaceId);
+			if (this.#stopping || this.#open.has(spaceId)) return;
+			this.get(spaceId).catch((err) => {
+				if (err instanceof LeaseHeld) this.#scheduleRetry(spaceId, attempt + 1);
+				else console.error(`[runtime] retry open of ${spaceId} failed`, err?.message ?? err);
+			});
+		}, delay);
+		t.unref();
+		this.#retryTimers.set(spaceId, t);
+	}
+
+	#startResumeSweep(): void {
+		const every = this.#opts.resumeSweepMs ?? 30_000;
+		if (this.#resumeSweep || !every || this.#stopping) return;
+		this.#resumeSweep = setInterval(() => void this.sweepPending().catch((err) => console.error("[runtime] pending sweep failed", err)), every);
+		this.#resumeSweep.unref();
+	}
+
+	/**
+	 * One convergence pass (also runs periodically): (1) re-write wake mirrors that failed; (2) open spaces the mirror
+	 * says are active or due that have no harness here (a space under a retry timer is left to it); (3) re-arm lost
+	 * timers for future sleeps. Cheap: one indexed-free SELECT over the small rt_space_runtime table plus the dirty set.
+	 */
+	async sweepPending(): Promise<void> {
+		if (this.#stopping || this.#sweeping) return;
+		this.#sweeping = true;
+		try {
+			for (const id of [...this.#mirrorDirty]) {
+				const e = this.#open.get(id);
+				if (e && !e.closing) this.#writeMirror(e);
+			}
+			const now = Date.now();
+			const rows = this.#ctx.db.all<{ space_id: string; wake_active: number; wake_at: number | null }>("SELECT space_id, wake_active, wake_at FROM rt_space_runtime WHERE wake_active = 1 OR wake_at IS NOT NULL");
+			const ids = new Set(rows.map((r) => r.space_id));
+			for (const id of this.#mirrorDirty) if (!ids.has(id)) rows.push({ space_id: id, wake_active: 1, wake_at: null });
+			for (const r of rows) {
+				if (this.#stopping) return;
+				const e = this.#open.get(r.space_id);
+				if ((e && !e.closing) || this.#opening.has(r.space_id) || this.#retryTimers.has(r.space_id)) continue;
+				if (r.wake_active === 1 || (r.wake_at !== null && r.wake_at <= now) || this.#mirrorDirty.has(r.space_id)) {
+					try {
+						await this.get(r.space_id);
+					} catch (err) {
+						if (err instanceof LeaseHeld) this.#scheduleRetry(r.space_id, 0);
+						else if ((err as any)?.code !== "space_not_found") console.error(`[runtime] sweep open of ${r.space_id} failed`, (err as Error)?.message ?? err);
+					}
+				} else if (r.wake_at !== null && !this.pendingWakeTimers.has(r.space_id)) this.#armWake(r.space_id, r.wake_at);
+			}
+		} finally {
+			this.#sweeping = false;
+		}
 	}
 
 	async stop(): Promise<void> {
 		this.#stopping = true;
 		if (this.#heartbeat) clearInterval(this.#heartbeat);
 		if (this.#sweep) clearInterval(this.#sweep);
+		if (this.#resumeSweep) clearInterval(this.#resumeSweep);
+		for (const t of this.#retryTimers.values()) clearTimeout(t);
+		this.#retryTimers.clear();
 		for (const t of this.#wakeTimers) clearTimeout(t);
 		this.#wakeTimers.clear();
 		await Promise.allSettled([...this.#opening.values()]);

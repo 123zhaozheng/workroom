@@ -59,6 +59,8 @@ interface Link {
 	orgId?: string;
 	/** The user the run acts for (set by the wr.ops hook from the run's input): the model is re-checked against THEIR current access. */
 	userId?: string;
+	/** Round 13: the request belongs to a run whose execution identity could not be established — refused, never let through. */
+	unresolved?: boolean;
 	conversationId?: number;
 	taskId?: number;
 	at: number;
@@ -415,8 +417,11 @@ export class Gateway implements ModelGateway {
 		if (!link.spaceId && typeof meta.wrSpaceId === "string") link.spaceId = meta.wrSpaceId;
 		// Enforced here, at the one place every request passes: a model the acting user may no longer use (visibility changed,
 		// personal-key policy switched off, a collaborator continuing someone else's personal-key conversation) never reaches the upstream.
-		if (link.userId && link.orgId && meta.wrNoFailover !== true) {
-			const why = await this.#denial(link.userId, link.orgId, model);
+		// Round 13: checked on EVERY call, including a fallback's own inner call (wrNoFailover only stops chaining and double accounting,
+		// never the permission check); and a run whose identity is unknown is refused instead of passing unchecked.
+		const unresolved = link.unresolved === true && !link.userId;
+		if (unresolved || (link.userId && link.orgId)) {
+			const why = unresolved ? "无法确认这次运行代表哪位用户（执行身份缺失），已拒绝调用模型" : await this.#denial(link.userId!, link.orgId!, model);
 			if (why) {
 				const msg = errorMessage(model, `model_not_allowed: ${why}`);
 				if (record) this.#insertAttempt({ requestKey, attemptNo: 1, model, row, link, status: "error", cls: "bad_request", error: msg.errorMessage, retryable: false, failover: false, startedAt: new Date(t0).toISOString(), endedAt: nowIso(), fixture: false });
@@ -432,6 +437,7 @@ export class Gateway implements ModelGateway {
 
 		const needs = transcriptNeeds(context);
 		const chain: Model<Api>[] = [model];
+		const deniedFallbacks: { m: Model<Api>; row: ProviderRow | null; why: string }[] = [];
 		// A fallback is called through Models (its own auth) with wrNoRecord/wrNoFailover: the OUTER loop records its attempt and
 		// the fallback's own wrapper must neither record again nor chain further fallbacks (no A→B→A loops).
 		for (const fb of meta.wrNoFailover === true ? [] : this.#fallbacksOf(model.provider, model.id)) {
@@ -441,6 +447,15 @@ export class Gateway implements ModelGateway {
 			if (frow && frow.status !== "enabled") continue;
 			if (needs.image && !m.input.includes("image")) continue;
 			if (needs.tools && this.entryOf(m.provider, m.id)?.spec && json<ModelSpec>(this.entryOf(m.provider, m.id)!.spec, {}).tools === false) continue;
+			// Round 13: a fallback is a model like any other — the acting user must be allowed to use it, checked before any credential is
+			// fetched or request sent. A denied fallback is recorded as skipped (visible in the route record) and never called.
+			if (link.userId && link.orgId) {
+				const why = await this.#denial(link.userId, link.orgId, m);
+				if (why) {
+					deniedFallbacks.push({ m, row: frow ?? null, why });
+					continue;
+				}
+			}
 			chain.push(m);
 		}
 
@@ -449,6 +464,7 @@ export class Gateway implements ModelGateway {
 		let last: { msg: AssistantMessage; model: Model<Api> } | undefined;
 		let attemptNo = 0;
 		let failovers = 0;
+		if (record) for (const d of deniedFallbacks) this.#insertAttempt({ requestKey, attemptNo: ++attemptNo, model: d.m, row: d.row, link, status: "skipped", cls: "bad_request", error: `model_not_allowed: ${d.why}`, retryable: false, failover: true, startedAt: new Date(t0).toISOString(), endedAt: nowIso(), fixture: false });
 		for (let i = 0; i < chain.length; i++) {
 			const cand = chain[i]!;
 			const candRow = i === 0 ? row : (this.rowOf(cand.provider) ?? null);
