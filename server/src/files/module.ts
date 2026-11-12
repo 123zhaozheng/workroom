@@ -2,7 +2,8 @@
 import type { Context as HonoContext } from "hono";
 import type { AppContext, AppEnv, Principal, WorkroomModule } from "../core/contracts.ts";
 import { HttpError, principalOf } from "../core/http.ts";
-import { Files, FILE_MIGRATIONS, type FileProvenanceInput } from "./service.ts";
+import { Files, FILE_MIGRATIONS, type FileProvenanceInput, type VersionRow } from "./service.ts";
+import { Library, LIBRARY_MIGRATIONS } from "./library.ts";
 import { renderPreview } from "./preview.ts";
 import { extractText } from "./extract.ts";
 import { effectiveMime } from "./mime.ts";
@@ -39,9 +40,10 @@ async function readUpload(c: HonoContext<AppEnv>): Promise<{ file: File; fields:
 
 export const filesModule: WorkroomModule = {
 	name: "files",
-	migrations: [...FILE_MIGRATIONS, ...SLIDE_MIGRATIONS],
+	migrations: [...FILE_MIGRATIONS, ...SLIDE_MIGRATIONS, ...LIBRARY_MIGRATIONS],
 	init(ctx) {
 		ctx.services.provide("files", new Files(ctx));
+		(ctx.services as any).provide("library", new Library(ctx));
 	},
 	extensions(ctx) {
 		return [createFilesExtension(ctx)];
@@ -107,10 +109,8 @@ export const filesModule: WorkroomModule = {
 			return c.json({ ok: true });
 		});
 
-		api.get("/files/:id/versions/:vid/download", async (c) => {
-			const p = principalOf(c);
-			const { version, bytes } = await files.requireVersion(p, c.req.param("id"), c.req.param("vid"));
-			return new Response(bytes as Uint8Array<ArrayBuffer>, {
+		const download = (version: VersionRow, bytes: Uint8Array) =>
+			new Response(bytes as Uint8Array<ArrayBuffer>, {
 				headers: {
 					"content-type": version.mime,
 					"content-length": String(bytes.byteLength),
@@ -121,11 +121,7 @@ export const filesModule: WorkroomModule = {
 					etag: `"${version.sha256}"`,
 				},
 			});
-		});
-
-		api.get("/files/:id/versions/:vid/preview", async (c) => {
-			const p = principalOf(c);
-			const { version, bytes } = await files.requireVersion(p, c.req.param("id"), c.req.param("vid"));
+		const preview = async (version: VersionRow, bytes: Uint8Array) => {
 			let pv;
 			try {
 				let slideOpts: { slides?: Uint8Array[]; slidesUnavailable?: string } = {};
@@ -144,17 +140,72 @@ export const filesModule: WorkroomModule = {
 				"cache-control": "private, no-store",
 				"x-preview-kind": pv.kind,
 				"referrer-policy": "no-referrer",
+				// round 14: the preview of the CURRENT file is keyed on its content hash (an overwrite never shows a stale preview)
+				etag: `"${version.sha256}"`,
 			};
 			if (pv.csp) headers["content-security-policy"] = pv.csp;
 			if (pv.renderMode) headers["x-preview-render"] = pv.renderMode;
 			return new Response(pv.body as string | Uint8Array<ArrayBuffer>, { headers });
+		};
+		const text = async (version: VersionRow, bytes: Uint8Array) => {
+			const out: FileTextResponse = await extractText(version.mime, version.name, bytes);
+			return out;
+		};
+		/** Round 14: the CURRENT content of a file (no version in the URL): what cards, the library and the preview panel use. */
+		const current = async (p: Principal, fileId: string) => {
+			const file = await files.requireFile(p, "read", fileId);
+			if (!file.latest_version_id) throw new HttpError(404, "file_not_found", "文件不存在");
+			return files.requireVersion(p, fileId, file.latest_version_id);
+		};
+
+		api.get("/files/:id/versions/:vid/download", async (c) => {
+			const { version, bytes } = await files.requireVersion(principalOf(c), c.req.param("id"), c.req.param("vid"));
+			return download(version, bytes);
+		});
+		api.get("/files/:id/versions/:vid/preview", async (c) => {
+			const { version, bytes } = await files.requireVersion(principalOf(c), c.req.param("id"), c.req.param("vid"));
+			return preview(version, bytes);
+		});
+		api.get("/files/:id/versions/:vid/text", async (c) => {
+			const { version, bytes } = await files.requireVersion(principalOf(c), c.req.param("id"), c.req.param("vid"));
+			return c.json(await text(version, bytes));
+		});
+		api.get("/files/:id/download", async (c) => {
+			const { version, bytes } = await current(principalOf(c), c.req.param("id"));
+			return download(version, bytes);
+		});
+		api.get("/files/:id/preview", async (c) => {
+			const { version, bytes } = await current(principalOf(c), c.req.param("id"));
+			return preview(version, bytes);
+		});
+		api.get("/files/:id/text", async (c) => {
+			const { version, bytes } = await current(principalOf(c), c.req.param("id"));
+			return c.json(await text(version, bytes));
 		});
 
-		api.get("/files/:id/versions/:vid/text", async (c) => {
+		// ---------------------------------------------------------------- round 14: delivered outputs
+		const library = (ctx.services as any).get("library") as Library;
+		api.get("/library", async (c) => {
 			const p = principalOf(c);
-			const { version, bytes } = await files.requireVersion(p, c.req.param("id"), c.req.param("vid"));
-			const out: FileTextResponse = await extractText(version.mime, version.name, bytes);
-			return c.json(out);
+			const q = c.req.query();
+			const conversationId = q.conversationId ? Number(q.conversationId) : undefined;
+			if (q.spaceId && conversationId !== undefined) {
+				// one conversation's outputs (removed ones included, for cards): the caller must be able to read that conversation
+				await ctx.services.get("acl").require(p, "read", { kind: "conversation", id: String(conversationId), spaceId: q.spaceId });
+				return c.json({ items: library.ofConversation(q.spaceId, conversationId) });
+			}
+			return c.json({ items: await library.listFor(p, { ...(q.spaceId ? { spaceId: q.spaceId } : {}) }) });
+		});
+		api.get("/library/:fileId", async (c) => {
+			const p = principalOf(c);
+			const r = library.row(c.req.param("fileId"));
+			if (!r) throw new HttpError(404, "not_found", "成果不存在");
+			await ctx.services.get("acl").require(p, "read", { kind: "conversation", id: String(r.conversation_id), spaceId: r.space_id });
+			return c.json({ item: library.dto(r) });
+		});
+		api.delete("/library/:fileId", async (c) => {
+			const item = await library.remove(principalOf(c), c.req.param("fileId"));
+			return c.json({ item });
 		});
 	},
 };

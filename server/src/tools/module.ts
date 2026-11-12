@@ -26,6 +26,11 @@ import { sandboxEnvFor } from "./sandbox/env-vars.ts";
 import { pdfFontStatus } from "../files/generate.ts";
 import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
+import { VfsRouter } from "../vfs/router.ts";
+import { WorkBackend } from "../vfs/backends/work.ts";
+import { UploadsBackend } from "../vfs/backends/uploads.ts";
+import { LibraryBackend } from "../vfs/backends/library.ts";
+import { createVfsExtension } from "../vfs/tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
 import { Market, MARKET_MIGRATIONS } from "./market.ts"; // marketplace group
@@ -101,6 +106,13 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("jobs", new Jobs(ctx));
 		ctx.services.provide("sandboxPrewarm", prewarmFor(ctx)); // round 11 (R2b): the runtime calls it after a user message is accepted
 		ctx.services.provide("toolPolicy", new ToolPolicy(ctx));
+		// Round 14: the agent's virtual filesystem (/skills /memory /library /uploads /work). Other modules register their backends on it
+		// (knowledge: /memory; skills: /skills) — see docs/r14-virtual-backend.md.
+		const vfs = new VfsRouter();
+		vfs.register(new WorkBackend(ctx));
+		vfs.register(new UploadsBackend(ctx));
+		vfs.register(new LibraryBackend(ctx));
+		(ctx.services as any).provide("vfs", vfs);
 		const sessions = new BrowserSessions(ctx);
 		ctx.services.provide("browserSessions", sessions);
 		// Work items of a conversation (for ConversationState.work — see docs/requests/D.md).
@@ -125,7 +137,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createLocalExecExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLocalExecExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).

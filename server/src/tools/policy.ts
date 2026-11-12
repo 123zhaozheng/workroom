@@ -17,7 +17,7 @@ export const POLICY_MIGRATIONS: Migration[] = [
 ];
 
 export const TOOL_GROUPS = {
-	sandbox: { label: "代码执行（沙箱）", match: (n: string) => n.startsWith("sandbox_") || n === "code_run" },
+	sandbox: { label: "代码执行（沙箱）", match: (n: string) => n.startsWith("sandbox_") || n === "code_run" || n === "exec" },
 	codemode: { label: "脚本编排（Code Mode）", match: (n: string) => n === "codemode" },
 	browser: { label: "服务端浏览器", match: (n: string) => n === "browse" || n.startsWith("browser_") },
 	jobs: { label: "后台长任务", match: (n: string) => n.startsWith("job_") },
