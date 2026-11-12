@@ -193,7 +193,9 @@ export const runtimeModule: WorkroomModule = {
 		return exts;
 	},
 	async start(ctx) {
-		const { manager, search } = runtimeState(ctx);
+		const { manager, search, rt } = runtimeState(ctx);
+		// Harness 检视 asks the runtime how a conversation's harness is composed (only used while the org switch is on).
+		if (ctx.services.has("harnessInspect")) (ctx.services.get("harnessInspect") as { buildProvider?: (s: string, c: number) => Promise<unknown> }).buildProvider = (s, c) => rt.describeHarness(s, c);
 		search.start();
 		// Install every module's extensions (ours included) before any harness opens, so pending tasks resume with
 		// their definitions present. modules.ts loads runtime last; this runs after every init().

@@ -130,4 +130,25 @@ ALTER TABLE model_entries ADD COLUMN rpm_limit INTEGER;
 ALTER TABLE model_entries ADD COLUMN concurrency_limit INTEGER;
 `,
 	},
+	{
+		version: 4,
+		name: "harness inspector: captured model requests (per round) and per-run harness build summaries",
+		sql: `
+CREATE TABLE ops_harness_rounds (
+  id TEXT PRIMARY KEY, org_id TEXT NOT NULL, space_id TEXT NOT NULL, conversation_id INTEGER NOT NULL, task_id INTEGER, run_key TEXT NOT NULL,
+  round_index INTEGER NOT NULL, request_key TEXT, user_id TEXT, started_at INTEGER NOT NULL, duration_ms INTEGER,
+  provider TEXT NOT NULL, model_id TEXT NOT NULL, served_by TEXT, thinking_level TEXT, stop_reason TEXT, error TEXT, usage TEXT, message_ts INTEGER,
+  message_count INTEGER NOT NULL, tool_count INTEGER NOT NULL, system_chars INTEGER NOT NULL, size_bytes INTEGER NOT NULL, truncated INTEGER NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX ops_harness_rounds_conv ON ops_harness_rounds(space_id, conversation_id, started_at);
+CREATE INDEX ops_harness_rounds_run ON ops_harness_rounds(space_id, conversation_id, run_key, round_index);
+CREATE INDEX ops_harness_rounds_org ON ops_harness_rounds(org_id, created_at);
+CREATE TABLE ops_harness_builds (
+  id TEXT PRIMARY KEY, org_id TEXT NOT NULL, space_id TEXT NOT NULL, conversation_id INTEGER NOT NULL, task_id INTEGER, run_key TEXT NOT NULL,
+  build TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (space_id, conversation_id, run_key)
+);
+CREATE INDEX ops_harness_builds_org ON ops_harness_builds(org_id, created_at);
+`,
+	},
 ];

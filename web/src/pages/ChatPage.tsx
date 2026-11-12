@@ -311,7 +311,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const lastAssistantIdx = turns.map((t) => t.kind).lastIndexOf("assistant");
 	/** The latest message that was actually placed (not a 未送达 marker) and what its run did: feeds 「已停止（已完成 N 步）」. */
 	const parent = detail?.parent ?? conv?.parent;
-	const panelOpen = !!panel;
+	// Only the preview takes a column; the work panel floats over the chat without narrowing it.
+	const panelOpen = panel?.kind === "preview";
 
 	return (
 		<div ref={pageRef} className="relative isolate flex min-h-0 flex-1 flex-col">

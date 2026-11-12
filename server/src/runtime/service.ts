@@ -9,6 +9,7 @@ import { HttpError, nowIso } from "../core/http.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AbortResponse, AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, PromoteResponse, SubagentDTO, SubmissionDTO, TasksResponse, WithdrawResponse } from "../../../shared/chat.ts";
 import type { WorkspacePrepItem } from "../../../shared/chat.ts";
+import type { HarnessBuildDTO, HarnessToolKind } from "../../../shared/harness-inspect.ts";
 import type { Sandbox } from "../tools/sandbox.ts";
 import { storeLabel } from "../tools/sandbox/stores.ts";
 import { closeDeadWork } from "./lifecycle.ts";
@@ -1150,6 +1151,43 @@ export class Runtime implements RuntimeService {
 		const page = await conv.entries(query, limit, undefined, context);
 		const items = [...page.items].reverse();
 		return { items: await this.toDTOs(harness, items, context), ...(page.next && items.length ? { next: items[0]!.id as number } : {}) };
+	}
+
+	/**
+	 * Harness 检视: how the conversation's harness is composed right now — the model, the extensions that registered tools and prompt
+	 * sections, the tools offered, the assistant's instructions, and the execution environment. Read straight from the resolved agent.
+	 */
+	async describeHarness(spaceId: string, conversationId: number): Promise<Omit<HarnessBuildDTO, "id" | "conversationId" | "runId" | "createdAt"> | undefined> {
+		const harness = await this.manager.get(spaceId);
+		const conv = await harness.conversation(cid(conversationId), BACKGROUND_CONTEXT);
+		if (!conv) return undefined;
+		const agent = await conv.agent(BACKGROUND_CONTEXT);
+		const ad = await harness.snapshot(AssistantDoc, conv.id, BACKGROUND_CONTEXT);
+		const offered = new Set(agent.tools.map((t) => t.name));
+		const enabled = new Set([...offered, ...agent.callable.map((t) => t.name)]);
+		const extKind = (ext: string): HarnessToolKind => (ext.startsWith("wr.skill") ? "skill" : ext.includes("fixture") ? "fixture" : ext.startsWith("wr") ? "builtin" : "kernel");
+		// MCP tools are registered by the wr.mcp extension as mcp__<server>__<tool>; its other tools (tool_search) are built in.
+		const toolKind = (ext: string, name: string): HarnessToolKind => (name.startsWith("mcp__") ? "mcp" : extKind(ext));
+		const extensions = agent.extensions.map((e) => {
+			const names = (e.tools ?? []).map((t) => t.name).filter((n) => enabled.has(n));
+			return { name: e.name, kind: names.some((n) => n.startsWith("mcp__")) ? ("mcp" as const) : extKind(e.name), tools: names };
+		});
+		const tools = agent.extensions.flatMap((e) => (e.tools ?? []).filter((t) => enabled.has(t.name)).map((t) => ({ name: t.name, source: e.name, kind: toolKind(e.name, t.name), offered: offered.has(t.name) })));
+		const promptSections = agent.sections.map((s) => ({ key: s.key, source: agent.extensions.find((e) => e.sections?.includes(s))?.name ?? (agent.instructions ? "assistant.instructions" : "unknown") }));
+		const env = await this.#workspaceEnv(this.manager.space(spaceId));
+		return {
+			...(agent.model ? { model: { provider: agent.model.provider, modelId: agent.model.modelId, label: this.modelLabel(agent.model) } } : {}),
+			thinkingLevel: agent.thinkingLevel,
+			...(agent.maxTurns ? { maxTurns: agent.maxTurns } : {}),
+			...(agent.cwd ? { cwd: agent.cwd } : {}),
+			...(agent.instructions ? { instructions: agent.instructions.slice(0, 4000) } : {}),
+			...(ad?.assistantId ? { assistant: { id: ad.assistantId, name: ad.name } } : {}),
+			promptSections,
+			extensions,
+			tools,
+			deferredTools: agent.deferred.map((t) => t.name),
+			environment: { label: env.label, usable: env.ok, ...(env.detail ? { detail: env.detail } : {}) },
+		};
 	}
 
 	async agentDTO(harness: Harness, conv: Conversation, context: Context): Promise<AgentDTO> {

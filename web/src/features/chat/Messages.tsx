@@ -16,6 +16,7 @@ import { turnMarkdown, type AssistantTurn, type UserRun } from "./model";
 import { cleanErrorText, userTextOf } from "./testText";
 import { StepChain } from "./Steps";
 import { JobChip } from "@/features/work/live";
+import { InspectButton } from "@/features/inspect";
 
 function ActionButton({ label, onClick, children, testId }: { label: string; onClick: () => void; children: ReactNode; testId?: string }) {
 	return (
@@ -217,12 +218,15 @@ export function AssistantMessage({
 								<GitBranch />
 							</ActionButton>
 						) : null}
+						<InspectButton turn={turn} />
 						{turn.usage ? (
 							<span data-testid="turn-usage" className="ml-1 text-xs text-fg-subtle" title="本轮用量">
 								{isSimulatedUsage(turn.usage, turn.fixture) ? SIMULATED_USAGE : `${turn.usage.totalTokens.toLocaleString()} tokens`}
 							</span>
 						) : null}
 					</div>
+				) : !turn.streaming && turn.error ? (
+					<InspectButton turn={turn} standalone />
 				) : null}
 			</div>
 		</div>

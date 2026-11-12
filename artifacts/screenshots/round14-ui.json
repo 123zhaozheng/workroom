@@ -1,0 +1,240 @@
+{
+  "at": "2026-11-12T08:02:47.838Z",
+  "results": [
+    {
+      "name": "panel: the ☰ button keeps its test id and the panel is closed at first",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "panel: exactly three blocks 输出 | 子任务 | 浏览器, in that order",
+      "ok": true,
+      "detail": "block-outputs,block-tasks,block-browser"
+    },
+    {
+      "name": "panel: each header is title · count with a chevron",
+      "ok": true,
+      "detail": "输出\n· 0\n暂无输出 | 子任务\n· 0\n暂无子任务 | 浏览器\n· 0\n暂无网页"
+    },
+    {
+      "name": "panel: no old tabs (子任务 / 终端 / 文件 / 浏览器)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "panel: 输出 is empty → the quiet one-line hint 暂无输出",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "panel: the three blocks live in ONE rounded floating card (≤380px wide, chat not narrowed)",
+      "ok": true,
+      "detail": "{\"rounded\":\"18px\",\"n\":3,\"w\":360}"
+    },
+    {
+      "name": "panel: a block collapses and expands through its header",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "panel: the ☰ toggle collapses the whole panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V08 the upload shows on its message",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V08 no file card for it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V08 it is not in 输出 (count 0, placeholder shown)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V23 write + exec-generated files create no card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V23 …and no 输出 entry",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steps: wording 写入「a.md」 / 运行命令",
+      "ok": true,
+      "detail": "写入「a.md」\n4 ms || 运行命令\n152 ms"
+    },
+    {
+      "name": "steps: exec shows the command as input and stdout as output",
+      "ok": true,
+      "detail": "运行命令\n152 ms\n命令\necho hello-exec > /work/b.txt && echo done-exec\n输出\n退出码 0 · ok · 146 ms\nstdout:\ndone-exec\n"
+    },
+    {
+      "name": "V12 the card has the name, type and size",
+      "ok": true,
+      "detail": "a.md | 文本 · 24 B"
+    },
+    {
+      "name": "V21 no version text on the card (no v1 / 版本)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V12 the download link serves the delivered content",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "steps: present_file reads 交付文件「a.md」 · 已交付「a.md」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V12 the preview shows the delivered content",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V21 the preview has no version picker / version text",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V12 the preview has a download button for the same file",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "panel: 输出 shows the delivered file (icon, name, size) and nothing else",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "panel: the uploaded csv and the exec-generated b.txt are not listed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V14 the same name keeps the same fileId (old and new card), one card per file inside a turn",
+      "ok": true,
+      "detail": "file_0mwd9frs8c4042b2a154fdb9f,file_0mwd9frs8c4042b2a154fdb9f"
+    },
+    {
+      "name": "V14 the old card shows the CURRENT size (it resolves through the outputs)",
+      "ok": true,
+      "detail": "文本 · 84 B / 文本 · 84 B"
+    },
+    {
+      "name": "V14 输出 still has one entry, with the new size",
+      "ok": true,
+      "detail": "a.md\n84 B"
+    },
+    {
+      "name": "V14 the download link serves the new content (no v2, no stale bytes)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V14 previewing from the OLD card shows the current content",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V14 an overwrite refreshes an open preview (cache keyed by the content hash)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V12 the files page lists the delivered output once, under its conversation folder",
+      "ok": true,
+      "detail": "a.md\n45 B · 刚刚"
+    },
+    {
+      "name": "V08 the upload is not on the files page",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V21 the files page has no version text, no upload / origin controls",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V12 the file page shows the current content, no versions, no 上传新版本",
+      "ok": true,
+      "detail": "a.md\n\n45 B · 刚刚 · 对话「先看看目录」\n\n知识库：\n未加入\n下载\n分享\n加入知识库\n删除\n报告\n\n第三版：预览打开时被覆盖"
+    },
+    {
+      "name": "390px: the chat and the open panel have no horizontal scroll",
+      "ok": true,
+      "detail": "{\"ov1\":0,\"doc\":0,\"panel\":0}"
+    },
+    {
+      "name": "390px: the three blocks are all there",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390px: the files page has no horizontal scroll",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V22 deleting asks first and says what happens",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V22 the files page no longer lists it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V22 the old cards show 已删除 with no download and no preview",
+      "ok": true,
+      "detail": "a.md\n已删除|a.md\n已删除|a.md\n已删除"
+    },
+    {
+      "name": "V22 输出 drops it (count 0, placeholder back)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V22 the download is gone (404)",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "name": "V23 a browser screenshot (details.screenshot / artifact on browse) never creates a card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V23 read / ls / copy_to_work / exec / job results never create a card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "V23 present_file (wr.presented) creates one card; two deliveries of one fileId dedupe",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "history: a legacy file_create result still renders one card by fileId, with no version in it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "history: a legacy browse screenshot is still never a card",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

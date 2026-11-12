@@ -22,6 +22,7 @@ import { SecretBox } from "../identity/secrets.ts";
 import { Allowlist, resolveTarget } from "./egress.ts";
 import { pinnedFetch } from "../tools/netpolicy.ts";
 import { logEvent, redactText } from "./log.ts";
+import type { HarnessInspect } from "./harness-inspect.ts";
 import { DEFAULT_BREAKER_THRESHOLD, DEFAULT_BREAKER_WINDOW_MS, Limiter, type Acquire, type LimitClass } from "./models-limits.ts";
 import { builtinProviderMap, listRemoteModels, modelFromRemote, requestAuth, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from "./models-fetch.ts";
 import { normalizeBaseUrl } from "./models-presets.ts";
@@ -163,6 +164,8 @@ export class Gateway implements ModelGateway {
 	readonly limits = new Limiter(() => this.#now());
 	/** Called after each finished request with its linkage (usage importer marks the conversation dirty). */
 	onRequestFinished?: (link: { spaceId?: string; conversationId?: number }) => void;
+	/** Harness 检视: records each request's final transcript when the org switch is on (set by the ops module). */
+	inspector?: Pick<HarnessInspect, "begin">;
 	/** Resolver override for tests of the personal-provider egress guard. */
 	resolver?: Parameters<typeof resolveTarget>[2];
 
@@ -431,6 +434,10 @@ export class Gateway implements ModelGateway {
 				return;
 			}
 		}
+		// Capture point of the Harness inspector: this is the final transcript, exactly what the provider receives.
+		const capture = record
+			? this.inspector?.begin({ orgId: link.orgId, spaceId: link.spaceId, userId: link.userId, conversationId: link.conversationId, taskId: link.taskId, requestKey, startedAt: t0, model, context: context as never, options })
+			: undefined;
 		const upstreamMeta = Object.fromEntries(Object.entries(meta).filter(([k]) => !k.startsWith("wr")));
 		const { metadata: _m, ...rest } = options;
 		const baseOpts: SimpleStreamOptions = { ...rest, ...(Object.keys(upstreamMeta).length ? { metadata: upstreamMeta } : {}), ...(!rest.timeoutMs && row?.timeout_ms ? { timeoutMs: row.timeout_ms } : {}), ...(row?.scope === "user" ? { fetch: pinnedFetch() } : {}) };
@@ -543,6 +550,7 @@ export class Gateway implements ModelGateway {
 			const m = errorMessage(model, `${lastDenied!.cls}: ${lastDenied!.detail}`);
 			out.push({ type: "error", reason: "error", error: m });
 			out.end(m);
+			capture?.finish(m);
 			if (record) this.onRequestFinished?.(link);
 			return;
 		}
@@ -559,6 +567,7 @@ export class Gateway implements ModelGateway {
 		if (msg.stopReason === "error" || msg.stopReason === "aborted") out.push({ type: "error", reason: msg.stopReason, error: msg });
 		else out.push({ type: "done", reason: msg.stopReason as "stop" | "length" | "toolUse" | "deferred", message: msg });
 		out.end(msg);
+		capture?.finish(msg);
 		if (record) this.onRequestFinished?.(link);
 	}
 

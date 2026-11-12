@@ -24,6 +24,7 @@ const Ctx = createContext<ShellCtx>({ sidebarHidden: false, openSidebar: () => {
 export const useShell = () => useContext(Ctx);
 
 export const WIDE_QUERY = "(min-width: 1024px)";
+const SM_QUERY = "(min-width: 640px)";
 
 /** Radix returns focus only to a Dialog.Trigger; our drawers and panels are opened by outside buttons, so put focus back ourselves. */
 function useRestoreFocus(open: boolean) {
@@ -96,6 +97,11 @@ function ShellLayout() {
 	const presence = useSidebarPresence(sidebarInline, motionReduced);
 	const ctx: ShellCtx = { sidebarHidden: !sidebarInline, openSidebar: () => (wide ? set("sidebarCollapsed", false) : setDrawerOpen(true)), wide };
 
+	// The work panel floats over the chat area from sm up; the preview keeps its column (wide) / sheet (narrow).
+	const sm = useMedia(SM_QUERY);
+	const floatWork = panel?.kind === "work" && sm;
+	const columnPanel = panel && !floatWork ? panel : null;
+
 	const panelBody = panel ? (
 		<Suspense
 			fallback={
@@ -105,7 +111,7 @@ function ShellLayout() {
 			}
 		>
 			<ErrorBoundary label="面板" resetKey={panel}>
-				{panel.kind === "preview" ? <PreviewPanel target={panel.target} onClose={close} /> : <WorkPanel state={panel} onClose={close} />}
+				{panel.kind === "preview" ? <PreviewPanel target={panel.target} onClose={close} /> : <WorkPanel state={panel} onClose={close} variant={floatWork ? "card" : "sheet"} />}
 			</ErrorBoundary>
 		</Suspense>
 	) : null;
@@ -132,18 +138,23 @@ function ShellLayout() {
 						<Sidebar onNavigate={() => setDrawerOpen(false)} onClose={() => setDrawerOpen(false)} />
 					</Sheet>
 				) : null}
-				<main className="flex min-w-0 flex-1 flex-col">
+				<main className="relative flex min-w-0 flex-1 flex-col">
 					<ErrorBoundary label="页面" resetKey={loc.pathname}>
 						<Outlet />
 					</ErrorBoundary>
+					{floatWork ? (
+						<div data-testid="work-float" className="absolute right-3 top-14 z-30 w-[min(360px,calc(100%-1.5rem))] sm:right-4">
+							{panelBody}
+						</div>
+					) : null}
 				</main>
-				{panel && wide ? (
+				{columnPanel && wide ? (
 					<aside data-testid="side-panel" className="flex w-[clamp(380px,40vw,680px)] shrink-0 flex-col border-l border-border bg-surface wr-drawer-right">
 						{panelBody}
 					</aside>
 				) : null}
-				{!wide ? (
-					<Sheet open={!!panel} onOpenChange={(o) => !o && close()} side="right" title={panel?.kind === "preview" ? "预览" : "工作面板"}>
+				{!wide && columnPanel ? (
+					<Sheet open onOpenChange={(o) => !o && close()} side="right" title={columnPanel.kind === "preview" ? "预览" : "工作面板"}>
 						<div data-testid="side-drawer" className="flex h-full flex-col">
 							{panelBody}
 						</div>
