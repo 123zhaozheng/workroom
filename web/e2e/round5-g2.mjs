@@ -39,7 +39,7 @@ try {
 	await register(page, base, { email: `g2-${Date.now()}@example.com`, name: "林夏" });
 
 	// ------------------------------------------------------------------ 1. directives are not content; run summary; 技术详情
-	await start(page, '帮我写周报 [[call file_create {"name":"项目周报","format":"md","title":"项目周报","content":"# 本周进展\\n- 完成需求评审"}]] [[call file_list {}]]');
+	await start(page, '帮我写周报 [[call write {"path":"/work/项目周报.md","content":"# 本周进展\\n- 完成需求评审"}]] [[call present_file {"source":"/work/项目周报.md"}]] [[call ls {"path":"/work"}]]');
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 30000 });
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 30000 });
 	await idle(page);
@@ -59,9 +59,9 @@ try {
 	await page.waitForSelector('[data-testid="tool-step"]', { timeout: 5000 });
 	await sleep(250);
 	const titles = await page.locator('[data-testid="tool-step"] > button').allInnerTexts();
-	check("steps: human wording per tool (生成文件「项目周报」 / 查看文件列表)", titles.length === 2 && titles[0].includes("生成文件「项目周报」") && titles[1].includes("查看文件列表"), titles.join(" | "));
-	check("steps: one human outcome on the row (已生成「项目周报.md」)", titles[0].includes("已生成「项目周报.md」"), titles[0]);
-	check("steps: tool names and JSON are not in the step rows", !titles.join(" ").includes("file_create") && !titles.join(" ").includes("{"));
+	check("steps: human wording per tool (写入「项目周报.md」 / 交付文件「项目周报.md」 / 查看目录 /work)", titles.length === 3 && titles[0].includes("写入「项目周报.md」") && titles[1].includes("交付文件「项目周报.md」") && titles[2].includes("查看目录 /work"), titles.join(" | "));
+	check("steps: one human outcome on the delivery row (已交付「项目周报.md」)", titles[1].includes("已交付「项目周报.md」"), titles[1]);
+	check("steps: tool names and JSON are not in the step rows", !titles.join(" ").includes("present_file") && !titles.join(" ").includes("{"));
 	check("steps [round 12]: no 技术详情 / preview / workspace links anywhere in the steps", (await page.locator('[data-testid="tool-step"] [data-testid="tech-details"]').count()) === 0 && (await page.locator('[data-testid="tool-step"]').getByRole("button", { name: /预览|在工作区|工作面板/ }).count()) === 0);
 	await page.locator('[data-testid="tool-step"] > button').first().click();
 	await sleep(200);

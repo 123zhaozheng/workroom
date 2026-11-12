@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import mammoth from "mammoth";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
+import { oldConversation } from "./helpers/legacy-conversation.ts";
 import { upload } from "./fixtures/util.ts";
 
 type Conv = { spaceId: string; conversationId: number };
@@ -57,11 +58,12 @@ async function toolResults(t: TestApp, c: Conv, name: string) {
 	return items.filter((e) => e.kind === "pi.tool-result" && e.model?.[0]?.toolName === name).map((e) => ({ text: e.model[0].content.map((x: any) => x.text ?? "").join(""), details: e.model[0].details, isError: !!e.model[0].isError }));
 }
 
-test("e2e: fixture model drives file_create → v1 card, file_revise → v2, file_read of an attachment, through the chat API", { skip }, async () => {
+test("e2e (old conversation, legacy file tools): fixture model drives file_create → v1 card, file_revise → v2, file_read of an attachment, through the chat API", { skip }, async () => {
 	const t = await startTestApp();
 	try {
 		const u = await t.user("e2e@example.com");
-		const c: Conv = (await t.json("POST", "/api/conversations", { token: u.token, json: { title: "交付测试" } })).conversation;
+		// round 14: new conversations use write/present_file (r14-vfs-chain); file_* stay working in conversations created before it
+		const c: Conv = await oldConversation(t, u.me.userId, u.me.orgId, "交付测试");
 		const create = JSON.stringify({ name: "周报", format: "docx", title: "周报", content: "## 本周\n- 完成文件模块\n- 完成测试" });
 		const s1 = await send(t, u.token, c, `[[call file_create ${create}]]`);
 		assert.equal((await settled(t, u.token, c, s1.submissionId)).status, "done");

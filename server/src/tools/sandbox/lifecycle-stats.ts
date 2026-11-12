@@ -1,5 +1,5 @@
 // Round 11 (R6): read-only aggregation over the sandbox lifecycle events (tool_sandbox_events), the instance table, the tool call records
-// (code_run) and the prewarm log (tool_sandbox_prewarm_log). Nothing here writes lifecycle data; the only write is the price setting.
+// and the prewarm log (tool_sandbox_prewarm_log). Nothing here writes lifecycle data; the only write is the price setting.
 // Definitions and formulas: docs/r11-observability.md.
 //
 //  * Percentiles: nearest-rank. Sorted ascending x[0..n-1], P(p) = x[ceil(p/100 * n) - 1]. n = 0 -> null, n = 1 -> the single value for every p.
@@ -9,7 +9,6 @@
 import type { AppContext, Principal } from "../../core/contracts.ts";
 import { HttpError, nowIso } from "../../core/http.ts";
 import type {
-	SandboxCodeRunStatsDTO,
 	SandboxConversationStatsDTO,
 	SandboxLifecycleStatsDTO,
 	SandboxPercentilesDTO,
@@ -192,26 +191,6 @@ export function parseProvider(raw: string | undefined): string | null {
 	return raw;
 }
 
-// ------------------------------------------------------------------ code_run (R4)
-const EMPTY_CODE_RUN: SandboxCodeRunStatsDTO = { browser: 0, cloud: 0, upgraded: 0 };
-
-/**
- * code_run finishes with a tool-call record whose result summary is "<backend> <status> <reason>[ upgraded]" (server/src/tools/localexec/extension.ts;
- * older records only have "<backend> <status>"). Only calls that returned a report are counted; a call that threw (permission, validation) has no backend.
- */
-export function codeRunStats(ctx: AppContext, orgId: string, from: string, to: string, conv?: { spaceId: string; conversationId: number }): SandboxCodeRunStatsDTO {
-	try {
-		const r = ctx.db.get<{ b: number | null; c: number | null; u: number | null }>(
-			`SELECT SUM(result_summary LIKE 'browser %') AS b, SUM(result_summary LIKE 'cloud %') AS c, SUM(result_summary LIKE '% upgraded') AS u
-			 FROM tool_calls WHERE org_id = ? AND tool = 'code_run' AND status = 'ok' AND started_at >= ? AND started_at < ?${conv ? " AND space_id = ? AND conversation_id = ?" : ""}`,
-			orgId, from, to, ...(conv ? [conv.spaceId, conv.conversationId] : []),
-		);
-		return { browser: r?.b ?? 0, cloud: r?.c ?? 0, upgraded: r?.u ?? 0 };
-	} catch {
-		return EMPTY_CODE_RUN; // tool_calls belongs to the tools module; a harness without it has nothing to count
-	}
-}
-
 // ------------------------------------------------------------------ the aggregation
 interface OpenRow {
 	provider: string;
@@ -341,14 +320,13 @@ export async function sandboxStats(ctx: AppContext, orgId: string, o: SandboxSta
 		costComplete,
 		byProvider,
 		conversations,
-		codeRun: codeRunStats(ctx, orgId, o.from, o.to),
 		prewarm: prewarmTuning(ctx, orgId, o.from, o.to),
 	};
 }
 
 /** One conversation over its whole life (events and open intervals up to now). `costVisible` false -> cost is always null. */
-export function conversationSandboxStats(ctx: AppContext, orgId: string, spaceId: string, conversationId: number, costVisible: boolean, now = Date.now()): { stats: SandboxLifecycleStatsDTO; codeRun: SandboxCodeRunStatsDTO } {
+export function conversationSandboxStats(ctx: AppContext, orgId: string, spaceId: string, conversationId: number, costVisible: boolean, now = Date.now()): { stats: SandboxLifecycleStatsDTO } {
 	const prices = costVisible ? readPrices(ctx, orgId) : {};
 	const c = collect(ctx, orgId, "", "9999", null, now, { spaceId, conversationId });
-	return { stats: c.total.dto(prices, costScope(null, prices)), codeRun: codeRunStats(ctx, orgId, "", "9999", { spaceId, conversationId }) };
+	return { stats: c.total.dto(prices, costScope(null, prices)) };
 }

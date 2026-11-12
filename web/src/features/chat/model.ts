@@ -1,6 +1,6 @@
 // View model: pi entries (+ live partial) → user turns and assistant turns with an embedded step chain.
 import type { ApprovalDTO, AssistantEntryDTO, ConversationState, EntryDTO, LiveToolDTO, MarkerEntryDTO, SubagentDTO, ToolCallDTO, ToolResultEntryDTO, UsageDTO, UserEntryDTO, WorkspacePrepItem } from "@shared/chat";
-import type { BrowseResultDTO, FileVersionRefDTO, JobDTO } from "@shared/files";
+import type { BrowseResultDTO, JobDTO, LibItemDTO } from "@shared/files";
 import type { CitationDTO } from "@shared/knowledge";
 
 export type Step =
@@ -20,7 +20,8 @@ export interface AssistantTurn {
 	steps: Step[];
 	answer?: string;
 	streaming: boolean;
-	artifacts: FileVersionRefDTO[];
+	/** File cards of this turn: delivered outputs only (present_file), de-duplicated by fileId. */
+	artifacts: CardRef[];
 	citations: CitationDTO[];
 	/** Background jobs started in this turn (job_start → details.job). */
 	jobs: JobDTO[];
@@ -63,16 +64,40 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 	return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
-/** File cards: tool results carry `details.artifact` (FileVersionRefDTO) — also accept `artifacts[]`. */
-export function artifactsOf(details: unknown): FileVersionRefDTO[] {
-	if (!isRecord(details)) return [];
-	const out: FileVersionRefDTO[] = [];
+/** What a file card needs to render before it is resolved against the conversation's current outputs. */
+export interface CardRef {
+	fileId: string;
+	name: string;
+	mime: string;
+	size: number;
+	/** Delivered item as returned by present_file (absent for legacy cards). */
+	item?: LibItemDTO;
+}
+
+/** The ONLY thing that makes a file card appear: a successful present_file result (`details.kind === "wr.presented"`). */
+export function presentedOf(details: unknown): LibItemDTO | null {
+	if (!isRecord(details) || details.kind !== "wr.presented" || !isRecord(details.item)) return null;
+	const it = details.item;
+	return typeof it.fileId === "string" && typeof it.name === "string" ? (it as unknown as LibItemDTO) : null;
+}
+
+/** Legacy tools of conversations created before round 14: their result `details.artifact` still renders a card (by fileId, current file). */
+const LEGACY_CARD_TOOLS = new Set(["file_create", "file_revise", "sandbox_publish"]);
+
+/**
+ * File cards of one tool result. Browser screenshots, job outputs, read / ls / copy_to_work results and uploads never create one:
+ * only present_file (or, for old history, the three legacy publishing tools) does.
+ */
+export function cardsOf(toolName: string, details: unknown): CardRef[] {
+	const item = toolName === "present_file" ? presentedOf(details) : null;
+	if (item) return [{ fileId: item.fileId, name: item.name, mime: item.mime, size: item.size, item }];
+	if (!LEGACY_CARD_TOOLS.has(toolName) || !isRecord(details)) return [];
+	const out: CardRef[] = [];
 	const push = (a: unknown) => {
-		if (isRecord(a) && typeof a.fileId === "string" && typeof a.versionId === "string") out.push(a as unknown as FileVersionRefDTO);
+		if (isRecord(a) && typeof a.fileId === "string" && typeof a.name === "string") out.push({ fileId: a.fileId, name: a.name, mime: typeof a.mime === "string" ? a.mime : "", size: typeof a.size === "number" ? a.size : 0 });
 	};
 	push(details.artifact);
 	if (Array.isArray(details.artifacts)) details.artifacts.forEach(push);
-	if (isRecord(details.screenshot)) push(details.screenshot);
 	return out;
 }
 export function citationsOf(details: unknown): CitationDTO[] {
@@ -166,7 +191,7 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 						t.steps.push({ kind: "tool", key: `t${c.id}`, call: c, result: r, live: liveTools.get(c.id), approval: approvalsByCall.get(c.id), subagent: subagentsByCall.get(c.id) });
 						if (r) {
 							finished(t, r.timestamp);
-							t.artifacts.push(...artifactsOf(r.details));
+							if (!r.isError) t.artifacts.push(...cardsOf(c.name, r.details));
 							t.citations.push(...citationsOf(r.details));
 							const job = isRecord(r.details) && isRecord(r.details.job) && typeof r.details.job.id === "string" ? (r.details.job as unknown as JobDTO) : null;
 							if (job) t.jobs.push(job);
@@ -237,9 +262,9 @@ export function buildTurns(entries: readonly EntryDTO[], state?: Pick<Conversati
 }
 
 function finalize(t: AssistantTurn) {
-	// de-dup artifacts by versionId (keep last)
-	const seen = new Map<string, FileVersionRefDTO>();
-	for (const a of t.artifacts) seen.set(a.versionId, a);
+	// one card per file: an overwrite delivers the same fileId again (keep the last data, first position)
+	const seen = new Map<string, CardRef>();
+	for (const a of t.artifacts) seen.set(a.fileId, a);
 	t.artifacts = [...seen.values()];
 	const cs = new Map<string, CitationDTO>();
 	for (const c of t.citations) cs.set(c.chunkId, c);
@@ -265,6 +290,6 @@ export function turnMarkdown(t: AssistantTurn): string {
 	const parts: string[] = [];
 	if (t.answer) parts.push(t.answer);
 	if (t.citations.length) parts.push(`\n引用：\n${t.citations.map((c, i) => `[${c.n ?? i + 1}] ${c.fileName} v${c.versionNo} ${c.locator}`).join("\n")}`);
-	if (t.artifacts.length) parts.push(`\n成果文件：\n${t.artifacts.map((a) => `- ${a.name} (v${a.versionNo})`).join("\n")}`);
+	if (t.artifacts.length) parts.push(`\n成果文件：\n${t.artifacts.map((a) => `- ${a.name}`).join("\n")}`);
 	return parts.join("\n");
 }

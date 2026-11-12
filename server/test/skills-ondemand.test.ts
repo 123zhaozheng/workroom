@@ -58,15 +58,17 @@ test("prompt section: only usable skills, one line each, max 50 + explicit 'N mo
 			let text = (await render())!;
 			const lines = text.split("\n");
 			assert.equal(lines.length, 1 + 5, text);
-			assert.match(lines[1]!, /^- five01 \(five01-[a-z0-9]{6}\) — 技能 1 第二行/);
+			assert.match(lines[1]!, /^- five01 \(\/skills\/five01-[a-z0-9]{6}\) — 技能 1 第二行/);
 			assert.ok(!/另有/.test(text), "nothing hidden with 5 skills");
+			assert.match(lines[0]!, /\/skills\/<slug>\/SKILL\.md/);
+			assert.ok(!/skill 工具|skill_/.test(text), "no mention of the removed skill tool");
 
 			const long = "长".repeat(300);
 			await mkSkills(t, a.token, 55, "many", () => long);
 			text = (await render())!;
 			const bullet = text.split("\n").filter((l) => l.startsWith("- "));
 			assert.equal(bullet.length, SKILL_PROMPT_MAX_LINES);
-			assert.equal(text.split("\n").at(-1), "另有 10 个技能未列出，用 skill 工具 action=search 查找", "60 skills: 50 shown, 10 reported");
+			assert.equal(text.split("\n").at(-1), "另有 10 个技能未列出，用 ls /skills 或 search 查找", "60 skills: 50 shown, 10 reported");
 			assert.ok(bullet.every((l) => l.length <= 2 + 60 + 3 + 80 + 3 + 120 + 10), "descriptions are cut");
 			const desc = bullet.find((l) => l.includes("长"))!.split(" — ")[1]!;
 			assert.equal(desc.length, 120);

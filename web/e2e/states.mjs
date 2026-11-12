@@ -105,14 +105,9 @@ try {
 	check("work panel: subagent with source/status/result", subs > 0, `subagents=${subs}`);
 	await sleep(300);
 	await shot(page, "1440-work-panel-tasks");
-	await page.click('[data-testid="work-tab-terminal"]');
-	await sleep(800);
-	await shot(page, "1440-work-panel-terminal");
-	check("work panel: terminal tab renders (sandbox info / runs / directory)", (await page.locator('[data-testid="render-error"]').count()) === 0);
-	await page.click('[data-testid="work-tab-browser"]');
-	await sleep(800);
-	await shot(page, "1440-work-panel-browser");
-	check("work panel: one panel, switchable tabs", (await page.locator('[data-testid="side-panel"]').count()) === 1);
+	check("work panel: three blocks 输出 / 子任务 / 浏览器 in one panel, no terminal tab", (await page.locator('[data-testid="work-panel"] section[data-testid^="block-"]').count()) === 3 && (await page.locator('[data-testid^="work-tab-"]').count()) === 0 && (await page.locator('[data-testid="render-error"]').count()) === 0);
+	await shot(page, "1440-work-panel-blocks");
+	check("work panel: one panel", (await page.locator('[data-testid="side-panel"]').count()) === 1);
 	await page.click('[data-testid="close-panel"]');
 
 	// ---------------------------------------------------------------- knowledge failure is shown honestly (M06-A)

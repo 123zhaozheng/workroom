@@ -12,6 +12,7 @@ import type { WorkspacePrepItem } from "../../../shared/chat.ts";
 import type { Sandbox } from "../tools/sandbox.ts";
 import { storeLabel } from "../tools/sandbox/stores.ts";
 import { closeDeadWork } from "./lifecycle.ts";
+import { LEGACY_EXTENSIONS, LEGACY_TOOLS, LEGACY_TOOL_MAP } from "../vfs/legacy.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
@@ -142,9 +143,23 @@ export class Runtime implements RuntimeService {
 	 */
 	#toolsByName(names: readonly string[], withDelegate: boolean) {
 		const byName = new Map(this.manager.registry.snapshot().tools().map((t) => [t.tool.name, t.tool] as const));
-		const want = new Set(names.map(String));
+		const want = new Set<string>();
+		// round 14: a replaced tool name in an older allowlist means its unified equivalent
+		for (const n of names.map(String)) for (const m of LEGACY_TOOL_MAP[n] ?? [n]) want.add(m);
 		if (withDelegate) want.add("delegate");
 		return [...want].flatMap((n) => (byName.has(n) ? [byName.get(n)!] : []));
+	}
+
+	/**
+	 * Round 14: what a NEW conversation's agent leaves out — the extensions and tools replaced by the unified file/exec tools (they stay
+	 * installed for older conversations and their persisted tasks).
+	 */
+	#legacyRemoval(): { extensions?: { remove: any[] }; tools?: { remove: any[] } } {
+		const snap = this.manager.registry.snapshot();
+		const exts = LEGACY_EXTENSIONS.flatMap((n) => (snap.extension(n) ? [snap.extension(n)!] : []));
+		const byName = new Map(snap.tools().map((t) => [t.tool.name, t.tool] as const));
+		const tools = LEGACY_TOOLS.flatMap((n) => (byName.has(n) ? [byName.get(n)!] : []));
+		return { ...(exts.length ? { extensions: { remove: exts } } : {}), ...(tools.length ? { tools: { remove: tools } } : {}) };
 	}
 
 	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: Context): Promise<{ conversationId: number; notice?: string }> {
@@ -184,7 +199,8 @@ export class Runtime implements RuntimeService {
 					...(assistant?.instructions ? { instructions: assistant.instructions } : {}),
 					// Round 13: the assistant's tool allowlist is the conversation's ENABLED tool set (pi-durable `tools`): it filters what the
 					// model is offered AND what nested calls (Code Mode) can reach. Unset = product default; [] = no tools; a list = exactly those.
-					...(allowed ? { tools: allowed } : {}),
+					...(this.#legacyRemoval().extensions ? { extensions: this.#legacyRemoval().extensions } : {}),
+					...(allowed ? { tools: allowed } : this.#legacyRemoval().tools ? { tools: this.#legacyRemoval().tools } : {}),
 				},
 				init: async (tx, id) => {
 					await tx.appendEntry(StartEntry, id, { data: { createdBy: principal.userId, at: nowIso() } });

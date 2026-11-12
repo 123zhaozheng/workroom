@@ -1,6 +1,6 @@
 // Round 10 · chat UX: compact approval cards (progressive disclosure) and one place per notice.
 // Fixture model only (no real AI): "[[call wr_fixture_approval {...}]]" asks for approval, "[[call credential_request {...}]]" asks for a
-// credential, "[[call skill_manage {...}]]" drafts a skill, "[[call sandbox_exec {...}]]" fails against an unreachable remote sandbox, "[[fail]]" fails a run.
+// credential, "[[call skill_manage {...}]]" drafts a skill, "[[call exec {...}]]" fails against an unreachable remote sandbox, "[[fail]]" fails a run.
 //  A. approval cards (real medium / high + mocked MCP-style, skill draft, blocked draft; credential request): height, visible words and
 //     whether the decision buttons are on screen without scrolling — 1440 / 390, light / dark. Nothing removed: everything is behind 详情 › (round 12).
 //  B. notices: one failed sandbox step = one inline explanation (no env banner / run bar repeating it); a failed run = one inline note + a slim
@@ -309,7 +309,7 @@ try {
 
 	// ================================================================ B. notices
 	// B1. skill saved: real flow with the local driver (before the remote provider is configured)
-	const wf = (path, content) => directive("sandbox_write_file", { path, content });
+	const wf = (path, content) => directive("write", { path: `/work/${path}`, content });
 	const skillMd = "---\nname: r10-skill\ndescription: 把输入的名字问候一遍\nversion: 1.0.0\nentry: scripts/run.py\n---\n# r10-skill\n\n运行 scripts/run.py。\n";
 	await startConv(page, `帮我创建一个技能 ${wf("my-skill/SKILL.md", skillMd)} ${wf("my-skill/scripts/run.py", 'print("hello")\n')}`);
 	await page.waitForSelector(`${T("assistant-message")} .wr-prose`, { timeout: 60000 });
@@ -340,7 +340,7 @@ try {
 	const s1 = await put("/api/sandbox/providers/opensandbox", { enabled: true, endpoint: "http://127.0.0.1:9", apiKey: "sk-e2e-unreachable-0123456789", allowPrivateNetwork: true, egressAcknowledged: true });
 	const s2 = await put("/api/sandbox/provider-policy", { orgDefault: "opensandbox", allowProjectOverride: false });
 	check("B setup: org default = a remote OpenSandbox whose endpoint is unreachable", s1 === 200 && s2 === 200, `${s1}/${s2}`);
-	const sbx = await startConv(page, `跑一下 ${directive("sandbox_exec", { language: "shell", code: "echo hi" })}`);
+	const sbx = await startConv(page, `跑一下 ${directive("exec", { command: "echo hi" })}`);
 	await idle(page);
 	await page.waitForSelector(T("step-chain"), { timeout: 30000 });
 	await sleep(1800); // the environment poll settles
@@ -400,7 +400,7 @@ try {
 		await bad.locator("button").first().click();
 		await sleep(250);
 		const badText = await bad.innerText();
-		check("B sandbox failure: the failed row opens to its input (参数, or 代码 for code tools) and 错误 — nothing was dropped", /失败/.test(badText) && (badText.includes("参数") || badText.includes("代码")) && badText.includes("错误") && /沙箱提供方|创建沙箱失败|fetch failed/.test(badText), badText.replace(/\s+/g, " ").slice(0, 200));
+		check("B sandbox failure: the failed row opens to its 命令 (exec's arguments: the command) and 错误 — nothing was dropped", /失败/.test(badText) && badText.includes("命令") && badText.includes("echo hi") && badText.includes("错误") && /沙箱提供方|创建沙箱失败|fetch failed/.test(badText), badText.replace(/\s+/g, " ").slice(0, 200));
 		// the environment popover still offers the retry
 		await page.locator(T("env-button")).click();
 		await page.waitForSelector(T("env-popover"));

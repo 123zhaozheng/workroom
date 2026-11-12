@@ -35,7 +35,7 @@ test("M09-B handoff: editor takes over (reads handoff, approves, continues); vie
 		const hasFiles = t.app.ctx.services.has("files");
 
 		// A works: a deliverable, an external write with unknown outcome, then an approval left pending
-		if (hasFiles) await settle(t, a.token, c, (await send(t, a.token, c, `[[call file_create {"name":"方案草稿","format":"md","content":"# 方案\\n要点"}]]`)).submissionId);
+		if (hasFiles) await settle(t, a.token, c, (await send(t, a.token, c, `[[call write {"path":"/work/方案草稿.md","content":"# 方案\\n要点"}]] [[call present_file {"source":"/work/方案草稿.md"}]]`)).submissionId);
 		await settle(t, a.token, c, (await send(t, a.token, c, `[[call wr_fixture_effect {"key":"crm-sync","unknownOutcome":true}]]`)).submissionId);
 		const pend = await send(t, a.token, c, `[[call wr_fixture_approval {"title":"发送方案","summary":"把方案邮件发给客户"}]]`);
 		await waitFor(async () => ((await t.json("GET", `${base(c)}/handoff`, { token: a.token })) as ConversationHandoff).pending.approvals.length === 1, { what: "approval pending" });

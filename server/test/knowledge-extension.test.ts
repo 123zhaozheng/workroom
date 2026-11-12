@@ -1,6 +1,6 @@
 // pi-durable extension "wr.knowledge" through the REAL runtime (group A) with the fixture model:
 // kb_search (numbered citations + details, scope defaults, knowledgeRefs, ACL as the run's author),
-// memory/knowledge_scope prompt sections (no private memory in project conversations), memory_save.
+// memory (Markdown MEMORY.md)/knowledge_scope prompt sections (no personal memory in project conversations), legacy memory_save.
 process.env.WORKROOM_FIXTURE_TOOLS ??= "1";
 process.env.WORKROOM_RT_RETRY_MAX ??= "1";
 process.env.WORKROOM_RT_RETRY_BASE_MS ??= "20";
@@ -97,16 +97,25 @@ test("kb_search tool: numbered citations + details, project-scope default, knowl
 	}
 });
 
-test("memory section + memory_save: private memory only in the owner's personal conversations; project memory shared; corrections reach every branch", async () => {
+/** Create/replace a memory file through the front-end route (the same service the agent's /memory backend uses). */
+async function putMem(t: TestApp, token: string, scope: string, path: string, content: string) {
+	const q = `scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(path)}`;
+	const cur = await t.req("GET", `/api/memory/file?${q}`, { token });
+	const headers: Record<string, string> = cur.status === 200 ? { "if-match": ((await cur.json()) as any).file.etag } : {};
+	const res = await t.req("PUT", `/api/memory/file?${q}`, { token, json: { content }, headers });
+	assert.equal(res.status, 200, await res.clone().text());
+}
+
+test("memory section (Markdown MEMORY.md) + legacy memory_save: personal memory only in the owner's personal conversations; project/org memory shared; edits reach every branch", async () => {
 	const t = await startTestApp();
 	try {
 		const alice = await t.user("alice@example.com", { name: "Alice" });
 		const bob = await joinOrg(t, alice.me.orgId, "bob@example.com");
 		const { project } = await t.json("POST", "/api/projects", { token: alice.token, json: { kind: "space", name: "Apollo" } });
 		await t.json("PUT", `/api/projects/${project.id}/members`, { token: alice.token, json: { email: "bob@example.com", role: "editor" } });
-		await t.json("POST", "/api/memory", { token: alice.token, json: { content: "PRIVATE-MEM 我的体检在周五", scope: "private" } });
-		const pm = (await t.json("POST", "/api/memory", { token: alice.token, json: { content: "PROJECT-MEM 交付物统一用中文", scope: "project", projectId: project.id, kind: "constraint" } })).memory;
-		await t.json("POST", "/api/memory", { token: alice.token, json: { content: "ORG-MEM 对外文件须法务审核", scope: "org" } });
+		await putMem(t, alice.token, "personal", "MEMORY.md", "# 长期记忆\nPRIVATE-MEM 我的体检在周五\n");
+		await putMem(t, alice.token, `project:${project.id}`, "MEMORY.md", "# 项目\nPROJECT-MEM 交付物统一用中文\n");
+		await putMem(t, alice.token, "org", "MEMORY.md", "# 企业\nORG-MEM 对外文件须法务审核\n");
 
 		const personal = await newChat(t, alice.token);
 		await run(t, alice.token, personal, "[[reply ok]]");
@@ -120,39 +129,31 @@ test("memory section + memory_save: private memory only in the owner's personal 
 		const sproj = (await sections(t, pc)).memory ?? "";
 		assert.match(sproj, /PROJECT-MEM/);
 		assert.match(sproj, /ORG-MEM/);
-		assert.doesNotMatch(sproj, /PRIVATE-MEM/, "private memory must never enter a project conversation");
+		assert.doesNotMatch(sproj, /PRIVATE-MEM/, "personal memory must never enter a project conversation");
 
-		// memory_save from the project conversation, scope project → shared, source "extracted" with conversation ref.
-		await run(t, alice.token, pc, '[[call memory_save {"content":"SAVED-MEM 客户偏好每周五收到周报","scope":"project","kind":"preference"}]]');
-		const [saved] = await toolResults(t, pc, "memory_save");
-		assert.equal(saved!.isError, false, saved!.text);
-		const m = saved!.details.memory;
-		assert.equal(m.source, "extracted");
-		assert.equal(m.scope, "project");
-		assert.equal(m.sourceRef.conversationId, pc.conversationId);
-		assert.equal(m.sourceRef.spaceId, project.spaceId);
-		assert.ok(m.sourceRef.callId);
-		assert.ok((await t.json("GET", "/api/memory", { token: bob.token })).memories.some((x: any) => x.id === m.id && x.source === "extracted"));
-		// Scope is required, and "project" is refused outside a project conversation.
-		await run(t, alice.token, personal, '[[call memory_save {"content":"no scope given"}]]');
-		assert.equal((await toolResults(t, personal, "memory_save"))[0]!.isError, true);
-		await run(t, alice.token, personal, '[[call memory_save {"content":"wrong place","scope":"project"}]]');
-		const wrong = (await toolResults(t, personal, "memory_save"))[1]!;
-		assert.equal(wrong.isError, true);
-		assert.match(wrong.text, /不是项目会话/);
+		// legacy memory_save stays registered for OLD conversations but a new conversation no longer offers it; its write path is the Markdown service
+		await run(t, alice.token, pc, '[[call memory_save {"content":"x","scope":"project"}]]');
+		assert.equal((await toolResults(t, pc, "memory_save"))[0]!.isError, true, "not offered to new conversations");
+		const k = t.app.ctx.services.get("knowledgeAdmin") as any;
+		const aliceP = await t.app.ctx.services.get("identity").principalFor(alice.me.userId, alice.me.orgId);
+		const saved = k.memory.appendNote(aliceP, { kind: "project", projectId: project.id }, "preference", "SAVED-MEM 客户偏好每周五收到周报");
+		assert.equal(saved.vpath, `/memory/shared/project/${project.id}/preferences.md`);
+		const bobFile = await t.json("GET", `/api/memory/file?scope=${encodeURIComponent(`project:${project.id}`)}&path=preferences.md`, { token: bob.token });
+		assert.match(bobFile.content, /SAVED-MEM/);
+		assert.equal(k.memory.appendNote(aliceP, { kind: "project", projectId: project.id }, "preference", "SAVED-MEM 客户偏好每周五收到周报").status, "unchanged", "exact duplicates are not appended twice");
 
-		// Correction is global: a fork made from an early entry sees the corrected memory at its next request.
+		// An edit is global and fresh: a fork made from an early entry sees the edited memory at its next request.
 		const firstEntry = (await t.json("GET", `${base(pc)}/entries?limit=200`, { token: alice.token })).items.find((e: any) => e.kind === "user");
-		await t.json("POST", `/api/memory/${pm.id}/correct`, { token: alice.token, json: { content: "PROJECT-MEM-V2 交付物中英双语", note: "客户要求" } });
+		await putMem(t, alice.token, `project:${project.id}`, "MEMORY.md", "# 项目\nPROJECT-MEM-V2 交付物中英双语\n");
 		const fork = (await t.json("POST", `${base(pc)}/fork`, { token: alice.token, json: { entryId: firstEntry.entryId ?? firstEntry.id } })).conversation as Conv;
 		await run(t, alice.token, fork, "[[reply ok]]");
 		const sf = (await sections(t, fork)).memory ?? "";
 		assert.match(sf, /PROJECT-MEM-V2/);
 		assert.doesNotMatch(sf, /PROJECT-MEM 交付物统一用中文/);
 		await run(t, alice.token, pc, "[[reply again]]");
-		assert.match((await sections(t, pc)).memory ?? "", /PROJECT-MEM-V2.*|[\s\S]*PROJECT-MEM-V2/);
+		assert.match((await sections(t, pc)).memory ?? "", /PROJECT-MEM-V2/);
 
-		// Bob in the same project conversation: same shared memory, still no private memory of anyone.
+		// Bob in the same project conversation: same shared memory, still no personal memory of anyone.
 		await run(t, bob.token, pc, "[[reply hi]]");
 		const sb = (await sections(t, pc)).memory ?? "";
 		assert.doesNotMatch(sb, /PRIVATE-MEM/);
@@ -165,7 +166,7 @@ test("compaction: key constraints from memory are still in the prompt after the 
 	const t = await startTestApp();
 	try {
 		const alice = await t.user("alice@example.com", { name: "Alice" });
-		await t.json("POST", "/api/memory", { token: alice.token, json: { content: "CONSTRAINT-MEM 所有金额以人民币万元为单位", scope: "private", kind: "constraint" } });
+		await putMem(t, alice.token, "personal", "MEMORY.md", "# 长期记忆\nCONSTRAINT-MEM 所有金额以人民币万元为单位\n");
 		const c = await newChat(t, alice.token);
 		// Enough transcript that compaction has something to summarize (keepRecentTokens keeps only the tail verbatim).
 		const filler = "历史讨论内容，与约束无关。".repeat(2500);

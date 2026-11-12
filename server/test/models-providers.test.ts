@@ -155,15 +155,15 @@ test("admin adds OpenAI-compatible + Anthropic providers → fetch models → ch
 				assert.equal(req.headers.authorization, `Bearer ${OPENAI_KEY}`);
 				assert.equal(req.headers["x-org-tag"], "acme", "provider custom headers are sent on chat requests");
 			} else assert.equal(req.headers["x-api-key"], ANTHROPIC_KEY);
-			// tool call round trip: model asks for file_list, pi-durable executes it, the model answers from the result
+			// tool call round trip: model asks for ls, pi-durable executes it, the model answers from the result
 			await send(t, tok, conversation.spaceId, conversation.conversationId, "看看有哪些文件 [[tool]]");
 			s = await idle(t, tok, conversation.spaceId, conversation.conversationId, /工具已返回/);
-			const tr = s.entries.find((e: any) => e.kind === "tool_result" && e.toolName === "file_list");
-			assert.ok(tr && !tr.isError, `${label}: file_list executed through pi-durable: ${JSON.stringify(tr)}`);
+			const tr = s.entries.find((e: any) => e.kind === "tool_result" && e.toolName === "ls");
+			assert.ok(tr && !tr.isError, `${label}: ls executed through pi-durable: ${JSON.stringify(tr)}`);
 			assert.match(lastAssistant(s).text, /工具已返回/, `${label} final answer after the tool result`);
 			const withTools = mock.requests.slice(before).filter((r) => r.method === "POST");
 			assert.ok(withTools.length >= 3, "message, tool call, tool result = separate upstream requests");
-			assert.ok(JSON.stringify(withTools.at(-1)!.body).includes("file_list"));
+			assert.ok(JSON.stringify(withTools.at(-1)!.body).includes('"ls"'));
 			await get(`/api/conversations/${conversation.spaceId}/${conversation.conversationId}/entries`, tok);
 			seen.push(JSON.stringify(s));
 			// usage attribution: attempts recorded against the native provider / model

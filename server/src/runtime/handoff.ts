@@ -1,6 +1,7 @@
 // Handoff views (M09-B): what a member taking over needs to know — decisions, progress, pending items, deliverables,
 // participants. Everything is derived on read from pi-durable state (entries, submissions, pi.live, pi.inbox and the
 // wr.* documents) plus the files service; there is no handoff table. ACL = the caller's CURRENT access.
+import type { LibItemDTO } from "../../../shared/files.ts";
 import type { Context } from "@earendil-works/chord/context";
 import { InboxDoc, LiveDoc, type Cursor, type EntryRecord, type Harness } from "@earendil-works/pi-durable";
 import type { Principal } from "../core/contracts.ts";
@@ -24,10 +25,6 @@ export class Handoff {
 		this.#rt = rt;
 	}
 
-	#files(): FilesLike | undefined {
-		const s = this.#rt.ctx.services;
-		return s.has("files") ? (s.get("files") as unknown as FilesLike) : undefined;
-	}
 
 	#role(userId: string, projectId: string | undefined, ownerUserId: string | undefined): HandoffParticipant["role"] {
 		if (!projectId) return userId === ownerUserId ? "owner" : null;
@@ -35,31 +32,33 @@ export class Handoff {
 		return (r?.role as HandoffParticipant["role"]) ?? null;
 	}
 
-	/** File versions of `spaceId` whose provenance names `conversationId` (or every file of the project when omitted). */
+	/**
+	 * Round 14: the deliverables of a conversation (or of every conversation of the space/project when omitted) are its DELIVERED outputs —
+	 * the library's current files (present_file), never uploads, intermediate files or screenshots.
+	 */
 	async deliverables(p: Principal, opts: { spaceId?: string; projectId?: string; conversationId?: number }): Promise<{ items: HandoffDeliverable[]; unavailable?: string }> {
-		const files = this.#files();
-		if (!files?.list || !files.detail) return { items: [], unavailable: "files service not loaded" };
-		const list = await files.list(p, { ...opts, limit: 100 });
-		const out: HandoffDeliverable[] = [];
-		for (const f of list) {
-			const d = await files.detail(p, f.id).catch(() => undefined);
-			for (const v of d?.versions ?? []) {
-				if (opts.conversationId !== undefined && v.provenance?.conversationId !== opts.conversationId) continue;
-				out.push({
-					fileId: f.id,
-					versionId: v.versionId,
-					versionNo: v.versionNo,
-					name: v.name,
-					mime: v.mime,
-					createdAt: v.createdAt,
-					createdBy: v.createdBy,
-					createdByName: this.#rt.userName(v.createdBy),
-					...(v.provenance?.conversationId !== undefined ? { conversationId: v.provenance.conversationId } : {}),
-					...(v.downloadUrl ? { downloadUrl: v.downloadUrl } : {}),
-					...(v.previewUrl ? { previewUrl: v.previewUrl } : {}),
-				});
-			}
-		}
+		const services = this.#rt.ctx.services as any;
+		if (!services.has("library")) return { items: [], unavailable: "library not loaded" };
+		const lib = services.get("library") as { listFor(p: Principal, o: { spaceId?: string; conversationId?: number }): Promise<LibItemDTO[]>; row(id: string): { version_id: string; rev: number; presented_by: string; created_at: string } | undefined };
+		let spaceId = opts.spaceId;
+		if (!spaceId && opts.projectId) spaceId = this.#rt.ctx.services.get("identity").projectSpace(opts.projectId)?.id;
+		const items = await lib.listFor(p, { ...(spaceId ? { spaceId } : {}), ...(opts.conversationId !== undefined ? { conversationId: opts.conversationId } : {}) });
+		const out: HandoffDeliverable[] = items.map((it) => {
+			const r = lib.row(it.fileId);
+			return {
+				fileId: it.fileId,
+				versionId: r?.version_id ?? "",
+				versionNo: r?.rev ?? 1,
+				name: it.name,
+				mime: it.mime,
+				createdAt: it.updatedAt,
+				createdBy: r?.presented_by ?? "",
+				createdByName: r ? this.#rt.userName(r.presented_by) : undefined,
+				conversationId: it.conversationId,
+				downloadUrl: it.downloadUrl,
+				previewUrl: it.previewUrl,
+			};
+		});
 		out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 		return { items: out };
 	}

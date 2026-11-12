@@ -581,8 +581,8 @@ export class Skills {
 		const tools = [...new Set(ok.map((c) => c.tool as string))].filter((t) => !t.startsWith("skill_"));
 		const perms = new Set<string>();
 		for (const t of tools) {
-			if (t === "sandbox_exec") perms.add("sandbox.exec");
-			else if (["file_create", "file_revise", "sandbox_publish"].includes(t)) perms.add("file.write");
+			if (t === "sandbox_exec" || t === "exec") perms.add("sandbox.exec");
+			else if (["file_create", "file_revise", "sandbox_publish", "present_file"].includes(t)) perms.add("file.write");
 			else if (t.startsWith("mcp__") || t === "browse") perms.add(`tool:${t}`);
 		}
 		const lastRun = runs[runs.length - 1];
@@ -659,8 +659,8 @@ export class Skills {
 		const missing = tools.filter((t) => !known.has(t));
 		add("所需工具可用", missing.length === 0, missing.length ? `缺少：${missing.join(", ")}` : tools.join(", ") || "（无）");
 		const usesTool = (t: string) => tools.includes(t);
-		if (usesTool("sandbox_exec") || r.kind === "executable") add("声明 sandbox.exec", perms.includes("sandbox.exec"));
-		if (usesTool("file_create") || usesTool("file_revise")) add("声明 file.write", perms.includes("file.write"));
+		if (usesTool("sandbox_exec") || usesTool("exec") || r.kind === "executable") add("声明 sandbox.exec", perms.includes("sandbox.exec"));
+		if (usesTool("file_create") || usesTool("file_revise") || usesTool("present_file")) add("声明 file.write", perms.includes("file.write"));
 		// Round 9: a declared `network` permission stays a user grant item; whether the sandbox can reach a network depends on its driver / provider (no Workroom switch).
 		if (perms.includes("network")) add("联网权限已声明", true, "使用者需单独授权；沙箱能否联网取决于所用的执行环境");
 		const sample = r.sample ? JSON.parse(r.sample) : { input: "" };
@@ -761,6 +761,21 @@ export function renderSkillIndex(entries: readonly { name: string; slug: string;
 		...shown.map((e) => `- ${oneLine(e.name, 60)} (${oneLine(e.slug, 80)}) — ${oneLine(e.description, 120) || "（无描述）"}`),
 	];
 	if (entries.length > shown.length) lines.push(`另有 ${entries.length - shown.length} 个技能未列出，用 skill 工具 action=search 查找`);
+	return lines.join("\n");
+}
+
+/**
+ * Round 14 prompt text: skills are files under /skills (read SKILL.md first). No mention of the legacy `skill` tool. Same line cap and
+ * explicit "N more" rule as the legacy index.
+ */
+export function renderVfsSkillIndex(entries: readonly { name: string; slug: string; description: string }[]): string | undefined {
+	if (!entries.length) return undefined;
+	const shown = entries.slice(0, SKILL_PROMPT_MAX_LINES);
+	const lines = [
+		"可用技能（按需使用）：用 read 读取 /skills/<slug>/SKILL.md 了解用法，不要凭记忆假设技能内容；ls /skills/<slug> 查看其中的脚本和参考资料。技能目录是只读视图，运行其中的脚本前先 copy_to_work（source 为技能目录，recursive: true）复制到 /work，再用 exec 运行；技能文件不授予额外权限。只有你自己创建的个人技能可以直接用 write/edit 修改。",
+		...shown.map((e) => `- ${oneLine(e.name, 60)} (/skills/${oneLine(e.slug, 80)}) — ${oneLine(e.description, 120) || "（无描述）"}`),
+	];
+	if (entries.length > shown.length) lines.push(`另有 ${entries.length - shown.length} 个技能未列出，用 ls /skills 或 search 查找`);
 	return lines.join("\n");
 }
 
@@ -988,7 +1003,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 					const mk = market();
 					if (!(await mk.can(scope.principal, "skill.use"))) return undefined;
 					const act = await skills().active(scope.principal, scope.space);
-					return renderSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })), layoutOf(scope.space));
+					return renderVfsSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })));
 				} catch {
 					return undefined;
 				}

@@ -96,7 +96,7 @@ try {
 	await page.click(T("run-summary"));
 
 	// ---------------- D2. a failing step
-	await page.fill(T("composer-input"), `${call("sandbox_read_file", { path: "nope/missing.txt" })} 读一下`);
+	await page.fill(T("composer-input"), `${call("read", { path: "/work/nope/missing.txt" })} 读一下`);
 	await page.click(T("send"));
 	await page.waitForSelector(T("stop"), { state: "detached", timeout: 60000 }).catch(() => {});
 	await sleep(500);

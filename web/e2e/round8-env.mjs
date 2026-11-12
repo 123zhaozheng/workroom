@@ -230,7 +230,7 @@ const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 		return gets === g0;
 	})()));
 	// a running turn with a sandbox call (sleep keeps the turn busy so the poll can observe state)
-	await sendMessage(p, `跑一下 ${directive("sandbox_exec", { language: "shell", code: "sleep 7; echo done" })}`);
+	await sendMessage(p, `跑一下 ${directive("exec", { command: "sleep 7; echo done" })}`);
 	await p.waitForSelector('[data-testid="stop"]', { timeout: 20000 });
 	await sleep(3200);
 	phase = "preparing";
@@ -348,13 +348,16 @@ else {
 			await sleep(120);
 		}
 	})();
-	await sendMessage(page, `在沙箱里跑一下 ${directive("sandbox_exec", { language: "shell", code: "echo live-env-ok; uname -s" })}`);
+	await sendMessage(page, `在沙箱里跑一下 ${directive("exec", { command: "echo live-env-ok; uname -s" })}`);
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 20000 });
 	await page.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-state") === "ready", null, { timeout: 180000 });
 	await idle(page, 180000);
 	sampling = false;
 	await sampler;
 	await apiSampler;
+	// one last sample after the run is idle: the sampler may have stopped inside the final sync (each run reports "preparing" while it syncs /work)
+	const fin = await page.request.get(`${base}/api/conversations/${spaceId2}/${convId2}/environment`).then((x) => x.json()).catch(() => null);
+	if (fin?.state && apiStates.at(-1)?.s !== fin.state) apiStates.push({ s: fin.state, at: Date.now() - t0 });
 	const seen = [...samples].join(",");
 	const seq = apiStates.map((x) => x.s);
 	check("D [live] the server reported none → preparing → ready while the real sandbox was created for the tool call (sampled directly from the API)", seq.includes("preparing") && seq.at(-1) === "ready" && seq.indexOf("preparing") < seq.lastIndexOf("ready"), JSON.stringify(apiStates));

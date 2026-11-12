@@ -109,7 +109,7 @@ export function startOpenAIMock(opts: { key?: string | null; models?: string[]; 
 			const base = { id: "chatcmpl-mock", object: "chat.completion.chunk", created: 1_700_000_000, model: b.model };
 			const wantsTool = !lastIsTool && /\[\[tool\]\]/.test(user) && Array.isArray(b.tools) && b.tools.length > 0;
 			if (wantsTool) {
-				const tool = b.tools.find((t: any) => t.function?.name === "file_list") ?? b.tools[0];
+				const tool = b.tools.find((t: any) => t.function?.name === "ls") ?? b.tools[0];
 				sse(res, null, { ...base, choices: [{ index: 0, delta: { role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_mock_1", type: "function", function: { name: tool.function.name, arguments: "" } }] }, finish_reason: null }] });
 				sse(res, null, { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] }, finish_reason: null }] });
 				sse(res, null, { ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] });
@@ -162,7 +162,7 @@ export function startAnthropicMock(opts: { key?: string; reply?: string; models?
 			sse(res, "message_start", { type: "message_start", message: { id: "msg_mock", type: "message", role: "assistant", model: b.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 25, output_tokens: 1 } } });
 			const wantsTool = !lastIsToolResult && /\[\[tool\]\]/.test(user) && Array.isArray(b.tools) && b.tools.length > 0;
 			if (wantsTool) {
-				const tool = b.tools.find((t: any) => t.name === "file_list") ?? b.tools[0];
+				const tool = b.tools.find((t: any) => t.name === "ls") ?? b.tools[0];
 				sse(res, "content_block_start", { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_mock_1", name: tool.name, input: {} } });
 				sse(res, "content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{}" } });
 				sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });

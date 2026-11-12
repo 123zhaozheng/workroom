@@ -46,6 +46,7 @@ try {
 	await idle(page);
 	await page.click('[data-testid="open-work-panel"]');
 	await page.waitForSelector('[data-testid="subagent"]', { timeout: 15000 });
+	await page.locator('[data-testid="subagent"] > button').first().click(); // details are behind the row's chevron
 	const sub = await page.locator('[data-testid="subagent"]').first().innerText();
 	check("M03-B: subagent card shows source, owner, status, result/failure and simulated cost", sub.includes("来源") && sub.includes("负责人") && /模拟用量|tokens/.test(sub) && /已完成|未完成|失败/.test(sub), sub.replace(/\s+/g, " ").slice(0, 200));
 	check("M02-C: turn-limit (timeout class) shown as its own state, not as success or a plain failure", sub.includes("达到轮数上限（超时）") && !sub.includes("已完成"), sub.split("\n").slice(0, 3).join(" | "));
@@ -63,7 +64,7 @@ try {
 
 	// ---------------------------------------------------------------- M02-A: close the browser mid-run, log in again elsewhere
 	await page.goto(`${base}/`);
-	await sendMessage(page, '[[slow 6000]] 写一份会议纪要 [[call file_create {"name":"会议纪要","format":"md","content":"# 纪要\\n- 结论一"}]]');
+	await sendMessage(page, '[[slow 6000]] 写一份会议纪要 [[call write {"path":"/work/会议纪要.md","content":"# 纪要\\n- 结论一"}]] [[call present_file {"source":"/work/会议纪要.md"}]]');
 	await page.waitForURL(/\/c\//);
 	const runUrl = page.url();
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 10000 });
@@ -77,7 +78,7 @@ try {
 	await page.waitForSelector('[data-testid="stream-notice"]', { state: "detached", timeout: 20000 });
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
 	check("M02-A: back online, the page reconnects and shows the result produced while it was offline", (await page.locator('[data-testid="stop"]').count()) === 0);
-	await sendMessage(page, '[[slow 6000]] 再做一份 [[call file_create {"name":"会议纪要二","format":"md","content":"# 纪要二\n- 结论二"}]]');
+	await sendMessage(page, '[[slow 6000]] 再做一份 [[call write {"path":"/work/会议纪要二.md","content":"# 纪要二\\n- 结论二"}]] [[call present_file {"source":"/work/会议纪要二.md"}]]');
 	await page.waitForSelector('[data-testid="stop"]', { timeout: 10000 });
 	await ctx.close(); // then the browser is gone altogether; the server keeps working
 	await sleep(9000);

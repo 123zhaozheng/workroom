@@ -106,7 +106,8 @@ try {
 	const projChat = a.url();
 	await member.p.goto(projChat);
 	await member.p.click('[data-testid="open-work-panel"]');
-	await member.p.click('[data-testid="work-tab-browser"]');
+	await member.p.waitForSelector('[data-testid="browser-entry"]', { timeout: 20000 });
+	await member.p.locator('[data-testid="browser-entry"] > button').first().click();
 	await member.p.waitForSelector('[data-testid="browser-session"]', { timeout: 20000 });
 	await member.p.waitForSelector('[data-testid="browser-screenshot"]');
 	const vText = await member.p.locator('[data-testid="browser-session"]').innerText();

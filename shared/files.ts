@@ -410,6 +410,8 @@ export interface BrowserSessionListResponse {
 export interface ConversationWorkDTO {
 	readonly jobs: JobDTO[];
 	readonly browserSessions: BrowserSessionDTO[];
+	/** Round 14: delivered outputs of this conversation (present_file), removed ones included so old cards can show 已删除. */
+	readonly outputs?: readonly LibItemDTO[];
 }
 
 // ---------------- skills & MCP marketplace (round 4, MARKETPLACE group) ----------------
@@ -675,4 +677,36 @@ export interface ConnectorMarketInfoDTO {
 	readonly toolOverrides: Readonly<Record<string, "ask" | "disabled">>;
 	/** Secret names a per-user connector needs from each user. */
 	readonly requiredSecretNames: readonly string[];
+}
+
+// ---------------------------------------------------------------- round 14: delivered outputs (library)
+
+/**
+ * One delivered output (present_file): the CURRENT file of a conversation folder. Same name delivered again in the same conversation keeps
+ * `fileId` and updates content, size and `etag`. `status: "removed"` = withdrawn (cards show 已删除, downloads stop). No versions.
+ */
+export interface LibItemDTO {
+	readonly fileId: string;
+	/** Virtual path: /library/<folder>/<name> */
+	readonly path: string;
+	readonly name: string;
+	readonly mime: string;
+	readonly size: number;
+	/** Content hash: preview / thumbnail caches key on it. */
+	readonly etag: string;
+	readonly status: "active" | "removed";
+	readonly spaceId: string;
+	readonly conversationId: number;
+	readonly folder: string;
+	readonly description?: string;
+	readonly updatedAt: string;
+	readonly previewUrl: string;
+	readonly downloadUrl: string;
+}
+
+/** `details` of a successful present_file tool result: the ONLY thing that makes a file card appear in the conversation. */
+export interface PresentedDetailsDTO {
+	readonly kind: "wr.presented";
+	readonly status: "created" | "updated" | "unchanged";
+	readonly item: LibItemDTO;
 }

@@ -161,7 +161,7 @@ test("trace merges other modules' events (D tool calls, contributed retrieval ev
 		const a = await t.user("admin@a.example");
 		const { conversation } = await t.json("POST", "/api/conversations", { token: a.token, json: {} });
 		const base = `/api/conversations/${conversation.spaceId}/${conversation.conversationId}`;
-		const sent = await t.json("POST", `${base}/messages`, { token: a.token, json: { text: `[[call file_create {"name":"report","format":"md","content":"# 报告 api_key=sk-ant-api03-SECRETSECRET1234"}]]`, requestId: "tr1" } });
+		const sent = await t.json("POST", `${base}/messages`, { token: a.token, json: { text: `[[call write {"path":"/work/report.md","content":"# 报告 api_key=sk-ant-api03-SECRETSECRET1234"}]]`, requestId: "tr1" } });
 		await waitFor(async () => ["done", "unanswered"].includes((await t.json("GET", `${base}/submissions/${sent.submissionId}`, { token: a.token })).status));
 		// A real kb_search through C (C records the retrieval event; E merges it by conversation).
 		const ks = await t.json("POST", `${base}/messages`, { token: a.token, json: { text: `[[call kb_search {"query":"季度报告 password=hunter2hunter2"}]]`, requestId: "tr2" } });
@@ -177,7 +177,7 @@ test("trace merges other modules' events (D tool calls, contributed retrieval ev
 			throw new Error("boom");
 		});
 		const tr = await t.json("GET", `/api/admin/trace?q=${conversation.spaceId}:${conversation.conversationId}`, { token: a.token });
-		const tool = tr.events.find((e: any) => e.kind === "tool_call" && e.detail.tool === "file_create");
+		const tool = tr.events.find((e: any) => e.kind === "tool_call" && e.detail.tool === "write");
 		assert.ok(tool, JSON.stringify(tr.events));
 		assert.equal(tool.conversationId, conversation.conversationId);
 		assert.ok(tool.taskId > 0 && tool.callId);

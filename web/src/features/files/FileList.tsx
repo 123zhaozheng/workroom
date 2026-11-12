@@ -1,102 +1,73 @@
-// The file list shared by the wide two-column 文件库 and the phone list page: search, space and origin filters (as the server supports
-// them), upload, rows with a preview button, and the empty states. `split` = rendered as the left column next to the detail panel.
-import { Eye, FolderOpen, Search, Upload } from "lucide-react";
-import { useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
-import type { FileListResponse, FileOrigin, FileUploadResponse } from "@shared/files";
-import { errorText, post, qs } from "@/lib/api";
-import { useSession } from "@/lib/session";
+// The output library list shared by the wide two-column 文件库 and the phone list page. It lists ONLY delivered outputs (GET /library:
+// present_file results), grouped by the conversation folder they were delivered into. Deleting an output withdraws it (with a confirm).
+// Uploads are not outputs: they stay on their messages.
+import { Eye, FolderOpen, Search, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router";
+import type { LibItemDTO } from "@shared/files";
+import { del } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import type { Project } from "@/lib/types";
 import { cn, formatBytes, relTime } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/misc";
 import { LoadState } from "@/features/work/states";
 import { fileIcon } from "@/features/chat/Cards";
-import { ORIGIN } from "./origin";
+import { ConfirmDialog } from "@/features/projects/ConfirmDialog";
 
-/** List state + upload for the library. Lives in the page so the list (and its filters) survives selecting another file. */
+/** List state for the library. Lives in the page so the list (and its search) survives selecting another file. */
 export function useFileLibrary() {
-	const { personalSpaceId } = useSession();
-	const [sp, setSp] = useSearchParams();
-	const projectId = sp.get("projectId") ?? "";
+	const items = useApi<{ items: LibItemDTO[] }>("/library");
 	const [q, setQ] = useState("");
-	const [origin, setOrigin] = useState<"" | FileOrigin>("");
-	const files = useApi<FileListResponse>(`/files${qs({ q, origin, projectId })}`);
-	const projects = useApi<{ projects: Project[] }>("/projects?kind=space");
-	const input = useRef<HTMLInputElement>(null);
-	const [upErr, setUpErr] = useState<string>();
-	const [uploading, setUploading] = useState(false);
-
-	const upload = async (list: FileList | null) => {
-		if (!list?.length) return;
-		setUploading(true);
-		setUpErr(undefined);
-		try {
-			for (const f of Array.from(list)) {
-				const fd = new FormData();
-				fd.set("file", f);
-				if (projectId) fd.set("projectId", projectId);
-				else if (personalSpaceId) fd.set("spaceId", personalSpaceId);
-				await post<FileUploadResponse>("/files", fd);
-			}
-			files.reload();
-		} catch (e) {
-			setUpErr(errorText(e));
-		} finally {
-			setUploading(false);
-			if (input.current) input.current.value = "";
+	const [removing, setRemoving] = useState<LibItemDTO | null>(null);
+	const list = useMemo(() => {
+		const all = items.data?.items ?? [];
+		const needle = q.trim().toLowerCase();
+		return needle ? all.filter((i) => i.name.toLowerCase().includes(needle)) : all;
+	}, [items.data, q]);
+	/** Groups in the order of their newest item (the server returns newest first). */
+	const groups = useMemo(() => {
+		const m = new Map<string, { folder: string; spaceId: string; conversationId: number; items: LibItemDTO[] }>();
+		for (const i of list) {
+			const key = `${i.spaceId}/${i.conversationId}`;
+			const g = m.get(key) ?? { folder: i.folder, spaceId: i.spaceId, conversationId: i.conversationId, items: [] };
+			g.items.push(i);
+			m.set(key, g);
 		}
-	};
-	const setProject = (id: string) => setSp((p) => {
-		const n = new URLSearchParams(p);
-		if (id) n.set("projectId", id);
-		else n.delete("projectId");
-		return n;
-	});
-	const clear = () => {
-		setQ("");
-		setOrigin("");
-		setProject("");
-	};
-	return { files, projects, q, setQ, origin, setOrigin, projectId, setProject, input, upload, uploading, upErr, clear, filtered: !!(q || origin || projectId) };
+		return [...m.values()];
+	}, [list]);
+	return { items, q, setQ, groups, count: list.length, filtered: !!q.trim(), removing, setRemoving, clear: () => setQ("") };
 }
 export type FileLibrary = ReturnType<typeof useFileLibrary>;
 
-/** Upload button + the hidden multi-file input it drives. */
-export function UploadButton({ lib, variant = "primary" }: { lib: FileLibrary; variant?: "primary" | "secondary" }) {
+export function FileSearch({ lib, split }: { lib: FileLibrary; split?: boolean }) {
 	return (
-		<Button variant={variant} onClick={() => lib.input.current?.click()} disabled={lib.uploading} data-testid="files-upload">
-			<Upload />
-			{lib.uploading ? "上传中…" : "上传文件"}
-		</Button>
+		<div className={cn("relative", split ? "px-3 pb-3" : "mb-4")}>
+			<Search aria-hidden className={cn("absolute top-2.5 size-4 text-fg-subtle", split ? "left-[22px]" : "left-2.5")} />
+			<Input value={lib.q} onChange={(e) => lib.setQ(e.target.value)} placeholder="搜索文件名" aria-label="搜索文件名" className="pl-8" />
+		</div>
 	);
 }
 
-export function FileFilters({ lib, split }: { lib: FileLibrary; split?: boolean }) {
+/** The withdraw confirmation: the output disappears from the library and its cards show 已删除. */
+export function RemoveOutputDialog({ lib, onRemoved }: { lib: FileLibrary; onRemoved?: (i: LibItemDTO) => void }) {
+	const item = lib.removing;
 	return (
-		<div className={cn("flex flex-wrap items-center gap-2", split ? "px-3 pb-3" : "mb-4")}>
-			<div className={cn("relative min-w-[200px] flex-1 basis-full", !split && "sm:basis-0")}>
-				<Search aria-hidden className="absolute left-2.5 top-2.5 size-4 text-fg-subtle" />
-				<Input value={lib.q} onChange={(e) => lib.setQ(e.target.value)} placeholder="搜索文件名" aria-label="搜索文件名" className="pl-8" />
-			</div>
-			<Select value={lib.projectId} onChange={(e) => lib.setProject(e.target.value)} aria-label="空间" className={split ? "h-8 text-[13px]" : undefined}>
-				<option value="">全部空间</option>
-				{(lib.projects.data?.projects ?? []).map((p) => (
-					<option key={p.id} value={p.id}>
-						项目：{p.name}
-					</option>
-				))}
-			</Select>
-			<Select value={lib.origin} onChange={(e) => lib.setOrigin(e.target.value as FileOrigin | "")} aria-label="来源" className={split ? "h-8 text-[13px]" : undefined}>
-				<option value="">全部来源</option>
-				<option value="upload">上传</option>
-				<option value="agent">助手生成</option>
-				<option value="automation">自动化</option>
-			</Select>
-		</div>
+		<ConfirmDialog
+			open={!!item}
+			onOpenChange={(o) => !o && lib.setRemoving(null)}
+			title="删除这个成果？"
+			confirmLabel="删除"
+			testId="remove-output-dialog"
+			onConfirm={async () => {
+				if (!item) return;
+				await del(`/library/${encodeURIComponent(item.fileId)}`);
+				lib.items.reload();
+				lib.setRemoving(null);
+				onRemoved?.(item);
+			}}
+		>
+			「{item?.name}」将从文件库移除，对话里的卡片会显示已删除，不能再下载。
+		</ConfirmDialog>
 	);
 }
 
@@ -105,80 +76,60 @@ export interface FileRowsProps {
 	selectedId?: string;
 	split?: boolean;
 	/** Phones: the eye opens the shared preview sheet. Wide: it opens the file in the detail column. */
-	onPreview: (f: FileListResponse["files"][number]) => void;
+	onPreview: (f: LibItemDTO) => void;
 }
 
 export function FileRows({ lib, selectedId, split, onPreview }: FileRowsProps) {
-	const keep = lib.projectId ? `?projectId=${encodeURIComponent(lib.projectId)}` : "";
-	const list = lib.files.data?.files ?? [];
 	return (
-		<LoadState state={lib.files} what="文件库">
-			{list.length === 0 ? (
+		<LoadState state={lib.items} what="文件库">
+			{lib.groups.length === 0 ? (
 				<div data-testid="files-empty" className={split ? "px-2" : "rounded-xl border border-border bg-surface"}>
-					<EmptyState
-						icon={<FolderOpen />}
-						title={lib.filtered ? "没有匹配的文件" : "文件库还是空的"}
-						action={
-							lib.filtered ? (
-								<Button onClick={lib.clear}>清除筛选</Button>
-							) : (
-								<Button variant="primary" onClick={() => lib.input.current?.click()} disabled={lib.uploading}>
-									<Upload />
-									上传文件
-								</Button>
-							)
-						}
-					/>
+					<EmptyState icon={<FolderOpen />} title={lib.filtered ? "没有匹配的文件" : "还没有交付的成果"} />
 				</div>
 			) : (
-				<ul className={cn(split ? "px-2 pb-3" : "overflow-hidden rounded-xl border border-border bg-surface")}>
-					{list.map((f, i) => {
-						const Icon = fileIcon(f.name, f.mime);
-						const o = ORIGIN[f.origin];
-						const selected = f.id === selectedId;
-						return (
-							<li
-								key={f.id}
-								data-testid="file-row"
-								data-selected={selected ? "true" : undefined}
-								className={cn("group flex items-center gap-3 px-3 py-2.5", split ? "rounded-lg" : i > 0 && "border-t border-border", selected ? "bg-surface-3" : "hover:bg-surface-2/70")}
-							>
-								<Icon className="size-[18px] shrink-0 text-fg-muted" />
-								<Link
-									to={`/files/${f.id}${keep}`}
-									aria-current={selected ? "page" : undefined}
-									className="min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								>
-									<span className="block truncate text-sm font-medium">{f.name}</span>
-									<span className="block truncate text-xs text-fg-muted">
-										{o.label} · v{f.latestVersionNo} · {formatBytes(f.size)} · {relTime(f.updatedAt)}
-										{f.spaceKind === "project" ? " · 项目" : ""}
-									</span>
+				<div className={cn("space-y-4", split && "px-2 pb-3")}>
+					{lib.groups.map((g) => (
+						<section key={`${g.spaceId}/${g.conversationId}`} data-testid="files-folder" data-folder={g.folder}>
+							<h3 className="mb-1 flex items-center gap-1.5 px-3 text-[13px] text-fg-muted">
+								<FolderOpen aria-hidden className="size-4 shrink-0" strokeWidth={1.5} />
+								<Link to={`/c/${g.spaceId}/${g.conversationId}`} className="min-w-0 truncate hover:text-fg hover:underline" title="打开对话">
+									{g.folder}
 								</Link>
-								<button
-									type="button"
-									onClick={() => onPreview(f)}
-									className={cn(
-										"inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-										split && "opacity-0 group-hover:opacity-100",
-									)}
-									aria-label={`预览 ${f.name}`}
-								>
-									<Eye className="size-4" />
-								</button>
-							</li>
-						);
-					})}
-				</ul>
+								<span className="tabular-nums text-fg-subtle">· {g.items.length}</span>
+							</h3>
+							<ul className={cn(!split && "overflow-hidden rounded-xl border border-border bg-surface")}>
+								{g.items.map((f, i) => {
+									const Icon = fileIcon(f.name, f.mime);
+									const selected = f.fileId === selectedId;
+									return (
+										<li
+											key={f.fileId}
+											data-testid="file-row"
+											data-file-id={f.fileId}
+											data-selected={selected ? "true" : undefined}
+											className={cn("group flex items-center gap-3 px-3 py-2.5", split ? "rounded-lg" : i > 0 && "border-t border-border", selected ? "bg-surface-3" : "hover:bg-surface-2/70")}
+										>
+											<Icon className="size-[18px] shrink-0 text-fg-muted" strokeWidth={1.5} />
+											<Link to={`/files/${f.fileId}`} aria-current={selected ? "page" : undefined} className="min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+												<span className="block truncate text-sm font-medium">{f.name}</span>
+												<span className="block truncate text-xs text-fg-muted">
+													{formatBytes(f.size)} · {relTime(f.updatedAt)}
+												</span>
+											</Link>
+											<button type="button" onClick={() => onPreview(f)} className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", split && "opacity-0 group-hover:opacity-100")} aria-label={`预览 ${f.name}`}>
+												<Eye className="size-4" />
+											</button>
+											<button type="button" data-testid="file-delete" onClick={() => lib.setRemoving(f)} className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-3 hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", split && "opacity-0 group-hover:opacity-100")} aria-label={`删除 ${f.name}`}>
+												<Trash2 className="size-4" />
+											</button>
+										</li>
+									);
+								})}
+							</ul>
+						</section>
+					))}
+				</div>
 			)}
 		</LoadState>
 	);
-}
-
-export function UploadError({ lib }: { lib: FileLibrary }) {
-	return lib.upErr ? (
-		<p role="alert" className="mx-3 mb-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
-			上传失败：{lib.upErr}
-		</p>
-	) : null;
 }

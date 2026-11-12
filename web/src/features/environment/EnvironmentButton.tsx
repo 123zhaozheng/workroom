@@ -10,11 +10,8 @@
 import { Check, Cloud, Laptop, Loader2, RotateCcw, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ConversationEnvironmentDTO } from "@shared/sandbox";
-import type { LocalExecPreference } from "@shared/localexec";
 import { Popover, PopoverContent, PopoverTrigger, Tip } from "@/components/ui/overlay";
-import { errorText } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { setLocalExecPreference } from "@/features/localexec/api";
 import { useEnvironment } from "./useEnvironment";
 
 export interface EnvironmentButtonProps {
@@ -54,17 +51,16 @@ const DOT: Partial<Record<ConversationEnvironmentDTO["state"], { cls: string; la
 };
 
 const pendingKey = (spaceId: string) => `wr-env-pref:${spaceId}`;
-function readPending(spaceId: string): LocalExecPreference | undefined {
+function readPending(spaceId: string): boolean {
 	try {
-		const v = sessionStorage.getItem(pendingKey(spaceId));
-		return v === "local" || v === "cloud" ? v : undefined;
+		return sessionStorage.getItem(pendingKey(spaceId)) === "cloud";
 	} catch {
-		return undefined;
+		return false;
 	}
 }
-function writePending(spaceId: string, v: LocalExecPreference | null): void {
+function writePending(spaceId: string, v: boolean): void {
 	try {
-		if (v) sessionStorage.setItem(pendingKey(spaceId), v);
+		if (v) sessionStorage.setItem(pendingKey(spaceId), "cloud");
 		else sessionStorage.removeItem(pendingKey(spaceId));
 	} catch {
 		/* storage unavailable: the choice simply is not carried over */
@@ -74,35 +70,19 @@ function writePending(spaceId: string, v: LocalExecPreference | null): void {
 export function EnvironmentButton({ spaceId, conversationId, active, side = "top", disabled, className }: EnvironmentButtonProps) {
 	const { env, unavailable, error, prepare, busy, retryError, reload } = useEnvironment(spaceId, conversationId, active);
 	const [open, setOpen] = useState(false);
-	const [saving, setSaving] = useState(false);
-	const [choiceError, setChoiceError] = useState<string>();
 	const bodyRef = useRef<HTMLDivElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
 
-	const localOn = env?.local?.enabled === true;
 	const remote = env?.kind === "remote";
 	const canStart = remote && !!env?.canPrepare && (env.state === "none" || env.state === "lost" || env.state === "paused");
-	// Only a conversation that explicitly chose local in round 11 still reports "local"; everything else runs in the cloud.
-	const pref: LocalExecPreference = localOn && conversationId !== undefined && env?.local?.preference === "local" ? "local" : "cloud";
-
-	const choose = async (next: LocalExecPreference) => {
+	// Round 14: always the cloud sandbox (the 本地环境 row is a static placeholder for the future desktop app).
+	const choose = async () => {
 		if (!spaceId || !env) return;
-		if (next === "local") return; // greyed out until the desktop app ships
-		setChoiceError(undefined);
 		if (conversationId === undefined) {
-			writePending(spaceId, next);
+			writePending(spaceId, true);
 			return;
 		}
-		try {
-			setSaving(true);
-			if (localOn && env.local?.preference !== next) await setLocalExecPreference(spaceId, conversationId, next);
-		} catch (e) {
-			setChoiceError(errorText(e));
-			return;
-		} finally {
-			setSaving(false);
-		}
-		if (next === "cloud" && canStart) await prepare();
+		if (canStart) await prepare();
 		else reload();
 	};
 
@@ -111,10 +91,9 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 	useEffect(() => {
 		if (applied.current || !spaceId || conversationId === undefined || !env) return;
 		applied.current = true;
-		const p = readPending(spaceId);
-		if (!p) return;
-		writePending(spaceId, null);
-		void choose(p);
+		if (!readPending(spaceId)) return;
+		writePending(spaceId, false);
+		void choose();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [spaceId, conversationId, env]);
 
@@ -130,20 +109,20 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
-			<Tip label={pref === "local" ? "本地环境" : "云端沙箱"}>
+			<Tip label="云端沙箱">
 				<PopoverTrigger asChild>
 					<button
 						type="button"
 						ref={triggerRef}
-						aria-label={env ? `执行环境：${pref === "local" ? "本地环境" : "云端沙箱"}（${name}${dot ? `，${dot.label}` : ""}）` : "执行环境"}
+						aria-label={env ? `执行环境：云端沙箱（${name}${dot ? `，${dot.label}` : ""}）` : "执行环境"}
 						data-testid="env-button"
 						data-env-kind={env?.kind ?? "loading"}
 						data-env-state={env?.state ?? "loading"}
-						data-env-pref={env ? pref : undefined}
+						data-env-pref={env ? "cloud" : undefined}
 						disabled={disabled}
 						className={cn("relative flex size-10 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:size-9", className)}
 					>
-						{pref === "local" ? <Laptop aria-hidden className="size-5" /> : <Cloud aria-hidden className="size-5" />}
+						<Cloud aria-hidden className="size-5" />
 						{dot ? <span aria-hidden data-testid="env-dot" data-dot={dotState} className={cn("absolute right-1.5 top-1.5 size-2 rounded-full ring-2 ring-bg", dot.cls)} /> : null}
 					</button>
 				</PopoverTrigger>
@@ -161,11 +140,11 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 								</button>
 							</Tip>
 							<div>
-								<button type="button" role="radio" aria-checked={pref === "cloud"} data-testid="env-cloud" disabled={saving || busy} onClick={() => void choose("cloud")} className={row(pref === "cloud")}>
+								<button type="button" role="radio" aria-checked="true" data-testid="env-cloud" disabled={busy} onClick={() => void choose()} className={row(true)}>
 									<Cloud aria-hidden className="size-4 shrink-0 text-fg-muted" />
 									<span className="flex-1 font-medium">云端沙箱</span>
 									<span className="sr-only">（{name}{dot ? `，${dot.label}` : ""}）</span>
-									{working || busy ? <Loader2 aria-label="准备中" className="size-4 text-info wr-spin" /> : failed ? <TriangleAlert aria-label="准备失败" className="size-4 text-danger" /> : pref === "cloud" ? <Check aria-hidden className="size-4 text-success" /> : null}
+									{working || busy ? <Loader2 aria-label="准备中" className="size-4 text-info wr-spin" /> : failed ? <TriangleAlert aria-label="准备失败" className="size-4 text-danger" /> : <Check aria-hidden className="size-4 text-success" />}
 								</button>
 								{failed ? (
 									<div data-testid="env-state" data-state={env.state} role="status" className="flex items-center gap-2 px-3 pt-1 text-xs text-danger">
@@ -179,7 +158,7 @@ export function EnvironmentButton({ spaceId, conversationId, active, side = "top
 									</div>
 								) : null}
 							</div>
-							{retryError || choiceError ? <p role="alert" className="text-xs text-danger">{retryError || choiceError}</p> : null}
+							{retryError ? <p role="alert" className="text-xs text-danger">{retryError}</p> : null}
 						</div>
 					)}
 				</div>

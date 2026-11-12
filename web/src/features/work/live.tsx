@@ -1,16 +1,15 @@
 // Long-running jobs (M14-C) and live browser sessions with take-over (M11-B). Take-over follows the same
 // permission as the preview: the server reports `canControl` (space write); viewers can only watch.
-import { ArrowLeft, ArrowRight, Ban, Hand, Loader2, RotateCw, Send, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Hand, Loader2, RotateCw, Send, Undo2 } from "lucide-react";
 import { useRef, useState, type MouseEvent } from "react";
 import type { BrowserSessionDTO, JobDTO, JobStatus } from "@shared/files";
 import { errorText, post } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
-import { cn, durationText, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/misc";
-import { FileCard } from "@/features/chat/Cards";
 
 export const JOB_STATUS: Record<JobStatus, { label: string; tone: "info" | "success" | "danger" | "neutral" | "warning" }> = {
 	queued: { label: "排队中", tone: "info" },
@@ -20,66 +19,7 @@ export const JOB_STATUS: Record<JobStatus, { label: string; tone: "info" | "succ
 	cancelled: { label: "已取消", tone: "neutral" },
 	timeout: { label: "超出预算已停止", tone: "warning" },
 };
-const KIND = { sandbox: "代码执行", browse: "网页采集", generate: "文档生成" } as const;
 const ended = (s: JobStatus) => s !== "queued" && s !== "running";
-
-/** Full job card (work panel). */
-export function JobCard({ job, onChanged }: { job: JobDTO; onChanged?: () => void }) {
-	const [busy, setBusy] = useState(false);
-	const [err, setErr] = useState<string>();
-	const st = JOB_STATUS[job.status];
-	const took = job.startedAt ? (job.finishedAt ? Date.parse(job.finishedAt) : Date.now()) - Date.parse(job.startedAt) : undefined;
-	return (
-		<div data-testid="job" data-status={job.status} className="rounded-xl border border-border p-3 text-[13px]">
-			<div className="flex flex-wrap items-center gap-2">
-				{!ended(job.status) ? <Loader2 className="size-3.5 wr-spin text-info" /> : null}
-				<span className="font-medium">{job.title}</span>
-				<Badge>{KIND[job.kind]}</Badge>
-				<span className="flex-1" />
-				<Badge tone={st.tone}>{st.label}</Badge>
-				{job.canCancel && !ended(job.status) ? (
-					<Button
-						size="sm"
-						disabled={busy || !!job.cancelRequestedBy}
-						data-testid="job-cancel"
-						onClick={async () => {
-							setBusy(true);
-							setErr(undefined);
-							try {
-								await post(`/jobs/${job.id}/cancel`);
-								onChanged?.();
-							} catch (e) {
-								setErr(errorText(e));
-							} finally {
-								setBusy(false);
-							}
-						}}
-					>
-						<Ban />
-						{job.cancelRequestedBy ? "正在取消…" : "取消"}
-					</Button>
-				) : null}
-			</div>
-			{job.progress ? <p className="mt-1 text-fg-muted">{job.progress}</p> : null}
-			{job.summary ? <p className="mt-1 whitespace-pre-wrap text-fg-muted">{job.summary}</p> : null}
-			{job.error ? <p className="mt-1 text-danger">{job.error}</p> : null}
-			<p className="mt-1 text-xs text-fg-subtle">
-				最长 {Math.round(job.budget.timeoutMs / 60000)} 分钟
-				{job.budget.memoryBytes ? ` · 内存 ${formatBytes(job.budget.memoryBytes)}` : ""}
-				{took !== undefined ? ` · 已用 ${durationText(took)}` : ""}
-				{job.attempts > 1 ? ` · 第 ${job.attempts} 次尝试` : ""}
-			</p>
-			{err ? <p className="mt-1 text-xs text-danger">{err}</p> : null}
-			{job.outputs.length ? (
-				<div className="mt-2 flex flex-col gap-1.5">
-					{job.outputs.map((o) => (
-						<FileCard key={o.versionId} file={o} />
-					))}
-				</div>
-			) : null}
-		</div>
-	);
-}
 
 /** Compact job status inside the assistant message: live status + cancel, without opening the panel. */
 export function JobChip({ jobId, initial }: { jobId: string; initial: JobDTO }) {

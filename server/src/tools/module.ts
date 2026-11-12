@@ -16,9 +16,7 @@ import { registerEnvironmentRoutes } from "./sandbox/environment-routes.ts"; // 
 import { PREWARM_MIGRATIONS, prewarmFor } from "./sandbox/prewarm.ts"; // round 11 (R2b): intent-based prewarm + its log
 import { registerPrewarmRoutes } from "./sandbox/prewarm-routes.ts";
 import { registerSandboxStatsRoutes } from "./sandbox/lifecycle-stats-routes.ts"; // round 11 (R6): /stats/sandbox, /conversations/:s/:c/sandbox-stats, /sandbox/prices
-import { LocalExec } from "./localexec/service.ts"; // round 11 (R4): local (browser) execution
-import { registerLocalExecRoutes } from "./localexec/routes.ts";
-import { createLocalExecExtension } from "./localexec/extension.ts";
+import { createLegacyCodeRunExtension } from "../vfs/legacy-code-run.ts"; // round 14: replaces the removed browser execution; legacy only
 import { CREDENTIAL_MIGRATIONS } from "./credentials/store.ts"; // round 7b: credentials
 import { createCredentialExtension, CREDENTIAL_TOOL_NAMES } from "./credentials/extension.ts";
 import { registerCredentialRoutes } from "./credentials/routes.ts";
@@ -26,6 +24,12 @@ import { sandboxEnvFor } from "./sandbox/env-vars.ts";
 import { pdfFontStatus } from "../files/generate.ts";
 import { slideRendererAvailable } from "../files/slides.ts";
 import { createSandboxExtension } from "./sandbox-tools.ts";
+import { VfsRouter } from "../vfs/router.ts";
+import { WorkBackend } from "../vfs/backends/work.ts";
+import { UploadsBackend } from "../vfs/backends/uploads.ts";
+import { LibraryBackend } from "../vfs/backends/library.ts";
+import { SkillsBackend } from "../vfs/backends/skills.ts";
+import { createVfsExtension } from "../vfs/tools.ts";
 import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
 import { Market, MARKET_MIGRATIONS } from "./market.ts"; // marketplace group
@@ -93,7 +97,6 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
 		ctx.services.provide("mcp", new McpManager(ctx));
 		ctx.services.provide("sandbox", new Sandbox(ctx));
-		ctx.services.provide("localExec", new LocalExec(ctx));
 		ctx.services.provide("browser", new BrowserService(ctx));
 		ctx.services.provide("skills", new Skills(ctx));
 		ctx.services.provide("market", new Market(ctx)); // marketplace group
@@ -101,11 +104,24 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("jobs", new Jobs(ctx));
 		ctx.services.provide("sandboxPrewarm", prewarmFor(ctx)); // round 11 (R2b): the runtime calls it after a user message is accepted
 		ctx.services.provide("toolPolicy", new ToolPolicy(ctx));
+		// Round 14: the agent's virtual filesystem (/skills /memory /library /uploads /work). Other modules register their backends on it
+		// (knowledge: /memory; skills: /skills) — see docs/r14-virtual-backend.md.
+		const vfs = new VfsRouter();
+		vfs.register(new WorkBackend(ctx));
+		vfs.register(new UploadsBackend(ctx));
+		vfs.register(new LibraryBackend(ctx));
+		vfs.register(new SkillsBackend(ctx));
+		(ctx.services as any).provide("vfs", vfs);
 		const sessions = new BrowserSessions(ctx);
 		ctx.services.provide("browserSessions", sessions);
 		// Work items of a conversation (for ConversationState.work — see docs/requests/D.md).
 		ctx.services.provide("work", {
-			forConversation: (spaceId: string, conversationId: number): ConversationWorkDTO => ({ jobs: (ctx.services.get("jobs") as Jobs).forConversation(spaceId, conversationId), browserSessions: sessions.forConversation(spaceId, conversationId) }),
+			forConversation: (spaceId: string, conversationId: number): ConversationWorkDTO => ({
+				jobs: (ctx.services.get("jobs") as Jobs).forConversation(spaceId, conversationId),
+				browserSessions: sessions.forConversation(spaceId, conversationId),
+				// round 14: the conversation's delivered outputs — the single source of chat file cards and the side panel's 输出
+				outputs: (ctx.services as any).has("library") ? ((ctx.services as any).get("library") as { ofConversation(s: string, c: number): ConversationWorkDTO["outputs"] }).ofConversation(spaceId, conversationId) : [],
+			}),
 		});
 	},
 	extensions(ctx) {
@@ -125,7 +141,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [createPolicyExtension(ctx), ext, createSandboxExtension(ctx), createLocalExecExtension(ctx), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLegacyCodeRunExtension(), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).
@@ -142,7 +158,6 @@ export const toolsModule: WorkroomModule = {
 		(ctx.services.get("market") as Market).stop(); // marketplace group
 		await (ctx.services.get("mcp") as McpManager).stop();
 		await (ctx.services.get("sandbox") as Sandbox).stop();
-		(ctx.services.get("localExec") as LocalExec).broker.shutdown();
 		await (ctx.services.get("browserSessions") as BrowserSessions).stop();
 		await (ctx.services.get("browser") as BrowserService).stop();
 		await codemodeSandboxes.get(ctx)?.close().catch(() => {});
@@ -171,7 +186,6 @@ export const toolsModule: WorkroomModule = {
 		registerEnvironmentRoutes(api, ctx); // round 8 (Q2)
 		registerPrewarmRoutes(api, ctx); // round 11 (R2b): /sandbox/prewarm
 		registerSandboxStatsRoutes(api, ctx); // round 11 (R6): before /sandbox/:spaceId so /sandbox/prices is not captured
-		registerLocalExecRoutes(api, ctx); // round 11 (R4)
 		registerSandboxEnvRoutes(api, ctx); // round 7b: /sandbox-env/*
 		registerPersistRoutes(api, ctx); // round 7b: /workspaces/*, /workspace-policy
 		registerCredentialRoutes(api, ctx); // round 7b: /credential-requests/*, /credentials/*

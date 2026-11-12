@@ -430,11 +430,11 @@ try {
 	await page.keyboard.type("乙");
 	check("chat keys: Shift+Enter newline, nothing sent", (await cta.inputValue()) === "甲\n乙" && (await page.locator('[data-testid="user-message"]').count()) === 1);
 	await cta.fill("");
-	await sendMessage(page, '写份周报 [[call file_create {"name":"项目周报","format":"md","title":"项目周报","content":"# 本周进展\\n- 完成需求评审"}]]');
+	await sendMessage(page, '写份周报 [[call write {"path":"/work/项目周报.md","content":"# 本周进展\\n- 完成需求评审"}]] [[call present_file {"source":"/work/项目周报.md"}]]');
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
 	const fc = page.locator('[data-testid="file-card"]').first();
 	const fcText = await fc.innerText();
-	check("deliverable card: type icon, name, version badge, size and a download link in the same visual language", /项目周报/.test(fcText) && (await fc.locator('[data-testid="file-version"]').innerText()) === "v1" && (await fc.locator('a[download], a[href*="/download"]').count()) === 1 && (await fc.locator("[data-kind], span[data-kind]").count()) >= 1, fcText.replace(/\n/g, " | "));
+	check("deliverable card: type icon, name, size and a download link in the same visual language, no version badge", /项目周报/.test(fcText) && (await fc.locator('[data-testid="file-version"]').count()) === 0 && !/\bv\d+\b/.test(fcText) && (await fc.locator('a[download], a[href*="/download"]').count()) === 1 && (await fc.locator("[data-kind], span[data-kind]").count()) >= 1, fcText.replace(/\n/g, " | "));
 	await page.waitForSelector('[data-testid="assistant-message"] .wr-prose', { timeout: 20000 });
 	await sleep(800);
 	await shot(page, "round4-1440-chat");
@@ -580,7 +580,7 @@ try {
 	await shot(lp, "round4-1366-home");
 	await lp.setInputFiles('[data-testid="file-input"]', [{ name: "销售数据.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from("PK fake") }, { name: "封面.png", mimeType: "image/png", buffer: PNG }]);
 	await allReady(lp, 2);
-	await sendMessage(lp, '整理一下 [[call file_create {"name":"销售汇总","format":"md","title":"销售汇总","content":"# 汇总\\n- 数据已整理"}]]');
+	await sendMessage(lp, '整理一下 [[call write {"path":"/work/销售汇总.md","content":"# 汇总\\n- 数据已整理"}]] [[call present_file {"source":"/work/销售汇总.md"}]]');
 	await lp.waitForURL(/\/c\//);
 	await lp.waitForSelector('[data-testid="file-card"]', { timeout: 40000 }).catch(async (e) => {
 		console.log("DEBUG lp page:", (await lp.locator("main").innerText()).slice(0, 600));

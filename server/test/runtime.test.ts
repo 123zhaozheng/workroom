@@ -313,7 +313,7 @@ test("fixture model: directive parsing, schema-driven demo args, labelled answer
 	assert.match((a2.message.content[0] as any).text, /^【测试模型·非真实AI】/);
 });
 
-test("fixture demo mode drives a real module tool: 生成 → D's file tool when installed", async (tc) => {
+test("fixture demo mode drives the real delivery chain: 生成 → write /work/report.md → present_file → library", async (tc) => {
 	const t = await startTestApp();
 	try {
 		if (!t.app.ctx.services.has("files")) return tc.skip("files module not loaded");
@@ -322,9 +322,13 @@ test("fixture demo mode drives a real module tool: 生成 → D's file tool when
 		const r = await send(t, a.token, c, "请帮我生成一份周报");
 		await settle(t, a.token, c, r.submissionId);
 		const es = await entries(t, a.token, c);
-		const tr = es.find((e) => e.kind === "tool_result") as any;
-		assert.ok(tr, "a file tool was called");
-		assert.equal(tr.isError, false, tr.text);
+		const wr = es.find((e) => e.kind === "tool_result" && (e as any).toolName === "write") as any;
+		assert.ok(wr && !wr.isError, `write: ${JSON.stringify(wr)}`);
+		const pr = es.find((e) => e.kind === "tool_result" && (e as any).toolName === "present_file") as any;
+		assert.ok(pr && !pr.isError, `present_file: ${JSON.stringify(pr)}`);
+		assert.equal(pr.details.kind, "wr.presented");
+		const lib = await t.json("GET", `/api/library?spaceId=${c.spaceId}&conversationId=${c.conversationId}`, { token: a.token });
+		assert.equal(lib.items.length, 1);
 		assert.match((es.at(-1) as any).text, /测试模型·非真实AI/);
 	} finally {
 		await t.dispose();
@@ -447,14 +451,16 @@ test("default toolset policy: a default conversation gets every product tool (AC
 		const tools: string[] = created.agent.tools;
 		const s = t.app.ctx.services;
 		const expect = [
-			...(s.has("files") ? ["file_create", "file_revise", "file_read", "file_list"] : []),
-			...(s.has("knowledge") ? ["kb_search", "memory_save"] : []),
-			...(s.has("sandbox") ? ["sandbox_exec", "sandbox_publish", "codemode"] : []),
+			// round 14: the unified file/exec tools replace file_* / sandbox_* / code_run in new conversations
+			...(s.has("vfs") ? ["ls", "read", "write", "edit", "search", "remove", "present_file", "copy_to_work"] : []),
+			...(s.has("knowledge") ? ["kb_search"] : []),
+			...(s.has("sandbox") ? ["exec", "codemode"] : []),
 			...(s.has("browser") ? ["browse"] : []),
 			...(s.has("mcp") ? ["tool_search"] : []),
 			"delegate",
 		];
 		for (const name of expect) assert.ok(tools.includes(name), `default conversation offers ${name}`);
+		for (const name of ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_publish", "code_run", "memory_save", "skill"]) assert.ok(!tools.includes(name), `a new conversation no longer offers ${name}`);
 		// MCP connector tools are deferred (offered only via tool_search, per user); no raw mcp__ tool is offered by default
 		assert.ok(!tools.some((n) => n.startsWith("mcp__")));
 		if (!s.has("sandbox")) return;
@@ -463,7 +469,7 @@ test("default toolset policy: a default conversation gets every product tool (AC
 		await settle(t, a.token, c, r.submissionId, 30_000);
 		const es = await entries(t, a.token, c);
 		const tr = es.find((e) => e.kind === "tool_result") as any;
-		assert.equal(tr.toolName, "sandbox_exec");
+		assert.equal(tr.toolName, "exec");
 		assert.equal(tr.isError, false, tr.text);
 		assert.match(tr.text, /sandbox ok/);
 	} finally {

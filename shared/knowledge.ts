@@ -302,68 +302,28 @@ export interface KbEvalResult {
 	readonly samples: readonly { id: string; pass: boolean; rank: number | null; reason?: RetrievalFailure; top?: string; kbDecisions?: KbDecisionDTO[] }[];
 }
 
-// ---------- memory ----------
-export type MemoryScope = "private" | "project" | "org";
-export type MemorySource = "user" | "extracted" | "corrected";
-export type MemoryKind = "preference" | "fact" | "constraint" | "background";
-
-export interface MemoryDTO {
-	readonly id: string;
-	readonly scope: MemoryScope;
+// ---------- memory (round 14: Markdown files) ----------
+/** "personal" | "project:<id>" | "org" */
+export type MemoryScopeId = string;
+export interface MemoryScopeDTO {
+	readonly id: MemoryScopeId;
+	readonly kind: "personal" | "project" | "org";
+	readonly label: string;
+	readonly writable: boolean;
 	readonly projectId?: string;
-	readonly kind: MemoryKind;
+}
+export interface MemoryFileDTO {
+	/** Path below the scope root ("preferences.md", "projects/apollo.md"). */
+	readonly path: string;
+	readonly name: string;
+	readonly size: number;
+	readonly mtime: string;
+	/** sha256 of the content; send it back as If-Match when saving or deleting. */
+	readonly etag: string;
+	readonly markdown: boolean;
+}
+export interface MemoryFileContentDTO {
+	readonly file: MemoryFileDTO;
 	readonly content: string;
-	readonly source: MemorySource;
-	/** Where an extracted memory came from. */
-	readonly sourceRef?: { spaceId: string; conversationId: number; callId?: string; taskId?: number; entryId?: number };
-	/** For a correction: the memory it replaced. */
-	readonly correctsId?: string;
-	readonly status: "active" | "superseded";
-	readonly supersededById?: string;
-	readonly version: number;
-	readonly createdBy: string;
-	readonly createdByName?: string;
-	readonly createdAt: string;
-	readonly updatedAt: string;
-	readonly permissions: { edit: boolean; delete: boolean };
-}
-
-export interface CreateMemoryRequest {
-	readonly content: string;
-	readonly scope: MemoryScope;
-	readonly projectId?: string;
-	readonly kind?: MemoryKind;
-}
-export interface UpdateMemoryRequest {
-	readonly content?: string;
-	readonly kind?: MemoryKind;
-}
-export interface CorrectMemoryRequest {
-	readonly content: string;
-	readonly note?: string;
-}
-/** Visible result of a correction: what changed, and what the model will see from now on. */
-export interface MemoryCorrectionResult {
-	readonly previous: MemoryDTO;
-	readonly current: MemoryDTO;
-	readonly change: { before: string; after: string; note?: string; at: string; by: string };
-}
-export interface MemoryRevisionDTO {
-	readonly memoryId: string;
-	readonly version: number;
-	readonly change: "create" | "edit" | "correct" | "supersede" | "delete";
-	readonly content: string;
-	readonly note?: string;
-	readonly by: string;
-	readonly at: string;
-}
-
-/** GET /memory/context?spaceId= — exactly what the memory system-prompt section contains for that space and caller. */
-export interface MemoryContextDTO {
-	readonly spaceId: string;
-	readonly spaceKind: "personal" | "project";
-	readonly included: readonly MemoryDTO[];
-	/** Rendered section text (undefined when nothing applies). */
-	readonly section?: string;
-	readonly rules: string;
+	readonly writable: boolean;
 }

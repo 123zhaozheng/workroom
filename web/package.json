@@ -28,7 +28,6 @@
     "katex": "0.16.47",
     "lucide-react": "1.70.0",
     "motion": "14.10.1",
-    "pyodide": "314.0.7",
     "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

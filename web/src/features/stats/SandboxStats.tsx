@@ -56,7 +56,6 @@ function Body({ d, dim }: { d: SandboxStatsDTO; dim: boolean }) {
 				<Tile id="idlePauses" label="空闲暂停" value={fmtInt(t.idlePauses)} sub={t.archives || t.destroys ? `归档 ${t.archives} · 销毁 ${t.destroys}` : undefined} />
 				<Tile id="running" label="运行时长" value={t.runningMs > 0 ? fmtRunning(t.runningMs) : "—"} sub={t.openRunningMs > 0 ? `其中运行中 ${fmtRunning(t.openRunningMs)}` : undefined} />
 				{t.costUsd !== null ? <Tile id="cost" label={costLabel} value={fmtUsd(t.costUsd)} /> : null}
-				<Tile id="codeRun" label="代码运行 本地 / 云端" value={d.codeRun.browser + d.codeRun.cloud > 0 ? `${fmtInt(d.codeRun.browser)} / ${fmtInt(d.codeRun.cloud)}` : "—"} sub={d.codeRun.upgraded ? `升级 ${d.codeRun.upgraded}` : undefined} />
 			</div>
 			<ProviderTable rows={d.byProvider} />
 			<Prewarm d={d} />
