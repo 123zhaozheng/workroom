@@ -78,7 +78,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 
 	const ls = defineTool({
 		name: "ls",
-		description: "列出虚拟目录内容（/、/skills、/memory、/library、/uploads、/work）。每项给出类型、大小、修改时间和你实际可做的操作（read/write/edit/remove/exec）。默认路径 /；结果分页，truncated 时用 cursor（上一页最后一个名称）继续。",
+		description: "列出虚拟目录（默认 /），每项带类型、大小和你可做的操作。结果被截断时用 cursor（上一页最后一个名称）继续。",
 		parameters: obj({ path: opt(str()), cursor: opt(str()), limit: opt(int({ minimum: 1, maximum: 1000 })) }),
 		replay: "safe",
 		async execute(args, api, context) {
@@ -95,7 +95,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 
 	const read = defineTool({
 		name: "read",
-		description: "读取文件。文本按行分段（offset 为起始行号，从 1 开始；limit 为行数，默认 2000）；图片直接返回图片；PDF/Office 文档返回抽取的文本；其他二进制文件只返回类型与大小（需要处理时 copy_to_work 后用 exec）。结果附带 etag，可用于 write/edit 的 expected_etag。",
+		description: "读取文件：文本按行分段（offset 从 1 起，limit 默认 2000）；图片直接返回；PDF/Office 返回抽取文本；其他二进制只返回类型与大小（需处理时 copy_to_work 后 exec）。结果带 etag，供 write/edit 的 expected_etag 使用。",
 		parameters: obj({ path: str({ minLength: 1 }), offset: opt(int({ minimum: 1 })), limit: opt(int({ minimum: 1, maximum: 10000 })) }),
 		replay: "safe",
 		async execute(args, api, context) {
@@ -141,7 +141,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 
 	const write = defineTool({
 		name: "write",
-		description: "创建或覆盖一个文本文件（自动创建上级目录）。可写范围由各目录决定：/work 可写；/memory 中你的记忆可写；/skills 只有你自己的个人技能可写；/library 与 /uploads 不可写（交付用 present_file）。expected_etag 可防止覆盖别人刚做的修改。",
+		description: "创建或覆盖文本文件（自动建上级目录）。可写：/work、你的 /memory、你自己的个人技能；/library、/uploads 不可写。覆盖已有记忆文件必须带 read 得到的 expected_etag，不一致会失败而不是覆盖。",
 		parameters: obj({ path: str({ minLength: 1 }), content: str(), expected_etag: opt(str()) }),
 		replay: "safe",
 		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
@@ -160,7 +160,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 
 	const edit = defineTool({
 		name: "edit",
-		description: "在文本文件中把 old_text 精确替换为 new_text。old_text 必须在文件中恰好出现一次；找不到或出现多次都会失败（请给出更长、唯一的片段）。expected_etag 不一致时失败，不会覆盖并发修改。",
+		description: "把文本文件中恰好出现一次的 old_text 精确替换为 new_text（找不到或出现多次都会失败，请给更长的唯一片段）。expected_etag 不一致时失败，不覆盖并发修改。",
 		parameters: obj({ path: str({ minLength: 1 }), old_text: str({ minLength: 1 }), new_text: str(), expected_etag: opt(str()) }),
 		replay: "safe",
 		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
@@ -187,7 +187,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 
 	const search = defineTool({
 		name: "search",
-		description: "在虚拟目录中查找：mode=name 按文件名，mode=content 按文本内容（不区分大小写）。结果限量并保持虚拟路径；默认从 / 搜索当前可访问的所有目录。",
+		description: "查找：mode=name 按文件名，mode=content 按文本内容（不区分大小写）。默认从 / 搜索所有可访问目录，结果限量。",
 		parameters: obj({ query: str({ minLength: 1 }), path: opt(str()), mode: opt(oneOf(["name", "content"] as const)), limit: opt(int({ minimum: 1, maximum: 100 })) }),
 		replay: "safe",
 		async execute(args, api, context) {
@@ -202,7 +202,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 
 	const remove = defineTool({
 		name: "remove",
-		description: "删除文件（/work、你的 /memory、你自己的技能）。删除目录必须显式传 recursive: true。在 /library 中表示撤回已交付的成果（卡片会显示已删除）。/uploads 与已安装技能不可删除。",
+		description: "删除文件（目录需 recursive: true）：/work、你的 /memory、个人技能。在 /library 中表示撤回已交付成果（卡片显示已删除）。/uploads 与他人技能不可删。",
 		parameters: obj({ path: str({ minLength: 1 }), recursive: opt(bool()) }),
 		replay: "safe",
 		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
@@ -224,9 +224,8 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 	const exec = defineTool({
 		name: "exec",
 		description:
-			`在当前会话的完整沙盒中执行 Shell 命令（唯一的代码执行入口；可运行 python3、node、安装允许的依赖、处理文件）。工作目录是 /work（cwd 可指定 /work 下的子目录）。` +
-			`超时 timeout_ms 默认 30000，最大 ${MAX_TIMEOUT_MS}；输出过长会截断。/memory、/library、/uploads、/skills 不在沙盒里：要用命令处理它们，先用 copy_to_work。` +
-			`命令被进程重启打断时不会自动重跑（可能有副作用），结果会标明未知。`,
+			`在会话沙盒中执行 Shell 命令（唯一的代码执行入口：python3、node、装依赖、处理文件），cwd 默认 /work。` +
+			`timeout_ms 默认 30000，最大 ${MAX_TIMEOUT_MS}；输出过长会截断。进程重启打断的命令不会自动重跑，结果标为结果未知：重试前先检查 /work 与外部状态。`,
 		parameters: obj({ command: str({ minLength: 1 }), cwd: opt(str()), timeout_ms: opt(int({ minimum: 1000, maximum: MAX_TIMEOUT_MS })) }),
 		replay: "unsafe",
 		executionMode: "sequential", // a command reads/writes /work: it must see the writes before it and finish before reads after it
@@ -257,8 +256,8 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 	const present = defineTool({
 		name: "present_file",
 		description:
-			"把结果交付给用户：source 为 /work 下的文件或 HTTP(S) URL（URL 会下载真实内容后保存）。成功后文件进入本会话的文件库目录并在聊天中显示文件卡片。" +
-			"只有调用本工具才算交付：写文件、exec 生成文件都不会自动展示。同一会话同名交付会覆盖当前文件（不创建版本）。不要交付上传附件、中间文件或日志。",
+			"把结果交付给用户：source 为 /work 下的文件或 HTTP(S) URL。成功后文件进入本会话的文件库并显示文件卡片；只有它算交付，写文件、exec、后台任务输出都不会自动交付。" +
+			"同会话同名交付会覆盖当前文件（不留版本）。不要交付上传附件、中间文件或日志。",
 		parameters: obj({ source: str({ minLength: 1 }), name: opt(str({ minLength: 1, maxLength: 180 })), description: opt(str({ maxLength: 500 })) }),
 		replay: "safe",
 		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
@@ -304,8 +303,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 	const copy = defineTool({
 		name: "copy_to_work",
 		description:
-			"把你有权读取的虚拟文件（/uploads、/library、/skills、/memory）或 HTTP(S) URL 复制到当前会话 /work，用于 exec 处理；原件保留，不产生卡片。" +
-			"复制技能目录需 recursive: true。destination 默认 /work/<文件名>；目标已存在且内容不同会失败，除非 overwrite: true。",
+			"把 /uploads、/library、/skills、/memory 中的文件或 HTTP(S) URL 复制到 /work 供 exec 处理；原件保留，不产生卡片。技能目录需 recursive: true；目标已存在且内容不同需 overwrite: true。",
 		parameters: obj({ source: str({ minLength: 1 }), destination: opt(str()), overwrite: opt(bool()), recursive: opt(bool()) }),
 		replay: "safe",
 		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
@@ -376,15 +374,12 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 export function renderFilesSection(o: { backend: string; sharedSpace: boolean }): string {
 	return [
 		"## 文件与执行",
-		"你用统一的文件工具（ls、read、write、edit、search、remove）浏览一个虚拟文件系统，由路径决定实际存储与权限：",
-		"- /skills：当前可用的技能。先读相关技能的 SKILL.md；已安装、组织或共享的技能只读，只有你自己的个人技能可写。",
-		`- /memory：Markdown 长期记忆，/memory/MEMORY.md 是索引。你可以主动维护有对话依据的稳定偏好、背景与长期事实（合并重复、替换过时内容，不写临时参数或推测）。${o.sharedSpace ? "这是共享空间里的对话：不会提供任何人的个人记忆。" : ""}`,
-		"- /uploads：用户在本会话上传的原始附件，只读。",
-		"- /library：已交付的成果，按会话分目录；只能通过 present_file 写入。",
-		`- /work：当前会话的完整沙盒工作区（${o.backend}），可读写，exec 在这里运行（默认 cwd 为 /work）。`,
-		"用命令处理 /uploads、/library、/skills、/memory 中的文件前，先用 copy_to_work 复制到 /work，原件保留。",
-		"生成文件不等于交付：只有 present_file 成功，文件才进入文件库并在聊天中显示给用户。不要交付上传附件、临时文件和过程日志。同一会话同名交付会覆盖当前文件，不创建版本。",
-		"工具失败时如实告诉用户，不要声称已经运行或已经交付。",
+		"文件工具（ls、read、write、edit、search、remove）作用于虚拟路径，权限由路径决定，被拒时错误会说明原因：",
+		"- /skills：技能，用到时先读 SKILL.md。个人技能可直接写，保存即生成新版本；已安装、组织、市场技能只读，要修改用 skill_manage（checkout → 改 → submit_draft，用户确认后生效）。",
+		`- /memory：长期记忆，MEMORY.md 是索引。只记有对话依据的稳定偏好与背景（合并重复、替换过时内容）；不记临时参数、推测、密码或密钥，任务进度也不写在这里。改已有文件先 read 并带 expected_etag（用户可能刚改过）。${o.sharedSpace ? "共享空间的对话没有任何人的个人记忆。" : ""}`,
+		"- /uploads：用户附件，只读。/library：已交付成果，只能由 present_file 写入。",
+		`- /work：会话沙盒工作区（${o.backend}），可读写，exec 在此运行。`,
+		"用命令处理 /uploads、/library、/skills、/memory 的文件前，先 copy_to_work。生成文件不等于交付：present_file 成功才进入文件库并显示卡片（同名覆盖），后台任务的输出也要经它交付。",
 	].join("\n");
 }
 

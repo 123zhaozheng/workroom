@@ -10,6 +10,7 @@
 import { join } from "node:path";
 import type { AppContext, Principal, Space } from "../core/contracts.ts";
 import { HttpError } from "../core/http.ts";
+import { redactText } from "../ops/log.ts";
 import { hostNode, hostRead, hostRemove, hostWalk, hostWriteAtomic, resolveHost, sha256 } from "../vfs/hostdir.ts";
 import { VfsError } from "../vfs/types.ts";
 import { dirSize } from "../tools/sandbox/workspace.ts";
@@ -23,6 +24,21 @@ export const MEMORY_FILE_MAX = 512 * 1024;
 const MAX_DEPTH = 4;
 const MAX_SEGMENT = 120;
 export const memBudgetChars = (): number => Math.max(500, Number(process.env.WORKROOM_MEMORY_PROMPT_CHARS ?? 6000) || 6000);
+
+/**
+ * Agent-written memory must not carry credentials. Returns the first NEW line (not already in `prev`) that looks like a secret, so an
+ * existing file is never blocked by what it already holds. The person's own edits in the memory page are not checked.
+ */
+export function findMemorySecret(next: string, prev = ""): string | undefined {
+	const had = new Set(prev.split("\n"));
+	const KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+	const ZH = /(密码|口令|密钥)\s*[:：=是为]\s*\S{4,}/;
+	for (const line of next.split("\n")) {
+		if (had.has(line)) continue;
+		if (KEY_BLOCK.test(line) || ZH.test(line) || redactText(line, "standard") !== line) return line.trim().slice(0, 60);
+	}
+	return undefined;
+}
 
 export const scopeId = (s: MemScope): string => (s.kind === "project" ? `project:${s.projectId}` : s.kind);
 export function parseScopeId(id: string): MemScope {

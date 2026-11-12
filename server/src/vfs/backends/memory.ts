@@ -6,7 +6,7 @@
 //   /memory/shared/org/…           organisation memory (members read; org admins write)
 import type { AppContext } from "../../core/contracts.ts";
 import { effectiveMime, isTextMime } from "../../files/mime.ts";
-import { INDEX_FILE, isMarkdownName, MEMORY_FILE_MAX, type MarkdownMemory, type MemFile, type MemScope } from "../../knowledge/memory-md.ts";
+import { findMemorySecret, INDEX_FILE, isMarkdownName, MEMORY_FILE_MAX, type MarkdownMemory, type MemFile, type MemScope } from "../../knowledge/memory-md.ts";
 import { joinVirtual } from "../path.ts";
 import { grep } from "../router.ts";
 import { VfsError, type Cap, type ListResult, type SearchHit, type VfsBackend, type VfsContext, type VNode, type WriteResult } from "../types.ts";
@@ -148,6 +148,16 @@ export class MemoryBackend implements VfsBackend {
 	async write(ctx: VfsContext, rel: string, bytes: Uint8Array, opts: { expectedEtag?: string }): Promise<WriteResult> {
 		const t = await this.#target(ctx, rel);
 		if (t.kind !== "file") throw new VfsError("read_only", `${joinVirtual("/memory", rel)} 是目录，只能写其中的 .md 文件`, 403);
+		let prev = "";
+		if (this.#mem.can(ctx.principal, t.scope).read) {
+			const cur = await this.stat(ctx, rel).catch(() => null);
+			if (cur?.type === "file") {
+				if (opts.expectedEtag === undefined) throw new VfsError("etag_required", `${joinVirtual("/memory", rel)} 已存在：先 read 取得最新内容与 etag，再带 expected_etag 写入（用户可能刚在记忆页改过，不会被静默覆盖）`, 428);
+				if (opts.expectedEtag === cur.etag) prev = new TextDecoder().decode((await this.read(ctx, rel)).bytes);
+			}
+		}
+		const secret = findMemorySecret(new TextDecoder().decode(bytes), prev);
+		if (secret) throw new VfsError("secret_refused", `内容疑似包含密码、密钥或令牌（「${secret}…」），长期记忆不保存凭证：请去掉后再写；需要保存凭证请让用户使用凭证管理`, 422);
 		const r = this.#mem.write(ctx.principal, t.scope, t.inner, bytes, { ifMatch: opts.expectedEtag });
 		return { node: this.#fileNode({ ...r.file, name: r.file.path.slice(r.file.path.lastIndexOf("/") + 1) }, t.vroot, true), status: r.status };
 	}

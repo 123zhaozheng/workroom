@@ -39,6 +39,16 @@ CREATE INDEX tool_jobs_conv ON tool_jobs(space_id, conversation_id, created_at);
 ];
 
 const TERMINAL: readonly JobStatus[] = ["done", "failed", "cancelled", "timeout"];
+/** Marks a failure whose real outcome is unknown (the process died mid-run): job_status reports it as 结果未知, not as a plain failure. */
+const UNKNOWN_PREFIX = "结果未知：";
+const STATUS_LABEL: Record<JobStatus, string> = { queued: "排队中", running: "运行中", done: "已完成", failed: "失败", cancelled: "已取消", timeout: "超时" };
+
+/** Where the model can reach a finished job's output files (they live in /work; present_file delivers them). */
+function outputPaths(r: JobRow): string[] {
+	const input = JSON.parse(r.input) as JobInput;
+	if (r.kind === "sandbox") return (input.sandbox?.publish ?? []).map((p) => `/work/${p.replace(/^\.?\/+/, "")}`);
+	return (JSON.parse(r.outputs) as FileVersionRef[]).filter((o) => !/\.(png|jpe?g)$/i.test(o.name)).map((o) => `/work/jobs/${r.id}/${o.name}`);
+}
 
 /** Conversation mirror of job status (fork: "initial": a branch does not inherit the original's jobs). */
 export const JobsDoc = defineDoc<{ jobs: Record<string, { status: string; title: string; kind: string; updatedAt: string }>; tasks?: Record<string, number> }>({
@@ -208,8 +218,18 @@ export class Jobs {
 		}
 		this.#set(id, { status: "running", attempts: attempt, started_at: r.started_at ?? nowIso(), progress: attempt > 1 ? `服务重启后第 ${attempt} 次运行` : "运行中", error: null });
 		const files = this.#ctx.services.get("files") as unknown as Files;
-		const put = (name: string, mime: string, bytes: Uint8Array, key: string, note: string) =>
-			files.putVersion(principal, { name, mime, bytes, idempotencyKey: `job:${id}:${key}`, provenance: { createdBy: principal.userId, spaceId: space.id, conversationId: r.conversation_id, taskId, callId: `job:${id}`, changeNote: note, origin: principal.via ? "automation" : "agent", tool: `job:${r.kind}` } as any });
+		// browse/generate outputs also land in /work so present_file can deliver them (sandbox jobs already wrote theirs there)
+		const toWork = (name: string, bytes: Uint8Array) => {
+			try {
+				(this.#ctx.services.get("sandbox") as Sandbox).writeFile(space, r.conversation_id, `jobs/${id}/${name}`, bytes, principal);
+			} catch {
+				/* the version in the file service is still recorded; the output list then simply omits a /work path that cannot be read */
+			}
+		};
+		const put = (name: string, mime: string, bytes: Uint8Array, key: string, note: string) => {
+			if (r.kind !== "sandbox") toWork(name, bytes);
+			return files.putVersion(principal, { name, mime, bytes, idempotencyKey: `job:${id}:${key}`, provenance: { createdBy: principal.userId, spaceId: space.id, conversationId: r.conversation_id, taskId, callId: `job:${id}`, changeNote: note, origin: principal.via ? "automation" : "agent", tool: `job:${r.kind}` } as any });
+		};
 		const ac = new AbortController();
 		const onAbort = () => ac.abort();
 		signal.addEventListener("abort", onAbort, { once: true });
@@ -302,7 +322,7 @@ export function createJobsExtension(ctx: AppContext, opts: { resolveActor?: Acto
 				if (attempt > 1) {
 					j.cleanupStale(id);
 					if (r.restart_policy !== "rerun" || attempt > 3) {
-						j.finish(id, "failed", { error: `服务重启中断了任务（第 ${attempt - 1} 次运行）；该任务声明为不可重跑（restartPolicy=${r.restart_policy}），未自动重做` });
+						j.finish(id, "failed", { error: `${UNKNOWN_PREFIX}服务重启中断了任务（第 ${attempt - 1} 次运行），它可能已部分或全部执行；该任务声明为不可重跑（restartPolicy=${r.restart_policy}），未自动重做。重做前先检查 /work 与外部状态` });
 						return void (await done("failed"));
 					}
 				}
@@ -335,17 +355,17 @@ export function createJobsExtension(ctx: AppContext, opts: { resolveActor?: Acto
 	const start = defineTool({
 		name: "job_start",
 		description:
-			"Start long work in the background and return immediately with a job id: kind=sandbox (run code; list files to publish), kind=browse (fetch a page; text + screenshot saved as files), kind=generate (build a large document). " +
-			`The chat stays usable; the job has a time/CPU budget (timeoutMs up to ${Math.round(JOB_MAX_TIMEOUT_MS / 60000)} min) and can be cancelled. Results are published to the file library. Check with job_status.`,
+			"在后台启动耗时任务并立即返回任务 id：sandbox（运行代码，publish 列出要登记的输出文件）、browse（抓取页面，保存正文）、generate（生成大文档）。" +
+			`对话可继续；任务有时间/CPU 预算（timeoutMs 最长 ${Math.round(JOB_MAX_TIMEOUT_MS / 60000)} 分钟），可取消。用 job_status 查看。任务输出只是中间文件，不会自动交付：完成后对其 /work 路径调用 present_file。`,
 		parameters: obj({
 			kind: oneOf(["sandbox", "browse", "generate"]),
 			title: opt(str()),
-			sandbox: opt(obj({ language: oneOf(["shell", "python", "node"]), code: str({ minLength: 1 }), publish: opt(arr(str(), { description: "Paths in the sandbox working directory (relative, e.g. out/report.csv) to publish to the file library when the job ends." })) })),
+			sandbox: opt(obj({ language: oneOf(["shell", "python", "node"]), code: str({ minLength: 1 }), publish: opt(arr(str(), { description: "任务结束时登记为任务输出的文件（/work 下的相对路径，如 out/report.csv）；不等于交付" })) })),
 			browse: opt(obj({ url: str(), screenshot: opt(bool()) })),
 			generate: opt(obj({ format: oneOf(FORMATS), name: str(), title: opt(str()), content: opt(str()) }, { open: true })),
 			timeoutMs: opt(int({ minimum: 1000, maximum: JOB_MAX_TIMEOUT_MS })),
 			cpuSeconds: opt(int({ minimum: 1 })),
-			restartPolicy: opt(oneOf(["rerun", "fail"], { description: "After a server restart: rerun from scratch (only for idempotent work) or fail (default)." })),
+			restartPolicy: opt(oneOf(["rerun", "fail"], { description: "服务重启后：从头重跑（仅限可重复执行的任务）或标记结果未知（默认 fail）" })),
 		}),
 		// Replay-safe: the job id is derived from the tool call, so a rerun finds the same job and task instead of starting another.
 		replay: "safe",
@@ -373,29 +393,33 @@ export function createJobsExtension(ctx: AppContext, opts: { resolveActor?: Acto
 				}
 				return jobs().row(row.id)!;
 			}, (x) => x.id);
-			return { output: [{ type: "text", text: `已在后台启动任务 ${r.id}（${r.title}），预算 ${JSON.parse(r.budget).timeoutMs} ms。用 job_status 查看进度；对话可以继续。` }], details: { job: json(jobs().dto(r)) } };
+			return { output: [{ type: "text", text: `已在后台启动任务 ${r.id}（${r.title}），预算 ${JSON.parse(r.budget).timeoutMs} ms。用 job_status 查看进度；对话可以继续。启动不代表完成，更不代表已交付。` }], details: { job: json(jobs().dto(r)) } };
 		},
 	});
 
 	const status = defineTool({
 		name: "job_status",
-		description: "Show background jobs of this conversation (or one job): status, budget, summary, published outputs.",
+		description: "查看本会话的后台任务（或指定 jobId）：运行中 / 已完成 / 失败 / 已取消 / 超时 / 结果未知，以及输出文件的 /work 路径。结果未知表示重启打断，先核对状态再决定是否重做。",
 		parameters: obj({ jobId: opt(str()) }),
 		replay: "safe",
 		async execute(args, api, context) {
 			const actor = await resolve(api, context);
 			await ctx.services.get("acl").require(actor.principal, "read", { kind: "space", id: actor.space.id });
 			const list = jobs().forConversation(actor.space.id, actor.conversationId).filter((j) => !args.jobId || j.id === args.jobId);
-			const text = list.length
-				? list.map((j) => `- ${j.id} ${j.title}: ${j.status}${j.attempts > 1 ? `（第 ${j.attempts} 次）` : ""}${j.error ? ` — ${j.error}` : ""}${j.outputs.length ? `；输出：${j.outputs.map((o) => `${o.name}（versionId=${o.versionId}）`).join("、")}` : ""}${j.summary ? `\n  ${j.summary.split("\n").slice(-5).join("\n  ")}` : ""}`).join("\n")
-				: "（没有后台任务）";
+			const line = (j: (typeof list)[number]) => {
+				const unknown = j.status === "failed" && !!j.error?.startsWith(UNKNOWN_PREFIX);
+				const paths = j.status === "done" ? outputPaths(jobs().row(j.id)!) : [];
+				const out = paths.length ? `；输出文件（中间产物，尚未交付，需要给用户时对它调用 present_file）：${paths.join("、")}` : j.outputs.length ? `；输出：${j.outputs.map((o) => o.name).join("、")}` : "";
+				return `- ${j.id} ${j.title}: ${unknown ? "结果未知" : STATUS_LABEL[j.status]}（${j.status}）${j.attempts > 1 ? `（第 ${j.attempts} 次）` : ""}${j.error ? ` — ${j.error}` : ""}${out}${j.summary ? `\n  ${j.summary.split("\n").slice(-5).join("\n  ")}` : ""}`;
+			};
+			const text = list.length ? list.map(line).join("\n") : "（没有后台任务）";
 			return { output: [{ type: "text", text }], details: { jobs: json(list) } };
 		},
 	});
 
 	const cancel = defineTool({
 		name: "job_cancel",
-		description: "Cancel a background job of this conversation.",
+		description: "取消本会话的后台任务。",
 		parameters: obj({ jobId: str() }),
 		replay: "safe",
 		async execute(args, api, context) {

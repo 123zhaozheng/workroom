@@ -170,7 +170,7 @@ export class SkillsBackend implements VfsBackend {
 
 	// ---------------------------------------------------------------- writes
 	#denyReadOnly(e: Entry, what: string): never {
-		throw new VfsError("read_only", `/skills/${e.slug} 是${SCOPE_LABEL[e.skill.scope] ?? "技能"}${e.via === "me" && e.skill.scope !== "personal" ? "（已安装）" : ""}，不能${what}：只有你自己创建的个人技能可以修改。需要改动时请 copy_to_work（recursive: true）到 /work 后修改副本。`, 403);
+		throw new VfsError("read_only", `/skills/${e.slug} 是${SCOPE_LABEL[e.skill.scope] ?? "技能"}${e.via === "me" && e.skill.scope !== "personal" ? "（已安装）" : ""}，不能${what}：只有你自己创建的个人技能可以直接修改。要改它：调用 skill_manage（action: checkout, name: "${e.slug}"）取出到 /work，改完用 submit_draft 提交，用户确认后成为新版本；只想参考内容可 copy_to_work。`, 403);
 	}
 
 	/** Publish `files` as the next package version of an owned skill. */
