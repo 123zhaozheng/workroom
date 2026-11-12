@@ -787,6 +787,8 @@ export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 				.map((t) => ({ t, s: rankScore(query, searchText(t)) }))
 				.filter((x) => x.s > 0)
 				.sort((a, b) => b.s - a.s)
+				// Single shared bigrams (e.g. "用户") are noise: load only candidates close to the best match.
+				.filter((x, _i, all) => x.s >= all[0]!.s * 0.25)
 				.slice(0, max)
 				.map((x) => x.t);
 			const loaded = ranked.map((t) => t.name);
