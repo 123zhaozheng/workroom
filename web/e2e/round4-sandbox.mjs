@@ -1,4 +1,4 @@
-// Round 4 — SANDBOX: the work panel's terminal log and 文件 tab (workspace tree, preview, download, upload, folder, delete, publish),
+// Round 4 — SANDBOX (round 14: the terminal log and 文件 tab were removed from the work panel; what remains is the server routes):
 // viewer read-only, non-member refusal, and the honest "沙箱不可用 + how to enable" state. Real server, real sandbox runs through the
 // fixture model's [[call …]] directives (no model credentials involved).
 // Run: npm run build:web && node web/e2e/round4-sandbox.mjs
@@ -89,102 +89,17 @@ try {
 	const chatUrl = a.url();
 	const [spaceId, convId] = new URL(chatUrl).pathname.split("/").slice(2, 4);
 
-	// ---------------------------------------------------------------- terminal: commands, stdout/stderr, exit codes
-	await a.click('[data-testid="open-work-panel"]');
-	await a.click('[data-testid="work-tab-terminal"]');
-	await a.waitForSelector('[data-testid="sandbox-run"]', { timeout: 20000 });
-	await a.waitForFunction(() => document.querySelectorAll('[data-testid="sandbox-run"]').length >= 2, null, { timeout: 20000 });
-	const runs = a.locator('[data-testid="sandbox-run"]');
-	const first = await runs.nth(0).innerText();
-	const second = await runs.nth(1).innerText();
-	check("terminal: runs are listed oldest first with the command, stdout and an exit line", first.includes("python3 main.py") && first.includes("已写入 4 个文件") && /退出码 0/.test(first), first.replace(/\s+/g, " ").slice(0, 160));
-	check("terminal: a failing run shows stdout, stderr and a non-zero exit code", second.includes("处理到一半") && second.includes("Traceback: boom") && /退出码 3/.test(second) && (await runs.nth(1).getAttribute("data-status")) === "error", second.replace(/\s+/g, " ").slice(0, 160));
-	const termStyle = await a.locator('[data-testid="terminal-log"]').evaluate((el) => ({ overflowY: getComputedStyle(el).overflowY, maxH: getComputedStyle(el).maxHeight }));
-	const monoOk = await a.locator('[data-testid="run-stdout"]').first().evaluate((el) => /mono|courier|consolas/i.test(getComputedStyle(el).fontFamily));
-	check("terminal: the log scrolls (bounded height, overflow auto) and is monospace", termStyle.overflowY === "auto" && termStyle.maxH !== "none" && monoOk, JSON.stringify(termStyle));
-	check("terminal [round 11]: no run-limits popover or explanatory sentence (限时 / 网络关闭 / 只能写入工作区 are gone from the panel)", (await a.locator('[data-testid="sandbox-limits"], [data-testid="sandbox-driver"]').count()) === 0 && !/网络关闭|只能写入工作区/.test(await a.locator('[data-testid="terminal-tab"]').innerText()));
-	await sleep(300);
-	await shot(a, "1440-sandbox-terminal");
-
-	// ---------------------------------------------------------------- 文件 tab: tree, preview, download
-	await a.click('[data-testid="work-tab-files"]');
-	await a.waitForSelector('[data-testid="ws-tree"]', { timeout: 20000 });
+	// Round 14: the work panel no longer has a 终端 or 文件 view (the right panel is 输出 / 子任务 / 浏览器; see round14-ui.mjs). The workspace
+	// file API checks below keep running against the server routes, which are unchanged.
 	const entry = (p) => a.locator(`[data-testid="ws-entry"][data-path="${p}"]`);
-	await entry("notes.md").waitFor({ timeout: 10000 });
-	const top = await a.locator('[data-testid="ws-entry"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-path")));
-	check("files: the workspace tree shows what the agent wrote (folders first, children hidden until expanded)", top.includes("out") && top.includes("notes.md") && top.includes("blob.bin") && !top.includes("out/report.csv"), top.join(","));
-	await entry("out").click();
-	await entry("out/report.csv").waitFor({ timeout: 5000 });
-	check("files: expanding a folder reveals its files", (await entry("out/chart.png").count()) === 1);
-	const usage = await a.locator('[data-testid="ws-usage"]').innerText();
-	check("files [round 11]: one usage line shows file count and used/quota; no ? button, no retention-rule paragraph", /\d+ 个文件 · 已用/.test(usage) && usage.split("\n").length <= 2 && (await a.locator('[data-testid="ws-rules"], [data-testid="ws-lifecycle"]').count()) === 0, usage.replace(/\s+/g, " "));
-	await entry("notes.md").click();
-	await a.waitForSelector('[data-testid="ws-preview-text"]');
-	const pv = await a.locator('[data-testid="ws-preview-text"]').innerText();
-	check("files: text preview", pv.includes("分析笔记") && pv.includes("同比增长 25%"));
-	const meta = await a.locator('[data-testid="ws-preview"]').innerText();
-	check("files: preview shows size, modified time and when the file is cleaned up", meta.includes("自动清理") && meta.includes("修改于"), meta.replace(/\s+/g, " ").slice(0, 120));
-	await shot(a, "1440-sandbox-files-text-preview");
-	await entry("out/chart.png").click();
-	await a.waitForSelector('[data-testid="ws-preview-image"]');
-	await a.waitForFunction(() => { const i = document.querySelector('[data-testid="ws-preview-image"]'); return i && i.complete && i.naturalWidth === 120; }, null, { timeout: 10000 });
-	check("files: image preview renders inline (120×60 PNG written by the sandbox)", true);
-	await shot(a, "1440-sandbox-files-image-preview");
-	await entry("blob.bin").click();
-	await a.waitForSelector('[data-testid="ws-preview-binary"]');
-	check("files: a binary file says it cannot be previewed and offers download", (await a.locator('[data-testid="ws-preview-binary"]').innerText()).includes("无法预览"));
-	await entry("out/report.csv").click();
-	await a.waitForSelector('[data-testid="ws-preview-text"]');
-	await a.click('[data-testid="ws-menu"][data-path="out/report.csv"]');
-	const href = await a.locator('[data-testid="ws-download"]').getAttribute("href");
-	await a.keyboard.press("Escape");
-	const dl = await a.request.get(`${base}${href}`);
-	check("files: download returns the exact bytes as an attachment", dl.status() === 200 && (await dl.text()) === "月份,收入\n1月,120\n2月,150\n" && /attachment/.test(dl.headers()["content-disposition"] ?? ""), `${dl.status()} ${dl.headers()["content-disposition"]}`);
-
-	// ---------------------------------------------------------------- upload, new folder, delete, publish
-		await entry("out").click(); // select the folder → upload goes into it (collapse state irrelevant)
-	await a.setInputFiles('[data-testid="ws-upload-input"]', { name: '上传的数据.csv', mimeType: 'text/csv', buffer: Buffer.from('id,name\n1,甲\n2,乙\n') });
-	await entry("out/上传的数据.csv").waitFor({ timeout: 10000 });
-	const upl = await a.request.get(`${base}/api/sandbox/${spaceId}/file?path=${encodeURIComponent("out/上传的数据.csv")}&conversationId=${convId}`);
-	check("files: upload (user) lands in the selected folder with the exact content", (await upl.text()) === "id,name\n1,甲\n2,乙\n");
-	await a.click('[data-testid="ws-mkdir"]');
-	await a.fill('[data-testid="ws-mkdir-name"]', "图表");
-	await a.click('[data-testid="ws-mkdir-ok"]');
-	await entry("out/图表").waitFor({ timeout: 10000 });
-	check("files: new folder is created in the selected folder", true);
-	await a.click('[data-testid="ws-menu"][data-path="out/上传的数据.csv"]');
-	await a.click('[data-testid="ws-publish"]');
-	await a.waitForSelector('[data-testid="ws-published"]', { timeout: 15000 });
-	const pub = await a.locator('[data-testid="ws-published"]').innerText();
-	const lib = await (await a.request.get(`${base}/api/files?projectId=${proj.id}`)).json();
-	check("files: publish to the library creates a file version (shown as a file card) that outlives the workspace", pub.includes("上传的数据.csv") && lib.files.some((f) => f.name === "上传的数据.csv"), pub.replace(/\s+/g, " ").slice(0, 100));
-	await shot(a, "1440-sandbox-files-published");
-	await a.click('[data-testid="ws-menu"][data-path="out/上传的数据.csv"]');
-	await a.click('[data-testid="ws-delete"]');
-	await a.waitForSelector('[data-testid="ws-delete-confirm"]');
-	check("files: delete asks for confirmation first (nothing is deleted yet)", (await a.locator('[data-testid="ws-delete-confirm"]').count()) === 1 && (await entry("out/上传的数据.csv").count()) === 1);
-	await a.click('[data-testid="ws-delete-confirm"]');
-	await a.waitForFunction((p) => !document.querySelector(`[data-testid="ws-entry"][data-path="${p}"]`), "out/上传的数据.csv", { timeout: 10000 });
-	const gone = await a.request.get(`${base}/api/sandbox/${spaceId}/file?path=${encodeURIComponent("out/上传的数据.csv")}&conversationId=${convId}`);
-	check("files: delete removes the file from the workspace (the published library copy stays)", gone.status() === 404 && (await (await a.request.get(`${base}/api/files?projectId=${proj.id}`)).json()).files.some((f) => f.name === "上传的数据.csv"));
-	const trav = await a.request.put(`${base}/api/sandbox/${spaceId}/file?path=${encodeURIComponent("../../escape.txt")}&conversationId=${convId}`, { data: "x" });
-	const trav2 = await a.request.get(`${base}/api/sandbox/${spaceId}/file?path=${encodeURIComponent("..\\..\\app.sqlite")}&conversationId=${convId}`);
-	check("files: path traversal (../ and ..\\) is refused by the server", trav.status() === 400 && trav2.status() === 400, `${trav.status()} ${trav2.status()}`);
+	void entry;
+	await a.click('[data-testid="open-work-panel"]');
+	await a.waitForSelector('[data-testid="work-panel"]');
+	check("work panel: no terminal / files tab any more", (await a.locator('[data-testid^="work-tab-"]').count()) === 0 && (await a.locator('[data-testid="ws-tree"]').count()) === 0);
+	await a.click('[data-testid="close-panel"]');
 
 	// ---------------------------------------------------------------- viewer: read-only; non-member: refused
 	const v = viewer.p;
-	await v.goto(chatUrl);
-	await v.click('[data-testid="open-work-panel"]');
-	await v.click('[data-testid="work-tab-files"]');
-	await v.waitForSelector('[data-testid="ws-tree"]', { timeout: 20000 });
-	await v.locator('[data-testid="ws-entry"][data-path="notes.md"]').click();
-	await v.waitForSelector('[data-testid="ws-preview-text"]');
-	await v.click('[data-testid="ws-menu"][data-path="notes.md"]');
-	const disabled = await v.evaluate(() => ["ws-upload", "ws-mkdir"].every((id) => document.querySelector(`[data-testid="${id}"]`)?.disabled === true));
-	check("viewer: sees the same tree and previews, upload/new-folder are disabled and the panel says 只读", disabled && (await v.locator('[data-testid="ws-readonly"]').count()) === 1);
-	check("viewer: delete and publish are disabled, download stays available", (await v.locator('[data-testid="ws-delete"]').getAttribute("data-disabled")) !== null && (await v.locator('[data-testid="ws-publish"]').getAttribute("data-disabled")) !== null && (await v.locator('[data-testid="ws-download"]').count()) === 1);
-	await v.keyboard.press("Escape");
-	await shot(v, "1440-sandbox-files-viewer-readonly");
 	const q = `path=notes.md&conversationId=${convId}`;
 	const vput = await v.request.put(`${base}/api/sandbox/${spaceId}/file?path=hack.txt&conversationId=${convId}`, { data: "x" });
 	const vdel = await v.request.delete(`${base}/api/sandbox/${spaceId}/file?${q}`);
@@ -197,34 +112,9 @@ try {
 	// ---------------------------------------------------------------- sandbox unavailable: honest state with how to enable; files still browsable
 	const off = await a.request.put(`${base}/api/sandbox/driver`, { data: { driver: "none" } });
 	check("admin: the driver setting can be changed (PUT /api/sandbox/driver)", off.ok() && (await off.json()).effective === "none");
-	await a.click('[data-testid="work-tab-terminal"]');
-	await a.waitForSelector('[data-testid="sandbox-unavailable"]', { timeout: 15000 });
-	const un = await a.locator('[data-testid="sandbox-unavailable"]').innerText();
-	const unAdmin = await a.locator('[data-testid="sandbox-admin-hint"]').textContent();
-	check("unavailable: one plain sentence (no driver jargon) plus an administrator hint; how-to-enable (Docker Desktop / namespaces) only inside 技术详情", un.includes("代码运行暂时不可用") && !/Docker|命名空间|namespace|driver/i.test(un.replace("技术详情", "")) && un.includes("技术详情") && /启用方法/.test(unAdmin) && /Docker/.test(unAdmin), un.replace(/\s+/g, " ").slice(0, 200));
-	await shot(a, "1440-sandbox-unavailable");
-	await a.click('[data-testid="work-tab-files"]');
-	await a.waitForSelector('[data-testid="ws-entry"][data-path="notes.md"]', { timeout: 15000 });
-	check("unavailable: the workspace files stay browsable and downloadable", true);
 	const back = await a.request.put(`${base}/api/sandbox/driver`, { data: { driver: "auto" } });
 	check("admin: switching back to auto re-enables the sandbox", back.ok() && (await back.json()).effective !== "none");
 
-	// ---------------------------------------------------------------- narrow screen (drawer)
-	const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: "zh-CN" });
-	const pp = await phone.newPage();
-	await pp.goto(`${base}/login`);
-	await pp.fill("#email", viewer.email);
-	await pp.fill("#password", "password123");
-	await pp.click('button[type="submit"]');
-	await pp.waitForSelector('[data-testid="home-greeting"]');
-	await pp.goto(chatUrl);
-	await pp.click('[data-testid="open-work-panel"]');
-	await pp.click('[data-testid="work-tab-files"]');
-	await pp.waitForSelector('[data-testid="ws-tree"]', { timeout: 20000 });
-	const overflow = await pp.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-	check("narrow screen: the files tab fits without horizontal page scroll", !overflow);
-	await shot(pp, "390-sandbox-files");
-	await phone.close();
 } catch (e) {
 	check(`unexpected error: ${String(e?.message ?? e).split("\n")[0]}`, false);
 	console.error(e);

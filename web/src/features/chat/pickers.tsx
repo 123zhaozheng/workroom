@@ -47,7 +47,7 @@ export function FilePickerDialog({ open, onOpenChange, onPick, spaceId, projectI
 									<span className="min-w-0 flex-1">
 										<span className="block truncate text-sm">{f.name}</span>
 										<span className="block text-xs text-fg-subtle">
-											v{f.latestVersionNo} · {formatBytes(f.size)} · {relTime(f.updatedAt)}
+											{formatBytes(f.size)} · {relTime(f.updatedAt)}
 										</span>
 									</span>
 								</button>

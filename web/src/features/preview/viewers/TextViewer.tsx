@@ -1,6 +1,6 @@
 // Markdown and plain-text/code previews rendered by the same Markdown component as chat messages.
 // Source code is wrapped in a fence so the (lazy) highlighter chunk loads only for code files.
-import type { FileTextResponse, FileVersionDTO } from "@shared/files";
+import type { FileTextResponse, PreviewKind } from "@shared/files";
 import { useApi } from "@/lib/useApi";
 import { Markdown } from "@/features/markdown/Markdown";
 import { PanelLoading } from "@/features/work/states";
@@ -8,13 +8,14 @@ import FrameViewer from "./FrameViewer";
 
 const CODE_EXT: Record<string, string> = { ts: "ts", tsx: "tsx", js: "js", jsx: "jsx", py: "python", json: "json", css: "css", html: "html", sh: "bash", sql: "sql", yaml: "yaml", yml: "yaml", go: "go", rs: "rust", java: "java" };
 
-export default function TextViewer({ fileId, version, fallbackSrc }: { fileId: string; version: FileVersionDTO; fallbackSrc: string }) {
-	const res = useApi<FileTextResponse>(`/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(version.versionId)}/text`);
+/** `textPath` is the API path of the text endpoint (current file or a pinned revision, with its cache-busting query). */
+export default function TextViewer({ textPath, kind, name, fallbackSrc }: { textPath: string; kind: PreviewKind; name: string; fallbackSrc: string }) {
+	const res = useApi<FileTextResponse>(textPath);
 	if (res.loading) return <PanelLoading />;
-	if (res.error || !res.data) return <FrameViewer src={fallbackSrc} kind={version.previewKind} name={version.name} />;
-	const ext = version.name.split(".").pop()?.toLowerCase() ?? "";
+	if (res.error || !res.data) return <FrameViewer src={fallbackSrc} kind={kind} name={name} />;
+	const ext = name.split(".").pop()?.toLowerCase() ?? "";
 	const lang = CODE_EXT[ext];
-	const body = version.previewKind === "markdown" ? res.data.text : lang ? `\`\`\`${lang}\n${res.data.text}\n\`\`\`` : null;
+	const body = kind === "markdown" ? res.data.text : lang ? `\`\`\`${lang}\n${res.data.text}\n\`\`\`` : null;
 	return (
 		<div data-testid="preview-text" className="wr-scroll h-full overflow-auto px-4 py-4 sm:px-6 sm:py-5">
 			{body !== null ? <Markdown text={body} document /> : <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-fg">{res.data.text}</pre>}

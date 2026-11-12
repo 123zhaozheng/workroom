@@ -1,7 +1,7 @@
 // Human wording for tool calls: one line per step ("检索知识库「报销」"), a present-tense form for the running state,
 // and the one-line outcome. Raw arguments / results are never produced here; the UI keeps them behind 「技术详情」.
 import type { SubagentDTO, ToolCallDTO, ToolResultEntryDTO } from "@shared/chat";
-import { artifactsOf, browseOf, citationsOf } from "./model";
+import { browseOf, cardsOf, citationsOf } from "./model";
 import { cleanErrorText, cleanTestText } from "./testText";
 
 export type ToolKind = "kb" | "file" | "code" | "web" | "agent" | "connector" | "job" | "skill" | "memory" | "wait" | "approval" | "other";
@@ -21,6 +21,8 @@ const clip = (s: string, n = 28): string => {
 	return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 };
 const quote = (s: string): string => (s ? `「${clip(s)}」` : "");
+/** "/work/out/a.md" → "a.md": the file name reads better than the whole virtual path in a one-line title. */
+const base = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
 
 export function hostOf(url: string): string {
 	try {
@@ -48,10 +50,31 @@ export function describeTool(call: Pick<ToolCallDTO, "name" | "arguments">, extr
 	switch (name) {
 		case "kb_search":
 			return { kind: "kb", title: `检索知识库${quote(str(a.query))}`, running: "正在检索知识库" };
+		// ---- round 14 unified tools
+		case "ls":
+			return { kind: "file", title: `查看目录 ${str(a.path) || "/work"}`, running: "正在查看目录" };
+		case "read":
+			return { kind: "file", title: `读取${quote(base(str(a.path)))}`, running: "正在读取文件" };
+		case "write":
+			return { kind: "file", title: `写入${quote(base(str(a.path)))}`, running: "正在写入文件" };
+		case "edit":
+			return { kind: "file", title: `修改${quote(base(str(a.path)))}`, running: "正在修改文件" };
+		case "search":
+			return { kind: "file", title: `搜索${quote(str(a.query))}`, running: "正在搜索" };
+		case "remove":
+			return { kind: "file", title: `删除${quote(base(str(a.path)))}`, running: "正在删除" };
+		case "exec":
+			return { kind: "code", title: "运行命令", running: "正在运行命令" };
+		case "present_file": {
+			const item = extra.result ? cardsOf(name, extra.result.details)[0] : undefined;
+			return { kind: "file", title: `交付文件${quote(item?.name ?? (str(a.name) || base(str(a.source))))}`, running: "正在交付文件" };
+		}
+		case "copy_to_work":
+			return { kind: "file", title: `复制${quote(base(str(a.source)))}到工作区`, running: "正在复制到工作区" };
 		case "file_create":
 			return { kind: "file", title: `生成文件${quote(str(a.name) || str(a.title))}`, running: "正在生成文件" };
 		case "file_revise": {
-			const art = extra.result ? artifactsOf(extra.result.details)[0] : undefined;
+			const art = extra.result ? cardsOf(name, extra.result.details)[0] : undefined;
 			return { kind: "file", title: `修改文件${quote(art?.name ?? str(a.name))}`, running: "正在修改文件" };
 		}
 		case "file_read":
@@ -167,14 +190,16 @@ export function resultLine(call: Pick<ToolCallDTO, "name">, result: ToolResultEn
 	if (result.isError && (result.details as { status?: string } | undefined)?.status === "needs_reconciliation") return "外部操作的结果不确定，系统没有重做；请在下方核对。";
 	if (result.isError) return firstLine(result.text) || "这一步没有成功";
 	const cites = citationsOf(result.details).length;
-	const files = artifactsOf(result.details).filter((f) => !call.name.includes("browse") && !call.name.includes("browser"));
+	const files = cardsOf(call.name, result.details);
 	switch (call.name) {
 		case "kb_search":
 			return cites ? `找到 ${cites} 处相关资料` : "没有找到相关资料";
+		case "present_file":
+			return files[0] ? `已交付「${files[0].name}」` : "";
 		case "file_create":
 		case "file_revise":
 		case "sandbox_publish":
-			return files[0] ? `${call.name === "file_revise" ? "已更新" : "已生成"}「${files[0].name}」v${files[0].versionNo}` : "";
+			return files[0] ? `${call.name === "file_revise" ? "已更新" : "已生成"}「${files[0].name}」` : "";
 		case "browse":
 		case "browser_open": {
 			const b = browseOf(result.details);

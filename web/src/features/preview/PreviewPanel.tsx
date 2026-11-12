@@ -1,23 +1,43 @@
 // Right-side deliverable preview (lazy chunk). Each viewer kind is its own chunk as well, so opening a
 // Markdown file never downloads the Office/PDF viewers or the code highlighter.
-import { Check, ChevronDown, Download, ExternalLink, FileX, X } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
-import type { FileDetailResponse, FileVersionDTO } from "@shared/files";
+// A delivered output is previewed by fileId and always shows its CURRENT content: every URL carries the content hash (etag) as a cache
+// key, and while the conversation's outputs are live (chat page) an overwrite swaps the etag and the viewer reloads.
+import { Download, ExternalLink, FileX, X } from "lucide-react";
+import { lazy, Suspense } from "react";
+import type { FileDetailResponse, PreviewKind } from "@shared/files";
 import { useApi } from "@/lib/useApi";
-import { cn, formatBytes, fullTime, relTime } from "@/lib/utils";
-import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip } from "@/components/ui/overlay";
+import { formatBytes, relTime } from "@/lib/utils";
+import { Tip } from "@/components/ui/overlay";
 import { Spinner } from "@/components/ui/misc";
 import { LoadState, Notice } from "@/features/work/states";
-import type { PreviewTarget } from "@/components/shell/panel";
+import { usePanel, type PreviewTarget } from "@/components/shell/panel";
 import { fileIcon } from "@/features/chat/Cards";
+import { previewKindOf } from "./kind";
 
 const FrameViewer = lazy(() => import("./viewers/FrameViewer"));
 const TextViewer = lazy(() => import("./viewers/TextViewer"));
 const ImageViewer = lazy(() => import("./viewers/ImageViewer"));
 
-export function Viewer({ fileId, version }: { fileId: string; version: FileVersionDTO }) {
-	const k = version.previewKind;
-	const src = `/api${version.previewUrl.startsWith("/") ? "" : "/"}${version.previewUrl.replace(/^\/api/, "")}`;
+export interface ViewerFile {
+	fileId: string;
+	name: string;
+	mime: string;
+	/** Content hash (cache key); absent when unknown. */
+	etag?: string;
+	/** Chat uploads / knowledge citations are pinned to a revision; delivered outputs are not. */
+	versionId?: string;
+}
+
+/** API paths (no /api prefix) of a file's preview / download / text. */
+export function fileUrls(f: Pick<ViewerFile, "fileId" | "etag" | "versionId">) {
+	const root = `/files/${encodeURIComponent(f.fileId)}${f.versionId ? `/versions/${encodeURIComponent(f.versionId)}` : ""}`;
+	const q = f.etag ? `?v=${encodeURIComponent(f.etag.slice(0, 16))}` : "";
+	return { preview: `${root}/preview${q}`, download: `${root}/download${q}`, text: `${root}/text${q}` };
+}
+
+export function Viewer({ file }: { file: ViewerFile }) {
+	const k: PreviewKind = previewKindOf(file.name, file.mime);
+	const u = fileUrls(file);
 	return (
 		<Suspense
 			fallback={
@@ -27,21 +47,21 @@ export function Viewer({ fileId, version }: { fileId: string; version: FileVersi
 			}
 		>
 			{k === "image" ? (
-				<ImageViewer src={src} name={version.name} />
+				<ImageViewer key={u.preview} src={`/api${u.preview}`} name={file.name} />
 			) : k === "markdown" || k === "text" ? (
-				<TextViewer fileId={fileId} version={version} fallbackSrc={src} />
+				<TextViewer key={u.text} textPath={u.text} kind={k} name={file.name} fallbackSrc={`/api${u.preview}`} />
 			) : k === "none" ? (
 				<Notice
 					icon={<FileX />}
 					title="这种文件暂不支持预览"
 					action={
-						<a className="text-sm text-info hover:underline" href={`/api${version.downloadUrl.replace(/^\/api/, "")}`}>
+						<a className="text-sm text-info hover:underline" href={`/api${u.download}`}>
 							下载文件
 						</a>
 					}
 				/>
 			) : (
-				<FrameViewer src={src} kind={k} name={version.name} />
+				<FrameViewer key={u.preview} src={`/api${u.preview}`} kind={k} name={file.name} />
 			)}
 		</Suspense>
 	);
@@ -50,13 +70,20 @@ export function Viewer({ fileId, version }: { fileId: string; version: FileVersi
 const ICON_BTN = "inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-8";
 
 export default function PreviewPanel({ target, onClose }: { target: PreviewTarget; onClose: () => void }) {
-	const res = useApi<FileDetailResponse>(`/files/${encodeURIComponent(target.fileId)}`);
-	const [versionId, setVersionId] = useState(target.versionId);
-	useEffect(() => setVersionId(target.versionId), [target.fileId, target.versionId]);
-	const versions = res.data?.versions ?? [];
-	const v = versions.find((x) => x.versionId === versionId) ?? versions[0];
-	const Icon = fileIcon(target.name ?? v?.name ?? "", target.mime ?? v?.mime);
-	const many = versions.length > 1;
+	const { work } = usePanel();
+	// the live item of this output (conversation SSE state): name / size / etag follow an overwrite, a withdrawal shows 已删除
+	const live = target.versionId ? undefined : work?.outputs?.find((o) => o.fileId === target.fileId);
+	// name / type are known for outputs; chat uploads and knowledge citations ask the file service (one request, no version list)
+	const needMeta = !live && (!target.name || !target.mime);
+	const meta = useApi<FileDetailResponse>(needMeta ? `/files/${encodeURIComponent(target.fileId)}` : null);
+	const name = live?.name ?? target.name ?? meta.data?.file.name ?? "文件";
+	const mime = live?.mime ?? target.mime ?? meta.data?.file.mime ?? "";
+	const size = live?.size ?? target.size ?? meta.data?.file.size;
+	const etag = live?.etag ?? target.etag;
+	const removed = live?.status === "removed";
+	const Icon = fileIcon(name, mime);
+	const file: ViewerFile = { fileId: target.fileId, name, mime, etag, versionId: target.versionId };
+	const u = fileUrls(file);
 
 	return (
 		<div
@@ -73,49 +100,26 @@ export default function PreviewPanel({ target, onClose }: { target: PreviewTarge
 				<Icon className="mr-1 size-4 shrink-0 text-fg-muted" />
 				<div className="min-w-0 flex-1">
 					<div data-testid="preview-name" className="truncate text-sm font-medium">
-						{v?.name ?? target.name ?? "文件"}
+						{name}
 					</div>
-					{v ? (
+					{removed ? (
+						<div className="truncate text-xs text-fg-muted">已删除</div>
+					) : size !== undefined ? (
 						<div className="truncate text-xs text-fg-muted">
-							{many ? "" : `v${v.versionNo} · `}
-							{formatBytes(v.size)} · {relTime(v.createdAt)}
+							{formatBytes(size)}
+							{live?.updatedAt ? ` · ${relTime(live.updatedAt)}` : ""}
 						</div>
 					) : null}
 				</div>
-				{many ? (
-					<Menu>
-						<MenuTrigger asChild>
-							<button data-testid="version-switch" aria-label={`切换版本，当前 v${v?.versionNo}`} className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2 text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-								v{v?.versionNo}
-								<ChevronDown className="size-3.5" />
-							</button>
-						</MenuTrigger>
-						<MenuContent align="end" className="w-72 max-w-[calc(100vw-24px)]">
-							<MenuLabel>版本</MenuLabel>
-							{versions.map((x) => (
-								<MenuItem key={x.versionId} onSelect={() => setVersionId(x.versionId)} className="items-start">
-									<Check className={cn("mt-0.5", x.versionId === v?.versionId ? "opacity-100" : "opacity-0")} />
-									<span className="min-w-0 flex-1">
-										<span className="block">
-											v{x.versionNo}
-											{x.versionNo === res.data?.file.latestVersionNo ? <span className="ml-1 text-xs text-fg-muted">最新</span> : null}
-										</span>
-										<span className="block truncate text-xs text-fg-muted">{x.changeNote || fullTime(x.createdAt)}</span>
-									</span>
-								</MenuItem>
-							))}
-						</MenuContent>
-					</Menu>
-				) : null}
-				{v ? (
+				{removed ? null : (
 					<Tip label="下载">
-						<a data-testid="preview-download" href={`/api${v.downloadUrl.replace(/^\/api/, "")}`} className={ICON_BTN} aria-label="下载">
+						<a data-testid="preview-download" href={`/api${u.download}`} className={ICON_BTN} aria-label="下载">
 							<Download className="size-4" />
 						</a>
 					</Tip>
-				) : null}
+				)}
 				<Tip label="在新标签页打开">
-					<a data-testid="preview-open" href={`/files/${target.fileId}${v ? `?v=${v.versionId}` : ""}`} target="_blank" rel="noopener" className={ICON_BTN} aria-label="在新标签页打开">
+					<a data-testid="preview-open" href={`/files/${target.fileId}`} target="_blank" rel="noopener" className={ICON_BTN} aria-label="在新标签页打开">
 						<ExternalLink className="size-4" />
 					</a>
 				</Tip>
@@ -126,11 +130,16 @@ export default function PreviewPanel({ target, onClose }: { target: PreviewTarge
 				</Tip>
 			</div>
 			<div className="min-h-0 flex-1 overflow-hidden">
-				<LoadState state={res} what="文件预览">
-					{v ? <Viewer fileId={target.fileId} version={v} /> : <Notice icon={<FileX />} title="没有可预览的版本" />}
-				</LoadState>
+				{removed ? (
+					<Notice icon={<FileX />} title="已删除" />
+				) : needMeta ? (
+					<LoadState state={meta} what="文件预览">
+						<Viewer file={file} />
+					</LoadState>
+				) : (
+					<Viewer file={file} />
+				)}
 			</div>
-			{many && v?.changeNote ? <div className="shrink-0 truncate border-t border-border px-3 py-2 text-xs text-fg-muted">v{v.versionNo} 说明：{v.changeNote}</div> : null}
 		</div>
 	);
 }
