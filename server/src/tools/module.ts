@@ -38,6 +38,7 @@ import { McpMarket, MCP_MARKET_MIGRATIONS } from "./mcp-market.ts"; // marketpla
 import { registerMarketRoutes } from "./market-routes.ts"; // marketplace group
 import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
 import { BrowserSessions, createBrowserSessionExtension } from "./browser-sessions.ts";
+import { createHarnessPromptExtension } from "./harness-prompt.ts";
 import { createPolicyExtension, POLICY_MIGRATIONS, TOOL_GROUPS, ToolPolicy } from "./policy.ts";
 import type { BrowserActionRequest, ConversationWorkDTO } from "../../../shared/files.ts";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
@@ -140,8 +141,8 @@ export const toolsModule: WorkroomModule = {
 		// each with its own ACL check and replay policy.
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
-		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, namespaces: [{ name: "files", description: "File library tools", prefix: "file_" }, { name: "sandbox", description: "Sandbox tools", prefix: "sandbox_" }] });
-		return [createPolicyExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLegacyCodeRunExtension(), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, inlineBudget: 0 }); // native tools carry their schemas; the wr.harness section replaces the catalog
+		return [createPolicyExtension(ctx), createHarnessPromptExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLegacyCodeRunExtension(), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).

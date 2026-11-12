@@ -14,6 +14,7 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
+import { offerAllTools } from "./helpers/ondemand.ts";
 import { JobsDoc } from "../src/tools/jobs.ts";
 
 type Conv = { spaceId: string; conversationId: number };
@@ -41,6 +42,7 @@ test("job_start replay after a crash between task creation and projection write 
 	try {
 		const u = await t.user("atomic-jobs@example.com");
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: u.token, json: { title: "原子" } })).conversation;
+		await offerAllTools(t, c);
 		const jobs = t.app.ctx.services.get("jobs") as any;
 		let parked = false;
 		const release: Array<() => void> = [];

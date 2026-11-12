@@ -37,11 +37,10 @@ export function createCredentialExtension(ctx: AppContext, opts: { resolveActor?
 	const request = defineTool({
 		name: "credential_request",
 		description:
-			"Ask the user for a secret (API key / token) you need to call an external service. You NEVER receive the value: the user types it into a form shown in the app, " +
-			"and you then use it through credential_http (the server sends the request and injects the secret). Give the service name, why you need it, and the exact hosts it may be sent to " +
-			"(exact domain such as api.github.com, or *.example.com for one subdomain level). Default is a GET-only Authorization: Bearer header; widen methods/inject only when needed. " +
-			'usage "env" (a secret exposed to a sandbox command as an environment variable) is a last resort and needs extra consent from the user. ' +
-			"The call waits until the user answers; the result is a status (fulfilled / declined / expired / cancelled) and, when fulfilled, a credentialId. If declined, do not ask again for the same thing.",
+			"Ask the user for a secret (API key/token) for an external service. You never receive the value: the user types it into a form in the app, then you use it through credential_http. " +
+			"Give the service, why you need it, and the exact hosts it may be sent to (api.github.com, or *.example.com for one subdomain level). Default: GET-only, Authorization: Bearer. " +
+			'usage "env" (secret exposed to a sandbox command as an env var) is a last resort and needs extra user consent. ' +
+			"Waits for the user; result is a status (fulfilled/declined/expired/cancelled) plus credentialId when fulfilled. If declined, do not ask again for the same thing.",
 		parameters: obj({
 			service: str({ description: "Service name shown to the user, e.g. GitHub" }),
 			purpose: str({ description: "Why you need it and what you will do with it (shown to the user)" }),
@@ -74,10 +73,10 @@ export function createCredentialExtension(ctx: AppContext, opts: { resolveActor?
 	const http = defineTool({
 		name: "credential_http",
 		description:
-			"Send ONE HTTPS request through the server using a credential the user provided (credentialId from credential_request / credential_list, or the requestId). " +
-			"The server injects the secret into the credential's header and only sends to the credential's allowed hosts and methods. You never see the secret; it is removed from the response. " +
-			"Redirects are NOT followed: a 3xx is returned with its Location, and calling again re-checks the host. Request body max 1 MB, response max 2 MB, 30 s. " +
-			"This call has external effects and is not repeated automatically after an interruption: check the state before retrying, and pass an Idempotency-Key header if the API supports it.",
+			"Send ONE HTTPS request through the server with a credential the user provided (credentialId from credential_request/credential_list, or requestId). " +
+			"The server injects the secret and only sends to the credential's allowed hosts and methods; the secret is scrubbed from the response. " +
+			"Redirects are not followed (a 3xx returns its Location; calling again re-checks the host). Body max 1 MB, response max 2 MB, 30 s. " +
+			"External effects, not repeated after an interruption: check state before retrying; pass an Idempotency-Key header if the API supports it.",
 		parameters: obj({
 			credentialId: opt(str()),
 			requestId: opt(str()),
@@ -100,7 +99,7 @@ export function createCredentialExtension(ctx: AppContext, opts: { resolveActor?
 
 	const list = defineTool({
 		name: "credential_list",
-		description: "List credentials the user has saved that you may use here (metadata only: id, service name, allowed hosts/methods, expiry). Values are never shown.",
+		description: "List the user's saved credentials you may use here (id, service, hosts/methods, expiry; never the value).",
 		parameters: obj({}),
 		replay: "safe",
 		async execute(_args, api, c) {

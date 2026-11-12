@@ -18,6 +18,8 @@ import { runtimeActorResolver, type ActorResolver } from "../files/actor.ts";
 import { redactText, summarizeArgs, type ToolCallLog } from "./calls.ts";
 import { checkUrl, pinnedFetch } from "./netpolicy.ts";
 import { SecretBox } from "./secrets.ts";
+import { ONDEMAND_TOOLS, ondemandGroupOf, rankScore } from "./ondemand.ts";
+import type { ToolPolicy } from "./policy.ts";
 
 export const MCP_MIGRATIONS: Migration[] = [
 	{
@@ -726,78 +728,82 @@ export class McpManager {
 	}
 }
 
-// ----- tool_search restricted to what the acting user may use -----
-function tokens(s: string): string[] {
-	return s.toLowerCase().split(/[^a-z0-9一-鿿]+/).filter(Boolean);
-}
-function score(query: string, text: string): number {
-	const q = tokens(query);
-	const t = tokens(text);
-	if (!q.length) return 0;
-	let s = 0;
-	for (const w of q) {
-		const exact = t.filter((x) => x === w).length;
-		const partial = t.filter((x) => x !== w && (x.includes(w) || w.includes(x))).length;
-		s += exact * 2 + partial * 0.5;
-		if (/[一-鿿]/.test(w) && text.includes(w)) s += 1;
+// ----- tool_search: restricted to what the acting user may use -----
+
+/**
+ * The tools tool_search may load for this actor: deferred tools (connector tools of servers the user may use and has enabled) and the
+ * built-in on-demand tools hidden from this conversation (unless the org switched their group off). Legacy skill tools are never offered.
+ */
+export async function loadableTools(mgr: McpManager, ctx: AppContext, agent: { deferred: readonly ToolRegistration[]; extensions: readonly { tools?: readonly ToolRegistration[] }[]; tools: readonly ToolRegistration[] }, actor: ToolActor): Promise<ToolRegistration[]> {
+	const policy = ctx?.services?.has("toolPolicy") ? (ctx.services.get("toolPolicy") as ToolPolicy) : undefined;
+	const orgId = actor.principal.orgId;
+	const allowedServers = new Map<string, boolean>();
+	const byPiName = new Map<string, McpServerRow>();
+	const rawName = new Map<string, string>();
+	for (const r of mgr.rows(orgId)) for (const t of mgr.tools(r)) {
+		byPiName.set(piToolName(r.handle, t.name), r);
+		rawName.set(piToolName(r.handle, t.name), t.name);
 	}
-	return s;
+	const offered = new Set(agent.tools.map((t) => t.name));
+	const hidden = agent.extensions.flatMap((e) => e.tools ?? []).filter((t) => ONDEMAND_TOOLS.includes(t.name) && !offered.has(t.name) && (t.callers === undefined || t.callers.includes("model")));
+	const out: ToolRegistration[] = [];
+	for (const t of [...agent.deferred, ...hidden]) {
+		if (/^skill_(list|load|read|run)$/.test(t.name)) continue; // legacy skill tools: superseded by the `skill` tool, never offered
+		if (policy && !policy.allowed(orgId, t.name)) continue; // switched off by the organisation: not listed, not loaded
+		if (t.name.startsWith("mcp__")) {
+			const r = byPiName.get(t.name);
+			if (!r) continue; // another org's connector: never shown
+			if (!allowedServers.has(r.id)) allowedServers.set(r.id, (await mgr.usable(actor.principal, r)).ok);
+			if (!allowedServers.get(r.id)) continue;
+			const raw = rawName.get(t.name)!;
+			if (mgr.toolDisabled(r, raw) || mgr.toolOverrides(r, actor.principal.userId)[raw] === "disabled") continue; // off for this user
+		}
+		out.push(t);
+	}
+	return out;
+}
+
+function searchText(t: ToolRegistration): string {
+	const g = ondemandGroupOf(t.name);
+	return `${t.name.replace(/_/g, " ")} ${t.description} ${g ? `${g.label} ${g.keywords}` : ""}`;
 }
 
 export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 	return defineTool({
 		name: "tool_search",
 		description:
-			"# Tool discovery\n\nSearches the deferred tools you may use (for example tools of connected MCP servers / connectors) and loads the matches for your next call. " +
-			"Only connectors the current user may use and has enabled are searched. Always use this to find connector tools.",
-		parameters: obj({ query: str({ description: "What you need, e.g. 'create calendar event' or 'search issues'." }), limit: opt(num()) }, { open: true }),
+			"按需加载工具：搜索「按需能力」目录里的内置工具和已连接的连接器（MCP）工具，命中的工具从下一步起可直接调用并保持可用。" +
+			"系统提示中没有、但任务需要的能力（凭据、后台任务、实时浏览器、脚本编排、连接器等）先用它查找；只搜当前用户可用的工具。",
+		parameters: obj({ query: str({ description: "需要的能力，如「申请 API 密钥」「后台运行」「create calendar event」" }), limit: opt(num()) }, { open: true }),
 		callers: ["model"],
 		replay: "safe",
 		async execute({ query, limit }, api, context) {
 			if (!query.trim()) throw new Error("query must not be empty");
 			const actor: ToolActor = await mgr.resolveActor(api, context);
 			const agent = await api.agent(context);
-			const allowedServers = new Map<string, boolean>();
-			const byPiName = new Map<string, McpServerRow>();
-			const rawName = new Map<string, string>();
-			for (const r of mgr.rows(actor.principal.orgId)) for (const t of mgr.tools(r)) {
-				byPiName.set(piToolName(r.handle, t.name), r);
-				rawName.set(piToolName(r.handle, t.name), t.name);
-			}
-			const candidates = [];
-			for (const t of agent.deferred) {
-				if (/^skill_(list|load|read|run)$/.test(t.name)) continue; // legacy skill tools: superseded by the `skill` tool, never offered
-				if (t.name.startsWith("mcp__")) {
-					const r = byPiName.get(t.name);
-					if (!r) continue; // another org's connector: never shown
-					if (!allowedServers.has(r.id)) allowedServers.set(r.id, (await mgr.usable(actor.principal, r)).ok);
-					if (!allowedServers.get(r.id)) continue;
-					const raw = rawName.get(t.name)!;
-					if (mgr.toolDisabled(r, raw) || mgr.toolOverrides(r, actor.principal.userId)[raw] === "disabled") continue; // off for this user
-				}
-				candidates.push(t);
-			}
+			const candidates = await loadableTools(mgr, ctx, agent, actor);
 			const max = Math.max(1, Math.min(Math.floor(limit ?? 8), 20));
 			const ranked = candidates
-				.map((t) => ({ t, s: score(query, `${t.name.replace(/_/g, " ")} ${t.description}`) }))
+				.map((t) => ({ t, s: rankScore(query, searchText(t)) }))
 				.filter((x) => x.s > 0)
 				.sort((a, b) => b.s - a.s)
 				.slice(0, max)
 				.map((x) => x.t);
 			const loaded = ranked.map((t) => t.name);
-			// Skills the user has active are discovered here too (they are used with the `skill` tool, not as tools).
+			// Skills the user has active are discovered here too (they are used by reading /skills/<name>/SKILL.md, not as tools).
 			let skillHint = "";
 			try {
 				const sk = ctx?.services?.has("skills") ? (ctx.services.get("skills") as any) : null;
 				if (sk) {
 					const active = (await sk.active(actor.principal, actor.space)) as { skill: { name: string }; version: { description: string } }[];
-					const hits = active.map((a) => ({ a, s: score(query, `${a.skill.name} ${a.version.description}`) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 5);
+					const hits = active.map((a) => ({ a, s: rankScore(query, `${a.skill.name} ${a.version.description}`) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 5);
 					if (hits.length) skillHint = `\n\nMatching skills (use the skill tool: action=load with name=<slug>):\n${hits.map((h) => `- ${h.a.skill.name}: ${h.a.version.description.slice(0, 120)}`).join("\n")}`;
 				}
 			} catch {
 				/* skills are optional here */
 			}
-			const text = (loaded.length ? `Loaded ${loaded.length} tool(s). They are available from your next call:\n${ranked.map((t) => `- ${t.name}: ${t.description.split("\n")[0]}`).join("\n")}` : "No matching tools found (or no connector you may use offers them).") + skillHint;
+			const miss = candidates.length ? `No matching tools. Loadable now: ${candidates.slice(0, 30).map((t) => t.name).join(", ")}${candidates.length > 30 ? ", …" : ""}` : "No matching tools found (or none you may use).";
+			const text = (loaded.length ? `Loaded ${loaded.length} tool(s). They are available from your next call:\n${ranked.map((t) => `- ${t.name}: ${t.description.split("\n")[0]!.slice(0, 160)}`).join("\n")}` : miss) + skillHint;
 			return { output: [{ type: "text", text }], details: { loaded }, ...(loaded.length ? { control: { addTools: loaded } } : {}) };
 		},
 	});
