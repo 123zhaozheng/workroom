@@ -339,10 +339,16 @@ export class Runtime implements RuntimeService {
 	}
 
 	/** Round 13: the execution identity behind a model request / compaction of a run (for the model gateway's per-user checks). */
-	async principalForRequest(api: { conversationId: unknown; snapshot: ToolExecutionApi["snapshot"] }, context: Context): Promise<{ userId: string; orgId: string } | null> {
+	async principalForRequest(api: { conversationId: unknown; snapshot: ToolExecutionApi["snapshot"] }, context: Context, opts: { idle?: boolean } = {}): Promise<{ userId: string; orgId: string } | null> {
 		const spaceId = (await api.snapshot(SpaceDoc, context))?.spaceId;
 		if (!spaceId) return null;
-		return this.principalOfRun(await this.manager.get(spaceId), api.conversationId as number, context);
+		const harness = await this.manager.get(spaceId);
+		const who = await this.principalOfRun(harness, api.conversationId as number, context);
+		if (who || !opts.idle) return who;
+		// A compaction outside any run (summarising the conversation with its own model; no tools): the newest recorded operator.
+		const rec = await harness.snapshot(RunActorDoc, cid(api.conversationId as number), context);
+		const last = rec?.order.length ? rec.bySubmission[String(rec.order.at(-1))] : undefined;
+		return last ? { userId: last.userId, orgId: last.orgId } : null;
 	}
 
 	// ------------------------------------------------------------------ extras used by C / D (duck-typed there)

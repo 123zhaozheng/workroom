@@ -104,7 +104,7 @@ export const opsModule: WorkroomModule = {
 		 * gateway can re-check model access per request. Round 13: when the identity cannot be established the link says so
 		 * (`unresolved`) and the gateway refuses the request — a missing identity is never treated as permission.
 		 */
-		const linkRequest = async (api: any, context: any): Promise<void> => {
+		const linkRequest = async (api: any, context: any, opts: { idle?: boolean } = {}): Promise<void> => {
 			let prov: { sessionId?: string } | undefined;
 			try {
 				prov = await api.snapshot(ProviderDoc, api.conversationId, context);
@@ -117,7 +117,7 @@ export const opsModule: WorkroomModule = {
 			let failed = false;
 			try {
 				sd = docs.SpaceDoc ? ((await api.snapshot(docs.SpaceDoc, context)) as { spaceId?: string; orgId?: string } | undefined) : undefined;
-				if (sd?.spaceId && ctx.services.has("runtime")) who = await (ctx.services.get("runtime") as unknown as { principalForRequest(a: unknown, c: unknown): Promise<{ userId: string; orgId: string } | null> }).principalForRequest(api, context);
+				if (sd?.spaceId && ctx.services.has("runtime")) who = await (ctx.services.get("runtime") as unknown as { principalForRequest(a: unknown, c: unknown, o?: { idle?: boolean }): Promise<{ userId: string; orgId: string } | null> }).principalForRequest(api, context, opts);
 			} catch {
 				failed = true;
 			}
@@ -140,7 +140,7 @@ export const opsModule: WorkroomModule = {
 					// Compaction summaries are model requests of the same conversation: the same identity, the same per-user checks.
 					hook(CompactionTask, {
 						beforeCompact: async (_c, api, context) => {
-							await linkRequest(api, context);
+							await linkRequest(api, context, { idle: true });
 							return undefined;
 						},
 					}),
