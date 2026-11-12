@@ -409,7 +409,7 @@ test("code_run backend counts come from the tool-call records; the real tool wri
 		const space = ctx.services.get("identity").personalSpace(w.owner.me.userId, w.orgId);
 		const svc = ctx.services.get("localExec") as LocalExec;
 		svc.setCloudRunner(async () => ({ id: "run_fake", status: "ok", exitCode: 0, stdout: "x", stderr: "", durationMs: 3 }));
-		// no browser tab is connected -> every call runs in the cloud (reasons no_tab / forced_cloud)
+		// round 12: a conversation prefers the cloud by default (本地环境 is greyed out) -> every call runs in the cloud (reasons pref_cloud / forced_cloud)
 		const h = await toolHarness([createLocalExecExtension(ctx, { resolveActor: fixedActor(ctx, w.owner.me.userId, w.orgId, space.id) })], [
 			call("code_run", { language: "javascript", code: "return 1" }, "c1"),
 			call("code_run", { language: "javascript", code: "return 2", backend: "cloud" }, "c2"),
@@ -418,7 +418,7 @@ test("code_run backend counts come from the tool-call records; the real tool wri
 		await h.run("go");
 		await h.close();
 		const rows = ctx.db.all<{ result_summary: string }>("SELECT result_summary FROM tool_calls WHERE tool = 'code_run' ORDER BY started_at, rowid");
-		assert.deepEqual(rows.map((r) => r.result_summary), ["cloud ok no_tab", "cloud ok forced_cloud"]);
+		assert.deepEqual(rows.map((r) => r.result_summary), ["cloud ok pref_cloud", "cloud ok forced_cloud"]);
 		assert.deepEqual(codeRunStats(ctx, w.orgId, "", "9999"), { browser: 0, cloud: 2, upgraded: 0 });
 
 		// records of the other shapes (browser run, upgraded run, an older record without a reason, a failed run) and another organisation / conversation
