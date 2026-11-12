@@ -148,7 +148,7 @@ export function ConversationHandoffDialog({ spaceId, conversationId, open, onOpe
 														}}
 													>
 														<FileText className="size-3.5" />
-														{d.name} v{d.versionNo}
+														{d.name}
 													</button>
 													<span className="text-xs text-fg-subtle">
 														{" "}
