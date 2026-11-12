@@ -72,6 +72,7 @@ test("V18/V20: an old conversation's legacy code_run ends with the clear error (
 		const c = await oldConversation(t, a.me.userId, a.me.orgId, "旧对话");
 		const offered: string[] = (await t.json("GET", base(c), { token: a.token })).agent.tools;
 		for (const n of ["code_run", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "file_create", "file_read", "file_list", "memory_save", "skill"]) assert.ok(offered.includes(n), `legacy ${n} registered in the old conversation: ${offered.join(",")}`);
+		for (const n of ["ls", "read", "write", "exec", "present_file"]) assert.ok(offered.includes(n), `the unified ${n} is also offered to the old conversation (its skill / files prompt sections describe them)`);
 
 		const before = t.app.ctx.db.all("SELECT 1 FROM tool_sandbox_runs").length;
 		const s = await say(t, a.token, c, call("code_run", { language: "python", code: "open('should-not-exist','w').write('1')" }));

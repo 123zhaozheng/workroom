@@ -110,3 +110,42 @@ codemode 仍可编排工具，只作编排用，不再作为计算后端。
 ## 6. 验收
 
 每个用例 V01–V24 都对应一条服务层或工具层测试，见 `server/test/r14-*.test.ts`；界面部分对应浏览器测试 `web/e2e/round14-*.mjs`。执行链路在本机真实的 Docker、namespaces 或 OpenSandbox 上验证。跳过的用例会注明原因，不算作通过。
+
+## 7. 实施状态（第 14 轮收尾）
+
+### 已打通的链路
+- **统一命名空间**：`/`、`/skills`、`/memory`、`/library`、`/uploads`、`/work` 按最长前缀路由（`server/src/vfs/router.ts`），每项返回真实能力（read/write/edit/remove/exec），不出现宿主路径。
+- **9 个工具**：ls、read、write、edit、search、remove、exec、present_file、copy_to_work。会改动文件的工具和 exec 都设为 `executionMode: "sequential"`，因此同一轮里"先写再执行/交付"一定按顺序跑。
+- **生成 ≠ 交付**：只有 present_file 会写入 lib_items 并产生卡片；同一会话里同名再交付会覆盖同一个 fileId，不产生版本；`remove /library/...` 和文件页的删除都是撤回，旧卡片显示已删除，下载返回 404。
+- **URL 交付**：经出网策略（固定 DNS、每次重定向都重新校验、流式限额）下载真实字节；出错或超限时不产生成果。
+- **唯一执行入口 exec**：在配置的沙盒中运行；远端创建或同步失败时明确报错，绝不退回宿主执行；进程中断后命令不会重放，结果标明结果未知。浏览器执行路径已整体删除，旧会话里的 `code_run` 以明确的错误结束，不会执行任何代码。
+- **读取不启动沙盒**：读 /skills、/memory、/library、/uploads 不创建、也不连接沙盒；读写 /work 直接访问宿主上的权威副本。
+- **Markdown 记忆**：MEMORY.md 索引加主题文件，用户和 agent 都能编辑，按 etag 检测冲突，删除后不会复活；旧的数据库注入已停用。
+- **右侧面板**：分为 输出 | 子任务 | 浏览器 三块，可以用 ☰ 收起；"输出"只列交付件。
+- **兼容旧会话**：新会话移除旧扩展和旧工具（`server/src/vfs/legacy.ts`），旧会话仍可用这些工具；助手白名单里的旧工具名映射到对应的新工具。
+
+### 迁移策略
+服务启动时执行，每项只执行一次，执行前先备份，原表和原记录保留不删：
+- 数据库记忆转为 Markdown，报告位于 `backups/r14/memory-report.json`。
+- 历史交付件转为当前文件，报告位于 `backups/r14/library-report.json`；上传附件、截图、后台任务输出、来源不明的文件都不进入文件库。
+- 上传附件不搬运数据，直接映射到 /uploads。
+详见 §5。
+
+### 验收用例对照
+| 用例 | 测试 |
+|---|---|
+| V01 V08 V09 V10 V11 V12 V14 V22 | `server/test/r14-vfs-chain.test.ts` |
+| V02 V03 V24（读取不启动沙盒） | `server/test/r14-skills.test.ts` |
+| V04 V05 V06 V07 V16（记忆）、记忆迁移 | `server/test/r14-memory.test.ts` |
+| V13 V15（服务层与真实 SIGKILL）V16 V19 V23、成果迁移 | `server/test/r14-delivery.test.ts` |
+| V10（远端失败）、V24（中断不重放） | `server/test/r14-exec.test.ts` |
+| V17 | `server/test/r13-identity.test.ts` |
+| V18 V20 | `server/test/r14-legacy.test.ts`、`server/test/acceptance-loop.test.ts`（重启后继续） |
+| V12 V21 V22 V23（界面） | `web/e2e/round14-ui.mjs` |
+
+### 未验证 / 剩余风险
+- E2B、Daytona 两个提供方没有账号和密钥，未联调。/work 别名（V19）和远端同步只在本机 namespaces、Docker 和 OpenSandbox 1.2.0 上实测过。
+- V18 的"取消能终止或报告未知"：进程中断由 V24 覆盖；用户点"停止"由第 10 轮的 `round10-stop.test.ts` 覆盖（用的是测试工具，不是 exec），本轮没有新增 exec 专项的停止测试。
+- 搜索结果里的知识库引用仍显示文档版本（属于知识库自身的版本机制，不在本轮范围内）。
+- 工作区保存状态组件（WorkspaceSaveStatus）随旧的"文件"标签一起失去了挂载位置，目前界面不显示保存状态；后端的工作区持久化不受影响。
+- 旧会话同时具备旧工具和统一工具（已有测试断言），技能和文件的提示段统一按 /skills、/work 来描述；旧工具的说明仍然留在各自的工具描述里。
