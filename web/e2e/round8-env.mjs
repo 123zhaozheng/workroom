@@ -355,6 +355,9 @@ else {
 	sampling = false;
 	await sampler;
 	await apiSampler;
+	// one last sample after the run is idle: the sampler may have stopped inside the final sync (each run reports "preparing" while it syncs /work)
+	const fin = await page.request.get(`${base}/api/conversations/${spaceId2}/${convId2}/environment`).then((x) => x.json()).catch(() => null);
+	if (fin?.state && apiStates.at(-1)?.s !== fin.state) apiStates.push({ s: fin.state, at: Date.now() - t0 });
 	const seen = [...samples].join(",");
 	const seq = apiStates.map((x) => x.s);
 	check("D [live] the server reported none → preparing → ready while the real sandbox was created for the tool call (sampled directly from the API)", seq.includes("preparing") && seq.at(-1) === "ready" && seq.indexOf("preparing") < seq.lastIndexOf("ready"), JSON.stringify(apiStates));

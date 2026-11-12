@@ -123,9 +123,10 @@ try {
 	check("B [round 12] 本地环境 stays in place, greyed out (aria-disabled, not checked) — just those four characters, no 即将推出", (await local.getAttribute("aria-disabled")) === "true" && (await local.getAttribute("aria-checked")) === "false" && (await local.innerText()).trim() === "本地环境");
 	await pop.locator('[data-testid="env-cloud"]').click();
 	await admin.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "cloud");
-	await local.click();
-	await admin.waitForFunction(() => document.querySelector('[data-testid="env-button"]')?.getAttribute("data-env-pref") === "local");
-	check("B on the home page (no conversation yet) choosing a row only switches the icon/pref in this tab: popover stays open, no environment request sent", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && posts.length === 0);
+	// round 12/14: the greyed 本地环境 row is a placeholder — clicking it changes nothing (still 云端沙箱) and sends nothing
+	await local.click({ force: true });
+	await sleep(300);
+	check("B on the home page (no conversation yet) choosing a row only switches the icon/pref in this tab; the greyed 本地环境 row changes nothing: popover stays open, no environment request sent", (await pop.locator('[data-testid="env-cloud"]').count()) === 1 && (await admin.locator('[data-testid="env-button"]').getAttribute("data-env-pref")) === "cloud" && posts.length === 0);
 	await admin.mouse.move(5, 5); // the click above left the pointer on the element: move away, then hover for real
 	await local.hover();
 	await sleep(900); // tooltip delay is 400ms
