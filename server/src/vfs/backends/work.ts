@@ -64,7 +64,7 @@ export class WorkBackend implements VfsBackend {
 
 	async list(ctx: VfsContext, rel: string, opts: { cursor?: string; limit: number }) {
 		const l = this.#loc(ctx, rel);
-		const page = hostList(l.root, l.inner, l.vroot, l.caps, { ...opts, hide: rel ? undefined : (n) => n === "project" || n === "memories" });
+		const page = hostList(l.root, l.inner, l.vroot, l.caps, { ...opts, hide: rel ? undefined : (n) => n === "project" });
 		if (rel) return page;
 		// the root also shows the shared project folder (when this conversation belongs to a container project)
 		const extra: VNode[] = [];

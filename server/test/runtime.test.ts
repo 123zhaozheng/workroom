@@ -448,7 +448,7 @@ test("default toolset policy: a default conversation gets every product tool (AC
 		const s = t.app.ctx.services;
 		const expect = [
 			...(s.has("files") ? ["file_create", "file_revise", "file_read", "file_list"] : []),
-			...(s.has("knowledge") ? ["kb_search", "memory_save"] : []),
+			...(s.has("knowledge") ? ["kb_search"] : []),
 			...(s.has("sandbox") ? ["sandbox_exec", "sandbox_publish", "codemode"] : []),
 			...(s.has("browser") ? ["browse"] : []),
 			...(s.has("mcp") ? ["tool_search"] : []),

@@ -6,23 +6,22 @@ import type { AppContext, AppEnv, FileVersionRef, Principal, ResourceRef, Workro
 import { HttpError, jsonBody, principalOf } from "../core/http.ts";
 import type {
 	AddKbDocRequest,
-	CorrectMemoryRequest,
 	CreateKbRequest,
-	CreateMemoryRequest,
 	KbCapabilities,
 	KbEvalSample,
 	KbScope,
 	KbSearchRequest,
 	ConversationCitationStatus,
-	MemoryScope,
 	RetrievalEventDTO,
 	UpdateGovernanceRequest,
-	UpdateMemoryRequest,
 } from "../../../shared/knowledge.ts";
 import { KNOWLEDGE_MIGRATIONS } from "./schema.ts";
 import { KnowledgeStore } from "./service.ts";
 import { IngestPipeline } from "./pipeline.ts";
-import { MemoryStore } from "./memory.ts";
+import { MarkdownMemory, parseScopeId, scopeId, type MemFile } from "./memory-md.ts";
+import { VfsError } from "../vfs/types.ts";
+import { migrateMemoryToMarkdown } from "./memory-migrate.ts";
+import { MemoryBackend } from "../vfs/backends/memory.ts";
 import { knowledgeExtension } from "./extension.ts";
 import { embeddingStatus, type EmbeddingProvider } from "./embeddings.ts";
 import { runEval } from "./eval.ts";
@@ -34,13 +33,13 @@ import { ocrSupport, TesseractOcr } from "./ocr.ts";
 export class Knowledge {
 	readonly ctx: AppContext;
 	readonly store: KnowledgeStore;
-	readonly memory: MemoryStore;
+	readonly memory: MarkdownMemory;
 	readonly pipeline: IngestPipeline;
 	embeddings: EmbeddingProvider | null = null;
 	constructor(ctx: AppContext) {
 		this.ctx = ctx;
 		this.store = new KnowledgeStore(ctx);
-		this.memory = new MemoryStore(ctx, this.store.access);
+		this.memory = new MarkdownMemory(ctx, this.store.access);
 		this.pipeline = new IngestPipeline(ctx, this.store);
 		this.store.onWork = () => this.pipeline.kick();
 		// Offline OCR when its packages are installed (WORKROOM_KB_OCR=0 disables it).
@@ -222,49 +221,82 @@ function mountRoutes(api: Hono<AppEnv>, ctx: AppContext): void {
 		return c.json({ ok: true });
 	});
 
-	// ----- memory -----
+	// ----- memory (round 14: Markdown files, one service shared with the agent's /memory backend) -----
 	const m = () => k().memory;
-	api.get("/memory/context", async (c) => {
+	const asHttp = (e: unknown): never => {
+		if (e instanceof VfsError) throw new HttpError(e.status, e.code === "etag_mismatch" ? "memory_conflict" : e.code, e.message);
+		throw e;
+	};
+	const scopeOf = (c: { req: { query(n: string): string | undefined } }) => parseScopeId(c.req.query("scope") ?? "personal");
+	const pathOf = (c: { req: { query(n: string): string | undefined } }) => {
+		const path = c.req.query("path");
+		if (!path) throw new HttpError(400, "invalid", "需要 path");
+		return path;
+	};
+	const ifMatch = (c: { req: { header(n: string): string | undefined } }) => {
+		const h = c.req.header("if-match");
+		return h === undefined ? undefined : h.replace(/^W\//, "").replace(/^"|"$/g, "");
+	};
+	const fileDto = (f: MemFile) => ({ path: f.path, name: f.name, size: f.size, mtime: f.mtime, etag: f.etag, markdown: f.markdown });
+	api.get("/memory/scopes", (c) => c.json({ scopes: m().scopesOf(principalOf(c)) }));
+	api.get("/memory/files", (c) => {
 		const p = principalOf(c);
-		const spaceId = c.req.query("spaceId");
-		if (!spaceId) throw new HttpError(400, "invalid", "需要 spaceId");
-		await ctx.services.get("acl").require(p, "read", { kind: "space", id: spaceId });
-		const space = ctx.services.get("identity").space(spaceId)!;
-		return c.json(m().contextDTO(p, space));
+		try {
+			return c.json({ scope: scopeId(scopeOf(c)), files: m().list(p, scopeOf(c)).map(fileDto) });
+		} catch (e) {
+			return asHttp(e);
+		}
 	});
-	api.get("/memory", (c) => {
+	api.get("/memory/file", (c) => {
 		const p = principalOf(c);
-		return c.json({
-			memories: m().list(p, { scope: (c.req.query("scope") || undefined) as MemoryScope | undefined, projectId: c.req.query("projectId") || undefined, includeSuperseded: c.req.query("includeSuperseded") === "1" }),
-		});
+		try {
+			const r = m().read(p, scopeOf(c), pathOf(c));
+			c.header("ETag", `"${r.file.etag}"`);
+			return c.json({ file: fileDto(r.file), content: r.content, writable: m().can(p, scopeOf(c)).write });
+		} catch (e) {
+			return asHttp(e);
+		}
 	});
-	api.post("/memory", async (c) => {
+	api.put("/memory/file", async (c) => {
 		const p = principalOf(c);
-		const b = await jsonBody<CreateMemoryRequest>(c);
-		return c.json({ memory: m().create(p, { content: b.content, scope: b.scope, projectId: b.projectId, kind: b.kind }) });
+		const b = await jsonBody<{ content?: string }>(c);
+		if (typeof b.content !== "string") throw new HttpError(400, "invalid", "需要 content");
+		try {
+			const r = m().write(p, scopeOf(c), pathOf(c), b.content, { ifMatch: ifMatch(c), requireIfMatch: true });
+			c.header("ETag", `"${r.file.etag}"`);
+			return c.json({ file: fileDto(r.file), status: r.status });
+		} catch (e) {
+			return asHttp(e);
+		}
 	});
-	api.get("/memory/:id", (c) => {
+	api.delete("/memory/file", (c) => {
 		const p = principalOf(c);
-		return c.json({ memory: m().get(p, c.req.param("id")) });
+		try {
+			return c.json({ ok: true, ...m().remove(p, scopeOf(c), pathOf(c), { ifMatch: ifMatch(c) }) });
+		} catch (e) {
+			return asHttp(e);
+		}
 	});
-	api.get("/memory/:id/history", (c) => {
+	api.post("/memory/topics", async (c) => {
 		const p = principalOf(c);
-		return c.json({ revisions: m().history(p, c.req.param("id")) });
+		const b = await jsonBody<{ scope?: string; title?: string; content?: string }>(c);
+		try {
+			return c.json({ file: fileDto(m().createTopic(p, parseScopeId(b.scope ?? "personal"), String(b.title ?? ""), b.content).file) });
+		} catch (e) {
+			return asHttp(e);
+		}
 	});
-	api.patch("/memory/:id", async (c) => {
-		const p = principalOf(c);
-		return c.json({ memory: m().update(p, c.req.param("id"), await jsonBody<UpdateMemoryRequest>(c)) });
-	});
-	api.post("/memory/:id/correct", async (c) => {
-		const p = principalOf(c);
-		const b = await jsonBody<CorrectMemoryRequest>(c);
-		return c.json(m().correct(p, c.req.param("id"), b));
-	});
-	api.delete("/memory/:id", (c) => {
-		const p = principalOf(c);
-		m().delete(p, c.req.param("id"));
-		return c.json({ ok: true });
-	});
+	// The database memory model is retired: its routes no longer write a competing copy.
+	const gone = () => {
+		throw new HttpError(410, "memory_moved", "记忆已改为 Markdown 文件（MEMORY.md 与主题文件）：请使用“记忆”页面，或在对话中让 Agent 维护 /memory。旧的数据库记忆接口已停用。");
+	};
+	api.post("/memory", gone);
+	api.patch("/memory/:id", gone);
+	api.post("/memory/:id/correct", gone);
+	api.delete("/memory/:id", gone);
+	api.get("/memory/context", gone);
+	api.get("/memory/:id", gone);
+	api.get("/memory/:id/history", gone);
 }
 
 export const knowledgeModule: WorkroomModule = {
@@ -275,6 +307,8 @@ export const knowledgeModule: WorkroomModule = {
 		instances.set(ctx, k);
 		ctx.services.provide("knowledge", k.store);
 		ctx.services.provide("knowledgeAdmin", k);
+		// the tools module (earlier in the init order) provides the router: /memory is served by the Markdown memory service
+		if (ctx.services.has("vfs" as never)) ((ctx.services as any).get("vfs") as { register(b: unknown): void }).register(new MemoryBackend(ctx, k.memory));
 	},
 	routes(api, ctx) {
 		mountRoutes(api, ctx);
@@ -288,6 +322,7 @@ export const knowledgeModule: WorkroomModule = {
 		const identity = ctx.services.get("identity") as unknown as { registerResolver?: (kind: ResourceRef["kind"], r: (p: Principal, action: string, res: ResourceRef) => Promise<any>) => void };
 		identity.registerResolver?.("kb", async (p, action, res) => k.store.access.decision(p, action, k.store.kbRow(res.id)));
 		pruneRetrievalEvents(ctx.db);
+		migrateMemoryToMarkdown(ctx, k.memory);
 		k.pipeline.start();
 	},
 	async stop(ctx) {
