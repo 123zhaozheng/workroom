@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
+import { offerAllTools } from "./helpers/ondemand.ts";
 import { orgMember } from "./fixtures/util.ts";
 import { waitFor } from "../src/runtime/testing.ts";
 import type { AppEnv, ToolActor } from "../src/core/contracts.ts";
@@ -117,6 +118,7 @@ const idle = (t: TestApp, token: string, sp: string, id: number, what: string) =
 const results = (s: any, name: string) => s.entries.filter((e: any) => e.kind === "tool_result" && e.toolName === name);
 async function newConv(t: TestApp, token: string, projectId?: string) {
 	const { conversation } = await t.json("POST", "/api/conversations", { token, json: projectId ? { projectId } : {} });
+	await offerAllTools(t, conversation);
 	return { sp: conversation.spaceId as string, cid: conversation.conversationId as number };
 }
 const pendingFor = (t: TestApp, token: string, cid: number) => waitFor(async () => (await t.json("GET", "/api/credential-requests?status=pending", { token })).requests.find((r: any) => r.conversationId === cid), { what: "pending credential request" });

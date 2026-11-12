@@ -40,8 +40,10 @@ test("default conversation offers exec/codemode/browser/jobs/unified file tools;
 		const c: Conv = (await t.json("POST", "/api/conversations", { token: member.token, json: { title: "默认工具" } })).conversation;
 		const detail = await t.json("GET", base(c), { token: member.token });
 		const offered: string[] = detail.agent.tools;
-		for (const name of ["exec", "present_file", "read", "write", "ls", "codemode", "browse", "browser_open", "browser_act", "job_start", "job_status", "tool_search"]) assert.ok(offered.includes(name), `${name} not offered: ${offered.join(",")}`);
+		for (const name of ["exec", "present_file", "read", "write", "ls", "browse", "tool_search"]) assert.ok(offered.includes(name), `${name} not offered: ${offered.join(",")}`);
 		for (const name of ["sandbox_exec", "sandbox_publish", "file_create", "file_read", "code_run", "skill"]) assert.ok(!offered.includes(name), `round 14: ${name} is replaced in new conversations`);
+		// Round 16: rarely needed tools are on demand — not offered up front, loaded by tool_search and then kept offered.
+		for (const name of ["codemode", "browser_open", "job_start", "credential_request", "skill_manage"]) assert.ok(!offered.includes(name), `${name} is on demand`);
 		assert.ok(!offered.some((n) => n.startsWith("mcp__")), "connector tools stay deferred");
 		assert.ok(!offered.some((n) => /^skill_(list|load|read|run)$/.test(n)), "legacy skill_* tools are deferred, not offered");
 
@@ -49,6 +51,8 @@ test("default conversation offers exec/codemode/browser/jobs/unified file tools;
 		assert.match((await results(t, c, "exec"))[0]!.text, /\b42\b/);
 		const runs = await t.json("GET", `/api/sandbox/${c.spaceId}/runs?conversationId=${c.conversationId}`, { token: member.token });
 		assert.equal(runs.runs[0].stdout.trim(), "42"); // the work panel's terminal data is real
+		await say(t, member.token, c, `[[call tool_search {"query":"脚本编排 批量调用工具 code mode"}]]`);
+		assert.ok((await t.json("GET", base(c), { token: member.token })).agent.tools.includes("codemode"), "tool_search loaded codemode");
 		await say(t, member.token, c, `[[call codemode {"code":"const r = await tools.exec({command:'echo via-codemode'}); console.log(r.output ?? r)"}]]`);
 		assert.match((await results(t, c, "codemode"))[0]!.text, /via-codemode/);
 
