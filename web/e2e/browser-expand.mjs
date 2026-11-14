@@ -53,12 +53,32 @@ try {
 	check("放大 button on the browser entry with aria-label / title 放大", (await expand.count()) === 1 && (await expand.getAttribute("aria-label")) === "放大" && (await expand.getAttribute("title")) === "放大");
 	check("放大 is not inside the row's toggle button (no nested buttons)", (await page.locator(`${T("browser-entry")} button button`).count()) === 0);
 	await shot(page, "browser-expand-1-panel-button");
+	// 放大 and the row's expand arrow sit in their own flex slots: they never overlap, also after the window is resized
+	const overlaps = async () =>
+		page.evaluate(() => {
+			const row = document.querySelector('[data-testid="browser-entry"]');
+			const a = row.querySelector('[data-testid="browser-expand"]').getBoundingClientRect();
+			const btns = [...row.querySelectorAll("button[aria-expanded]")];
+			const chev = btns[btns.length - 1].getBoundingClientRect();
+			return { overlap: !(a.right <= chev.left || chev.right <= a.left || a.bottom <= chev.top || chev.bottom <= a.top), gap: Math.round(chev.left - a.right) };
+		});
+	const sizes = [[1440, 900], [1024, 800], [800, 800], [1280, 800]];
+	const results = [];
+	for (const [w, h] of sizes) {
+		await page.setViewportSize({ width: w, height: h });
+		await page.waitForTimeout(200);
+		if (!(await page.locator(T("browser-entry")).isVisible())) continue;
+		results.push({ w, ...(await overlaps()) });
+	}
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.waitForTimeout(200);
+	check("放大 and the expand arrow never overlap across window sizes", results.length > 0 && results.every((r) => !r.overlap && r.gap >= 0), JSON.stringify(results));
 
 	// clicking 放大 must not toggle the row
 	await expand.click();
 	const modal = page.locator(T("browser-modal"));
 	await modal.waitFor({ timeout: 10000 });
-	check("clicking 放大 opens the dialog and leaves the row collapsed", (await page.locator(`${T("browser-entry")} > button`).getAttribute("aria-expanded")) === "false");
+	check("clicking 放大 opens the dialog and leaves the row collapsed", (await page.locator(`${T("browser-entry")} button[aria-expanded]`).first().getAttribute("aria-expanded")) === "false");
 	await page.waitForSelector(`${T("browser-modal")} ${T("browser-screenshot")}`);
 	await page.waitForFunction(() => { const i = document.querySelector('[data-testid="browser-modal"] [data-testid="browser-screenshot"]'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 });
 	const box = await modal.boundingBox();

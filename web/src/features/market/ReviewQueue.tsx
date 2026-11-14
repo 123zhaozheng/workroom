@@ -17,7 +17,8 @@ import { useConfirm } from "@/features/admin/confirm";
 import { ExpertAvatar, SkillChip } from "@/features/experts/common";
 import { DiffView, FileTree, FileViewer, FindingList, PermChips, Section, SCOPE, StateBadge, checkVerdict, permExplain, permText, useAct } from "./common";
 
-const KIND_LABEL: Record<ReviewFilterKind, string> = { skill: "技能", mcp: "连接", expert: "专家" };
+const KIND_LABEL: Record<ReviewFilterKind, string> = { expert: "专家", skill: "技能", mcp: "连接器" };
+const KIND_ORDER: readonly ReviewFilterKind[] = ["expert", "skill", "mcp"];
 
 export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: number) => void }) {
 	const [view, setView] = useState<"queue" | "history">("queue");
@@ -25,6 +26,7 @@ export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: nu
 	const [sel, setSel] = useState<string>();
 	const list = useApi<{ submissions: SubmissionDTO[] }>(`/market/submissions?view=${view}${kind ? `&kind=${kind}` : ""}`, { pollMs: 15000 });
 	const items = list.data?.submissions ?? [];
+	const filterKinds = KIND_ORDER.filter((k) => me.reviewKinds.includes(k));
 	useEffect(() => {
 		if (view === "queue" && list.data) onCount?.(list.data.submissions.length);
 	}, [view, list.data, onCount]);
@@ -39,9 +41,9 @@ export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: nu
 							</button>
 						))}
 					</div>
-					<Select value={kind} onChange={(e) => (setKind(e.target.value as typeof kind), setSel(undefined))} aria-label="类型" className="h-8 text-sm">
-						<option value="">全部类型</option>
-						{me.reviewKinds.map((k) => (
+					<Select value={kind} onChange={(e) => (setKind(e.target.value as typeof kind), setSel(undefined))} aria-label="类型" className="h-8 text-sm" data-testid="review-kind-filter">
+						<option value="">全部</option>
+						{(filterKinds.length ? filterKinds : KIND_ORDER).map((k) => (
 							<option key={k} value={k}>
 								{KIND_LABEL[k]}
 							</option>
@@ -55,13 +57,13 @@ export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: nu
 						<ul className="space-y-1.5" data-testid="review-list">
 							{items.map((s) => (
 								<li key={s.id}>
-									<button type="button" onClick={() => setSel(s.id)} data-testid="review-item" data-id={s.id} className={cn("w-full rounded-xl border bg-surface p-3 text-left hover:bg-surface-2", sel === s.id ? "border-accent" : "border-border")} aria-current={sel === s.id ? "true" : undefined}>
+									<button type="button" onClick={() => setSel(s.id)} data-testid="review-item" data-id={s.id} data-kind={s.kind} className={cn("w-full rounded-xl border bg-surface p-3 text-left hover:bg-surface-2", sel === s.id ? "border-accent" : "border-border")} aria-current={sel === s.id ? "true" : undefined}>
 										<div className="flex items-center gap-2">
 											<span className="min-w-0 flex-1 truncate text-sm font-medium">{s.subjectName}</span>
-											<Badge>{s.kind === "skill" ? "技能" : s.kind === "expert" ? "专家" : "连接"}</Badge>
+											<Badge>{s.kind === "skill" ? "技能" : s.kind === "expert" ? "专家" : "连接器"}</Badge>
 										</div>
 										<div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
-											<span>v{s.semver ?? s.versionNo ?? "—"}</span>
+											<span>{s.semver ?? s.versionNo ? `v${s.semver ?? s.versionNo}` : "—"}</span>
 											<span>→ {s.kind === "mcp_connector" ? "个人连接" : SCOPE[s.targetScope]}</span>
 											{view === "history" ? <StateBadge state={s.state} /> : null}
 											{s.warnCount ? <span className="text-warning">需关注 {s.warnCount} 项</span> : null}
@@ -135,7 +137,7 @@ function ReviewScreen({ id, me, onBack, onDecided }: { id: string; me: MarketMeD
 						<header className="rounded-xl border border-border bg-surface p-4">
 							<div className="flex flex-wrap items-center gap-2">
 								<h2 className="text-base font-semibold">{s.subjectName}</h2>
-								<Badge tone="info">v{s.semver ?? s.versionNo}</Badge>
+								{s.semver ?? s.versionNo ? <Badge tone="info">v{s.semver ?? s.versionNo}</Badge> : null}
 								<StateBadge state={s.state} />
 								{s.forced ? <Badge tone="warning">强制通过</Badge> : null}
 							</div>

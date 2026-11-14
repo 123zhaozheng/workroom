@@ -28,11 +28,13 @@ export function HomePage() {
 			{/* desktop: greeting + composer centred; phones: greeting centred, composer docked at the bottom */}
 			<div className="flex min-h-0 flex-1 flex-col items-center px-4 sm:justify-center sm:pb-[12vh]">
 				<div className="flex w-full max-w-[680px] flex-1 flex-col sm:flex-none">
-					<div className="order-1 flex flex-1 flex-col items-center justify-center text-center sm:mb-8 sm:flex-none">
-						<BrandMark className="mb-5 size-10 rounded-xl" />
-						<h1 data-testid="home-greeting" className="text-2xl font-medium tracking-tight sm:text-3xl">
-							{greeting(me?.name)}
-						</h1>
+					<div className="order-1 flex flex-1 items-center justify-center sm:mb-8 sm:flex-none">
+						<div className="flex max-w-full items-center justify-center gap-3 sm:gap-3.5">
+							<BrandMark size="lg" />
+							<h1 data-testid="home-greeting" className="min-w-0 text-left text-2xl font-medium tracking-tight sm:text-3xl">
+								{greeting(me?.name)}
+							</h1>
+						</div>
 					</div>
 					<div className="order-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:pb-0">
 						<Composer

@@ -1,7 +1,8 @@
 import { ArrowDown, ChevronDown, FoldHorizontal, UnfoldHorizontal, ChevronRight, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, TriangleAlert, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import type { AbortResponse, AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, UserEntryDTO, WithdrawResponse } from "@shared/chat";
+import type { SkillDistillLinkResponse, SkillDistillStartResponse } from "@shared/skill-distill";
 import type { ThinkingLevel } from "@shared/ops";
 import { ApiError, errorText, get, patch, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -48,21 +49,36 @@ export function ChatPage() {
 
 function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const navigate = useNavigate();
+	const location = useLocation();
 	const base = `/conversations/${spaceId}/${id}`;
 	const { state, status: streamStatus, error: streamError } = useConversationStream(spaceId, id);
 	const { detail, parentDetail, error: detailError, reload: reloadDetail } = useConversationDetail(spaceId, id);
+	const distillLink = useApi<SkillDistillLinkResponse>(`/skills/distill/${encodeURIComponent(spaceId)}/${id}`);
+	const distillSource = distillLink.data?.source;
 	const earlier = useEarlierEntries(spaceId, id);
 	const { openWork, panel, close: closePanel, publishWork } = usePanel();
 	const [actionErr, setActionErr] = useState<string>();
 	const [stopping, setStopping] = useState(false);
 	const [continuing, setContinuing] = useState(false);
-	// a starter question picked on the expert page: it seeds the message box (nothing is sent)
-	const [seed] = useState(() => {
+	const [distilling, setDistilling] = useState(false);
+	// a starter question picked on the expert page, or a prefill from conversational skill distill: seeds the message box (nothing is sent)
+	const prefill = (location.state as { prefill?: unknown } | null)?.prefill;
+	const [seed, setSeed] = useState<{ text: string; n: number } | undefined>(() => {
 		const k = `wr.seed.${spaceId}.${id}`;
 		const t = sessionStorage.getItem(k);
 		if (t) sessionStorage.removeItem(k);
+		if (typeof prefill === "string" && prefill) return { text: prefill, n: 1 };
 		return t ? { text: t, n: 1 } : undefined;
 	});
+	const handledPrefill = useRef<string | undefined>(typeof prefill === "string" ? prefill : undefined);
+	useEffect(() => {
+		if (typeof prefill !== "string") return;
+		if (handledPrefill.current !== prefill) {
+			handledPrefill.current = prefill;
+			if (prefill) setSeed((s) => ({ text: prefill, n: (s?.n ?? 0) + 1 }));
+		}
+		navigate(location.pathname + location.search, { replace: true, state: null });
+	}, [prefill, location.pathname, location.search, navigate]);
 	const [restore, setRestore] = useState<{ n: number; text: string; attachments?: readonly AttachmentRef[]; knowledgeRefs?: readonly KnowledgeRef[] }>();
 	/** What 停止 did with messages still waiting in the queue (they go back to the composer, never vanish). */
 	const [handoff, setHandoff] = useState(false);
@@ -316,13 +332,29 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const reconcile = (state?.effects ?? []).filter((e) => e.status === "needs_reconciliation");
 	const avatar = runStatus === "running" ? "working" : runStatus === "waiting_approval" ? "waiting" : runStatus === "failed" || runStatus === "interrupted" ? "failed" : "idle";
 	const assistantTurns = turns.filter((t): t is AssistantTurn => t.kind === "assistant");
+	const hasMessages = turns.some((t) => t.kind === "user" || t.kind === "assistant");
+	const startDistill = async () => {
+		if (distilling || readOnly || !hasMessages) return;
+		setActionErr(undefined);
+		setDistilling(true);
+		try {
+			const r = await post<SkillDistillStartResponse>("/skills/distill", { spaceId, conversationId: id });
+			navigate(`/c/${r.conversation.spaceId}/${r.conversation.conversationId}`, { state: { prefill: r.prompt } });
+		} catch (e) {
+			setActionErr(errorText(e));
+		} finally {
+			setDistilling(false);
+		}
+	};
 	const lastAssistantIdx = turns.map((t) => t.kind).lastIndexOf("assistant");
 	/** The latest message that was actually placed (not a 未送达 marker) and what its run did: feeds 「已停止（已完成 N 步）」. */
 	const parent = detail?.parent ?? conv?.parent;
 	// Only the preview takes a column; the work panel floats over the chat without narrowing it.
 	const panelOpen = panel?.kind === "preview";
-	// 加宽模式: a wider column (still capped; with the preview column open it simply fills what is left, up to 900px).
-	const colW = chatWide ? (panelOpen ? "max-w-[900px]" : "max-w-[var(--content-w-wide)]") : panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]";
+	// 加宽模式: a wider message column (still capped; with the preview column open it simply fills what is left, up to 900px).
+	// The bottom composer keeps the fixed default width and does not follow widening.
+	const msgW = chatWide ? (panelOpen ? "max-w-[900px]" : "max-w-[var(--content-w-wide)]") : panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]";
+	const composerW = panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]";
 	const gutter = chatWide ? "" : "sm:pl-[40px]"; // the avatar's width + gap, only in the default layout
 
 	return (
@@ -371,21 +403,23 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 									<Route />
 									模型与路由记录
 								</MenuItem>
-								<MenuItem
-									data-testid="make-skill"
-									disabled={readOnly}
-									onSelect={() =>
-										act(async () => {
-											const r = await post<{ draft: { id: string } }>("/skills/drafts", { spaceId, conversationId: id });
-											navigate(`/capabilities?draft=${r.draft.id}`);
-										})
-									}
-								>
-									<Sparkles />
-									整理为技能
-								</MenuItem>
 							</MenuContent>
 						</Menu>
+						<Tip label={readOnly ? "只读对话无法整理为技能" : !hasMessages ? "暂无消息，无法整理为技能" : "整理为技能"}>
+							<span className="inline-flex">
+								<button
+									type="button"
+									data-testid="make-skill"
+									aria-label="整理为技能"
+									disabled={readOnly || !hasMessages || distilling}
+									onClick={() => void startDistill()}
+									className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
+								>
+									{distilling ? <Loader2 className="size-4 wr-spin" /> : <Sparkles className="size-4" />}
+									<span className="hidden sm:inline">整理为技能</span>
+								</button>
+							</span>
+						</Tip>
 						<Tip label={chatWide ? "恢复默认宽度" : "加宽"}>
 							<button data-testid="toggle-wide" aria-label={chatWide ? "恢复默认宽度" : "加宽"} aria-pressed={chatWide} onClick={() => setPref("chatWide", !chatWide)} className={cn("hidden rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg md:inline-flex", chatWide && "bg-surface-2 text-fg")}>
 								{chatWide ? <FoldHorizontal className="size-[18px]" /> : <UnfoldHorizontal className="size-[18px]" />}
@@ -428,7 +462,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 
 			<div className="relative flex min-h-0 flex-1 flex-col">
 			<div ref={scroller} onScroll={onScroll} data-testid="chat-scroll" className="wr-scroll relative min-h-0 flex-1 overflow-y-auto">
-				<div className={cn("mx-auto w-full px-4 pb-6 pt-2 sm:px-6", colW)}>
+				<div className={cn("mx-auto w-full px-4 pb-6 pt-2 sm:px-6", msgW)}>
 					{!state ? (
 						<div className="flex items-center justify-center gap-2 py-20 text-[13px] text-fg-subtle">
 							<Spinner /> 正在连接…
@@ -522,7 +556,26 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			<PositionRail items={railItems} scroller={scroller} reduced={motionReduced} />
 			</div>
 
-			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", colW)}>
+			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", composerW)}>
+				{distillSource ? (
+					<div
+						data-testid="skill-distill-hint"
+						className="mb-2 flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/70 px-3 py-1.5 text-[12.5px] text-fg-muted"
+					>
+						<Sparkles aria-hidden className="size-3.5 shrink-0 text-fg-subtle" />
+						<p className="min-w-0 flex-1 leading-snug">
+							正在把《
+							<Link
+								to={`/c/${distillSource.spaceId}/${distillSource.conversationId}`}
+								className="font-medium text-info underline-offset-2 hover:underline"
+								data-testid="skill-distill-source-link"
+							>
+								{distillSource.title || `对话 ${distillSource.conversationId}`}
+							</Link>
+							》整理为技能 · 发送后 AI 会分析会话并生成技能，可在对话中继续微调
+						</p>
+					</div>
+				) : null}
 				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} inlineError={!!assistantTurns.at(-1)?.error} />
 				{spaceId && id !== undefined ? <EnvironmentStatus spaceId={spaceId} conversationId={id} active={runStatus === "running"} className="mb-2" explainedBy={failedSandboxTexts(assistantTurns.at(-1))} /> : null}
 				<MessageQueue items={queueItems} runStatus={runStatus} onSendNow={queueSendNow} onUndo={queueUndo} onDelete={queueDelete} readOnly={readOnly} />

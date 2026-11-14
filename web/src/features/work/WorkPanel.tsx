@@ -149,17 +149,31 @@ function OutputRow({ item }: { item: LibItemDTO }) {
 function Row({ icon, title, status, children, testId, data, action }: { icon: ReactNode; title: string; status?: ReactNode; children?: ReactNode; testId: string; data?: Record<string, string | undefined>; action?: ReactNode }) {
 	const [open, setOpen] = useState(false);
 	return (
-		<li data-testid={testId} {...data} className="relative rounded-lg">
-			<button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={cn("flex min-h-8 w-full items-center gap-2.5 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", action && "pr-9")}>
-				<span aria-hidden className="flex size-[18px] shrink-0 items-center justify-center text-fg-muted [&_svg]:size-[18px]">
-					{icon}
-				</span>
-				<span className="min-w-0 flex-1 truncate text-[13.5px]">{title}</span>
-				{status}
-				<ChevronRight aria-hidden className={cn("size-4 shrink-0 text-fg-subtle transition-transform duration-150", open && "rotate-90")} />
-			</button>
-			{/* Beside the row's toggle (never inside it: no button in a button); sits between the host and the chevron. */}
-			{action ? <span className="absolute right-6 top-0 flex h-8 items-center">{action}</span> : null}
+		<li data-testid={testId} {...data} className="rounded-lg">
+			<div className="flex min-h-8 items-center gap-1 rounded-lg px-1.5 hover:bg-surface-2">
+				<button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+					<span aria-hidden className="flex size-[18px] shrink-0 items-center justify-center text-fg-muted [&_svg]:size-[18px]">
+						{icon}
+					</span>
+					<span className="min-w-0 flex-1 truncate text-[13.5px]">{title}</span>
+					{status}
+					{!action ? <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-fg-subtle transition-transform duration-150", open && "rotate-90")} /> : null}
+				</button>
+				{action ? (
+					<div className="flex shrink-0 items-center gap-0.5">
+						{action}
+						<button
+							type="button"
+							onClick={() => setOpen((o) => !o)}
+							aria-expanded={open}
+							aria-label={open ? `收起 ${title}` : `展开 ${title}`}
+							className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<ChevronRight aria-hidden className={cn("size-4 transition-transform duration-150", open && "rotate-90")} />
+						</button>
+					</div>
+				) : null}
+			</div>
 			{open ? <div className="wr-fade-in mb-1.5 ml-[30px] mr-1 mt-0.5">{children}</div> : null}
 		</li>
 	);
@@ -257,9 +271,9 @@ function BrowserRow({ s }: { s: ConversationWorkDTO["browserSessions"][number] }
 				testId="browser-entry"
 				icon={<Globe strokeWidth={1.5} />}
 				title={s.title || host}
-				status={<span className="max-w-[40%] truncate text-xs text-fg-subtle">{host}</span>}
+				status={<span className="min-w-0 max-w-[38%] shrink truncate text-xs text-fg-subtle">{host}</span>}
 				action={
-					<button type="button" data-testid="browser-expand" aria-label="放大" title="放大" onClick={() => setBig(true)} className="flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+					<button type="button" data-testid="browser-expand" aria-label="放大" title="放大" onClick={() => setBig(true)} className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
 						<Maximize2 className="size-4" strokeWidth={1.5} />
 					</button>
 				}

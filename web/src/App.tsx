@@ -21,6 +21,7 @@ const ProjectPage = lazy(() => import("@/pages/ProjectPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const AutomationsPage = lazy(() => import("@/pages/AutomationsPage"));
 const CapabilitiesPage = lazy(() => import("@/pages/CapabilitiesPage"));
+const ReviewsPage = lazy(() => import("@/pages/ReviewsPage"));
 const StatsPage = lazy(() => import("@/pages/StatsPage"));
 const AdminPage = lazy(() => import("@/pages/AdminPage"));
 const MemoryPage = lazy(() => import("@/pages/MemoryPage"));
@@ -92,6 +93,7 @@ export function App() {
 									<Route path="/settings" element={<Lazy><SettingsPage /></Lazy>} />
 									<Route path="/automations" element={<Lazy><AutomationsPage /></Lazy>} />
 									<Route path="/capabilities" element={<Lazy><CapabilitiesPage /></Lazy>} />
+									<Route path="/reviews" element={<Lazy><ReviewsPage /></Lazy>} />
 									<Route path="/memory" element={<Lazy><MemoryPage /></Lazy>} />
 									<Route path="/stats" element={<Lazy><StatsPage /></Lazy>} />
 									<Route path="/admin" element={<Lazy><AdminPage /></Lazy>} />

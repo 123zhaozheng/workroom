@@ -2,7 +2,7 @@
 // Experts share the skills/MCP lifecycle: upload → automatic checks → 审查员 → publish. Mounted skills are references (always the current
 // published version). Permissions are decided by the server; the page only reflects them.
 import { Compass, MessageSquarePlus, Pencil, Plus, Search, Send, Sparkles, Trash2, UserRoundCog } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import type { ExpertDTO } from "@shared/experts";
 import type { MarketScope, SubmissionDTO } from "@shared/files";
@@ -127,49 +127,66 @@ function Square({ list, onOpen }: { list: ReturnType<typeof useApi<{ experts: Ex
 	);
 }
 
-export function ExpertCard({ e, onOpen }: { e: ExpertDTO; onOpen: () => void }) {
+export function ExpertCard({
+	e,
+	onOpen,
+	badge,
+	footer,
+	testId = "expert-card",
+}: {
+	e: ExpertDTO;
+	onOpen: () => void;
+	badge?: ReactNode;
+	footer?: ReactNode;
+	testId?: string;
+}) {
 	return (
-		<button type="button" onClick={onOpen} data-testid="expert-card" data-id={e.id} className="flex flex-col rounded-xl border border-border bg-surface p-4 text-left transition-shadow hover:shadow-pop focus-visible:outline-2 focus-visible:outline-ring">
-			<div className="flex items-start gap-3">
-				<ExpertAvatar e={e} size={40} />
-				<div className="min-w-0 flex-1">
-					<div className="truncate font-medium">{e.name}</div>
-					<div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
-						<span>{e.category}</span>
-						<span aria-hidden>·</span>
-						<span>{SCOPE_LABEL[e.scope]}</span>
-						{e.ownerName ? (
-							<>
-								<span aria-hidden>·</span>
-								<span className="truncate">{e.ownerName}</span>
-							</>
-						) : null}
+		<div data-testid={testId} data-id={e.id} className="flex flex-col rounded-xl border border-border bg-surface p-4 text-left transition-shadow hover:shadow-pop">
+			<button type="button" onClick={onOpen} className="flex flex-1 flex-col rounded-lg text-left focus-visible:outline-2 focus-visible:outline-ring">
+				<div className="flex w-full items-start gap-3">
+					<ExpertAvatar e={e} size={40} />
+					<div className="min-w-0 flex-1">
+						<div className="flex flex-wrap items-center justify-between gap-1.5">
+							<span className="min-w-0 truncate font-medium">{e.name}</span>
+							{badge}
+						</div>
+						<div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
+							<span>{e.category}</span>
+							<span aria-hidden>·</span>
+							<span>{SCOPE_LABEL[e.scope]}</span>
+							{e.ownerName ? (
+								<>
+									<span aria-hidden>·</span>
+									<span className="truncate">{e.ownerName}</span>
+								</>
+							) : null}
+						</div>
 					</div>
 				</div>
-			</div>
-			<p className="mt-2.5 line-clamp-2 min-h-[2.6em] text-sm text-fg-muted">{e.tagline || "（没有简介）"}</p>
-			<div className="mt-3 flex min-h-6 flex-wrap items-center gap-1.5">
-				{e.skills.slice(0, 3).map((s) => (
-					<span key={s.skillId} className="inline-flex h-6 max-w-[9rem] items-center gap-1 rounded-md bg-surface-2 px-2 text-xs text-fg-muted" data-testid="card-skill">
-						<Sparkles aria-hidden className="size-3 shrink-0" />
-						<span className="truncate">{s.name}</span>
-					</span>
-				))}
-				{e.skills.length > 3 ? <span className="text-xs text-fg-subtle">+{e.skills.length - 3}</span> : null}
-				{e.installed ? (
-					<Badge tone="success" className="ml-auto">
-						已添加
-					</Badge>
-				) : null}
-			</div>
-		</button>
+				<p className="mt-2.5 line-clamp-2 min-h-[2.6em] w-full text-sm text-fg-muted">{e.tagline || "（没有简介）"}</p>
+				<div className="mt-3 flex min-h-6 w-full flex-wrap items-center gap-1.5">
+					{e.skills.slice(0, 3).map((s) => (
+						<span key={s.skillId} className="inline-flex h-6 max-w-[9rem] items-center gap-1 rounded-md bg-surface-2 px-2 text-xs text-fg-muted" data-testid="card-skill">
+							<Sparkles aria-hidden className="size-3 shrink-0" />
+							<span className="truncate">{s.name}</span>
+						</span>
+					))}
+					{e.skills.length > 3 ? <span className="text-xs text-fg-subtle">+{e.skills.length - 3}</span> : null}
+					{!badge && e.installed ? (
+						<Badge tone="success" className="ml-auto">
+							已添加
+						</Badge>
+					) : null}
+				</div>
+			</button>
+			{footer ? <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-2.5">{footer}</div> : null}
+		</div>
 	);
 }
 
 function Mine({ list, onOpen, onEdit, onCreate, canCreate, onChanged }: { list: ReturnType<typeof useApi<{ experts: ExpertDTO[] }>>; onOpen: (id: string) => void; onEdit: (e: ExpertDTO) => void; onCreate: () => void; canCreate: boolean; onChanged: () => void }) {
 	const [submit, setSubmit] = useState<ExpertDTO>();
 	const [err, setErr] = useState<string>();
-	const { models } = useModels();
 	const items = list.data?.experts ?? [];
 	return (
 		<div data-testid="my-experts">
@@ -180,54 +197,50 @@ function Mine({ list, onOpen, onEdit, onCreate, canCreate, onChanged }: { list: 
 						专家 = 角色设定 + 挂载的技能 + 默认模型，创建后可在对话里 @ 它。
 					</EmptyState>
 				) : (
-					<ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
 						{items.map((e) => (
-							<li key={e.id} data-testid="my-expert" data-id={e.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-								<ExpertAvatar e={e} size={36} />
-								<button type="button" onClick={() => onOpen(e.id)} className="min-w-0 flex-1 text-left">
-									<span className="flex flex-wrap items-center gap-2">
-										<span className="font-medium">{e.name}</span>
-										<StatusBadge e={e} />
-										<Badge>{SCOPE_LABEL[e.scope]}</Badge>
-									</span>
-									<span className="mt-0.5 block truncate text-sm text-fg-muted">{e.tagline}</span>
-									<span className="mt-0.5 block text-xs text-fg-subtle">
-										模型：{e.defaultModel ? (models.find((m) => m.ref?.provider === e.defaultModel!.provider && m.ref.modelId === e.defaultModel!.modelId) ? modelName(models.find((m) => m.ref?.provider === e.defaultModel!.provider && m.ref.modelId === e.defaultModel!.modelId)!) : e.defaultModel.modelId) : "跟随会话"} · 技能 {e.skills.length} 个
-									</span>
-								</button>
-								<div className="flex gap-1">
-									{e.source !== "assistant" ? (
-										<Button size="sm" variant="ghost" onClick={() => onEdit(e)} aria-label="编辑">
-											<Pencil />
-											编辑
+							<ExpertCard
+								key={e.id}
+								e={e}
+								testId="my-expert"
+								onOpen={() => onOpen(e.id)}
+								badge={<StatusBadge e={e} />}
+								footer={
+									<>
+										{e.source !== "assistant" ? (
+											<Button size="sm" variant="ghost" onClick={() => onEdit(e)} aria-label="编辑">
+												<Pencil />
+												编辑
+											</Button>
+										) : null}
+										{e.source !== "assistant" ? (
+											<Button size="sm" variant="ghost" onClick={() => setSubmit(e)} data-testid="expert-submit-open">
+												<Send />
+												提交审核…
+											</Button>
+										) : null}
+										<Button
+											size="icon"
+											variant="ghost"
+											className="ml-auto"
+											aria-label="删除"
+											onClick={async () => {
+												if (!confirm(`删除专家「${e.name}」？已有对话不受影响。`)) return;
+												try {
+													await del(`/experts/${e.id}`);
+													onChanged();
+												} catch (x) {
+													setErr(errorText(x));
+												}
+											}}
+										>
+											<Trash2 />
 										</Button>
-									) : null}
-									{e.source !== "assistant" ? (
-										<Button size="sm" variant="ghost" onClick={() => setSubmit(e)} data-testid="expert-submit-open">
-											<Send />
-											提交审查…
-										</Button>
-									) : null}
-									<Button
-										size="icon"
-										variant="ghost"
-										aria-label="删除"
-										onClick={async () => {
-											if (!confirm(`删除专家「${e.name}」？已有对话不受影响。`)) return;
-											try {
-												await del(`/experts/${e.id}`);
-												onChanged();
-											} catch (x) {
-												setErr(errorText(x));
-											}
-										}}
-									>
-										<Trash2 />
-									</Button>
-								</div>
-							</li>
+									</>
+								}
+							/>
 						))}
-					</ul>
+					</div>
 				)}
 			</Loadable>
 			{submit ? <SubmitDialog expert={submit} onClose={() => setSubmit(undefined)} onDone={() => (setSubmit(undefined), onChanged())} /> : null}
@@ -257,7 +270,7 @@ function SubmitDialog({ expert, onClose, onDone }: { expert: ExpertDTO; onClose:
 	};
 	return (
 		<Dialog open onOpenChange={(o) => !o && onClose()}>
-			<DialogContent title="提交审查" description={`「${expert.name}」`}>
+			<DialogContent title="提交审核" description={`「${expert.name}」`}>
 				{result ? (
 					<div className="space-y-3 text-sm" data-testid="expert-submit-result">
 						<p className="flex items-center gap-2">

@@ -34,6 +34,7 @@ import { BrowserService, createBrowserExtension } from "./browser.ts";
 import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from "./skills.ts";
 import { Market, MARKET_MIGRATIONS } from "./market.ts"; // marketplace group
 import { createSkillManageExtension, registerSkillDraftRoutes, SKILL_DRAFT_MIGRATIONS } from "./skill-drafts.ts"; // round 6: skills from conversation
+import { createSkillDistillExtension, registerSkillDistillRoutes, SKILL_DISTILL_MIGRATIONS } from "./skill-distill.ts"; // conversational skill distill + session_trace
 import { McpMarket, MCP_MARKET_MIGRATIONS } from "./mcp-market.ts"; // marketplace group
 import { Experts, EXPERT_MIGRATIONS, createExpertsExtension } from "./experts.ts"; // round 17: experts
 import { registerExpertRoutes } from "./experts-routes.ts";
@@ -64,7 +65,7 @@ function mcpExtension(mgr: McpManager, ctx: AppContext): Extension {
 	};
 }
 
-const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "code_run", "browse", "skill", "skill_manage", "credential_request", "credential_http", "credential_list", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
+const D_TOOLS = ["file_create", "file_revise", "file_read", "file_list", "sandbox_exec", "sandbox_write_file", "sandbox_read_file", "sandbox_list", "sandbox_publish", "sandbox_import", "code_run", "browse", "skill", "skill_manage", "session_trace", "credential_request", "credential_http", "credential_list", "skill_list", "skill_load", "skill_read", "skill_run", "tool_search", "codemode"];
 /** Tool names a skill may require: the runtime registry when available, else D's own tools plus discovered MCP tools. */
 export function knownToolNames(ctx: AppContext): string[] {
 	const names = new Set(D_TOOLS);
@@ -98,6 +99,7 @@ export const toolsModule: WorkroomModule = {
 		...PREWARM_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1500 })), // sandbox prewarm log (round 11, R2b)
 		...EXPERT_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1600 })), // experts (round 17)
 		...NET_POLICY_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1700 })), // network access policy
+		...SKILL_DISTILL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1800 })), // conversational skill distill
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -162,7 +164,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, inlineBudget: 0 }); // native tools carry their schemas; the wr.harness section replaces the catalog
-		return [createPolicyExtension(ctx), createHarnessPromptExtension(ctx), createExpertsExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLegacyCodeRunExtension(), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), createHarnessPromptExtension(ctx), createExpertsExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLegacyCodeRunExtension(), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createSkillDistillExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).
@@ -351,6 +353,7 @@ export const toolsModule: WorkroomModule = {
 		registerExpertRoutes(api, ctx); // round 17: /experts
 		registerMarketRoutes(api, ctx); // marketplace group: /market/*, per-user connector credentials and tool settings
 		registerSkillDraftRoutes(api, ctx); // GET /api/skill-drafts/:id (owner only)
+		registerSkillDistillRoutes(api, ctx); // POST /api/skills/distill, GET /api/skills/distill/:spaceId/:conversationId
 		(ctx.services.get("identity") as any).registerResolver?.("skill", (p: Principal, action: string, res: { id: string }) => skills.decide(p, action, res.id));
 		const skillOr404 = async (c: any, action: "read" | "use" | "write") => {
 			const p = principalOf(c);

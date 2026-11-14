@@ -1,9 +1,9 @@
 // 我的技能: toolbar with 上传技能 (small dialog: .zip or folder) and 新建技能 → automated check result → submit for review; my installs with the
-// full version lifecycle (pin / upgrade / rollback / grants / runs); drafts made from a finished task; my submissions and their state.
-import { CheckCircle2, ChevronRight, CircleX, Plus, RefreshCw, RotateCcw, Send, ShieldCheck, Sparkles, Upload } from "lucide-react";
+// full version lifecycle (pin / upgrade / rollback / grants / runs); my submissions and their state.
+import { ChevronRight, Plus, RotateCcw, Send, ShieldCheck, Sparkles, Upload } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
-import type { MarketScope, SkillDTO, SkillDraftDTO, SkillKind, SkillListResponse, SkillRunDTO, SubmissionDTO } from "@shared/files";
+import type { MarketScope, SkillDTO, SkillKind, SkillListResponse, SkillRunDTO, SubmissionDTO } from "@shared/files";
 import { patch, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, fullTime } from "@/lib/utils";
@@ -23,7 +23,7 @@ export const KIND: Record<SkillKind, { label: string; hint: string }> = {
 	executable: { label: "可执行技能", hint: "包含脚本与资源，在云端沙箱中执行，需要逐版本授权" },
 };
 
-export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onDraftDone: () => void }) {
+export function MySkills() {
 	const skills = useApi<SkillListResponse>("/skills");
 	const subs = useApi<{ submissions: SubmissionDTO[] }>("/market/submissions?view=mine&kind=skill");
 	const [create, setCreate] = useState(false);
@@ -32,7 +32,6 @@ export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onD
 	const reloadAll = () => (skills.reload(), subs.reload());
 	return (
 		<div data-testid="my-skills">
-			{draftId ? <DraftPanel id={draftId} onDone={() => (onDraftDone(), skills.reload())} /> : null}
 			<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 				<h2 className="text-[15px] font-semibold">我的技能</h2>
 				<div className="flex flex-wrap items-center gap-2">
@@ -379,93 +378,6 @@ function CreateSkillDialog({ open, onOpenChange, onCreated }: { open: boolean; o
 				</div>
 			</DialogContent>
 		</Dialog>
-	);
-}
-
-/** Skill draft from a finished task: preview instructions/resources/permissions, edit, validate with the sample, publish. */
-function DraftPanel({ id, onDone }: { id: string; onDone: () => void }) {
-	const res = useApi<{ draft: SkillDraftDTO }>(`/skills/drafts/${id}`);
-	const d = res.data?.draft;
-	const [edit, setEdit] = useState<Partial<SkillDraftDTO>>({});
-	const { busy, err, run } = useAct(() => res.reload());
-	const v = { ...d, ...edit } as SkillDraftDTO;
-	const dirty = Object.keys(edit).length > 0;
-	return (
-		<section data-testid="skill-draft" className="mb-6 rounded-xl border border-info/40 bg-info-soft/30 p-4">
-			<Loadable state={res} what="技能草稿">
-				{d ? (
-					<div className="space-y-3 text-sm">
-						<div className="flex flex-wrap items-center gap-2">
-							<h2 className="text-[15px] font-semibold">从任务整理的技能草稿</h2>
-							<Badge>{KIND[v.kind].label}</Badge>
-							{d.source.conversationId && d.source.spaceId ? (
-								<Link to={`/c/${d.source.spaceId}/${d.source.conversationId}`} className="text-xs text-info hover:underline">
-									来源对话
-								</Link>
-							) : null}
-							{d.publishedSkillId ? <Badge tone="success">已发布</Badge> : null}
-						</div>
-						<div className="grid gap-3 sm:grid-cols-2">
-							<div>
-								<Label htmlFor="dn">名称</Label>
-								<Input id="dn" value={v.name} onChange={(e) => setEdit((x) => ({ ...x, name: e.target.value }))} />
-							</div>
-							<div>
-								<Label htmlFor="dd">说明</Label>
-								<Input id="dd" value={v.description} onChange={(e) => setEdit((x) => ({ ...x, description: e.target.value }))} />
-							</div>
-						</div>
-						<div>
-							<Label htmlFor="di">指令（SKILL.md）</Label>
-							<Textarea id="di" rows={7} value={v.instructions} onChange={(e) => setEdit((x) => ({ ...x, instructions: e.target.value }))} className="font-mono text-xs" />
-						</div>
-						<div className="text-xs text-fg-muted">
-							资源：{d.resources.length ? d.resources.map((r) => `${r.path}（${r.size} B）`).join("、") : "无"}
-							{d.entry ? ` · 入口 ${d.entry}` : ""} · 所需工具：{d.requiredTools.join("、") || "无"} · 所需授权：{d.requiredPermissions.map(permText).join("、") || "无"}
-						</div>
-						<div className="grid gap-3 sm:grid-cols-2">
-							<div>
-								<Label htmlFor="dsi">样例输入</Label>
-								<Input id="dsi" value={v.sample?.input ?? ""} onChange={(e) => setEdit((x) => ({ ...x, sample: { input: e.target.value, expectContains: v.sample?.expectContains } }))} />
-							</div>
-							<div>
-								<Label htmlFor="dse">期望输出包含</Label>
-								<Input id="dse" value={v.sample?.expectContains ?? ""} onChange={(e) => setEdit((x) => ({ ...x, sample: { input: v.sample?.input ?? "", expectContains: e.target.value } }))} />
-							</div>
-						</div>
-						{d.validation && !dirty ? (
-							<ul className="space-y-0.5 rounded-lg bg-surface px-3 py-2 text-xs" data-testid="draft-checks" data-ok={d.validation.ok}>
-								{d.validation.checks.map((c) => (
-									<li key={c.name} className="flex items-center gap-1.5">
-										{c.ok ? <CheckCircle2 className="size-3.5 text-success" /> : <CircleX className="size-3.5 text-danger" />}
-										{c.name}
-										{c.detail ? <span className="text-fg-subtle">· {c.detail}</span> : null}
-									</li>
-								))}
-							</ul>
-						) : null}
-						{err ? <p className="text-danger">{err}</p> : null}
-						{!d.publishedSkillId ? (
-							<div className="flex flex-wrap items-center gap-2">
-								{dirty ? (
-									<Button size="sm" disabled={busy} onClick={() => run(async () => (await patch(`/skills/drafts/${id}`, edit), setEdit({})))}>
-										保存修改
-									</Button>
-								) : null}
-								<Button size="sm" disabled={busy || dirty} onClick={() => run(() => post(`/skills/drafts/${id}/validate`))} data-testid="draft-validate">
-									<RefreshCw />
-									用样例验证
-								</Button>
-								<Button size="sm" variant="primary" disabled={busy || dirty || !d.validation?.ok} onClick={() => run(async () => (await post(`/skills/drafts/${id}/publish`, { scope: "personal" }), onDone()))} data-testid="draft-publish">
-									发布并安装
-								</Button>
-								<span className="text-xs text-fg-subtle">{dirty ? "修改后需重新验证" : !d.validation ? "发布前需先通过样例验证" : d.validation.ok ? "验证通过，可以发布" : "验证未通过，不能发布"}</span>
-							</div>
-						) : null}
-					</div>
-				) : null}
-			</Loadable>
-		</section>
 	);
 }
 

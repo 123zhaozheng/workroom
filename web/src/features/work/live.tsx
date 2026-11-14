@@ -159,16 +159,16 @@ export function BrowserSessionView({ s: polled, onChanged, variant = "inline" }:
 	);
 	return (
 		<div data-testid="browser-session" data-controller={s.controller.kind} data-variant={variant} className={cn("overflow-hidden", modal ? "flex h-full min-h-0 flex-col" : "rounded-xl border border-border")}>
-			<div className="flex shrink-0 items-center gap-2 bg-surface-2 px-2.5 py-1.5 text-[12px]">
+			<div className="flex shrink-0 items-center gap-1.5 bg-surface-2 px-2.5 py-1.5 text-[12px]">
 				{mine ? (
 					<>
-						<button aria-label="后退" disabled={busy} onClick={() => act("actions", { type: "back" })} className="text-fg-muted hover:text-fg">
+						<button type="button" aria-label="后退" disabled={busy} onClick={() => act("actions", { type: "back" })} className="shrink-0 rounded p-0.5 text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50">
 							<ArrowLeft className="size-3.5" />
 						</button>
-						<button aria-label="前进" disabled={busy} onClick={() => act("actions", { type: "forward" })} className="text-fg-muted hover:text-fg">
+						<button type="button" aria-label="前进" disabled={busy} onClick={() => act("actions", { type: "forward" })} className="shrink-0 rounded p-0.5 text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50">
 							<ArrowRight className="size-3.5" />
 						</button>
-						<button aria-label="刷新" disabled={busy} onClick={() => act("actions", { type: "reload" })} className="text-fg-muted hover:text-fg">
+						<button type="button" aria-label="刷新" disabled={busy} onClick={() => act("actions", { type: "reload" })} className="shrink-0 rounded p-0.5 text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50">
 							<RotateCw className="size-3.5" />
 						</button>
 						<form
@@ -183,7 +183,7 @@ export function BrowserSessionView({ s: polled, onChanged, variant = "inline" }:
 								onChange={(e) => setUrl(e.target.value)}
 								onFocus={() => (urlFocused.current = true)}
 								onBlur={() => (urlFocused.current = false)}
-								className="w-full rounded bg-surface px-1.5 py-0.5 font-mono text-[11.5px] outline-none"
+								className="min-w-0 w-full rounded bg-surface px-1.5 py-0.5 font-mono text-[11.5px] outline-none"
 								aria-label="地址"
 							/>
 						</form>
@@ -193,9 +193,12 @@ export function BrowserSessionView({ s: polled, onChanged, variant = "inline" }:
 						{s.url}
 					</span>
 				)}
-				<Badge tone={s.controller.kind === "user" ? "warning" : "info"} data-testid="browser-controller">
-					{s.controller.kind === "agent" ? "助手操作中" : mine ? "你在操作" : `${s.controller.name ?? "成员"} 在操作`}
-				</Badge>
+				<div className="flex shrink-0 items-center gap-1.5">
+					{busy ? <Loader2 aria-label="加载中" className="size-3.5 shrink-0 wr-spin text-info" /> : null}
+					<Badge tone={s.controller.kind === "user" ? "warning" : "info"} data-testid="browser-controller" className="max-w-[140px] truncate">
+						{s.controller.kind === "agent" ? "助手操作中" : mine ? "你在操作" : `${s.controller.name ?? "成员"} 在操作`}
+					</Badge>
+				</div>
 			</div>
 			<div className={cn("relative bg-white", modal && "min-h-0 flex-1")}>
 				<img
@@ -206,7 +209,6 @@ export function BrowserSessionView({ s: polled, onChanged, variant = "inline" }:
 					onClick={click}
 					className={cn("block", modal ? "size-full object-contain" : "w-full", mine && "cursor-crosshair")}
 				/>
-				{busy ? <Loader2 className="absolute right-2 top-2 size-4 wr-spin text-info" /> : null}
 			</div>
 			{modal ? (
 				<div className="shrink-0 space-y-1.5 border-t border-border px-4 py-2.5 text-[12.5px]">

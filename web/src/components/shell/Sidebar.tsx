@@ -1,22 +1,70 @@
-import { BarChart3, BookOpen, Clock4, Folders, UserRoundCog, LogOut, MessageSquarePlus, PanelLeftClose, Search, Settings, Shield, Sparkles, Workflow, X } from "lucide-react";
-import { NavLink, useNavigate } from "react-router";
+import { BarChart3, BookOpen, ChevronRight, ClipboardCheck, Clock4, Folders, UserRoundCog, LogOut, MessageSquarePlus, PanelLeftClose, Search, Settings, Shield, Sparkles, Workflow, X } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router";
+import { usePrefs } from "@/lib/prefs";
 import { useSession } from "@/lib/session";
+import { useApi } from "@/lib/useApi";
 import { cn } from "@/lib/utils";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tip } from "@/components/ui/overlay";
+import { useMarketMe } from "@/features/market/common";
 import { BrandMark } from "./BrandMark";
+import { Collapse } from "./Collapse";
 import { NotificationsBell } from "./Notifications";
 import { useSearchModal } from "@/features/search/SearchProvider";
 import { SidebarTree } from "./SidebarTree";
 
 const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
+const readBool = (key: string, fallback: boolean): boolean => {
+	try {
+		const raw = localStorage.getItem(key);
+		return raw === null ? fallback : raw === "true";
+	} catch {
+		return fallback;
+	}
+};
+const writeBool = (key: string, v: boolean) => {
+	try {
+		localStorage.setItem(key, String(v));
+	} catch {
+		/* storage unavailable */
+	}
+};
+
 const navCls = ({ isActive }: { isActive: boolean }) =>
 	cn("flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors [&_svg]:size-[17px] [&_svg]:text-fg-muted", isActive ? "bg-surface-3 text-fg font-medium" : "text-fg hover:bg-surface-3/70");
 
 export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () => void; onNavigate?: () => void; onClose?: () => void }) {
 	const { brand, me, logout, isOrgAdmin } = useSession();
+	const { motionReduced } = usePrefs();
+	const { pathname } = useLocation();
 	const navigate = useNavigate();
 	const search = useSearchModal();
+	const moreId = useId();
+	const uid = me?.userId ?? "anon";
+	const moreKey = `wr.sidebar.${uid}.more`;
+	const onCapabilities = pathname === "/capabilities" || pathname.startsWith("/capabilities/");
+	const [moreOpen, setMoreOpen] = useState<boolean>(() => onCapabilities || readBool(moreKey, false));
+	useEffect(() => {
+		setMoreOpen(onCapabilities || readBool(moreKey, false));
+	}, [moreKey]); // eslint-disable-line react-hooks/exhaustive-deps
+	useEffect(() => {
+		if (onCapabilities) {
+			setMoreOpen(true);
+			writeBool(moreKey, true);
+		}
+	}, [onCapabilities, moreKey]);
+	const toggleMore = () =>
+		setMoreOpen((o) => {
+			const next = !o;
+			writeBool(moreKey, next);
+			return next;
+		});
+
+	const marketMe = useMarketMe();
+	const canReview = !!marketMe.data?.me.canReview;
+	const reviewQueue = useApi<{ submissions: unknown[] }>(canReview ? "/market/submissions?view=queue" : null, { pollMs: 30000 });
+	const reviewCount = reviewQueue.data?.submissions.length ?? 0;
 
 	const go = (to: string) => {
 		navigate(to);
@@ -76,12 +124,24 @@ export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () =
 					<UserRoundCog />
 					专家
 				</NavLink>
+				<button type="button" onClick={toggleMore} aria-expanded={moreOpen} aria-controls={moreId} data-testid="nav-more" className={cn(navCls({ isActive: false }), "w-full")}>
+					<ChevronRight className={cn("transition-transform duration-200", moreOpen && "rotate-90")} />
+					更多
+				</button>
+				<Collapse id={moreId} open={moreOpen} instant={motionReduced}>
+					<div className="flex flex-col gap-0.5 pt-0.5">
+						<NavLink to="/capabilities" onClick={onNavigate} data-testid="nav-capabilities" className={({ isActive }) => cn(navCls({ isActive }), "pl-7")}>
+							<Sparkles />
+							能力
+						</NavLink>
+					</div>
+				</Collapse>
 			</div>
 
 			<SidebarTree onNavigate={onNavigate} />
 
 			<div className="shrink-0 border-t border-border p-2">
-				<Menu>
+				<Menu onOpenChange={(o) => { if (o && canReview) reviewQueue.reload(); }}>
 					<MenuTrigger asChild>
 						<button data-testid="user-menu" className="flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left hover:bg-surface-3/70">
 							<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-3 text-sm font-medium">{(me?.name ?? "?").slice(0, 1).toUpperCase()}</span>
@@ -105,6 +165,17 @@ export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () =
 							<Clock4 />
 							记忆
 						</MenuItem>
+						{canReview ? (
+							<MenuItem data-testid="menu-reviews" onSelect={() => go("/reviews")}>
+								<ClipboardCheck />
+								待审核
+								{reviewCount > 0 ? (
+									<span className="ml-auto rounded-full bg-warning-soft px-1.5 text-xs text-warning" data-testid="review-count">
+										{reviewCount}
+									</span>
+								) : null}
+							</MenuItem>
+						) : null}
 						<MenuItem onSelect={() => go("/stats")}>
 							<BarChart3 />
 							统计

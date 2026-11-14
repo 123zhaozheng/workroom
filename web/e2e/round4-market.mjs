@@ -78,9 +78,20 @@ try {
 	check("setup: reviewer holds the 审查员 role (skill.review / mcp.connector.review)", assign.ok(), String(assign.status()));
 
 	// ---------------------------------------------------------------- tabs: members do not see 待审核
+	await member.p.goto(`${base}/`);
+	await member.p.waitForSelector('[data-testid="nav-more"]');
+	const moreBefore = await member.p.locator('[data-testid="nav-more"]').getAttribute("aria-expanded");
 	await member.p.goto(`${base}/capabilities`);
 	await member.p.waitForSelector('[data-testid="tab-mine"]');
-	check("tabs: an ordinary member has 技能市场 / 我的技能 / 我的连接 but no 待审核 and no 连接市场", (await member.p.locator('[data-testid="tab-market"]').count()) === 1 && (await member.p.locator('[data-testid="tab-mcp"]').count()) === 0 && (await member.p.locator('[data-testid="tab-connectors"]').count()) === 1 && (await member.p.locator('[data-testid="tab-review"]').count()) === 0);
+	const moreOnCap = await member.p.locator('[data-testid="nav-more"]').getAttribute("aria-expanded");
+	await member.p.click('[data-testid="user-menu"]');
+	const memberMenuReviews = await member.p.locator('[data-testid="menu-reviews"]').count();
+	await member.p.keyboard.press("Escape");
+	check("sidebar: 更多 is collapsed by default and auto-expands on /capabilities", moreBefore === "false" && moreOnCap === "true");
+	check("tabs: an ordinary member has 技能市场 / 我的技能 / 我的连接 but no 待审核 and no 连接市场", (await member.p.locator('[data-testid="tab-market"]').count()) === 1 && (await member.p.locator('[data-testid="tab-mcp"]').count()) === 0 && (await member.p.locator('[data-testid="tab-connectors"]').count()) === 1 && (await member.p.locator('[data-testid="tab-review"]').count()) === 0 && memberMenuReviews === 0);
+	await member.p.goto(`${base}/reviews`);
+	await member.p.waitForSelector('[data-testid="reviews-forbidden"]');
+	check("reviews: member without review permission sees no-permission UI on /reviews", true);
 
 	// ---------------------------------------------------------------- upload by drag-drop (zip) + automated checks
 	await a.goto(`${base}/capabilities`);
@@ -126,10 +137,12 @@ try {
 	// ---------------------------------------------------------------- reviewer: queue, review screen, approve
 	const r = reviewer.p;
 	await r.goto(`${base}/capabilities`);
-	await r.waitForSelector('[data-testid="tab-review"]');
+	await r.click('[data-testid="user-menu"]');
+	await r.waitForSelector('[data-testid="menu-reviews"]');
 	await r.waitForFunction(() => document.querySelector('[data-testid="review-count"]')?.textContent === "1", null, { timeout: 15000 });
-	check("review: the reviewer sees the 待审核 tab with a count of 1", true);
-	await r.click('[data-testid="tab-review"]');
+	check("review: the reviewer sees the 待审核 menu item with a count of 1", true);
+	await r.click('[data-testid="menu-reviews"]');
+	await r.waitForURL(/\/reviews/);
 	await r.click('[data-testid="review-item"]');
 	await r.waitForSelector('[data-testid="review-screen"] [data-testid="manifest"]');
 	const mtext = await r.locator('[data-testid="manifest"]').innerText();
@@ -149,9 +162,10 @@ try {
 	await r.waitForSelector('[data-testid="review-screen"]', { state: "detached", timeout: 15000 });
 	check("review: approved item leaves the queue", true);
 
-	// The submitter sees the "self-review" explanation instead of working buttons.
+	// The submitter sees the "self-review" explanation instead of working buttons, and old link ?tab=review redirects to /reviews.
 	await a.goto(`${base}/capabilities?tab=review`);
-	check("self-review: the submitter cannot decide their own (no queue entry for a published item)", (await a.locator('[data-testid="review-item"]').count()) === 0);
+	await a.waitForURL(/\/reviews/);
+	check("self-review: ?tab=review redirects to /reviews and submitter cannot decide their own (no queue entry for a published item)", (await a.locator('[data-testid="review-item"]').count()) === 0);
 
 	// ---------------------------------------------------------------- market: browse, detail, install
 	const m = member.p;
@@ -257,12 +271,16 @@ try {
 
 	// ---------------------------------------------------------------- layout sanity at narrow width
 	await a.setViewportSize({ width: 390, height: 844 });
-	for (const tab of ["market", "mine", "review", "connectors"]) {
+	for (const tab of ["market", "mine", "connectors"]) {
 		await a.goto(`${base}/capabilities?tab=${tab === "mine" ? "" : tab}`.replace("tab=&", "").replace(/\?$/, ""));
 		await a.waitForSelector('[data-testid="tab-mine"]');
 		await sleep(400);
 		check(`mobile 390: ${tab} tab has no horizontal page scroll`, await noOverflow(a));
 	}
+	await a.goto(`${base}/reviews`);
+	await a.waitForSelector('[data-testid="review-queue"]');
+	await sleep(400);
+	check("mobile 390: /reviews has no horizontal page scroll", await noOverflow(a));
 	await a.setViewportSize({ width: 1440, height: 900 });
 	await shots(a, "market-final");
 } catch (e) {

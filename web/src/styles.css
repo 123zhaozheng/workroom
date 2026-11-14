@@ -49,7 +49,7 @@
 	--sidebar-w: 264px;
 	--panel-w: min(46vw, 720px);
 	--content-w: 760px;
-	/* chat 加宽模式: upper bound of the message column and composer (it still shrinks with the window) */
+	/* chat 加宽模式: upper bound of the message column (the composer keeps --content-w; it still shrinks with the window) */
 	--content-w-wide: 1160px;
 	color-scheme: light;
 }
@@ -287,6 +287,18 @@ html[data-reduce-motion="true"] ::after {
 }
 .wr-drawer-left {
 	animation: wr-slide-in-left 0.2s ease-out both;
+}
+@keyframes wr-logo-float {
+	0%,
+	100% {
+		transform: translateY(0) scale(1);
+	}
+	50% {
+		transform: translateY(-1.5px) scale(1.02);
+	}
+}
+.wr-logo-float {
+	animation: wr-logo-float 5.2s ease-in-out infinite;
 }
 
 /* ---------- message prose ---------- */

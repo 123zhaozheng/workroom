@@ -33,11 +33,6 @@ export function Connectors() {
 					{conns.data.connectors.map((c) => (
 						<ConnectorCard key={c.id} c={c} onChanged={conns.reload} />
 					))}
-					{conns.data.blocked.map((b) => (
-						<p key={b.kind} title={b.reason} className="px-1 text-sm text-fg-muted">
-							{b.kind}：未连接
-						</p>
-					))}
 				</div>
 			) : null}
 		</Loadable>

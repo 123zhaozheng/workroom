@@ -187,25 +187,19 @@ try {
 	check("skill: disable", true);
 	await shot(page, "1440-capabilities-skill");
 
-	// ---------------------------------------------------------------- 能力: draft from a finished task → validate → publish
+	// ---------------------------------------------------------------- 整理为技能: conversational distill (no form page)
 	await page.goto(`${base}/`);
 	await sendMessage(page, '把要点整理成文件 [[call write {"path":"/work/要点.md","content":"# 要点\\n- 一\\n- 二"}]] [[call present_file {"source":"/work/要点.md"}]]');
 	await page.waitForURL(/\/c\//);
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
-	await page.click('[data-testid="chat-more"]');
+	const sourceUrl = page.url();
 	await page.click('[data-testid="make-skill"]');
-	await page.waitForURL(/\/capabilities\?draft=/, { timeout: 15000 });
-	await page.waitForSelector('[data-testid="skill-draft"] #di');
-	check("draft: preview of instructions / resources / permissions from the task", (await page.locator("#di").inputValue()).length > 20);
-	await page.click('[data-testid="draft-validate"]');
-	await page.waitForSelector('[data-testid="draft-checks"]', { timeout: 60000 });
-	const ok = await page.locator('[data-testid="draft-checks"]').getAttribute("data-ok");
-	await shot(page, "1440-skill-draft-validated");
-	check("draft: sample validation passes", ok === "true", `ok=${ok}`);
-	check("draft: publish enabled only after a passing validation", !(await page.locator('[data-testid="draft-publish"]').isDisabled()));
-	await page.click('[data-testid="draft-publish"]');
-	await page.waitForFunction(() => document.querySelectorAll('[data-testid="skill"]').length >= 2, null, { timeout: 15000 });
-	check("draft: published and installed", true);
+	await page.waitForFunction((u) => location.href !== u && /\/c\//.test(location.pathname), sourceUrl, { timeout: 15000 });
+	await page.waitForSelector('[data-testid="skill-distill-hint"]', { timeout: 15000 });
+	check("distill: opens a new conversation with a link back to the source (no form page)", !page.url().includes("/capabilities"));
+	const prefilled = await page.locator("textarea").first().inputValue();
+	check("distill: composer is prefilled with the skill prompt template", prefilled.includes("会话经验提炼") && prefilled.includes("session_trace"), prefilled.slice(0, 80));
+	await shot(page, "1440-skill-distill-prefill");
 
 	// ---------------------------------------------------------------- 能力: connectors
 	const cr = await page.request.post(`${base}/api/connectors`, { data: { name: "测试笔记服务", scope: "system", transport: "stdio", command: process.execPath, args: MCP_ARGS } });

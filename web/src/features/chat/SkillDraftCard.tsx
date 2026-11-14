@@ -179,9 +179,12 @@ export function SkillDraftResult({ approval, d }: { approval: ApprovalDTO; d: Sk
 				「{d.title || d.name}」{failed ? draft?.error ?? "" : saved ? savedText(d, draft) : ""}
 			</span>
 			{saved ? (
-				<Link to="/capabilities" className="text-info underline-offset-2 hover:underline" data-testid="skill-draft-open">
-					在「能力 › 我的技能」查看
-				</Link>
+				<>
+					<Link to="/capabilities" className="text-info underline-offset-2 hover:underline" data-testid="skill-draft-open">
+						在「能力 › 我的技能」查看
+					</Link>
+					{d.target?.scope !== "market" ? <span className="text-fg-subtle">（可在那里提交审核）</span> : null}
+				</>
 			) : null}
 		</div>
 	);

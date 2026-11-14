@@ -14,7 +14,7 @@ export function ExpertAvatar({ e, size = 36, working = false }: { e?: { id?: str
 
 export const STATUS: Record<ExpertStatus, { label: string; tone: "success" | "warning" | "danger" | "neutral" | "info" }> = {
 	draft: { label: "草稿", tone: "neutral" },
-	pending: { label: "待审查", tone: "warning" },
+	pending: { label: "待审核", tone: "warning" },
 	published: { label: "已发布", tone: "success" },
 	unpublished: { label: "已下架", tone: "danger" },
 };
@@ -25,7 +25,7 @@ export function StatusBadge({ e }: { e: Pick<ExpertDTO, "status" | "updatePendin
 			<Badge tone={s.tone} data-testid="expert-status" data-status={e.status}>
 				{s.label}
 			</Badge>
-			{e.updatePending ? <Badge tone="warning">更新待审查</Badge> : e.dirty ? <Badge tone="info">有未发布的修改</Badge> : null}
+			{e.updatePending ? <Badge tone="warning">更新待审核</Badge> : e.dirty ? <Badge tone="info">有未发布的修改</Badge> : null}
 		</span>
 	);
 }

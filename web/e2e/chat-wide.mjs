@@ -1,6 +1,6 @@
 // 会话页加宽模式 (chat wide mode), checked in a real browser against the fixture model.
 //  - default: centered 760px column, assistant avatar shown;
-//  - 加宽: message area and composer share the wider column, avatar and its gutter are gone, status rows and the answer share one left edge;
+//  - 加宽: only the message area widens (the composer keeps its fixed default width), avatar and its gutter are gone, status rows and the answer share one left edge;
 //  - choice persists (localStorage wr.prefs.v1.chatWide + survives a reload); second click restores the default; font size unchanged.
 // Run: npm run -s build:web && node web/e2e/chat-wide.mjs        (port 8861; SHOTS_DIR overrides the screenshot folder)
 import { mkdirSync } from "node:fs";
@@ -61,7 +61,7 @@ try {
 	const b = await geo();
 	await page.mouse.move(700, 400);
 	await shot(page, "chat-wide");
-	check("加宽：消息区与输入框一起加宽", b.colW > a.colW + 200 && b.compW === b.colW, `${a.colW} -> ${b.colW}, composer ${b.compW}`);
+	check("加宽：只加宽消息区，底部输入框宽度固定不变", b.colW > a.colW + 200 && b.compW === a.compW, `${a.colW} -> ${b.colW}, composer ${a.compW} -> ${b.compW}`);
 	check("加宽：AI 头像和占位消失，状态行与正文左对齐", !b.avatar && Math.abs(b.sumLeft - b.msgLeft) <= 2 && (b.ansLeft === null || Math.abs(b.ansLeft - b.msgLeft) <= 2), JSON.stringify(b));
 	check("加宽：字体与左侧导航不变", b.font === a.font && b.sidebar === a.sidebar, `${a.font}/${b.font} sidebar ${a.sidebar}/${b.sidebar}`);
 	check("选择持久化到偏好并随刷新保留", b.pref === true && b.pressed === "true");
