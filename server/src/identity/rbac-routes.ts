@@ -80,8 +80,7 @@ export function registerRbacRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 	};
 	/** The actor may only hand out / take away permissions they hold themselves at that scope. */
 	const assertNoEscalation = (a: Access, perms: readonly string[], scope: ScopeIn): void => {
-		const mine = az.permissionsAt(a, scope as any);
-		const missing = perms.filter((x) => !mine.has(x));
+		const missing = perms.filter((x) => !az.decide(a, x, scope as any).allow);
 		if (missing.length) throw new HttpError(403, "privilege_escalation", `不能授予你自己没有的权限：${missing.map((x) => permissionDef(x)?.label ?? x).join("、")}`, { reason: "privilege_escalation", missing });
 	};
 	const memberOf = (orgId: string, userId: string) => db.get<any>("SELECT m.*, u.name, u.email, u.disabled_at AS user_disabled FROM id_org_members m JOIN id_users u ON u.id = m.user_id WHERE m.org_id = ? AND m.user_id = ? AND m.removed_at IS NULL", orgId, userId);

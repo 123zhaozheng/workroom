@@ -162,30 +162,33 @@ try {
 	await page.fill("#sd", "按公司格式写周报");
 	await page.fill("#si", "周报包含：本周进展、风险、下周计划。每节不超过五条，结论放最前。");
 	await page.click('[data-testid="skill-create"]');
-	await page.waitForSelector('[data-testid="skill"]');
+	await page.waitForSelector('[data-testid="my-skill-card"]');
 	const skillId = (await (await page.request.get(`${base}/api/skills`)).json()).skills[0].id;
 	await page.request.post(`${base}/api/skills/${skillId}/versions`, { data: { description: "加入数据来源要求", instructions: "周报包含：本周进展、风险、下周计划，并注明数据来源。每节不超过五条。", changeNote: "加数据来源" } });
 	await page.reload();
-	const card = page.locator('[data-testid="skill"]').first();
-	await card.locator("button[aria-expanded]").click();
-	for (let i = 0; i < 40 && !(await selOptions(card.locator('[data-testid="skill-pin"]'))).some((o) => o.value === "1"); i++) await sleep(250);
+	const card = page.locator('[data-testid="my-skill-card"]').first();
+	await card.click();
+	const dlg = page.locator('[data-testid="skill-detail-dialog"]');
+	await dlg.waitFor();
+	for (let i = 0; i < 40 && !(await selOptions(dlg.locator('[data-testid="skill-pin"]'))).some((o) => o.value === "1"); i++) await sleep(250);
 	await sleep(300);
-	await pick(card.locator('[data-testid="skill-pin"]'), "1");
-	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("v1（固定）"), null, { timeout: 10000 }).catch(async (e) => {
-		console.log("DEBUG card:", (await card.innerText()).replace(/\s+/g, " "));
+	await pick(dlg.locator('[data-testid="skill-pin"]'), "1");
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-detail-dialog"] [data-testid="skill-state"]')?.textContent?.includes("v1（固定）"), null, { timeout: 10000 }).catch(async (e) => {
+		console.log("DEBUG dialog:", (await dlg.innerText()).replace(/\s+/g, " "));
 		throw e;
 	});
 	check("skill: pin to v1", true);
-	await card.getByRole("button", { name: /升级到 v2/ }).click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("使用 v2"), null, { timeout: 10000 });
+	await dlg.getByRole("button", { name: /升级到 v2/ }).click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-detail-dialog"] [data-testid="skill-state"]')?.textContent?.includes("使用 v2"), null, { timeout: 10000 });
 	check("skill: upgrade to v2", true);
-	await card.locator('[data-testid="skill-rollback"]').click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("使用 v1"), null, { timeout: 10000 });
+	await dlg.locator('[data-testid="skill-rollback"]').click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-detail-dialog"] [data-testid="skill-state"]')?.textContent?.includes("使用 v1"), null, { timeout: 10000 });
 	check("skill: rollback to the version used before", true);
-	await card.locator('[data-testid="skill-enable"]').click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="skill-state"]')?.textContent?.includes("已停用"), null, { timeout: 10000 });
+	await dlg.locator('[data-testid="skill-enable"]').click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-detail-dialog"] [data-testid="skill-state"]')?.textContent?.includes("已停用"), null, { timeout: 10000 });
 	check("skill: disable", true);
 	await shot(page, "1440-capabilities-skill");
+	await page.keyboard.press("Escape");
 
 	// ---------------------------------------------------------------- 整理为技能: conversational distill (no form page)
 	await page.goto(`${base}/`);
@@ -193,10 +196,11 @@ try {
 	await page.waitForURL(/\/c\//);
 	await page.waitForSelector('[data-testid="file-card"]', { timeout: 20000 });
 	const sourceUrl = page.url();
+	await page.click('[data-testid="chat-more"]');
 	await page.click('[data-testid="make-skill"]');
 	await page.waitForFunction((u) => location.href !== u && /\/c\//.test(location.pathname), sourceUrl, { timeout: 15000 });
-	await page.waitForSelector('[data-testid="skill-distill-hint"]', { timeout: 15000 });
-	check("distill: opens a new conversation with a link back to the source (no form page)", !page.url().includes("/capabilities"));
+	await page.waitForFunction(() => (document.querySelector('[data-testid="composer-input"]')?.value ?? "").includes("session_trace"), null, { timeout: 15000 });
+	check("distill: opens a new conversation without skill-distill-hint banner (no form page)", !page.url().includes("/capabilities") && (await page.locator('[data-testid="skill-distill-hint"]').count()) === 0);
 	const prefilled = await page.locator("textarea").first().inputValue();
 	check("distill: composer is prefilled with the skill prompt template", prefilled.includes("会话经验提炼") && prefilled.includes("session_trace"), prefilled.slice(0, 80));
 	await shot(page, "1440-skill-distill-prefill");

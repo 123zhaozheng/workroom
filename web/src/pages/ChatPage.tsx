@@ -2,7 +2,7 @@ import { ArrowDown, ChevronDown, FoldHorizontal, UnfoldHorizontal, ChevronRight,
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import type { AbortResponse, AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, UserEntryDTO, WithdrawResponse } from "@shared/chat";
-import type { SkillDistillLinkResponse, SkillDistillStartResponse } from "@shared/skill-distill";
+import type { SkillDistillStartResponse } from "@shared/skill-distill";
 import type { ThinkingLevel } from "@shared/ops";
 import { ApiError, errorText, get, patch, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -26,7 +26,7 @@ import { buildTurns, type AssistantTurn, type Turn } from "@/features/chat/model
 import { RUN_LABEL, RunIcon, reasonText } from "@/features/chat/status";
 import { cleanErrorText, userTextOf } from "@/features/chat/testText";
 import { PositionRail, railItemOf, type RailItem } from "@/features/chat/PositionRail";
-import { normalizeProject } from "@/features/projects/model";
+import { normalizeProject, notifyConversations, notifyProjects } from "@/features/projects/model";
 import { usePrefs } from "@/lib/prefs";
 import { MessageQueue, type QueueNotice } from "@/features/composer/MessageQueue";
 import { EnvironmentButton } from "@/features/environment/EnvironmentButton";
@@ -51,10 +51,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const base = `/conversations/${spaceId}/${id}`;
-	const { state, status: streamStatus, error: streamError } = useConversationStream(spaceId, id);
+	const { state, status: streamStatus, error: streamError, reconnect, dropAssistantEntriesFrom } = useConversationStream(spaceId, id);
 	const { detail, parentDetail, error: detailError, reload: reloadDetail } = useConversationDetail(spaceId, id);
-	const distillLink = useApi<SkillDistillLinkResponse>(`/skills/distill/${encodeURIComponent(spaceId)}/${id}`);
-	const distillSource = distillLink.data?.source;
 	const earlier = useEarlierEntries(spaceId, id);
 	const { openWork, panel, close: closePanel, publishWork } = usePanel();
 	const [actionErr, setActionErr] = useState<string>();
@@ -227,6 +225,8 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			mode: v.mode,
 		});
 		nearBottom.current = true;
+		notifyConversations();
+		if (!hasMessages && conv?.projectId) notifyProjects();
 		return true;
 	};
 	const queueItems = useMemo(() => (state?.queue ?? []).filter((q) => q.mode !== "write"), [state?.queue]);
@@ -260,7 +260,21 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const goBranch = (c: ConversationSummary) => navigate(`/c/${c.spaceId}/${c.conversationId}`);
 	const fork = (entryId: number) => act(async () => goBranch((await post<BranchResponse>(`${base}/fork`, { entryId })).conversation));
 	const edit = (entryId: number, text: string) => act(async () => goBranch((await post<BranchResponse>(`${base}/edit`, { entryId, text, requestId: uuid() })).conversation));
-	const regenerate = (entryId: number) => act(async () => goBranch((await post<BranchResponse>(`${base}/regenerate`, { entryId })).conversation));
+	const regenerate = (turn: AssistantTurn) =>
+		act(async () => {
+			if (!turn.lastAssistantEntryId) return;
+			const r = await post<BranchResponse>(`${base}/regenerate`, { entryId: turn.lastAssistantEntryId });
+			if (r.conversation.conversationId !== id) {
+				goBranch(r.conversation);
+				return;
+			}
+			if (turn.firstEntryId !== undefined) {
+				earlier.dropFrom(turn.firstEntryId);
+				dropAssistantEntriesFrom(turn.firstEntryId);
+			}
+			nearBottom.current = true;
+			reconnect();
+		});
 	const stop = () =>
 		act(async () => {
 			setStopping(true);
@@ -306,7 +320,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 		if (conv?.title) document.title = conv.title;
 	}, [conv?.title]);
 	useEffect(() => {
-		window.dispatchEvent(new Event("wr:conversations-changed"));
+		notifyConversations();
 	}, [runStatus, conv?.title]);
 
 	// ----- error / unavailable states -----
@@ -391,6 +405,10 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 								</button>
 							</MenuTrigger>
 							<MenuContent align="end" className="w-60">
+								<MenuItem data-testid="make-skill" disabled={readOnly || !hasMessages || distilling} onSelect={() => void startDistill()}>
+									{distilling ? <Loader2 className="wr-spin" /> : <Sparkles />}
+									整理为技能
+								</MenuItem>
 								<MenuItem data-testid="open-handoff" onSelect={() => setHandoff(true)}>
 									<ClipboardList />
 									交接摘要
@@ -405,21 +423,6 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 								</MenuItem>
 							</MenuContent>
 						</Menu>
-						<Tip label={readOnly ? "只读对话无法整理为技能" : !hasMessages ? "暂无消息，无法整理为技能" : "整理为技能"}>
-							<span className="inline-flex">
-								<button
-									type="button"
-									data-testid="make-skill"
-									aria-label="整理为技能"
-									disabled={readOnly || !hasMessages || distilling}
-									onClick={() => void startDistill()}
-									className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
-								>
-									{distilling ? <Loader2 className="size-4 wr-spin" /> : <Sparkles className="size-4" />}
-									<span className="hidden sm:inline">整理为技能</span>
-								</button>
-							</span>
-						</Tip>
 						<Tip label={chatWide ? "恢复默认宽度" : "加宽"}>
 							<button data-testid="toggle-wide" aria-label={chatWide ? "恢复默认宽度" : "加宽"} aria-pressed={chatWide} onClick={() => setPref("chatWide", !chatWide)} className={cn("hidden rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg md:inline-flex", chatWide && "bg-surface-2 text-fg")}>
 								{chatWide ? <FoldHorizontal className="size-[18px]" /> : <UnfoldHorizontal className="size-[18px]" />}
@@ -511,7 +514,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 											wide={chatWide}
 											expert={agent?.expert?.boundId ? { id: agent.expert.boundId, avatarConfig: agent.expert.boundAvatarConfig, name: agent.expert.boundName } : undefined}
 											avatarState={i === lastAssistantIdx ? avatar : "idle"}
-											onRegenerate={t.lastAssistantEntryId ? () => regenerate(t.lastAssistantEntryId!) : undefined}
+											onRegenerate={i === lastAssistantIdx && t.lastAssistantEntryId ? () => regenerate(t) : undefined}
 											onFork={t.lastAssistantEntryId ? () => fork(t.lastAssistantEntryId!) : undefined}
 										/>
 									)}
@@ -557,25 +560,6 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			</div>
 
 			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", composerW)}>
-				{distillSource ? (
-					<div
-						data-testid="skill-distill-hint"
-						className="mb-2 flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/70 px-3 py-1.5 text-[12.5px] text-fg-muted"
-					>
-						<Sparkles aria-hidden className="size-3.5 shrink-0 text-fg-subtle" />
-						<p className="min-w-0 flex-1 leading-snug">
-							正在把《
-							<Link
-								to={`/c/${distillSource.spaceId}/${distillSource.conversationId}`}
-								className="font-medium text-info underline-offset-2 hover:underline"
-								data-testid="skill-distill-source-link"
-							>
-								{distillSource.title || `对话 ${distillSource.conversationId}`}
-							</Link>
-							》整理为技能 · 发送后 AI 会分析会话并生成技能，可在对话中继续微调
-						</p>
-					</div>
-				) : null}
 				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} inlineError={!!assistantTurns.at(-1)?.error} />
 				{spaceId && id !== undefined ? <EnvironmentStatus spaceId={spaceId} conversationId={id} active={runStatus === "running"} className="mb-2" explainedBy={failedSandboxTexts(assistantTurns.at(-1))} /> : null}
 				<MessageQueue items={queueItems} runStatus={runStatus} onSendNow={queueSendNow} onUndo={queueUndo} onDelete={queueDelete} readOnly={readOnly} />

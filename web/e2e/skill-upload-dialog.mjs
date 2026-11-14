@@ -73,7 +73,7 @@ try {
 	await page.waitForSelector(T("upload-dialog"), { state: "detached" });
 	await page.unroute("**/api/market/skills/upload");
 	await page.waitForSelector(T("upload-result"));
-	check("success: the dialog closes, the list shows the new skill and the outcome line", (await page.locator(T("skill")).count()) === 1 && (await page.locator(T("upload-result")).innerText()).includes("已上传「weekly-report」v1"));
+	check("success: the dialog closes, the list shows the new skill and the outcome line", (await page.locator(T("my-skill-card")).count()) === 1 && (await page.locator(T("upload-result")).innerText()).includes("已上传「weekly-report」v1"));
 	await shot("5-after-upload-light");
 
 	// ---- server rejection stays in the dialog (zip-slip), a retry with a good file works
@@ -93,8 +93,8 @@ try {
 	check("folder: picking a folder replaces the error and shows it", (await page.locator(T("upload-error")).count()) === 0 && (await page.locator(T("upload-picked")).innerText()).includes("1 个文件"));
 	await page.click(T("upload-submit"));
 	await page.waitForSelector(T("upload-dialog"), { state: "detached", timeout: 8000 }).catch(async () => console.log("FOLDER DIALOG:", await page.locator(T("upload-dialog")).innerText()));
-	await page.waitForFunction(() => document.querySelectorAll('[data-testid="skill"]').length === 2);
-	check("folder: uploaded, now two skills", (await page.locator(T("skill")).count()) === 2);
+	await page.waitForFunction(() => document.querySelectorAll('[data-testid="my-skill-card"]').length === 2);
+	check("folder: uploaded, now two skills", (await page.locator(T("my-skill-card")).count()) === 2);
 
 	// ---- drag and drop inside the dialog
 	await page.click(T("skill-upload"));
@@ -104,7 +104,7 @@ try {
 		dt.items.add(new File([bytes], "dropped.zip", { type: "application/zip" }));
 		document.querySelector('[data-testid="dropzone"]').dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
 	}, zip({ "SKILL.md": md("dropped-skill") }).toString("base64"));
-	check("drop: a dropped .zip is picked (not uploaded until 上传)", (await page.locator(T("upload-picked")).innerText()).includes("dropped.zip") && (await page.locator(T("skill")).count()) === 2);
+	check("drop: a dropped .zip is picked (not uploaded until 上传)", (await page.locator(T("upload-picked")).innerText()).includes("dropped.zip") && (await page.locator(T("my-skill-card")).count()) === 2);
 	await page.click(T("upload-clear"));
 	check("pick: the × clears the choice", (await page.locator(T("upload-picked")).count()) === 0 && (await page.locator(T("upload-submit")).isDisabled()));
 	await page.keyboard.press("Escape");

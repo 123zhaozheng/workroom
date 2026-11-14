@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
 import { AppDb } from "../src/core/db.ts";
 import { identityModule, type Identity } from "../src/identity/module.ts";
-import { BUILTIN_ROLES, PERMISSIONS, PERMISSION_GROUPS, builtinRole } from "../../shared/permissions.ts";
+import { BUILTIN_ROLES, PERMISSIONS, PERMISSION_GROUPS, builtinRole, permissionDef } from "../../shared/permissions.ts";
 
 type U = { token: string; me: any };
 const authzOf = (t: TestApp) => (t.app.ctx.services.get("authz") as any) as import("../src/core/contracts.ts").AuthzService;
@@ -40,6 +40,10 @@ test("catalog integrity: unique ids, groups, Chinese labels, valid scopes, role 
 		for (const s of p.scopes) assert.ok(["org", "department", "project"].includes(s));
 	}
 	for (const g of PERMISSION_GROUPS) assert.ok(PERMISSIONS.some((p) => p.group === g.id), `group ${g.id} is not empty`);
+	// assistant group/permission are hidden from the display catalog while still resolvable for legacy roles/checks
+	assert.equal(PERMISSION_GROUPS.some((g) => g.id === "assistant"), false);
+	assert.equal(PERMISSIONS.some((p) => p.id === "assistant.publish.org"), false);
+	assert.equal(permissionDef("assistant.publish.org")?.id, "assistant.publish.org");
 	// Every area the product asks for exists.
 	for (const need of ["member.disable", "market.review", "market.manage", "model.provider.manage", "sandbox.network", "sandbox.browser", "automation.run_as_others", "share.external.create", "file.export", "kb.create.department", "stats.department.view", "audit.view", "trace.view", "budget.manage", "project.manage", "role.assign", "grant.manage"]) assert.ok(ids.includes(need), need);
 	for (const r of BUILTIN_ROLES) for (const p of r.permissions) assert.ok(ids.includes(p), `${r.id} references unknown ${p}`);

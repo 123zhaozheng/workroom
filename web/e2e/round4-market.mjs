@@ -127,10 +127,12 @@ try {
 	await a.keyboard.press("Escape");
 
 	// ---------------------------------------------------------------- submit for review (UI)
-	await a.locator('[data-testid="skill"]').first().locator("button[aria-expanded]").click();
-	await a.click('[data-testid="submit-review"]');
+	await a.locator('[data-testid="my-skill-card"]').first().click();
+	await a.waitForSelector('[data-testid="skill-detail-dialog"]');
+	await a.click('[data-testid="skill-detail-dialog"] [data-testid="submit-review"]');
 	await pick(a.locator('[data-testid="submit-scope"]'), "org");
 	await a.click('[data-testid="submit-confirm"]');
+	await a.keyboard.press("Escape");
 	await a.waitForSelector('[data-testid="my-submission"][data-state="pending_review"]', { timeout: 15000 });
 	check("submit: the submission is pending review in 我的提交", true);
 

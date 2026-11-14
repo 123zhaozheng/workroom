@@ -123,7 +123,7 @@ export class AssistantStore {
 		const out: Record<string, unknown> = {};
 		if (!partial || b.name !== undefined) {
 			const name = String(b.name ?? "").trim();
-			if (!name || name.length > 60) throw new HttpError(400, "invalid_name", "助手名称必填且不超过 60 字");
+			if (!name || name.length > 60) throw new HttpError(400, "invalid_name", "专家名称必填且不超过 60 字");
 			out.name = name;
 		}
 		if (b.avatar !== undefined) out.avatar = b.avatar ? String(b.avatar).slice(0, 2000) : null;
@@ -169,13 +169,13 @@ export class AssistantStore {
 
 	async #own(p: Principal, id: string): Promise<Row> {
 		const r = this.#ctx.db.get<Row>("SELECT * FROM rt_assistants WHERE id = ? AND archived_at IS NULL AND org_id = ?", id, p.orgId);
-		if (!r || (r.scope === "personal" && r.owner_user_id !== p.userId)) throw new HttpError(404, "assistant_not_found", "助手不存在");
+		if (!r || (r.scope === "personal" && r.owner_user_id !== p.userId)) throw new HttpError(404, "assistant_not_found", "专家不存在");
 		if (r.scope === "org") await this.#ctx.services.get("authz").require(p, "assistant.publish.org");
 		return r;
 	}
 
 	async update(p: Principal, id: string, b: any): Promise<AssistantDTO> {
-		if (id === BUILTIN_ASSISTANT.id) throw new HttpError(403, "builtin", "内置助手不可修改");
+		if (id === BUILTIN_ASSISTANT.id) throw new HttpError(403, "builtin", "内置专家不可修改");
 		await this.#own(p, id);
 		const v = this.#validate(b, true);
 		await this.#requireModel(p, v.model);
@@ -185,7 +185,7 @@ export class AssistantStore {
 	}
 
 	async archive(p: Principal, id: string): Promise<void> {
-		if (id === BUILTIN_ASSISTANT.id) throw new HttpError(403, "builtin", "内置助手不可删除");
+		if (id === BUILTIN_ASSISTANT.id) throw new HttpError(403, "builtin", "内置专家不可删除");
 		await this.#own(p, id);
 		this.#ctx.db.run("UPDATE rt_assistants SET archived_at = ? WHERE id = ?", nowIso(), id);
 	}

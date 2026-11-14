@@ -153,10 +153,6 @@ export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () =
 					</MenuTrigger>
 					<MenuContent side="top" align="start" className="w-60">
 						<MenuLabel>{me?.email}</MenuLabel>
-						<MenuItem onSelect={() => go("/capabilities")}>
-							<Sparkles />
-							能力
-						</MenuItem>
 						<MenuItem onSelect={() => go("/automations")}>
 							<Workflow />
 							自动化

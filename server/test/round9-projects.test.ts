@@ -89,6 +89,8 @@ test("container projects: create / list / rename / delete — conversations and 
 		assert.equal(c1.access, "own");
 		assert.equal(loose.projectId, undefined);
 		await say(t, owner.token, c1, "[[reply 第一个结论]]");
+		await say(t, owner.token, c2, "[[reply 第二个结论]]");
+		await say(t, owner.token, loose, "[[reply 无项目内容]]");
 		const file = await deliverable(t, owner.me.userId, owner.me.orgId, c1, "结论.txt", "文件内容 A");
 
 		let list = (await t.json("GET", "/api/projects", { token: owner.token })).projects;
@@ -151,6 +153,7 @@ test("legacy (space) projects keep working: created on request, listed with spac
 
 		// conversations in a legacy project still live in the project space, with the project's members
 		const c = await newConv(t, m1.token, { projectId: lp.id, title: "项目里的对话" });
+		await say(t, m1.token, c, "[[reply 项目内容]]");
 		assert.equal(c.spaceId, lp.spaceId);
 		assert.equal(c.projectId, lp.id);
 		assert.equal(c.access, "member");
@@ -188,6 +191,7 @@ test("move: creator only, personal space only, own container project only; legac
 		const p = await newProject(t, owner.token, "归档夹");
 		const p2 = await newProject(t, owner.token, "第二个");
 		const mine = await newConv(t, owner.token, { title: "待移动" });
+		await say(t, owner.token, mine, "[[reply 待移动]]");
 		const put = (token: string, c: Conv, projectId: string | null, expect = 200) => t.json("PUT", `${base(c)}/project`, { token, json: { projectId }, expect });
 
 		const r1 = await put(owner.token, mine, p.id);
@@ -534,6 +538,8 @@ test("soft-deleted conversations (deleted_at) vanish from lists, counts, access 
 		const p = await newProject(t, owner.token, "删除测试");
 		const keep = await newConv(t, owner.token, { projectId: p.id, title: "保留" });
 		const gone = await newConv(t, owner.token, { projectId: p.id, title: "将被删除" });
+		await say(t, owner.token, keep, "[[reply 保留]]");
+		await say(t, owner.token, gone, "[[reply 将被删除]]");
 		await t.json("PUT", `/api/projects/${p.id}/shares/${m1.me.userId}`, { token: owner.token, json: { permission: "read" } });
 		await t.json("GET", base(gone), { token: m1.token });
 		assert.equal((await t.json("GET", "/api/projects", { token: owner.token })).projects[0].conversationCount, 2);

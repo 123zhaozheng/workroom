@@ -272,7 +272,7 @@ function PreviewPane({ hit, query }: { hit?: SearchHitDTO; query: string }) {
 									data-hit={t.entryId === hit.entryId || undefined}
 									className={cn("rounded-lg px-3 py-2 text-[13px] leading-relaxed", t.role === "user" ? "ml-6 bg-surface-3" : "mr-6 bg-surface", t.entryId === hit.entryId && "ring-2 ring-info")}
 								>
-									<span className="mb-0.5 block text-xs text-fg-subtle">{t.role === "user" ? "你" : "助手"}</span>
+									<span className="mb-0.5 block text-xs text-fg-subtle">{t.role === "user" ? "你" : "AI"}</span>
 									<span className="line-clamp-6 whitespace-pre-wrap break-words">
 										<Highlight text={t.text} query={query} />
 									</span>

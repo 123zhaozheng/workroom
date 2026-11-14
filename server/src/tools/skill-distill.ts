@@ -501,39 +501,12 @@ export function searchTraceItems(items: readonly TraceItemInternal[], query: str
 }
 
 // ------------------------------------------------------------------ prefilled prompt & section
-export function buildDistillPrompt(source: SkillDistillSourceDTO, overview: SessionTraceOverview): string {
-	const render = (reqLimit: number, toolLimit: number, fileLimit: number) => {
-		const firstReq = overview.firstUserRequest ? truncateText(overview.firstUserRequest, reqLimit) : "（无文本输入）";
-		const topTools = overview.toolsUsed.length
-			? overview.toolsUsed
-					.slice(0, toolLimit)
-					.map((t) => `${t.tool}×${t.count}`)
-					.join("、")
-			: "无";
-		const files = overview.filesProduced.length
-			? overview.filesProduced
-					.slice(0, fileLimit)
-					.map((f) => `${f.name}(v${f.versionNo})`)
-					.join("、")
-			: "无";
-		const totalCalls = overview.counts.toolCallsOk + overview.counts.toolCallsFailed;
-		return [
-			`请使用内置技能「${BUILTIN_DISTILL_SKILL_NAME}」和工具 \`${SESSION_TRACE_TOOL}\`，逐步分析源会话「${source.title}」（spaceId=${source.spaceId}，conversationId=${source.conversationId}），从中提炼可复用的标准技能。`,
-			`请自行生成技能名称（name）、描述（description）、适用场景、参数化步骤与避坑注意，将 SKILL.md（及必要脚本）写入工作区目录，并调用 \`skill_manage\`（action="submit_draft"）提交保存。`,
-			`完成后总结提炼内容，并提醒我可以在本对话继续微调，或在「能力 › 我的技能」点击「提交审核」。`,
-			"",
-			"源会话概览：",
-			`- 首条需求：${firstReq}`,
-			`- 轮次与工具：用户 ${overview.counts.userTurns} 轮 / 助手 ${overview.counts.assistantTurns} 轮，工具调用 ${totalCalls} 次（成功 ${overview.counts.toolCallsOk}，失败 ${overview.counts.toolCallsFailed}）`,
-			`- 常用工具：${topTools}`,
-			`- 产出文件：${files}`,
-		].join("\n");
-	};
-
-	let text = render(300, 6, 6);
-	if (Buffer.byteLength(text, "utf8") > 1536) text = render(180, 5, 4);
-	if (Buffer.byteLength(text, "utf8") > 1536) text = render(100, 3, 3);
-	return text;
+export function buildDistillPrompt(source: SkillDistillSourceDTO): string {
+	return [
+		`请使用内置技能「${BUILTIN_DISTILL_SKILL_NAME}」和工具 \`${SESSION_TRACE_TOOL}\`，逐步分析源会话「${source.title}」（spaceId=${source.spaceId}，conversationId=${source.conversationId}），从中提炼可复用的标准技能。`,
+		`请自行生成技能名称（name）、描述（description）、适用场景、参数化步骤与避坑注意，将 SKILL.md（及必要脚本）写入工作区目录，并调用 \`skill_manage\`（action="submit_draft"）提交保存。`,
+		`完成后总结提炼内容，并提醒我可以在本对话继续微调，或在「能力 › 我的技能」点击「提交审核」。`,
+	].join("\n");
 }
 
 export function renderDistillSection(source: SkillDistillSourceDTO): string {
@@ -617,10 +590,11 @@ export class SkillDistillService {
 		if (typeof sourceSpaceId !== "string" || !sourceSpaceId.trim()) throw new HttpError(400, "invalid", "spaceId 必填");
 		if (!Number.isInteger(sourceConversationId) || sourceConversationId <= 0) throw new HttpError(400, "invalid_id", "conversationId 无效");
 		const rt = this.#rt();
-		const { overview } = await this.loadTrace(p, sourceSpaceId, sourceConversationId, BACKGROUND_CONTEXT);
-		const source: SkillDistillSourceDTO = { spaceId: sourceSpaceId, conversationId: sourceConversationId, title: overview.title };
+		const { row } = await rt.access(p, "read", sourceSpaceId, sourceConversationId, BACKGROUND_CONTEXT);
+		const title0 = row?.title || `会话 ${sourceConversationId}`;
+		const source: SkillDistillSourceDTO = { spaceId: sourceSpaceId, conversationId: sourceConversationId, title: title0 };
 		const personalSpace = this.#ctx.services.get("identity").personalSpace(p.userId, p.orgId);
-		const title = `整理为技能：${overview.title}`.slice(0, 200);
+		const title = `整理为技能：${title0}`.slice(0, 200);
 		const { conversationId: distillConversationId } = await rt.createConversation(p, personalSpace.id, { title }, BACKGROUND_CONTEXT);
 		this.#db.run(
 			"INSERT INTO skill_distill_links (id, org_id, user_id, distill_space_id, distill_conversation_id, source_space_id, source_conversation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -636,7 +610,7 @@ export class SkillDistillService {
 		const detail = await rt.detail(p, personalSpace.id, distillConversationId, BACKGROUND_CONTEXT);
 		return {
 			conversation: detail.conversation,
-			prompt: buildDistillPrompt(source, overview),
+			prompt: buildDistillPrompt(source),
 			source,
 		};
 	}

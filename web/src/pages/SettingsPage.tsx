@@ -1,5 +1,5 @@
 // 设置: ChatGPT-style layout — grouped left navigation, one content column (≤720px) with label-left / control-right rows.
-// 常规 · 助手 · 模型 · 凭据与变量 · 权限 · 安全 · 登录设备. URLs stay `/settings?tab=<id>`.
+// 常规 · 模型 · 凭据与变量 · 权限 · 安全 · 登录设备. URLs stay `/settings?tab=<id>`.
 import { lazy, Suspense, useState } from "react";
 import { useSearchParams } from "react-router";
 import { FIXTURE_LABEL } from "@shared/chat";
@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SettingsContent, SettingsGroup, SettingsNav, SettingsRow } from "@/components/ui/settings";
 import { listOf } from "@/features/chat/pickers";
-import { AssistantsSection } from "@/features/assistants/Assistants";
 import type { ModelOption } from "@/features/chat/ModelPicker";
 import { MyPermissionsSection } from "@/features/admin/MyPermissions";
 import { Section } from "@/features/admin/common";
@@ -30,7 +29,6 @@ const PersonalProviders = lazy(() => import("@/features/admin/models/ModelsAdmin
 const ROLE_NAME: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员" };
 const TABS = [
 	{ value: "general", label: "常规" },
-	{ value: "assistants", label: "助手" },
 	{ value: "models", label: "模型" },
 	{ value: "credentials", label: "凭据与变量" },
 	{ value: "permissions", label: "权限" },
@@ -52,7 +50,6 @@ export default function SettingsPage() {
 						<SettingsNav label="设置" current={tab} items={TABS.map((t) => ({ value: t.value, label: t.label, to: `?tab=${t.value}`, testId: `settings-tab-${t.value}` }))} />
 						<SettingsContent className="min-w-0 flex-1">
 							{tab === "general" ? <General /> : null}
-							{tab === "assistants" ? <AssistantsSection /> : null}
 							{tab === "models" ? <ModelsTab /> : null}
 							{tab === "credentials" ? <CredentialsTab /> : null}
 							{tab === "permissions" ? <MyPermissionsSection /> : null}

@@ -129,6 +129,14 @@ CREATE TABLE rt_search_progress (
 );
 `,
 	},
+	{
+		version: 4,
+		name: "hide empty conversations until first message (backfill existing rows)",
+		sql: `
+ALTER TABLE rt_conversations ADD COLUMN first_message_at TEXT;
+UPDATE rt_conversations SET first_message_at = created_at WHERE first_message_at IS NULL;
+`,
+	},
 ];
 
 const envNum = (name: string, fallback: number): number => {

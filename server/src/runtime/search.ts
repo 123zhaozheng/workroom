@@ -19,6 +19,7 @@ import { HttpError, nowIso } from "../core/http.ts";
 import type { SearchHitDTO } from "../../../shared/round9.ts";
 import { keyOf, turnOf, type ConversationMeta, type VisibleConversation } from "./meta.ts";
 import { cid, type Runtime } from "./service.ts";
+import { nonEmptyConversations } from "../identity/projects.ts";
 
 export const DOC_TEXT_MAX = 40_000;
 export const SNIPPET_MAX = 160;
@@ -126,7 +127,7 @@ export class SearchIndex {
 		try {
 			const budget: Budget = { until: Date.now() + budgetMs, entries: budgetEntries };
 			const before = budget.entries;
-			const rows = this.db.all<{ space_id: string; conversation_id: number }>("SELECT space_id, conversation_id FROM rt_conversations WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 300");
+			const rows = this.db.all<{ space_id: string; conversation_id: number }>(`SELECT space_id, conversation_id FROM rt_conversations WHERE deleted_at IS NULL${nonEmptyConversations(this.db)} ORDER BY updated_at DESC LIMIT 300`);
 			for (const r of rows) {
 				if (Date.now() > budget.until || budget.entries <= 0) break;
 				const harness = this.rt.manager.openHarness(r.space_id);

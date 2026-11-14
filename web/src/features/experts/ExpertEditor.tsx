@@ -45,7 +45,6 @@ export function ExpertEditor({ initial, onClose, onSaved }: { initial?: ExpertDT
 	const mySkills = skills.data?.skills ?? [];
 	// a mounted skill the list no longer offers (removed, no longer usable) stays visible so it can be removed deliberately
 	const known = new Map(mySkills.map((s) => [s.id, s.name]));
-	const legacy = !!initial && initial.source === "assistant";
 
 	const save = async () => {
 		setBusy(true);
@@ -80,7 +79,6 @@ export function ExpertEditor({ initial, onClose, onSaved }: { initial?: ExpertDT
 		<Dialog open onOpenChange={(o) => !o && onClose()}>
 			<DialogContent title={initial ? "编辑专家" : "创建专家"} className="max-w-2xl">
 				<div className="wr-scroll -mx-1 max-h-[72vh] space-y-4 overflow-y-auto px-1 text-sm" data-testid="expert-editor">
-					{legacy ? <p className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">这是由旧助手迁移来的专家，请在「设置 → 助手」里修改。</p> : null}
 					<div>
 						<Label htmlFor="exnm">名称</Label>
 						<Input id="exnm" data-testid="expert-name" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="例如：周报专家" />
@@ -214,7 +212,7 @@ export function ExpertEditor({ initial, onClose, onSaved }: { initial?: ExpertDT
 					<Button variant="ghost" onClick={onClose}>
 						取消
 					</Button>
-					<Button variant="primary" onClick={save} disabled={busy || !name.trim() || legacy} data-testid="expert-save">
+					<Button variant="primary" onClick={save} disabled={busy || !name.trim()} data-testid="expert-save">
 						保存
 					</Button>
 				</div>

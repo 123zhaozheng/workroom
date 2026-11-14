@@ -78,7 +78,8 @@ export class Handoff {
 	async conversation(p: Principal, spaceId: string, conversationId: number, context: Context): Promise<ConversationHandoff> {
 		const { harness, conv, row, record } = await this.#rt.access(p, "read", spaceId, conversationId, context);
 		const space = this.#rt.manager.space(spaceId);
-		const dtos = await this.#rt.toDTOs(harness, await this.#allEntries(harness, conversationId, context), context);
+		const omitted = await this.#rt.omittedSet(harness, conversationId, context);
+		const dtos = await this.#rt.toDTOs(harness, await this.#allEntries(harness, conversationId, context), context, omitted);
 		const byId = new Map(dtos.map((d) => [d.id, d]));
 		const { approvals, effects, subagents } = await this.#rt.docs(harness, conversationId, context);
 		const live = await harness.snapshot(LiveDoc, conv.id, context);

@@ -16,7 +16,7 @@ import { storeLabel } from "../tools/sandbox/stores.ts";
 import { closeDeadWork } from "./lifecycle.ts";
 import { LEGACY_EXTENSIONS, LEGACY_TOOLS, LEGACY_TOOL_MAP } from "../vfs/legacy.ts";
 import { ONDEMAND_TOOLS } from "../tools/ondemand.ts";
-import { ApprovalsDoc, AssistantDoc, EffectsDoc, ExpertDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
+import { ApprovalsDoc, AssistantDoc, EffectsDoc, ExpertDoc, InputEntry, NoticeEntry, OmitEntry, OmittedEntriesDoc, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
 import { effectiveMime, previewKindOf } from "../files/mime.ts";
 import { uploadAliasPath } from "../vfs/backends/uploads.ts";
 import { humanSize, sheetNames } from "./attachment-meta.ts";
@@ -24,7 +24,7 @@ import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
 import type { AssistantStore } from "./assistants.ts";
-import { liveConversations, tableHasColumn } from "../identity/projects.ts";
+import { liveConversations, nonEmptyConversations, tableHasColumn } from "../identity/projects.ts";
 
 export interface CatalogRow {
 	space_id: string;
@@ -36,6 +36,7 @@ export interface CatalogRow {
 	archived: number;
 	created_at: string;
 	updated_at: string;
+	first_message_at?: string | null;
 	/** Round 9 (runtime migration by the meta module): set = soft-deleted; every list/access path treats the conversation as gone. */
 	deleted_at?: string | null;
 }
@@ -184,16 +185,19 @@ export class Runtime implements RuntimeService {
 			if (!cp || cp.orgId !== principal.orgId) throw new HttpError(404, "project_not_found", "项目不存在");
 			if (cp.ownerId !== principal.userId || space.ownerUserId !== principal.userId) throw new HttpError(403, "forbidden", "只能把对话放进自己的项目", { reason: "not_project_owner" });
 		}
-		// Round 17: `expertId` (preferred) / `assistantId` (legacy name). An id that is an old 助手 keeps the assistant path (team members, static
-		// instructions); any other expert is bound dynamically: its instructions and skills are resolved on every run (tools/experts.ts).
+		// Round 17: `expertId` (preferred) / `assistantId` (legacy name). When `expertId` is given, or once a migrated expert is resolved,
+		// prefer `ex_experts` (unless legacy `assistantId` was explicitly passed for an active assistant with team members).
 		const wantedId = options.expertId ?? options.assistantId;
-		const assistant = wantedId ? this.assistants?.get(principal, wantedId) : undefined;
 		const expertSvc = this.ctx.services.has("experts") ? (this.ctx.services.get("experts") as Experts) : undefined;
-		const expertRow = wantedId && !assistant ? expertSvc?.resolve(principal, wantedId) : undefined;
+		const expertRow = wantedId ? expertSvc?.resolve(principal, wantedId) : undefined;
 		const expertCfg = expertRow ? expertSvc!.effective(principal, expertRow) : undefined;
-		if (wantedId && !assistant && !expertCfg) throw new HttpError(404, options.expertId ? "expert_not_found" : "assistant_not_found", options.expertId ? "专家不存在或无权使用" : "助手不存在或无权使用");
-		const bound = assistant ?? (expertCfg ? { id: expertRow!.id, name: expertCfg.name, model: expertCfg.defaultModel ?? undefined, tools: expertCfg.tools ?? undefined, knowledge: expertCfg.knowledge ?? undefined, instructions: undefined as string | undefined, members: [] as never[] } : undefined);
-		// The assistant's default model is re-checked for THIS principal; when it is not allowed or blocked the
+		const expertArchived = !!(wantedId && expertSvc?.row(wantedId)?.archived_at);
+		// A migrated expert keeps the team members declared on its old 助手 row (they are still stored there); everything else comes from the expert.
+		const legacy = wantedId && !expertArchived ? this.assistants?.get(principal, wantedId) : undefined;
+		const assistant = expertCfg ? undefined : legacy;
+		if (wantedId && !assistant && !expertCfg) throw new HttpError(404, options.expertId ? "expert_not_found" : "assistant_not_found", "专家不存在或无权使用");
+		const bound = assistant ?? (expertCfg ? { id: expertRow!.id, name: expertCfg.name, model: expertCfg.defaultModel ?? undefined, tools: expertCfg.tools ?? undefined, knowledge: expertCfg.knowledge ?? undefined, instructions: undefined as string | undefined, members: legacy?.members ?? [] } : undefined);
+		// The expert/assistant's default model is re-checked for THIS principal; when it is not allowed or blocked the
 		// conversation falls back to the default model and records a visible notice (never a silent swap).
 		let notice: { text: string; code: string } | undefined;
 		let model = options.model;
@@ -204,7 +208,7 @@ export class Runtime implements RuntimeService {
 			if (chk.ok) model = chk.ref;
 			else {
 				model = await this.defaultModel(principal);
-				notice = { code: chk.code, text: `${assistant ? "助手" : "专家"}「${bound.name}」的默认模型不可用（${chk.reason}），本会话改用「${this.modelLabel(model)}」。` };
+				notice = { code: chk.code, text: `专家「${bound.name}」的默认模型不可用（${chk.reason}），本会话改用「${this.modelLabel(model)}」。` };
 			}
 		}
 		model ??= await this.defaultModel(principal);
@@ -526,6 +530,7 @@ export class Runtime implements RuntimeService {
 		const cap = Math.min(Math.max(Number(q.maxLimit) || 200, 200), 5000);
 		const limit = Math.min(Math.max(Number(q.limit) || 50, 1), cap);
 		const live = liveConversations(this.ctx.db);
+		const nonEmpty = nonEmptyConversations(this.ctx.db);
 		const params: any[] = [];
 		let where: string;
 		if (q.projectId && identity.containerProject(q.projectId)) {
@@ -550,7 +555,7 @@ export class Runtime implements RuntimeService {
 			where = `space_id IN (${spaces.map(() => "?").join(",")})`;
 			params.push(...spaces.map((s) => s.id));
 		}
-		let sql = `SELECT * FROM rt_conversations WHERE ${where} AND archived = ?${live}`;
+		let sql = `SELECT * FROM rt_conversations WHERE ${where} AND archived = ?${live}${nonEmpty}`;
 		params.push(q.archived ? 1 : 0);
 		if (q.q?.trim()) {
 			sql += " AND title LIKE ? ESCAPE '\\'";
@@ -892,7 +897,12 @@ export class Runtime implements RuntimeService {
 			const t = titleFrom(input.text);
 			if (t) this.ctx.db.run("UPDATE rt_conversations SET title = ? WHERE space_id = ? AND conversation_id = ? AND title = ?", t, spaceId, conversationId, DEFAULT_TITLE);
 		}
-		this.touch(spaceId, conversationId);
+		if (tableHasColumn(this.ctx.db, "rt_conversations", "first_message_at")) {
+			const at = nowIso();
+			this.ctx.db.run("UPDATE rt_conversations SET updated_at = ?, first_message_at = COALESCE(first_message_at, ?) WHERE space_id = ? AND conversation_id = ?", at, at, spaceId, conversationId);
+		} else {
+			this.touch(spaceId, conversationId);
+		}
 		this.#prewarmHint(p, spaceId, conversationId, input, harness, conv);
 		return this.submissionStatus(harness, conversationId, sub.id, context);
 	}
@@ -1004,16 +1014,30 @@ export class Runtime implements RuntimeService {
 	async #branch(p: Principal, spaceId: string, harness: Harness, conv: Conversation, row: CatalogRow | undefined, at: EntryId, title: string | undefined, context: Context): Promise<{ conv: Conversation; summary: ConversationSummary }> {
 		const fork = await conv.fork(at, { ownership: { kind: "ownerless" } }, context);
 		const now = nowIso();
-		this.ctx.db.run(
-			"INSERT INTO rt_conversations (space_id, conversation_id, created_by, title, project_id, kind, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'branch', 0, ?, ?)",
-			spaceId,
-			fork.id as number,
-			p.userId,
-			String(title ?? "").trim().slice(0, 200) || `${row?.title ?? "会话"}（分支）`.slice(0, 200),
-			row?.project_id ?? null,
-			now,
-			now,
-		);
+		if (tableHasColumn(this.ctx.db, "rt_conversations", "first_message_at")) {
+			this.ctx.db.run(
+				"INSERT INTO rt_conversations (space_id, conversation_id, created_by, title, project_id, kind, archived, created_at, updated_at, first_message_at) VALUES (?, ?, ?, ?, ?, 'branch', 0, ?, ?, ?)",
+				spaceId,
+				fork.id as number,
+				p.userId,
+				String(title ?? "").trim().slice(0, 200) || `${row?.title ?? "会话"}（分支）`.slice(0, 200),
+				row?.project_id ?? null,
+				now,
+				now,
+				now,
+			);
+		} else {
+			this.ctx.db.run(
+				"INSERT INTO rt_conversations (space_id, conversation_id, created_by, title, project_id, kind, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'branch', 0, ?, ?)",
+				spaceId,
+				fork.id as number,
+				p.userId,
+				String(title ?? "").trim().slice(0, 200) || `${row?.title ?? "会话"}（分支）`.slice(0, 200),
+				row?.project_id ?? null,
+				now,
+				now,
+			);
+		}
 		const record = await harness.commit((tx) => tx.conversation(fork.id), context);
 		return { conv: fork, summary: this.summary(spaceId, fork.id as number, this.row(spaceId, fork.id as number), record, undefined, p.userId) };
 	}
@@ -1049,20 +1073,129 @@ export class Runtime implements RuntimeService {
 		return { conversation: summary, submissionId: s.submissionId };
 	}
 
-	/** Regenerate = fork at the turn's user entry, then submit a continue there. */
-	async regenerate(p: Principal, spaceId: string, conversationId: number, body: { entryId: number }, context: Context): Promise<{ conversation: ConversationSummary; submissionId: number }> {
+	/** Regenerate in place: omit the last turn's assistant-side entries in model context and submit a continue in the same conversation. */
+	async regenerate(p: Principal, spaceId: string, conversationId: number, body: { entryId: number }, context: Context): Promise<{ conversation: ConversationSummary; submissionId: number; inPlace: true }> {
 		const { harness, conv, row } = await this.access(p, "write", spaceId, conversationId, context);
-		let e = await this.#visibleEntry(conv, Number(body.entryId), context);
-		if (e.kind !== InputEntry.kind && e.kind !== "pi.user") {
-			const before = await conv.entries({ maxEntryId: e.id, order: "descending" }, 200, undefined, context);
-			const user = before.items.find((x) => x.kind === InputEntry.kind || x.kind === "pi.user");
-			if (!user) throw new HttpError(409, "no_user_turn", "找不到这一轮的用户输入");
-			e = user;
-		}
-		const { conv: fork, summary } = await this.#branch(p, spaceId, harness, conv, row, e.id, undefined, context);
-		// Round 13: the new answer runs as the person who pressed 重新生成 (recorded with the submission), never as the original author.
-		const sub = await this.#submitAs(harness, fork, p, "regenerate", { type: "continue", requestId: `regenerate:${conversationId}:${e.id}:${fork.id}` }, context);
-		return { conversation: summary, submissionId: sub.id as number };
+		if (!row) throw new HttpError(409, "read_only", "子任务会话只读");
+		return this.#serial(`${spaceId}:${conversationId}`, async () => {
+			const live = await harness.snapshot(LiveDoc, conv.id, context);
+			if (live?.run) throw new HttpError(409, "busy", "会话正在运行，无法重新生成");
+			const omitted = await this.omittedSet(harness, conversationId, context);
+			const targetId = Number(body.entryId);
+			if (!Number.isInteger(targetId) || targetId <= 0) throw new HttpError(404, "entry_not_found", "该消息不在此会话中");
+			const targetEntry = await this.#visibleEntry(conv, targetId, context);
+			if (omitted.has(targetEntry.id as number) || targetEntry.kind === "pi.system" || targetEntry.kind === OmitEntry.kind) {
+				throw new HttpError(404, "entry_not_found", "该消息不在此会话中");
+			}
+
+			let turnUser: EntryRecord | undefined;
+			if (targetEntry.kind === InputEntry.kind || targetEntry.kind === "pi.user") {
+				turnUser = targetEntry;
+			} else {
+				let cursor: any;
+				for (let page = 0; page < 50; page++) {
+					const before = await conv.entries({ maxEntryId: targetEntry.id, order: "descending" }, 200, cursor, context);
+					for (const x of before.items) {
+						if (x.kind === "pi.reset") break;
+						if (x.kind === InputEntry.kind || x.kind === "pi.user") {
+							turnUser = x;
+							break;
+						}
+					}
+					if (turnUser || !before.next || before.items.some((x) => x.kind === "pi.reset")) break;
+					cursor = before.next;
+				}
+			}
+			if (!turnUser) throw new HttpError(409, "no_user_turn", "找不到这一轮的用户输入");
+
+			const afterUserEntries: EntryRecord[] = [];
+			let lastUser: EntryRecord | undefined;
+			let resetAfterTurnUser = false;
+			{
+				let cursor: any;
+				for (let page = 0; page < 50; page++) {
+					const tail = await conv.entries({ order: "descending" }, 200, cursor, context);
+					for (const x of tail.items) {
+						if ((x.id as number) <= (turnUser.id as number)) break;
+						if (x.kind === "pi.reset") {
+							resetAfterTurnUser = true;
+							break;
+						}
+						if (x.kind === InputEntry.kind || x.kind === "pi.user") {
+							lastUser = x;
+							break;
+						}
+						afterUserEntries.push(x);
+					}
+					if (lastUser || resetAfterTurnUser || !tail.next || tail.items.some((x) => (x.id as number) <= (turnUser.id as number))) break;
+					cursor = tail.next;
+				}
+			}
+			if (resetAfterTurnUser || (lastUser && (lastUser.id as number) !== (turnUser.id as number))) {
+				throw new HttpError(409, "regenerate_not_last", "只能重新生成最后一条回答，更早的回答请使用「从这里分叉」");
+			}
+
+			const targetsToOmit = afterUserEntries
+				.filter((x) => !omitted.has(x.id as number) && (x.kind === "pi.assistant" || x.kind === "pi.tool-result"))
+				.map((x) => x.id as number)
+				.sort((a, b) => a - b);
+
+			let subId: SubmissionId;
+			try {
+				subId = await harness.commit(async (tx) => {
+					// Admit continue first (checks ConversationBusy before any table write).
+					const id = await conv.submit(tx, {
+						type: "continue",
+						requestId: `regenerate:${conversationId}:${turnUser.id}:${randomUUID()}`,
+					});
+					const rd = await tx.doc(RunActorDoc, conv.id);
+					const key = String(id as number);
+					if (!rd.bySubmission[key]) {
+						rd.bySubmission[key] = { userId: p.userId, orgId: p.orgId, via: "regenerate", at: Date.now() };
+						rd.order.push(id as number);
+						while (rd.order.length > RUN_ACTOR_KEEP) delete rd.bySubmission[String(rd.order.shift())];
+					}
+					if (targetsToOmit.length > 0) {
+						await tx.appendEntry(OmitEntry, conv.id, {
+							data: { userEntryId: turnUser.id as number, omittedIds: targetsToOmit, at: nowIso() },
+							edits: targetsToOmit.map((target) => ({ target: target as EntryId, action: "omit" as const })),
+						});
+						const od = await tx.doc(OmittedEntriesDoc, conv.id);
+						const seen = new Set(od.ids);
+						for (const tid of targetsToOmit) {
+							if (!seen.has(tid)) od.ids.push(tid);
+						}
+					}
+					return id;
+				}, context);
+			} catch (err) {
+				if (err instanceof ConversationBusy) throw new HttpError(409, "busy", "会话正在运行，无法重新生成");
+				throw err;
+			}
+
+			if (targetsToOmit.length > 0) {
+				try {
+					this.ctx.db.run(
+						`DELETE FROM rt_search_docs WHERE space_id = ? AND conversation_id = ? AND entry_id IN (${targetsToOmit.map(() => "?").join(",")})`,
+						spaceId,
+						conversationId,
+						...targetsToOmit,
+					);
+				} catch {
+					/* search index table absent in unit tests */
+				}
+			}
+			this.touch(spaceId, conversationId);
+			const [record, liveAfter] = await Promise.all([
+				harness.commit((tx) => tx.conversation(conv.id), context),
+				harness.snapshot(LiveDoc, conv.id, context),
+			]);
+			return {
+				conversation: this.summary(spaceId, conversationId, this.row(spaceId, conversationId), record, liveAfter?.run ? "running" : undefined, p.userId),
+				submissionId: subId as number,
+				inPlace: true,
+			};
+		});
 	}
 
 	/**
@@ -1124,14 +1257,23 @@ export class Runtime implements RuntimeService {
 		return this.ctx.db.get<{ name: string }>("SELECT name FROM id_users WHERE id = ?", userId)?.name;
 	}
 
-	/** Entry DTOs (pi.system hidden) with each user message's submission outcome read from pi-durable. */
-	async toDTOs(harness: Harness, entries: readonly EntryRecord[], context: Context): Promise<EntryDTO[]> {
+	async omittedSet(harness: Harness, conversationId: number, context: Context): Promise<Set<number>> {
+		const doc = await harness.snapshot(OmittedEntriesDoc, cid(conversationId), context).catch(() => undefined);
+		return new Set<number>(doc?.ids ?? []);
+	}
+
+	/** Entry DTOs (pi.system, wr.omit, and omitted entries hidden) with each user message's submission outcome read from pi-durable. */
+	async toDTOs(harness: Harness, entries: readonly EntryRecord[], context: Context, omitted?: ReadonlySet<number>): Promise<EntryDTO[]> {
 		const names = new Map<string, string | undefined>();
 		const name = (u: string) => {
 			if (!names.has(u)) names.set(u, this.userName(u));
 			return names.get(u);
 		};
-		const visible = entries.filter((e) => e.kind !== "pi.system");
+		const hidden = new Set<number>(omitted);
+		for (const e of entries) {
+			for (const ed of e.edits ?? []) if (ed.action === "omit") hidden.add(ed.target as number);
+		}
+		const visible = entries.filter((e) => e.kind !== "pi.system" && e.kind !== OmitEntry.kind && !hidden.has(e.id as number));
 		const dtos = visible.map((e) => entryDTO(e, name, this.isSimulated));
 		const lookups: { i: number; conversationId: number; requestId: string }[] = [];
 		visible.forEach((e, i) => {
@@ -1290,10 +1432,27 @@ export class Runtime implements RuntimeService {
 	async entries(p: Principal, spaceId: string, conversationId: number, q: { before?: number; limit?: number }, context: Context): Promise<EntriesPage> {
 		const { harness, conv } = await this.access(p, "read", spaceId, conversationId, context);
 		const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
-		const query = q.before ? { maxEntryId: (Number(q.before) - 1) as EntryId, order: "descending" as const } : { order: "descending" as const };
-		const page = await conv.entries(query, limit, undefined, context);
-		const items = [...page.items].reverse();
-		return { items: await this.toDTOs(harness, items, context), ...(page.next && items.length ? { next: items[0]!.id as number } : {}) };
+		const omitted = await this.omittedSet(harness, conversationId, context);
+		const collected: EntryRecord[] = [];
+		let cursor: any;
+		const maxEntryId = q.before ? ((Number(q.before) - 1) as EntryId) : undefined;
+		let hasMore = false;
+		for (let pageIdx = 0; pageIdx < 100; pageIdx++) {
+			const query = maxEntryId !== undefined ? { maxEntryId, order: "descending" as const } : { order: "descending" as const };
+			const page = await conv.entries(query, Math.min(200, Math.max(limit, 50)), cursor, context);
+			for (const e of page.items) {
+				if (e.kind === "pi.system" || e.kind === OmitEntry.kind || omitted.has(e.id as number)) continue;
+				if (collected.length < limit) collected.push(e);
+				else {
+					hasMore = true;
+					break;
+				}
+			}
+			if (hasMore || !page.next || page.items.length === 0) break;
+			cursor = page.next;
+		}
+		const items = collected.reverse();
+		return { items: await this.toDTOs(harness, items, context, omitted), ...(hasMore && items.length ? { next: items[0]!.id as number } : {}) };
 	}
 
 	/**
@@ -1414,11 +1573,16 @@ export class Runtime implements RuntimeService {
 		const conversationId = conv.id as number;
 		const { approvals, effects, subagents } = await this.docs(harness, conversationId, context);
 		const live = view.docs[LiveDoc.definition.kind];
-		const hasAnswer = view.before !== undefined || view.entries.some((e) => e.kind === "pi.assistant");
+		const omitted = await this.omittedSet(harness, conversationId, context);
+		for (const e of view.entries) {
+			for (const ed of e.edits ?? []) if (ed.action === "omit") omitted.add(ed.target as number);
+		}
+		const visibleViewEntries = view.entries.filter((e) => e.kind !== "pi.system" && e.kind !== OmitEntry.kind && !omitted.has(e.id as number));
+		const hasAnswer = view.before !== undefined || visibleViewEntries.some((e) => e.kind === "pi.assistant");
 		const ld = liveDTO(live, approvals, hasAnswer);
 		return {
 			conversation: this.summary(spaceId, conversationId, this.row(spaceId, conversationId), view.conversation, ld.status, viewer),
-			entries: await this.toDTOs(harness, view.entries, context),
+			entries: await this.toDTOs(harness, visibleViewEntries, context, omitted),
 			hasEarlier: view.before !== undefined,
 			live: ld,
 			queue: queueDTO(view.docs[InboxDoc.definition.kind]),

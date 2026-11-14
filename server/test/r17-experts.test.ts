@@ -378,11 +378,20 @@ test("助手 → 专家 migration: old assistants appear as experts (same id), o
 		const detail = await t.json("GET", base(c), { token: member.token });
 		assert.equal(detail.agent.assistant.id, personal.id);
 		assert.equal(detail.agent.expert.boundId, personal.id);
-		// the old API's edits flow into the expert; archiving removes it
+		// the old API's edits flow into the expert; editing/archiving migrated experts directly via /api/experts works too
 		await t.json("PATCH", `/api/assistants/${personal.id}`, { token: member.token, json: { description: "改过的说明" } });
 		assert.equal((await t.json("GET", `/api/experts/${personal.id}`, { token: member.token })).expert.description, "改过的说明");
-		await t.json("PATCH", `/api/experts/${personal.id}`, { token: member.token, json: { tagline: "x" }, expect: 409 });
-		await t.json("DELETE", `/api/assistants/${personal.id}`, { token: member.token });
+		const edited = (await t.json("PATCH", `/api/experts/${personal.id}`, { token: member.token, json: { tagline: "新版一句话", instructions: "新专家指令 NEW_INST" } })).expert;
+		assert.equal(edited.tagline, "新版一句话");
+		assert.equal(edited.instructions, "新专家指令 NEW_INST");
+		// new conversation bound via expertId uses the edited expert config
+		const c2 = (await t.json("POST", "/api/conversations", { token: member.token, json: { expertId: personal.id } })).conversation;
+		await ask(t, member.token, c2, "你好");
+		const sys2 = await lastSystemPrompt(t, member.token, c2, 1);
+		assert.match(sys2, /新专家指令 NEW_INST/);
+		assert.doesNotMatch(sys2, /旧指令 OLD/);
+		// deleting the migrated expert via /api/experts removes it from experts list
+		await t.json("DELETE", `/api/experts/${personal.id}`, { token: member.token });
 		assert.equal((await t.json("GET", "/api/experts?mine=1", { token: member.token })).experts.length, 0);
 		// a conversation that was bound to the removed built-in 助手 still opens
 		const legacy = (await t.json("POST", "/api/conversations", { token: member.token, json: { assistantId: "builtin:workroom" } })).conversation;

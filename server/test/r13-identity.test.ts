@@ -47,8 +47,10 @@ test("item 1: 重新生成 and 继续 run as the operator — an editor cannot u
 		assert.equal(lastAssistant(s0).text, "仅管理员模型的回答");
 		const before = posts(up);
 
-		// the editor presses 重新生成 on the owner's answer
+		// the editor presses 重新生成 on the owner's answer (in-place on the same conversation)
 		const r = await t.json("POST", `/api/conversations/${c.spaceId}/${c.conversationId}/regenerate`, { token: editor.token, json: { entryId: lastAssistant(s0).id } });
+		assert.equal(r.inPlace, true);
+		assert.equal(r.conversation.conversationId, c.conversationId);
 		const branch = r.conversation;
 		const s1 = await idle(t, editor.token, branch, "regenerated run settles", (s) => lastAssistant(s)?.stopReason === "error" || s.live.status === "failed");
 		const a1 = lastAssistant(s1);
@@ -57,16 +59,16 @@ test("item 1: 重新生成 and 继续 run as the operator — an editor cannot u
 		const rt = t.app.ctx.services.get("runtime") as any;
 		const harness = await rt.harness(branch.spaceId, BACKGROUND_CONTEXT);
 		const rec = await harness.snapshot((await import("../src/runtime/docs.ts")).RunActorDoc, branch.conversationId, BACKGROUND_CONTEXT);
-		assert.deepEqual(Object.values(rec.bySubmission).map((x: any) => [x.userId, x.via]), [[editor.me.userId, "regenerate"]], "the regenerate submission is recorded as the editor's");
+		assert.deepEqual(Object.values(rec.bySubmission).map((x: any) => [x.userId, x.via]), [[owner.me.userId, "input"], [editor.me.userId, "regenerate"]], "the regenerate submission is recorded as the editor's");
 
 		// 继续 by the editor on the owner's conversation: same rule
 		const cont = await t.json("POST", `/api/conversations/${c.spaceId}/${c.conversationId}/continue`, { token: editor.token, json: { requestId: randomUUID() } });
 		assert.ok(cont.submissionId);
-		await idle(t, editor.token, c, "continue settles");
+		const sCont = await idle(t, editor.token, c, "continue settles");
 		assert.equal(posts(up), before, "a continue by the editor never reaches the restricted model either");
 
 		// the owner can regenerate: the same path works for a permitted operator
-		const r2 = await t.json("POST", `/api/conversations/${c.spaceId}/${c.conversationId}/regenerate`, { token: owner.token, json: { entryId: lastAssistant(s0).id } });
+		const r2 = await t.json("POST", `/api/conversations/${c.spaceId}/${c.conversationId}/regenerate`, { token: owner.token, json: { entryId: lastAssistant(sCont).id } });
 		const s2 = await idle(t, owner.token, r2.conversation, "owner's regenerate answers", (s) => !!lastAssistant(s)?.text);
 		assert.equal(lastAssistant(s2).text, "仅管理员模型的回答");
 	} finally {

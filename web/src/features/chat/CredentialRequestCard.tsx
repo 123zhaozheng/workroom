@@ -84,7 +84,7 @@ export function CredentialOutcome({ step }: { step: ToolStep }) {
 				<ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
 				<div className="min-w-0">
 					<div className="font-medium">凭据请求{service ? `：${service}` : ""}</div>
-					<p className="text-fg-muted">{noStore ? `${NO_STORE_TEXT}。助手没有得到任何凭据。` : "这个请求没有成功，助手没有得到任何凭据。"}</p>
+					<p className="text-fg-muted">{noStore ? `${NO_STORE_TEXT}。AI 没有得到任何凭据。` : "这个请求没有成功，AI 没有得到任何凭据。"}</p>
 				</div>
 			</div>
 		);
@@ -283,7 +283,7 @@ export function CredentialForm({ id, readOnly }: { id: string; readOnly?: boolea
 					<KeyRound aria-hidden className="size-4" />
 				</span>
 				<div className="min-w-0 flex-1">
-					<h3 className="text-sm font-medium leading-5">助手想使用「{req.service}」的密钥</h3>
+					<h3 className="text-sm font-medium leading-5">AI 想使用「{req.service}」的密钥</h3>
 					<p data-testid="credential-purpose" className="text-[13px] leading-5 text-fg-muted">
 						用途：{req.purpose}
 					</p>

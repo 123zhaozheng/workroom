@@ -78,6 +78,7 @@ test("star is per user; tags need write access; both show up in /conversation-me
 		const a = await t.user("m-star-a@example.com");
 		const b = await member(t, a, "m-star-b@example.com");
 		const c = await newChat(t, a.token, { title: "星标测试" });
+		await say(t, a.token, c, "[[reply 星标]]");
 
 		// B has no access to A's personal conversation at all
 		await t.json("PUT", `${base(c)}/star`, { token: b.token, json: { starred: true }, expect: 403 });
@@ -194,6 +195,9 @@ test("soft delete in a legacy project space: creator may delete own, the space o
 		const mine = await newChat(t, e.token, { projectId: project.id, title: "编辑者的会话" });
 		const other = await newChat(t, e.token, { projectId: project.id, title: "另一个会话" });
 		const third = await newChat(t, e.token, { projectId: project.id, title: "第三个会话" });
+		await say(t, e.token, mine, "[[reply 1]]");
+		await say(t, e.token, other, "[[reply 2]]");
+		await say(t, e.token, third, "[[reply 3]]");
 		await t.json("DELETE", base(other), { token: e2.token, expect: 403 }); // another editor: not creator, not admin
 		await t.json("DELETE", base(other), { token: v.token, expect: 403 }); // viewer
 		await t.json("DELETE", base(mine), { token: e.token }); // creator
@@ -279,8 +283,10 @@ test("search: title, message, tag and project matches; Chinese substrings; short
 		const c2 = await newChat(t, a.token, { title: "无关闲聊" });
 		await say(t, a.token, c2, '今天天气不错 [[call wr_fixture_echo {"text":"凭证口令-TOKEN-9981"}]]');
 		const c3 = await newChat(t, a.token, { title: "季度计划" });
+		await say(t, a.token, c3, "[[reply 计划]]");
 		await t.json("PUT", `${base(c3)}/tags`, { token: a.token, json: { tags: ["紧急", "Roadmap"] } });
 		const c4 = await newChat(t, a.token, { title: "纯项目归属" });
+		await say(t, a.token, c4, "[[reply 归属]]");
 		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "年度复盘项目" } });
 		await t.json("PUT", `${base(c4)}/project`, { token: a.token, json: { projectId: project.id } });
 

@@ -4,7 +4,7 @@
 import { join } from "node:path";
 import { check, chromium, login, register, sendMessage, shot, SHOTS, sleep, startServer, summary } from "./lib.mjs";
 
-const PORT = 8842;
+const PORT = Number(process.env.E2E_PORT ?? 8842);
 let server = await startServer({ port: PORT });
 const base = server.base;
 const browser = await chromium.launch();
@@ -16,21 +16,20 @@ try {
 	await register(page, base, { email, name: "运行测试" });
 
 	// ---------------------------------------------------------------- M03-A: assistant identity apart from conversations
-	await page.goto(`${base}/settings?tab=assistants`);
-	await page.click('[data-testid="assistant-new"]');
-	await page.fill("#aav", "研");
-	await page.fill("#anm", "研究助理");
-	await page.fill("#ads", "查资料、写摘要");
-	await page.fill("#ains", "先检索资料，再给出带引用的结论。");
-	await page.getByRole("button", { name: "添加成员" }).click();
-	await page.fill('input[aria-label="成员名称"]', "检索员");
-	await page.fill('input[aria-label="成员工具"]', "kb_search");
-	await page.fill('input[aria-label="最多轮数"]', "1");
-	await page.click('[data-testid="assistant-save"]');
-	await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="assistant"]')].some((e) => e.textContent?.includes("研究助理")), null, { timeout: 10000 });
-	const card = await page.locator('[data-testid="assistant"]', { hasText: "研究助理" }).innerText();
-	check("M03-A: assistant stored with avatar, description, tools, knowledge, model and members (Settings)", card.includes("查资料、写摘要") && card.includes("检索员") && card.includes("模型"), card.replace(/\s+/g, " "));
-	await shot(page, "1440-assistants");
+	// The 助手 settings page is gone (only 专家 remain); a legacy assistant with team members is still created through the kept
+	// compatibility API, and shows up as an expert.
+	const created = await page.evaluate(async () => {
+		const r = await fetch("/api/assistants", {
+			method: "POST",
+			credentials: "same-origin",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: "研究助理", avatar: "研", description: "查资料、写摘要", instructions: "先检索资料，再给出带引用的结论。", model: null, tools: [], knowledge: { kbIds: [] }, members: [{ id: "m1", name: "检索员", type: "builtin_subagent", description: "", tools: ["kb_search"], maxTurns: 1, instructions: "" }] }),
+		});
+		return { status: r.status, body: await r.json() };
+	});
+	check("M03-A: legacy assistant (with team members) still stored through the compatibility API", created.status < 300 && created.body?.assistant?.members?.length === 1, JSON.stringify(created).slice(0, 200));
+	await page.goto(`${base}/settings`);
+	check("settings no longer has a 助手 tab", (await page.getByRole("tab", { name: "助手" }).count()) === 0);
 	await page.goto(`${base}/`);
 	// round 17: the old 助手 picker is gone — assistants are experts now; "@" on the home composer binds one to the new conversation
 	await page.click('[data-testid="composer-input"]');
@@ -49,7 +48,7 @@ try {
 	await idle(page);
 	await page.click('[data-testid="open-work-panel"]');
 	await page.waitForSelector('[data-testid="subagent"]', { timeout: 15000 });
-	await page.locator('[data-testid="subagent"] > button').first().click(); // details are behind the row's chevron
+	await page.locator('[data-testid="subagent"] button[aria-expanded]').first().click(); // details are behind the row's chevron
 	const sub = await page.locator('[data-testid="subagent"]').first().innerText();
 	check("M03-B: subagent card shows source, owner, status, result/failure and simulated cost", sub.includes("来源") && sub.includes("负责人") && /模拟用量|tokens/.test(sub) && /已完成|未完成|失败/.test(sub), sub.replace(/\s+/g, " ").slice(0, 200));
 	check("M02-C: turn-limit (timeout class) shown as its own state, not as success or a plain failure", sub.includes("达到轮数上限（超时）") && !sub.includes("已完成"), sub.split("\n").slice(0, 3).join(" | "));

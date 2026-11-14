@@ -334,7 +334,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 	api.get("/assistants/:id", async (c) => {
 		const p = principalOf(c);
 		const a = assistants.get(p, c.req.param("id"));
-		if (!a) throw new HttpError(404, "assistant_not_found", "助手不存在");
+		if (!a) throw new HttpError(404, "assistant_not_found", "专家不存在");
 		return c.json({ assistant: await withAvailability(p, a) });
 	});
 	api.patch("/assistants/:id", async (c) => {

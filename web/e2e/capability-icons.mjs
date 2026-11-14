@@ -67,18 +67,20 @@ try {
 
 	// ---- my skills
 	await page.goto(`${base}/capabilities?tab=mine`);
-	await page.waitForSelector(T("skill"));
-	check("mine: skills are a card grid with icons", (await page.locator(T("skill")).count()) === SKILLS.length && (await page.locator(`${T("skill")} ${T("skill-icon")}`).count()) === SKILLS.length && (await page.locator(T("my-skill-grid")).count()) === 1);
+	await page.waitForSelector(T("my-skill-card"));
+	check("mine: skills are a card grid with icons", (await page.locator(T("my-skill-card")).count()) === SKILLS.length && (await page.locator(`${T("my-skill-card")} ${T("skill-icon")}`).count()) === SKILLS.length && (await page.locator(T("my-skill-grid")).count()) === 1);
 	await page.screenshot({ path: join(DIR, "capability-mine.png") });
 
 	// ---- author picks an icon in my skills; it persists and shows in the market
-	const card = page.locator(T("skill")).filter({ hasText: "Zzqx 小帮手" });
-	await card.locator("button[aria-expanded]").click();
-	await card.locator(T("icon-picker")).waitFor();
-	check("picker: library has ≥ 24 icons plus 自动", (await card.locator('[data-testid^="icon-opt-"]').count()) >= 24 && (await card.locator(T("icon-auto")).count()) === 1);
-	await card.locator(T("icon-opt-finance")).click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="skill"] [data-testid="icon-opt-finance"][aria-checked="true"]'), null, { timeout: 8000 });
+	const card = page.locator(T("my-skill-card")).filter({ hasText: "Zzqx 小帮手" });
+	await card.click();
+	const dlg = page.locator(T("skill-detail-dialog"));
+	await dlg.locator(T("icon-picker")).waitFor();
+	check("picker: library has ≥ 24 icons plus 自动", (await dlg.locator('[data-testid^="icon-opt-"]').count()) >= 24 && (await dlg.locator(T("icon-auto")).count()) === 1);
+	await dlg.locator(T("icon-opt-finance")).click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-detail-dialog"] [data-testid="icon-opt-finance"][aria-checked="true"]'), null, { timeout: 8000 });
 	await page.screenshot({ path: join(DIR, "capability-mine-picker.png") });
+	await page.keyboard.press("Escape");
 	const api = await (await page.request.get(`${base}/api/market/skills/${ids[8]}`)).json();
 	check("picker: the choice is stored on the skill (API)", api.skill.icon === "finance");
 	await page.goto(`${base}/capabilities?tab=market`);
@@ -86,10 +88,12 @@ try {
 	check("picker: the market card now shows the chosen icon", (await attr("zzqx-helper", "data-icon")) === "finance" && (await attr("zzqx-helper", "data-source")) === "explicit");
 	// 自动 clears it again
 	await page.goto(`${base}/capabilities?tab=mine`);
-	const card2 = page.locator(T("skill")).filter({ hasText: "Zzqx 小帮手" });
-	await card2.locator("button[aria-expanded]").click();
-	await card2.locator(T("icon-auto")).click();
-	await page.waitForFunction(() => document.querySelector('[data-testid="skill"] [data-testid="icon-auto"][aria-checked="true"]'), null, { timeout: 8000 });
+	const card2 = page.locator(T("my-skill-card")).filter({ hasText: "Zzqx 小帮手" });
+	await card2.click();
+	const dlg2 = page.locator(T("skill-detail-dialog"));
+	await dlg2.locator(T("icon-auto")).click();
+	await page.waitForFunction(() => document.querySelector('[data-testid="skill-detail-dialog"] [data-testid="icon-auto"][aria-checked="true"]'), null, { timeout: 8000 });
+	await page.keyboard.press("Escape");
 	check("picker: 自动 clears the choice", !(await (await page.request.get(`${base}/api/market/skills/${ids[8]}`)).json()).skill.icon);
 
 	// ---- dark theme + narrow screen

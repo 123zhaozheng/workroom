@@ -34,10 +34,16 @@ export function liveConversations(db: AppDb, alias = ""): string {
 	return tableHasColumn(db, "rt_conversations", "deleted_at") ? ` AND ${alias ? `${alias}.` : ""}deleted_at IS NULL` : "";
 }
 
+/** SQL fragment hiding newly created empty chat conversations that have not received any message yet. */
+export function nonEmptyConversations(db: AppDb, alias = ""): string {
+	const p = alias ? `${alias}.` : "";
+	return tableHasColumn(db, "rt_conversations", "first_message_at") ? ` AND (${p}first_message_at IS NOT NULL OR ${p}kind IN ('branch', 'automation'))` : "";
+}
+
 function conversationCount(db: AppDb, projectId: string, spaceId?: string): number {
 	try {
 		const where = spaceId ? "space_id = ?" : "project_id = ?";
-		return db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM rt_conversations WHERE ${where} AND archived = 0${liveConversations(db)}`, spaceId ?? projectId)?.n ?? 0;
+		return db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM rt_conversations WHERE ${where} AND archived = 0${liveConversations(db)}${nonEmptyConversations(db)}`, spaceId ?? projectId)?.n ?? 0;
 	} catch {
 		return 0; // runtime module not loaded
 	}

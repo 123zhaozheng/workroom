@@ -41,7 +41,6 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
 	{ id: "network", label: "网络访问", description: "服务器代为访问外部网址（浏览器、网页抓取、连接器、个人模型）的网络策略" },
 	{ id: "automation", label: "自动化", description: "创建自动化，以及以他人身份运行" },
 	{ id: "project", label: "项目", description: "创建项目与管理项目" },
-	{ id: "assistant", label: "助手", description: "发布组织级助手（旧接口；新的入口是「专家」）" },
 	{ id: "expert", label: "专家", description: "创建专家，并把专家提交到部门或组织（审查沿用统一的审查员权限）" },
 	{ id: "credential", label: "凭据", description: "项目/组织级凭据的保存、使用与撤销（任何人都读不到明文）" },
 ];
@@ -131,8 +130,6 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	// ---- 项目
 	p("project.create", "project", "创建项目", "创建新的项目空间"),
 	p("project.manage", "project", "管理项目", "管理项目设置与成员（不含查看项目内容）；项目所有者默认拥有", OP, "sensitive"),
-	// ---- 助手
-	p("assistant.publish.org", "assistant", "发布组织助手", "创建、修改和删除组织级助手", O, "sensitive"),
 	// ---- 专家（round 17）：审查/下架沿用 market.review / market.manage
 	p("expert.create", "expert", "创建专家", "创建和编辑仅自己使用的专家"),
 	p("expert.publish", "expert", "发布专家", "把专家提交到部门或组织（经审查员通过后上架）", OD, "sensitive"),
@@ -142,8 +139,14 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	p("credential.use.org", "credential", "使用组织凭据", "通过代理（或按同意注入环境变量）使用组织级凭据；默认只有所有者/管理员，其他角色按组织策略授予", O, "sensitive"),
 ];
 
+// Legacy permission ids kept in lookup/authz so existing stored roles/grants and legacy /assistants checks still work,
+// while omitted from the displayed catalog (PERMISSION_GROUPS / PERMISSIONS).
+const HIDDEN_PERMISSIONS: readonly PermissionDef[] = [
+	p("assistant.publish.org", "assistant", "发布组织助手", "创建、修改和删除组织级助手", O, "sensitive"),
+];
+
 export const PERMISSION_IDS: readonly string[] = PERMISSIONS.map((x) => x.id);
-const BY_ID = new Map(PERMISSIONS.map((x) => [x.id, x]));
+const BY_ID = new Map([...PERMISSIONS, ...HIDDEN_PERMISSIONS].map((x) => [x.id, x]));
 export function permissionDef(id: string): PermissionDef | undefined {
 	return BY_ID.get(id);
 }

@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router";
 import type { ConversationSummary, SendMessageResponse } from "@shared/chat";
 import { post, uuid } from "@/lib/api";
+import { notifyConversations, notifyProjects } from "@/features/projects/model";
 import type { ComposerSubmit } from "./Composer";
 
 /** Create a conversation in a space/project, send the first message (idempotent requestId), open it. */
@@ -27,6 +28,8 @@ export function useStartConversation() {
 			...(v.expertId ? { expertId: v.expertId } : {}), // the first message shows who answers (the chip)
 			mode: "auto",
 		});
+		notifyConversations();
+		if (opts.projectId) notifyProjects();
 		navigate(`/c/${conversation.spaceId}/${conversation.conversationId}`);
 		return true;
 	};

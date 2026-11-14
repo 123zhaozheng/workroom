@@ -47,7 +47,7 @@ export function EnvVarsEditor({ scope, scopeRef, editable, testId = "env-vars", 
 			res.reload();
 			onChanged?.();
 		} catch (e) {
-			const hint = e instanceof ApiError && e.code === "looks_like_secret" ? "密钥请不要放在环境变量里：助手需要时会在对话中请你通过「凭据」提供。" : "";
+			const hint = e instanceof ApiError && e.code === "looks_like_secret" ? "密钥请不要放在环境变量里：AI 需要时会在对话中请你通过「凭据」提供。" : "";
 			setErr([errorText(e), hint].filter(Boolean).join(" "));
 		} finally {
 			setBusy(false);

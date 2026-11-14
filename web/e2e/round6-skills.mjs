@@ -210,7 +210,7 @@ try {
 	await page.goto(`${base}/capabilities`);
 	await page.waitForSelector('[data-testid="my-skills"]');
 	await sleep(500);
-	check("B reject: 能力 › 我的技能 does not list it", (await page.locator('[data-testid="skill"]').filter({ hasText: "first-skill" }).count()) === 0);
+	check("B reject: 能力 › 我的技能 does not list it", (await page.locator('[data-testid="my-skill-card"]').filter({ hasText: "first-skill" }).count()) === 0);
 
 	// second draft → 保存
 	await start(page, `再来一个 ${writeSkill("my-skill2", "second-skill", "把输入的名字问候两遍")}`);
@@ -232,8 +232,8 @@ try {
 	check("B save: the skill exists in my skills (API)", skills.skills.some((s) => s.name === "second-skill"));
 	await page.locator('[data-testid="skill-draft-open"]').click();
 	await page.waitForSelector('[data-testid="my-skills"]');
-	await page.waitForSelector('[data-testid="skill"]', { timeout: 15000 });
-	check("B save: it appears in 能力 › 我的技能", (await page.locator('[data-testid="skill"]').filter({ hasText: "second-skill" }).count()) === 1);
+	await page.waitForSelector('[data-testid="my-skill-card"]', { timeout: 15000 });
+	check("B save: it appears in 能力 › 我的技能", (await page.locator('[data-testid="my-skill-card"]').filter({ hasText: "second-skill" }).count()) === 1);
 	await shot(page, "round6/my-skills-1440-light");
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.emulateMedia({ colorScheme: "dark" });
@@ -243,10 +243,13 @@ try {
 	await page.emulateMedia({ colorScheme: "light" });
 	await page.setViewportSize({ width: 1440, height: 900 });
 	// an executable skill needs the person's grant for that version before it runs (加载技能文本不等于授权)
-	const card2 = page.locator('[data-testid="skill"]').filter({ hasText: "second-skill" });
-	await card2.locator("button[aria-expanded]").click();
-	await card2.getByRole("button", { name: /授予 v1 所需权限/ }).click();
-	await card2.getByText("已全部授予").waitFor({ timeout: 15000 });
+	const card2 = page.locator('[data-testid="my-skill-card"]').filter({ hasText: "second-skill" });
+	await card2.click();
+	const dlg2 = page.locator('[data-testid="skill-detail-dialog"]');
+	await dlg2.waitFor();
+	await dlg2.getByRole("button", { name: /授予 v1 所需权限/ }).click();
+	await dlg2.getByText("已全部授予").waitFor({ timeout: 15000 });
+	await page.keyboard.press("Escape");
 	check("B use: the person grants the skill's permission in 我的技能 (执行需要授权)", true);
 
 	// use it (round 14: no skill tool — the skill is a directory under /skills; copy_to_work it and run its script with exec)
@@ -302,8 +305,9 @@ try {
 	}, zip);
 	await mp.click('[data-testid="upload-submit"]');
 	await mp.waitForSelector('[data-testid="upload-result"]', { timeout: 15000 });
-	await mp.locator('[data-testid="skill"]').first().locator("button[aria-expanded]").click();
-	await mp.click('[data-testid="submit-review"]');
+	await mp.locator('[data-testid="my-skill-card"]').first().click();
+	await mp.waitForSelector('[data-testid="skill-detail-dialog"]');
+	await mp.click('[data-testid="skill-detail-dialog"] [data-testid="submit-review"]');
 	await mp.waitForSelector('[data-testid="submit-scope"]');
 	await sleep(300);
 	const sel = mp.locator('[data-testid="submit-scope"]');
@@ -313,9 +317,10 @@ try {
 	await mp.keyboard.press("Escape");
 	await member.close();
 	await page.goto(`${base}/capabilities`);
-	await page.waitForSelector('[data-testid="skill"]', { timeout: 15000 });
-	await page.locator('[data-testid="skill"]').first().locator("button[aria-expanded]").click();
-	await page.click('[data-testid="submit-review"]');
+	await page.waitForSelector('[data-testid="my-skill-card"]', { timeout: 15000 });
+	await page.locator('[data-testid="my-skill-card"]').first().click();
+	await page.waitForSelector('[data-testid="skill-detail-dialog"]');
+	await page.click('[data-testid="skill-detail-dialog"] [data-testid="submit-review"]');
 	await page.waitForSelector('[data-testid="submit-scope"]');
 	await sleep(300);
 	check("C owner: an org publisher still defaults to 整个组织", (await selValue(page.locator('[data-testid="submit-scope"]'))) === "org");

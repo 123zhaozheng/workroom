@@ -163,7 +163,7 @@ function WelcomeStep({ headingRef }: { headingRef: HeadRef }) {
 			<Head headingRef={headingRef}>欢迎使用 {brand.name}</Head>
 			<p className="text-[15px] leading-relaxed text-fg">
 				{me?.name ? `${me.name}，` : ""}
-				{brand.name} 是你的在线工作助手。
+				{brand.name} 是你的在线 AI 工作空间。
 			</p>
 		</div>
 	);

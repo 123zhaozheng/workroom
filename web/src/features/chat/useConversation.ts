@@ -13,6 +13,7 @@ export function useConversationStream(spaceId: string, conversationId: number) {
 	const [state, setState] = useState<ConversationState>();
 	const [status, setStatus] = useState<StreamStatus>("connecting");
 	const [error, setError] = useState<{ code: string; message: string }>();
+	const reconnectRef = useRef<() => void>(() => {});
 
 	useEffect(() => {
 		setState(undefined);
@@ -73,10 +74,18 @@ export function useConversationStream(spaceId: string, conversationId: number) {
 			setStatus("reconnecting");
 			connect();
 		};
+		reconnectRef.current = () => {
+			if (disposed) return;
+			es?.close();
+			if (retry) clearTimeout(retry);
+			attempts = 0;
+			connect();
+		};
 		window.addEventListener("offline", onOffline);
 		window.addEventListener("online", onOnline);
 		return () => {
 			disposed = true;
+			reconnectRef.current = () => {};
 			if (retry) clearTimeout(retry);
 			window.removeEventListener("offline", onOffline);
 			window.removeEventListener("online", onOnline);
@@ -84,7 +93,20 @@ export function useConversationStream(spaceId: string, conversationId: number) {
 		};
 	}, [spaceId, conversationId]);
 
-	return { state, status, error };
+	const reconnect = useCallback(() => reconnectRef.current(), []);
+	const dropAssistantEntriesFrom = useCallback((firstEntryId: number) => {
+		setState((prev) =>
+			prev
+				? {
+						...prev,
+						entries: prev.entries.filter((e) => !(e.id >= firstEntryId && (e.kind === "assistant" || e.kind === "tool_result"))),
+						live: { ...prev.live, status: "running", busy: true, partial: undefined, tools: [], failure: undefined },
+					}
+				: prev,
+		);
+	}, []);
+
+	return { state, status, error, reconnect, dropAssistantEntriesFrom };
 }
 
 export function useConversationDetail(spaceId: string, conversationId: number) {
@@ -135,7 +157,10 @@ export function useEarlierEntries(spaceId: string, conversationId: number) {
 		},
 		[spaceId, conversationId],
 	);
-	return { earlier, hasMore, loading, load };
+	const dropFrom = useCallback((firstEntryId: number) => {
+		setEarlier((xs) => xs.filter((e) => !(e.id >= firstEntryId && (e.kind === "assistant" || e.kind === "tool_result"))));
+	}, []);
+	return { earlier, hasMore, loading, load, dropFrom };
 }
 
 export interface TrackedSubmission {

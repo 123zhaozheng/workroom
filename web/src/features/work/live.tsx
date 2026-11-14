@@ -146,7 +146,7 @@ export function BrowserSessionView({ s: polled, onChanged, variant = "inline" }:
 		mine ? (
 			<Button size="sm" onClick={() => act("release")} disabled={busy} data-testid="browser-release">
 				<Undo2 />
-				交还给助手
+				交还给 AI
 			</Button>
 		) : s.controller.kind === "agent" ? (
 			<Button size="sm" variant="primary" onClick={() => act("takeover")} disabled={busy} data-testid="browser-takeover">
@@ -196,7 +196,7 @@ export function BrowserSessionView({ s: polled, onChanged, variant = "inline" }:
 				<div className="flex shrink-0 items-center gap-1.5">
 					{busy ? <Loader2 aria-label="加载中" className="size-3.5 shrink-0 wr-spin text-info" /> : null}
 					<Badge tone={s.controller.kind === "user" ? "warning" : "info"} data-testid="browser-controller" className="max-w-[140px] truncate">
-						{s.controller.kind === "agent" ? "助手操作中" : mine ? "你在操作" : `${s.controller.name ?? "成员"} 在操作`}
+						{s.controller.kind === "agent" ? "AI 操作中" : mine ? "你在操作" : `${s.controller.name ?? "成员"} 在操作`}
 					</Badge>
 				</div>
 			</div>

@@ -95,6 +95,20 @@ export const ExpertDoc = defineDoc<{ modelExplicit: boolean; restoreModel: { pro
 	checkpointWhen: () => true,
 });
 
+/**
+ * Entry ids omitted by in-place regeneration (`edits: [{ target, action: "omit" }]` on `wr.omit`), so GET /entries
+ * and SSE /events hide them reliably even across pagination windows. `rewindable` + `asOf`: forks keep omissions as of the fork point.
+ */
+export const OmittedEntriesDoc = defineDoc<{ ids: number[] }>({
+	kind: "wr.omitted",
+	version: 1,
+	scope: "conversation",
+	history: "rewindable",
+	fork: "asOf",
+	initial: () => ({ ids: [] }),
+	checkpointWhen: (_v, _ops, info) => info.deltasSinceBase >= 32,
+});
+
 /** The entry every admitted user input is placed as (model still sees the plain user message). */
 export const InputEntry = defineEntry<InputEntryData & Record<string, any>>("wr.input");
 /** Display-only start marker written when a conversation is created (lets "edit first message" fork before it). */
@@ -105,3 +119,5 @@ export const UnplacedInputEntry = defineEntry<InputEntryData & Record<string, an
 export const WorkspaceEntry = defineEntry<import("../../../shared/chat.ts").WorkspacePrepDTO & Record<string, any>>("wr.workspace");
 /** Display-only runtime notice in the transcript (not seen by the model), e.g. a model fallback with its reason. */
 export const NoticeEntry = defineEntry<{ text: string; code: string }>("wr.notice");
+/** Hidden bookmark entry carrying `edits: [{ target, action: "omit" }]` for in-place regeneration. */
+export const OmitEntry = defineEntry<{ userEntryId: number; omittedIds: number[]; at: string }>("wr.omit");

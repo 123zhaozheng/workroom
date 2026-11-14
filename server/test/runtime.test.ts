@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { startTestApp, type TestApp } from "./helpers/app.ts";
 import { offerAllTools } from "./helpers/ondemand.ts";
 import { isSettled, sseReader, waitFor } from "../src/runtime/testing.ts";
+import { clearFixtureRequests, fixtureRequests } from "../src/runtime/fixture-model.ts";
 import type { ConversationState, EntryDTO, SubmissionDTO } from "../../shared/chat.ts";
 
 const rid = () => randomUUID();
@@ -160,25 +161,149 @@ test("runtime: fork from a middle entry; original and branch continue independen
 	}
 });
 
-test("runtime: edit and regenerate create branches and keep the original", async () => {
+test("runtime: edit creates a branch and keeps the original; regenerate runs in-place, omits last turn assistant entries, and rejects non-last or busy", async () => {
 	const t = await startTestApp();
 	try {
 		const a = await t.user("rt-edit@example.com");
 		const c = await newChat(t, a.token);
 		await settle(t, a.token, c, (await send(t, a.token, c, "原问题 [[reply R1]]")).submissionId);
 		const orig = await entries(t, a.token, c);
-		const user = orig.find((e) => e.kind === "user")!;
-		const asst = orig.find((e) => e.kind === "assistant")!;
-		const ed = await t.json("POST", `${base(c)}/edit`, { token: a.token, json: { entryId: user.id, text: "改过的问题 [[reply R2]]", requestId: rid() } });
+		const user1 = orig.find((e) => e.kind === "user")!;
+		const asst1 = orig.find((e) => e.kind === "assistant")!;
+
+		// edit still creates a branch and keeps the original untouched
+		const ed = await t.json("POST", `${base(c)}/edit`, { token: a.token, json: { entryId: user1.id, text: "改过的问题 [[reply R2]]", requestId: rid() } });
 		await settle(t, a.token, ed.conversation, ed.submissionId);
 		const edited = texts(await entries(t, a.token, ed.conversation));
 		assert.deepEqual(edited, ["user:改过的问题 [[reply R2]]", "assistant:【测试模型·非真实AI】 R2"]);
-		const rg = await t.json("POST", `${base(c)}/regenerate`, { token: a.token, json: { entryId: asst.id } });
-		const rs = await settle(t, a.token, rg.conversation, rg.submissionId);
+		assert.deepEqual(texts(await entries(t, a.token, c)), texts(orig), "original untouched after edit");
+
+		// second turn uses a tool call + tool result + final assistant answer
+		await settle(t, a.token, c, (await send(t, a.token, c, `第二问 [[call wr_fixture_echo {"text":"工具回声"}]]`)).submissionId);
+		const beforeRegen = await entries(t, a.token, c);
+		const turn2ToolAsst = beforeRegen.filter((e) => e.kind === "assistant").at(-2)!;
+		const turn2ToolRes = beforeRegen.filter((e) => e.kind === "tool_result").at(-1)!;
+		const turn2FinalAsst = beforeRegen.filter((e) => e.kind === "assistant").at(-1)!;
+
+		// non-last turn (turn 1 user or assistant) → 409 regenerate_not_last
+		const errOldAsst = await t.json("POST", `${base(c)}/regenerate`, { token: a.token, json: { entryId: asst1.id }, expect: 409 });
+		assert.equal(errOldAsst.error.code, "regenerate_not_last");
+		assert.match(errOldAsst.error.message, /只能重新生成最后一条回答/);
+		const errOldUser = await t.json("POST", `${base(c)}/regenerate`, { token: a.token, json: { entryId: user1.id }, expect: 409 });
+		assert.equal(errOldUser.error.code, "regenerate_not_last");
+
+		// open SSE stream to verify live removal + replacement
+		const sse = sseReader(await t.req("GET", `${base(c)}/events`, { token: a.token }));
+		await sse.next((e) => e.event === "snapshot");
+
+		const convCountBefore = t.app.ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM rt_conversations WHERE space_id = ?", c.spaceId)!.n;
+		clearFixtureRequests();
+
+		// in-place regenerate on the last turn's final assistant entry
+		const rg = await t.json("POST", `${base(c)}/regenerate`, { token: a.token, json: { entryId: turn2FinalAsst.id } });
+		assert.equal(rg.inPlace, true);
+		assert.equal(rg.conversation.conversationId, c.conversationId);
+		const rs = await settle(t, a.token, c, rg.submissionId);
 		assert.equal(rs.status, "done");
-		const regen = texts(await entries(t, a.token, rg.conversation));
-		assert.deepEqual(regen, ["user:原问题 [[reply R1]]", "assistant:【测试模型·非真实AI】 R1"]);
-		assert.deepEqual(texts(await entries(t, a.token, c)), texts(orig), "original untouched");
+
+		// no new branch row was created
+		assert.equal(t.app.ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM rt_conversations WHERE space_id = ?", c.spaceId)!.n, convCountBefore);
+		const detail = await t.json("GET", base(c), { token: a.token });
+		assert.equal(detail.branches.length, 1, "only the edit branch exists, not a regenerate branch");
+
+		// old assistant + tool_result + tool-call assistant entries are gone from GET /entries, and wr.omit is hidden
+		const afterRegen = await entries(t, a.token, c);
+		const idsAfter = new Set(afterRegen.map((e) => e.id));
+		assert.equal(idsAfter.has(turn2ToolAsst.id), false, "old tool-call assistant entry hidden");
+		assert.equal(idsAfter.has(turn2ToolRes.id), false, "old tool-result entry hidden");
+		assert.equal(idsAfter.has(turn2FinalAsst.id), false, "old final assistant entry hidden");
+		assert.equal(afterRegen.some((e) => (e as any).rawKind === "wr.omit"), false, "bookmark entry wr.omit is hidden");
+		const newFinalAsst = afterRegen.filter((e) => e.kind === "assistant").at(-1)!;
+		assert.ok(newFinalAsst.id > turn2FinalAsst.id, "new assistant entry appears");
+		assert.deepEqual(
+			texts(afterRegen),
+			[
+				"user:原问题 [[reply R1]]",
+				"assistant:【测试模型·非真实AI】 R1",
+				`user:第二问 [[call wr_fixture_echo {"text":"工具回声"}]]`,
+				"assistant:",
+				"assistant:【测试模型·非真实AI】 工具执行完成，结果如下：\n- wr_fixture_echo: echo(rt-edit): 工具回声",
+			],
+		);
+
+		// model context on the regenerate's first request did NOT include the omitted entries
+		const reqs = fixtureRequests();
+		assert.ok(reqs.length >= 1);
+		assert.deepEqual(reqs[0]!.map((m) => m.role), ["user", "assistant", "user"]);
+
+		// SSE snapshot on reconnect also hides omitted entries & wr.omit
+		await sse.close();
+		const sse2 = sseReader(await t.req("GET", `${base(c)}/events`, { token: a.token }));
+		const snap2: ConversationState = (await sse2.next((e) => e.event === "snapshot")).data;
+		assert.equal(snap2.entries.some((e) => e.id === turn2FinalAsst.id || e.id === turn2ToolRes.id || (e as any).rawKind === "wr.omit"), false);
+		await sse2.close();
+
+		// regenerating again in-place on the newly generated answer also works
+		const rg2 = await t.json("POST", `${base(c)}/regenerate`, { token: a.token, json: { entryId: newFinalAsst.id } });
+		assert.equal(rg2.inPlace, true);
+		assert.equal((await settle(t, a.token, c, rg2.submissionId)).status, "done");
+		const afterRegen2 = await entries(t, a.token, c);
+		assert.equal(afterRegen2.some((e) => e.id === newFinalAsst.id), false);
+
+		// regenerating while busy returns 409
+		const slow = await send(t, a.token, c, "[[slow 3000]] 慢一点");
+		await waitFor(async () => (await t.json("GET", `${base(c)}/submissions/${slow.submissionId}`, { token: a.token })).status === "applied");
+		const curEntries = await entries(t, a.token, c);
+		const latestUser = curEntries.filter((e) => e.kind === "user").at(-1)!;
+		await t.json("POST", `${base(c)}/regenerate`, { token: a.token, json: { entryId: latestUser.id }, expect: 409 });
+		await t.json("POST", `${base(c)}/abort`, { token: a.token, json: {} });
+		await settle(t, a.token, c, slow.submissionId);
+	} finally {
+		await t.dispose();
+	}
+});
+
+test("runtime: empty conversations stay hidden from list/search/project count until first message; branches and migrated rows stay visible", async () => {
+	const t = await startTestApp();
+	try {
+		const a = await t.user("rt-empty@example.com");
+		const { project } = await t.json("POST", "/api/projects", { token: a.token, json: { name: "项目空会话测试" } });
+
+		// Create empty conversation (personal & inside project) without sending a message
+		const emptyPersonal = await newChat(t, a.token, { title: "空个人会话" });
+		const emptyProject = await newChat(t, a.token, { title: "空项目会话", projectId: project.id });
+
+		assert.equal((await t.json("GET", "/api/conversations", { token: a.token })).conversations.length, 0);
+		assert.equal((await t.json("GET", `/api/conversations?projectId=${project.id}`, { token: a.token })).conversations.length, 0);
+		assert.equal((await t.json("GET", "/api/projects", { token: a.token })).projects[0].conversationCount, 0);
+		assert.equal((await t.json("GET", "/api/search?q=", { token: a.token })).results.length, 0);
+		// Direct URL access still works
+		assert.equal((await t.json("GET", base(emptyPersonal), { token: a.token })).conversation.conversationId, emptyPersonal.conversationId);
+		assert.equal((await t.json("GET", `${base(emptyProject)}/state`, { token: a.token })).conversation.conversationId, emptyProject.conversationId);
+
+		// Send one message in emptyPersonal -> appears in list & search
+		await settle(t, a.token, emptyPersonal, (await send(t, a.token, emptyPersonal, "第一句话 [[reply 收到]]")).submissionId);
+		const list1 = (await t.json("GET", "/api/conversations", { token: a.token })).conversations;
+		assert.deepEqual(list1.map((x: any) => x.conversationId), [emptyPersonal.conversationId]);
+		assert.equal((await t.json("GET", "/api/search?q=", { token: a.token })).results.length, 1);
+
+		// Send one message in emptyProject -> appears in project list & count
+		await settle(t, a.token, emptyProject, (await send(t, a.token, emptyProject, "项目第一句 [[reply 好]]")).submissionId);
+		const projList = (await t.json("GET", `/api/conversations?projectId=${project.id}`, { token: a.token })).conversations;
+		assert.deepEqual(projList.map((x: any) => x.conversationId), [emptyProject.conversationId]);
+		assert.equal((await t.json("GET", "/api/projects", { token: a.token })).projects[0].conversationCount, 1);
+
+		// Migration backfill: pre-v4 rows without first_message_at are backfilled and remain visible
+		const { AppDb } = await import("../src/core/db.ts");
+		const { runtimeModule } = await import("../src/runtime/module.ts");
+		const db = new AppDb(":memory:");
+		const all = runtimeModule.migrations!;
+		db.migrate("runtime", all.filter((m) => m.version <= 3));
+		db.run("INSERT INTO rt_conversations (space_id, conversation_id, created_by, title, project_id, kind, archived, created_at, updated_at) VALUES ('sp_1', 1, 'u1', '历史会话', NULL, 'chat', 0, '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z')");
+		db.migrate("runtime", all);
+		const backfilled = db.get<{ first_message_at: string | null }>("SELECT first_message_at FROM rt_conversations WHERE space_id = 'sp_1' AND conversation_id = 1");
+		assert.equal(backfilled?.first_message_at, "2025-01-01T00:00:00.000Z");
+		db.close();
 	} finally {
 		await t.dispose();
 	}
@@ -342,7 +467,9 @@ test("runtime: input validation — unknown/unlisted model refused, chip shapes 
 		const a = await t.user("rt-val@example.com");
 		await t.json("POST", "/api/conversations", { token: a.token, json: { modelId: "someprovider/some-model" }, expect: 400 });
 		const c = await newChat(t, a.token, { title: "100% 完成" });
-		await newChat(t, a.token, { title: "别的" });
+		const c2 = await newChat(t, a.token, { title: "别的" });
+		await settle(t, a.token, c, (await send(t, a.token, c, "m1 [[reply ok]]")).submissionId);
+		await settle(t, a.token, c2, (await send(t, a.token, c2, "m2 [[reply ok]]")).submissionId);
 		const r = await t.json("POST", `${base(c)}/messages`, { token: a.token, json: { text: "x", requestId: rid(), attachments: [{ fileId: 1 }] }, expect: 400 });
 		assert.equal(r.error.code, "invalid_attachments");
 		await t.json("POST", `${base(c)}/messages`, { token: a.token, json: { text: "", requestId: rid() }, expect: 400 });

@@ -2,7 +2,7 @@
 //  - the 放大 button is on the browser entry, the dialog opens centered with title / URL / controller state / live screenshot
 //  - Esc closes it and focus returns to the 放大 button
 //  - agent controls → 接管 in the dialog → click on the screenshot reaches the page, scroll with the wheel scrolls the page,
-//    typing works, 交还给助手 hands control back
+//    typing works, 交还给 AI hands control back
 //  - a project viewer sees the dialog read-only (只能观看, no 接管, no input)
 // Run: npm run -s build:web && node web/e2e/browser-expand.mjs        (port 8841; SHOTS_DIR overrides where screenshots go)
 import { createServer } from "node:http";
@@ -85,7 +85,7 @@ try {
 	const vp = page.viewportSize();
 	check("dialog is large and centered", box.width > 900 && box.height > 600 && Math.abs(box.x + box.width / 2 - vp.width / 2) < 4 && Math.abs(box.y + box.height / 2 - vp.height / 2) < 4, JSON.stringify(box));
 	const text = await modal.innerText();
-	check("dialog shows title, URL and controller state", text.includes("测试页面") && text.includes(PAGE) && text.includes("助手操作中"), text.replace(/\s+/g, " ").slice(0, 120));
+	check("dialog shows title, URL and controller state", text.includes("测试页面") && text.includes(PAGE) && text.includes("AI 操作中"), text.replace(/\s+/g, " ").slice(0, 120));
 	check("dialog has 接管 for an editor", (await modal.locator(T("browser-takeover")).count()) === 1);
 	await sleep(500); // let the fade-in finish
 	await shot(page, "browser-expand-2-modal-agent");
@@ -101,7 +101,7 @@ try {
 	await modal.waitFor();
 	await modal.locator(T("browser-takeover")).click();
 	await page.waitForSelector(`${T("browser-modal")} ${T("browser-session")}[data-controller="user"]`, { timeout: 10000 });
-	check("takeover inside the dialog: shows 你在操作 and 交还给助手", (await modal.innerText()).includes("你在操作") && (await modal.locator(T("browser-release")).count()) === 1);
+	check("takeover inside the dialog: shows 你在操作 and 交还给 AI", (await modal.innerText()).includes("你在操作") && (await modal.locator(T("browser-release")).count()) === 1);
 	const img = modal.locator(T("browser-screenshot"));
 	const ib = await img.boundingBox();
 	// the page is letterboxed (object-contain): locate the 点我 button (page ≈ (86, 176)) the way a user would, from the shown image
@@ -133,7 +133,7 @@ try {
 
 	await modal.locator(T("browser-release")).click();
 	await page.waitForSelector(`${T("browser-modal")} ${T("browser-session")}[data-controller="agent"]`, { timeout: 10000 });
-	check("交还给助手 inside the dialog returns control", (await modal.innerText()).includes("助手操作中"));
+	check("交还给 AI inside the dialog returns control", (await modal.innerText()).includes("AI 操作中"));
 	await modal.locator(T("browser-modal-close")).click();
 	await modal.waitFor({ state: "detached" });
 

@@ -207,18 +207,14 @@ function Mine({ list, onOpen, onEdit, onCreate, canCreate, onChanged }: { list: 
 								badge={<StatusBadge e={e} />}
 								footer={
 									<>
-										{e.source !== "assistant" ? (
-											<Button size="sm" variant="ghost" onClick={() => onEdit(e)} aria-label="编辑">
-												<Pencil />
-												编辑
-											</Button>
-										) : null}
-										{e.source !== "assistant" ? (
-											<Button size="sm" variant="ghost" onClick={() => setSubmit(e)} data-testid="expert-submit-open">
-												<Send />
-												提交审核…
-											</Button>
-										) : null}
+										<Button size="sm" variant="ghost" onClick={() => onEdit(e)} aria-label="编辑">
+											<Pencil />
+											编辑
+										</Button>
+										<Button size="sm" variant="ghost" onClick={() => setSubmit(e)} data-testid="expert-submit-open">
+											<Send />
+											提交审核…
+										</Button>
 										<Button
 											size="icon"
 											variant="ghost"
@@ -385,12 +381,12 @@ export function ExpertDetail({ id, onEdit, onChanged }: { id: string; onEdit: (e
 							<Button onClick={toggle} data-testid="expert-install">
 								{e.installed ? "移出我的专家" : "添加到我的专家"}
 							</Button>
-						) : e.source !== "assistant" ? (
+						) : (
 							<Button onClick={() => onEdit(e)}>
 								<Pencil />
 								编辑
 							</Button>
-						) : null}
+						)}
 					</div>
 					{err ? <p className="text-danger">{err}</p> : null}
 					{e.description ? <p className="whitespace-pre-wrap text-fg-muted">{e.description}</p> : null}

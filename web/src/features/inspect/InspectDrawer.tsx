@@ -76,7 +76,7 @@ function BuildView({ builds }: { builds: readonly HarnessBuildDTO[] }) {
 								["思考强度", b.thinkingLevel],
 								["最多轮数", b.maxTurns?.toString()],
 								["工作目录", b.cwd ? <span className="font-mono">{b.cwd}</span> : undefined],
-								["助手", b.assistant?.name ?? b.assistant?.id],
+								["专家", b.assistant?.name ?? b.assistant?.id],
 							]}
 						/>
 					</Collapsible>
@@ -95,7 +95,7 @@ function BuildView({ builds }: { builds: readonly HarnessBuildDTO[] }) {
 						)}
 						{b.instructions ? (
 							<div className="mt-3">
-								<div className="mb-1 text-xs font-medium text-fg-subtle">助手指令</div>
+								<div className="mb-1 text-xs font-medium text-fg-subtle">专家指令</div>
 								<Pre text={b.instructions} mono={false} />
 							</div>
 						) : null}

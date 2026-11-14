@@ -223,7 +223,7 @@ export function AssistantMessage({
 							<Download />
 						</ActionButton>
 						{!readOnly && onRegenerate ? (
-							<ActionButton label="重新生成（新分支）" testId="action-regenerate" onClick={onRegenerate}>
+							<ActionButton label="重新生成" testId="action-regenerate" onClick={onRegenerate}>
 								<RefreshCw />
 							</ActionButton>
 						) : null}

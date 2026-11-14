@@ -87,7 +87,7 @@ try {
 	check("A: a brand-new user is shown the onboarding dialog after the first sign-in", (await me(pa)).onboarded === false && (await dialog(pa).isVisible()));
 	check("A: it is a modal dialog with an accessible name", (await dialog(pa).getAttribute("role")) === "dialog" && !!(await dialog(pa).getAttribute("aria-labelledby")));
 	check("A: four progress dots, exactly one is the current step (aria-current=step)", (await dots(pa).count()) === 4 && (await pa.locator('[data-testid="onboarding-dot"][aria-current="step"]').count()) === 1 && (await dots(pa).first().getAttribute("aria-current")) === "step");
-	check("A: the first step is 欢迎 with the product sentence and the person's name", (await current(pa)) === "welcome" && /林小满/.test(await step(pa).innerText()) && /在线工作助手/.test(await step(pa).innerText()));
+	check("A: the first step is 欢迎 with the product sentence and the person's name", (await current(pa)) === "welcome" && /林小满/.test(await step(pa).innerText()) && /在线 AI 工作空间/.test(await step(pa).innerText()));
 	check("A: the left column shows a preview on desktop", await pa.locator('[data-testid="onboarding-preview"]').isVisible());
 	check("A: the step heading has focus (screen readers announce the step; Tab continues from it)", await pa.evaluate(() => document.activeElement?.tagName === "H2" && !!document.activeElement.closest('[data-testid="onboarding-step"]')));
 	check("A: 跳过引导 and 稍后 are both visible on the first step", (await pa.locator('[data-testid="onboarding-skip"]').isVisible()) && (await pa.locator('[data-testid="onboarding-later"]').isVisible()));
@@ -327,7 +327,7 @@ try {
 	await dialog(ph).waitFor({ state: "detached" });
 	await ph.goto(`${base}/settings?tab=security`);
 	await ph.waitForSelector('[data-testid="two-factor"]');
-	check("H: 设置 has a 安全 tab (seven entries now)", (await ph.locator('[data-testid^="settings-tab-"]').count()) === 7 && (await ph.locator('[data-testid="settings-tab-security"]').getAttribute("aria-current")) === "page");
+	check("H: 设置 has a 安全 tab (six entries: 助手 tab removed)", (await ph.locator('[data-testid^="settings-tab-"]').count()) === 6 && (await ph.locator('[data-testid="settings-tab-security"]').getAttribute("aria-current")) === "page");
 	check("H: 2FA shows 未启用 with an 启用 button", (await ph.locator('[data-testid="totp-status"]').getAttribute("data-enabled")) === "false" && (await ph.locator('[data-testid="totp-enable-open"]').isVisible()));
 	await snap(ph, "settings-security-off");
 	await ph.click('[data-testid="totp-enable-open"]');

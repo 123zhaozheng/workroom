@@ -58,7 +58,6 @@ try {
 		"cap-market": "/capabilities?tab=market",
 		"cap-connectors": "/capabilities?tab=connectors",
 		"settings-general": "/settings?tab=general",
-		"settings-assistants": "/settings?tab=assistants",
 		"settings-models": "/settings?tab=models",
 		"settings-credentials": "/settings?tab=credentials",
 		"settings-permissions": "/settings?tab=permissions",

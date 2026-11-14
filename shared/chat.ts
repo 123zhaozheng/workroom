@@ -361,6 +361,7 @@ export interface RegenerateRequest {
 export interface BranchResponse {
 	readonly conversation: ConversationSummary;
 	readonly submissionId?: number;
+	readonly inPlace?: boolean;
 }
 
 // ---------------------------------------------------------------- approvals & effects

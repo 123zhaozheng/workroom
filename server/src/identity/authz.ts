@@ -336,7 +336,11 @@ export class Authz implements AuthzService {
 			projectNames.set(r.project_id, r.name);
 		}
 		const roles = new Map<string, { name: string; permissions: ReadonlySet<string>; builtin: boolean }>();
-		for (const b of BUILTIN_ROLES) roles.set(b.id, { name: b.name, permissions: new Set(b.permissions), builtin: true });
+		for (const b of BUILTIN_ROLES) {
+			const perms = new Set(b.permissions);
+			if (b.id === "builtin:admin") perms.add("assistant.publish.org");
+			roles.set(b.id, { name: b.name, permissions: perms, builtin: true });
+		}
 		for (const r of db.all<{ id: string; name: string; permissions: string }>("SELECT id, name, permissions FROM id_roles WHERE org_id = ? AND archived_at IS NULL", orgId)) {
 			let perms: string[] = [];
 			try {

@@ -223,14 +223,15 @@ test("POST /api/skills/distill + GET link + ACL + prompt section + session_trace
 		assert.equal(started.conversation.title, "整理为技能：整理季度销售数据");
 		assert.deepEqual(started.source, { spaceId: src.spaceId, conversationId: src.conversationId, title: "整理季度销售数据" });
 
-		// Verify prompt content & size
+		// Verify prompt content & size (instructions only; no source overview block)
 		assert.match(started.prompt, new RegExp(BUILTIN_DISTILL_SKILL_NAME));
 		assert.match(started.prompt, /session_trace/);
 		assert.match(started.prompt, /skill_manage/);
 		assert.match(started.prompt, /整理季度销售数据/);
 		assert.match(started.prompt, /能力 › 我的技能/);
 		assert.match(started.prompt, /提交审核/);
-		assert.match(started.prompt, /帮我整理销售数据/);
+		assert.doesNotMatch(started.prompt, /源会话概览/);
+		assert.doesNotMatch(started.prompt, /帮我整理销售数据/);
 		assert.ok(Buffer.byteLength(started.prompt, "utf8") <= 1600, `prompt should be ~1.5KB max, got ${Buffer.byteLength(started.prompt, "utf8")} bytes`);
 
 		const distillConv: Conv = { spaceId: started.conversation.spaceId, conversationId: started.conversation.conversationId };

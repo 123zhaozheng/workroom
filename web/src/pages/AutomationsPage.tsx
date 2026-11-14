@@ -293,7 +293,7 @@ function AutomationEditor({ initial, onClose, onSaved }: { initial?: AutomationD
 					</div>
 					<div>
 						<Label htmlFor="ap">要做的事</Label>
-						<Textarea id="ap" rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="每次运行时发给助手的指令" />
+						<Textarea id="ap" rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="每次运行时发给 AI 的指令" />
 					</div>
 					{!initial ? (
 						<div>

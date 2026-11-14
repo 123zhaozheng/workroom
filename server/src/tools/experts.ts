@@ -462,7 +462,6 @@ export class Experts {
 	}
 	async update(p: Principal, id: string, b: any): Promise<ExpertDTO> {
 		const r = this.#own(p, id);
-		if (r.source === "assistant") throw new HttpError(409, "legacy_assistant", "这是由旧助手迁移来的专家，请用旧助手接口修改（团队成员声明仍存放在那里）");
 		const v = await this.#clean(p, b, true, r);
 		const cols = Object.keys(v);
 		if (cols.length) this.#db.run(`UPDATE ex_experts SET ${cols.map((c) => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`, ...(Object.values(v) as any[]), nowIso(), id);
@@ -631,7 +630,7 @@ export function createExpertsExtension(ctx: AppContext): Extension {
 			if (!cur?.expertId) return undefined;
 			const ex = ctx.services.get("experts") as Experts;
 			// A conversation bound to a migrated 助手 already carries its instructions in the agent: not repeated for that same expert.
-			const skip = cur.boundId === cur.expertId && ex.row(cur.expertId)?.source === "assistant";
+			const skip = cur.boundId === cur.expertId && ex.row(cur.expertId)?.source === "assistant" && !!input.agent?.instructions;
 			return await ex.promptFor(scope.principal, cur.expertId, { skipInstructions: skip });
 		} catch {
 			return undefined;

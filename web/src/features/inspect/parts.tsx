@@ -86,7 +86,7 @@ export function ToolItem({ tool }: { tool: InspectToolDTO }) {
 const ROLE: Record<InspectMessageDTO["role"], { label: string; bar: string; badge: "warning" | "info" | "success" | "neutral" }> = {
 	system: { label: "系统", bar: "border-l-warning", badge: "warning" },
 	user: { label: "用户", bar: "border-l-info", badge: "info" },
-	assistant: { label: "助手", bar: "border-l-success", badge: "success" },
+	assistant: { label: "AI", bar: "border-l-success", badge: "success" },
 	tool: { label: "工具结果", bar: "border-l-fg-subtle", badge: "neutral" },
 };
 

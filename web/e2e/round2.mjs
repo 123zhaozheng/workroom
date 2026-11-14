@@ -132,7 +132,7 @@ try {
 	await waitIdle(page);
 	await page.click('[data-testid="open-work-panel"]');
 	await page.waitForSelector('[data-testid="browser-entry"]', { timeout: 20000 });
-	await page.locator('[data-testid="browser-entry"] > button').first().click();
+	await page.locator('[data-testid="browser-entry"] button[aria-expanded]').first().click();
 	await page.waitForSelector('[data-testid="browser-session"][data-controller="agent"]', { timeout: 20000 });
 	await page.click('[data-testid="browser-takeover"]');
 	await page.waitForSelector('[data-testid="browser-session"][data-controller="user"]', { timeout: 10000 });
@@ -158,7 +158,7 @@ try {
 	await page.click('[data-testid="open-work-panel"]');
 	await page.waitForSelector('[data-testid="job"]', { timeout: 10000 });
 	await shot(page, "1440-job-running");
-	await page.locator('[data-testid="job"] > button').first().click(); // round 14: the row's details (and 取消) sit behind its chevron
+	await page.locator('[data-testid="job"] button[aria-expanded]').first().click(); // round 14: the row's details (and 取消) sit behind its chevron
 	await page.click('[data-testid="job-cancel"]');
 	await page.waitForSelector('[data-testid="job"][data-status="cancelled"]', { timeout: 30000 });
 	check("job: cancel → 已取消 (panel and in-message chip)", true);

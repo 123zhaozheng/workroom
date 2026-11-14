@@ -83,17 +83,24 @@ try {
 	const ex = await a.request.post(`${base}/api/skills`, { data: { name: "表格汇总脚本", kind: "executable", description: "把 CSV 汇总成统计表", instructions: "运行 summarize.sh 读取 /work 下的 CSV 并输出汇总，然后发布结果文件。", resources: [{ path: "summarize.sh", content: "#!/bin/sh\nwc -l /work/*.csv > /work/summary.txt\n" }], entry: "summarize.sh", requiredPermissions: ["file.write"] } });
 	check("setup: executable skill created", ex.ok(), `status=${ex.status()} ${ex.ok() ? "" : (await ex.text()).slice(0, 200)}`);
 	await a.goto(`${base}/capabilities`);
-	await a.waitForFunction(() => document.querySelectorAll('[data-testid="skill"]').length === 3);
-	for (const n of ["周报模板", "报销须知", "表格汇总脚本"]) await a.locator('[data-testid="skill"]', { hasText: n }).locator("button[aria-expanded]").click();
-	await a.waitForSelector('[data-testid="skill-grants"]', { timeout: 10000 });
-	const txt = (n) => a.locator('[data-testid="skill"]', { hasText: n }).innerText();
-	const [tp, tc, te] = [await txt("周报模板"), await txt("报销须知"), await txt("表格汇总脚本")];
+	await a.waitForFunction(() => document.querySelectorAll('[data-testid="my-skill-card"]').length === 3);
+	const detailText = async (n) => {
+		await a.locator('[data-testid="my-skill-card"]', { hasText: n }).click();
+		const dlg = a.locator('[data-testid="skill-detail-dialog"]');
+		await dlg.waitFor();
+		const t = await dlg.innerText();
+		if (n !== "表格汇总脚本") await a.keyboard.press("Escape");
+		return t;
+	};
+	const [tp, tc, te] = [await detailText("周报模板"), await detailText("报销须知"), await detailText("表格汇总脚本")];
+	await a.waitForSelector('[data-testid="skill-detail-dialog"] [data-testid="skill-grants"]', { timeout: 10000 });
 	check("M05-A: prompt preset, context-only and executable skills are labelled distinctly", tp.includes("提示词预设") && tc.includes("上下文技能") && te.includes("可执行技能"));
 	check("M05-A: the executable skill lists its entry, sandbox/file permissions and a grant prompt; text skills need none", te.includes("入口 summarize.sh") && te.includes("运行代码") && te.includes("写入文件") && te.includes("缺少") && tp.includes("无需额外权限") && tc.includes("无需额外权限"), te.replace(/\s+/g, " ").slice(0, 200));
-	await a.locator('[data-testid="skill"]', { hasText: "表格汇总脚本" }).getByRole("button", { name: /授予 v1 所需权限/ }).click();
-	await a.waitForFunction(() => document.querySelector('[data-testid="skill-grants"]')?.textContent?.includes("已全部授予"), null, { timeout: 10000 });
+	await a.locator('[data-testid="skill-detail-dialog"]').getByRole("button", { name: /授予 v1 所需权限/ }).click();
+	await a.waitForFunction(() => document.querySelector('[data-testid="skill-detail-dialog"] [data-testid="skill-grants"]')?.textContent?.includes("已全部授予"), null, { timeout: 10000 });
 	check("M05-A: per-version grant recorded for the executable skill", true);
 	await shot(a, "1440-skill-kinds");
+	await a.keyboard.press("Escape");
 
 	// ---------------------------------------------------------------- M11-B: viewer watches, cannot take over
 	const proj = (await (await a.request.post(`${base}/api/projects`, { data: { kind: "space", name: "竞品调研" } })).json()).project;
@@ -107,7 +114,7 @@ try {
 	await member.p.goto(projChat);
 	await member.p.click('[data-testid="open-work-panel"]');
 	await member.p.waitForSelector('[data-testid="browser-entry"]', { timeout: 20000 });
-	await member.p.locator('[data-testid="browser-entry"] > button').first().click();
+	await member.p.locator('[data-testid="browser-entry"] button[aria-expanded]').first().click();
 	await member.p.waitForSelector('[data-testid="browser-session"]', { timeout: 20000 });
 	await member.p.waitForSelector('[data-testid="browser-screenshot"]');
 	const vText = await member.p.locator('[data-testid="browser-session"]').innerText();

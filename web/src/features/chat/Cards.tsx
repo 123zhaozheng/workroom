@@ -210,7 +210,7 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 				</div>
 			) : sent ? (
 				<p role="status" className="mt-2.5 text-[13px] text-fg-muted">
-					{sent === "approved" ? (draft ? "已提交保存，正在继续…" : "已允许，正在继续…") : draft ? "已选择不保存，正在通知助手…" : "已拒绝，正在通知助手…"}
+					{sent === "approved" ? (draft ? "已提交保存，正在继续…" : "已允许，正在继续…") : draft ? "已选择不保存，正在通知 AI…" : "已拒绝，正在通知 AI…"}
 				</p>
 			) : confirming ? (
 				<div data-testid="approval-confirm" role="alertdialog" aria-label="再次确认" className="mt-2.5 rounded-lg border border-danger/40 bg-surface p-2.5">
@@ -271,7 +271,7 @@ export function ApprovalCard({ approval, base, canDecide = true }: { approval: A
 					)}
 					<dt className="text-fg-muted">请求人</dt>
 					<dd>
-						助手{forMe ? "（代你执行）" : "（代另一位成员执行）"}
+						AI{forMe ? "（代你执行）" : "（代另一位成员执行）"}
 						<span className="text-fg-subtle"> · {relTime(approval.requestedAt)}</span>
 					</dd>
 					{approval.approverUserIds?.length ? (

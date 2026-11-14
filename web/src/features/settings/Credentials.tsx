@@ -90,7 +90,7 @@ export function CredentialsSection() {
 											data-testid="credential-revoke"
 											disabled={!!c.revokedAt || busy === c.id}
 											onClick={async () => {
-												if (await ask({ title: "撤销这个凭据？", consequence: "撤销后助手不能再用它访问外部服务，需要时只能重新提供。", confirmLabel: "撤销", danger: true })) void act(c.id, () => post(`/credentials/${encodeURIComponent(c.id)}/revoke`, {}));
+												if (await ask({ title: "撤销这个凭据？", consequence: "撤销后 AI 不能再用它访问外部服务，需要时只能重新提供。", confirmLabel: "撤销", danger: true })) void act(c.id, () => post(`/credentials/${encodeURIComponent(c.id)}/revoke`, {}));
 											}}
 										>
 											撤销
