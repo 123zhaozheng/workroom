@@ -10,8 +10,10 @@ export interface Prefs {
 	sidebarCollapsed: boolean;
 	/** Animated dot-matrix background on the home and chat pages (user-requested; off = no canvas at all). */
 	dotMatrix: boolean;
+	/** Chat page 加宽模式: wider message area + composer, no assistant avatar column. Default is the centered column. */
+	chatWide: boolean;
 }
-const DEFAULTS: Prefs = { theme: "system", reduceMotion: false, sidebarCollapsed: false, dotMatrix: true };
+const DEFAULTS: Prefs = { theme: "system", reduceMotion: false, sidebarCollapsed: false, dotMatrix: true, chatWide: false };
 const KEY = "wr.prefs.v1";
 
 function load(): Prefs {

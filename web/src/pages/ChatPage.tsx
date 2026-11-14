@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronDown, ChevronRight, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, TriangleAlert, WifiOff, X } from "lucide-react";
+import { ArrowDown, ChevronDown, FoldHorizontal, UnfoldHorizontal, ChevronRight, ClipboardList, Link2, MessageSquare, Route, GitBranch, Loader2, MoreHorizontal, PanelRight, RotateCcw, Sparkles, TriangleAlert, WifiOff, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { AbortResponse, AgentDTO, AttachmentRef, BranchResponse, ConversationDetailResponse, ConversationSummary, EntryDTO, KnowledgeRef, PromoteResponse, QueuedInputDTO, SendMessageResponse, UserEntryDTO, WithdrawResponse } from "@shared/chat";
@@ -103,7 +103,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 		publishWork(state?.work);
 	}, [state?.work, publishWork]);
 	useEffect(() => () => publishWork(undefined), [publishWork]);
-	const { motionReduced } = usePrefs();
+	const { motionReduced, chatWide, set: setPref } = usePrefs();
 	// One rail tick per question. Short strings only, so the rail re-renders when a question or an answer's first words change — not per streamed token.
 	const railItems = useMemo<RailItem[]>(() => {
 		const out: RailItem[] = [];
@@ -313,10 +313,13 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const parent = detail?.parent ?? conv?.parent;
 	// Only the preview takes a column; the work panel floats over the chat without narrowing it.
 	const panelOpen = panel?.kind === "preview";
+	// 加宽模式: a wider column (still capped; with the preview column open it simply fills what is left, up to 900px).
+	const colW = chatWide ? (panelOpen ? "max-w-[900px]" : "max-w-[var(--content-w-wide)]") : panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]";
+	const gutter = chatWide ? "" : "sm:pl-[38px]"; // the avatar's width, only in the default layout
 
 	return (
 		<div ref={pageRef} className="relative isolate flex min-h-0 flex-1 flex-col">
-			<DotMatrix column={panelOpen ? 720 : 760} />
+			<DotMatrix column={chatWide ? (panelOpen ? 900 : 1160) : panelOpen ? 720 : 760} />
 			<TopBar
 				right={
 					<>
@@ -375,6 +378,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 								</MenuItem>
 							</MenuContent>
 						</Menu>
+						<Tip label={chatWide ? "恢复默认宽度" : "加宽"}>
+							<button data-testid="toggle-wide" aria-label={chatWide ? "恢复默认宽度" : "加宽"} aria-pressed={chatWide} onClick={() => setPref("chatWide", !chatWide)} className={cn("hidden rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg md:inline-flex", chatWide && "bg-surface-2 text-fg")}>
+								{chatWide ? <FoldHorizontal className="size-[18px]" /> : <UnfoldHorizontal className="size-[18px]" />}
+							</button>
+						</Tip>
 						<Tip label="工作面板">
 							<button data-testid="open-work-panel" aria-label="工作面板" aria-pressed={panel?.kind === "work"} onClick={toggleWork} className={cn("rounded-lg p-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg", panel?.kind === "work" && "bg-surface-2 text-fg")}>
 								<PanelRight className="size-[18px]" />
@@ -417,7 +425,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 
 			<div className="relative flex min-h-0 flex-1 flex-col">
 			<div ref={scroller} onScroll={onScroll} data-testid="chat-scroll" className="wr-scroll relative min-h-0 flex-1 overflow-y-auto">
-				<div className={cn("mx-auto w-full px-4 pb-6 pt-2 sm:px-6", panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]")}>
+				<div className={cn("mx-auto w-full px-4 pb-6 pt-2 sm:px-6", colW)}>
 					{!state ? (
 						<div className="flex items-center justify-center gap-2 py-20 text-[13px] text-fg-subtle">
 							<Spinner /> 正在连接…
@@ -463,6 +471,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 										<AssistantMessage
 											turn={t}
 											readOnly={readOnly}
+											wide={chatWide}
 											avatarState={i === lastAssistantIdx ? avatar : "idle"}
 											onRegenerate={t.lastAssistantEntryId ? () => regenerate(t.lastAssistantEntryId!) : undefined}
 											onFork={t.lastAssistantEntryId ? () => fork(t.lastAssistantEntryId!) : undefined}
@@ -483,11 +492,11 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						</div>
 					) : null}
 
-					<div className="mt-5 flex flex-col gap-3 empty:hidden sm:pl-[38px]">
+					<div className={cn("mt-5 flex flex-col gap-3 empty:hidden", gutter)}>
 						<PendingCredentialRequests spaceId={spaceId} conversationId={id} turns={assistantTurns} readOnly={readOnly} />
 					</div>
 					{pendingApprovals.length || reconcile.length || decidedDrafts.length ? (
-						<div className="mt-5 flex flex-col gap-3 sm:pl-[38px]">
+						<div className={cn("mt-5 flex flex-col gap-3", gutter)}>
 							{decidedDrafts.map((a) => (
 								<SkillDraftResult key={a.approvalId} approval={a} d={skillDraftOf(a.detail)!} />
 							))}
@@ -509,7 +518,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			<PositionRail items={railItems} scroller={scroller} reduced={motionReduced} />
 			</div>
 
-			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]")}>
+			<div className={cn("mx-auto w-full shrink-0 px-3 pb-3 sm:px-6 sm:pb-5", colW)}>
 				<RunBar status={runStatus} live={live} stream={streamStatus} streamError={streamError?.message} onContinue={cont} continuing={continuing} inlineError={!!assistantTurns.at(-1)?.error} />
 				{spaceId && id !== undefined ? <EnvironmentStatus spaceId={spaceId} conversationId={id} active={runStatus === "running"} className="mb-2" explainedBy={failedSandboxTexts(assistantTurns.at(-1))} /> : null}
 				<MessageQueue items={queueItems} runStatus={runStatus} onSendNow={queueSendNow} onUndo={queueUndo} onDelete={queueDelete} readOnly={readOnly} />

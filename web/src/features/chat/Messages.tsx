@@ -1,7 +1,7 @@
 import { BookOpen, Check, ChevronLeft, ChevronRight, Copy, Download, FlaskConical, GitBranch, Pencil, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { FIXTURE_LABEL, type ConversationSummary, type UserEntryDTO } from "@shared/chat";
-import { copyText, downloadText, isSimulatedUsage, SIMULATED_USAGE } from "@/lib/utils";
+import { cn, copyText, downloadText, isSimulatedUsage, SIMULATED_USAGE } from "@/lib/utils";
 import { reasonText, SUBMISSION_LABEL } from "./status";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -159,6 +159,7 @@ export function AssistantMessage({
 	onFork,
 	readOnly,
 	avatarState,
+	wide,
 }: {
 	turn: AssistantTurn;
 	children?: ReactNode;
@@ -166,13 +167,17 @@ export function AssistantMessage({
 	onFork?: () => void;
 	readOnly?: boolean;
 	avatarState: "idle" | "working" | "waiting" | "failed";
+	/** 加宽模式: no avatar and no avatar-sized gutter; status rows and text share one left edge. */
+	wide?: boolean;
 }) {
 	const md = turnMarkdown(turn);
 	return (
-		<div data-testid="assistant-message" data-entry-id={turn.lastAssistantEntryId} className="group flex gap-3">
-			<div className="hidden pt-0.5 sm:block">
-				<AssistantAvatar state={avatarState} label={turn.modelLabel} />
-			</div>
+		<div data-testid="assistant-message" data-entry-id={turn.lastAssistantEntryId} className={cn("group flex", !wide && "gap-3")}>
+			{wide ? null : (
+				<div data-testid="assistant-avatar" className="hidden pt-0.5 sm:block">
+					<AssistantAvatar state={avatarState} label={turn.modelLabel} />
+				</div>
+			)}
 			<div className="min-w-0 flex-1">
 				{turn.fixture ? (
 					<div className="mb-1.5 inline-flex items-center gap-1 rounded-md bg-warning-soft px-1.5 py-0.5 text-xs text-warning" data-testid="fixture-badge">

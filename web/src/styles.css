@@ -49,6 +49,8 @@
 	--sidebar-w: 264px;
 	--panel-w: min(46vw, 720px);
 	--content-w: 760px;
+	/* chat 加宽模式: upper bound of the message column and composer (it still shrinks with the window) */
+	--content-w-wide: 1160px;
 	color-scheme: light;
 }
 
