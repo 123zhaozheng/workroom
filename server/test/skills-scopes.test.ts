@@ -82,7 +82,7 @@ test("department subtree: a skill / install scoped to a department reaches its s
 		await join(hq, mHq);
 		await join(sales, mSales);
 		await assign(author, "builtin:dept_admin", { kind: "department", id: eng });
-		await assign(reviewer, "builtin:skill_reviewer", { kind: "department", id: eng });
+		await assign(reviewer, "builtin:reviewer", { kind: "department", id: eng });
 
 		const a = await up(t, author.token, pkg("eng-kit", "研发部通用的评审清单。当用户做代码评审时使用。"));
 		assert.equal(a.status, 200, JSON.stringify(a.body));

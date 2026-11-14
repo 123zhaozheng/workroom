@@ -102,6 +102,13 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("skills", new Skills(ctx));
 		ctx.services.provide("market", new Market(ctx)); // marketplace group
 		ctx.services.provide("mcpMarket", new McpMarket(ctx)); // marketplace group
+		{
+			// 提交类型处理器：MCP 目录 / 连接器。专家等新类型在各自模块 init 时同样 registerKind。
+			const mm = ctx.services.get("mcpMarket") as McpMarket;
+			const handler = { family: "mcp" as const, onPublished: (sub: any, actor: any) => mm.onPublished(sub, actor), onDecision: (sub: any, to: any) => mm.onDecision(sub, to), submissionInfo: (sub: any) => mm.submissionInfo(sub) };
+			(ctx.services.get("market") as Market).registerKind("mcp_catalog", handler);
+			(ctx.services.get("market") as Market).registerKind("mcp_connector", handler);
+		}
 		ctx.services.provide("jobs", new Jobs(ctx));
 		ctx.services.provide("sandboxPrewarm", prewarmFor(ctx)); // round 11 (R2b): the runtime calls it after a user message is accepted
 		ctx.services.provide("toolPolicy", new ToolPolicy(ctx));
@@ -343,7 +350,7 @@ export const toolsModule: WorkroomModule = {
 		api.post("/skills", async (c) => {
 			const p = principalOf(c);
 			const input = await jsonBody<SkillInput>(c);
-			if (input.scope === "org") await market.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以直接发布组织技能；成员请上传技能包并提交审核");
+			if (input.scope === "org") await market.require(p, "market.manage", undefined, "只有技能市场管理员可以直接发布组织技能；成员请上传技能包并提交审核");
 			const s = await skills.createSkill(p, input);
 			if (c.req.query("install") !== "0") await skills.installFor(p, s.id);
 			return c.json({ skill: await skills.dto(p, s, true) });

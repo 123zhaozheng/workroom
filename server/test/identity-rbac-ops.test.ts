@@ -15,7 +15,7 @@ test("ops admin routes are gated by permission, not by owner/admin role: 计费�
 		};
 		const billing = await mk("billing", "builtin:billing");
 		const auditor = await mk("auditor", "builtin:auditor");
-		const reviewer = await mk("reviewer", "builtin:skill_reviewer");
+		const reviewer = await mk("reviewer", "builtin:reviewer");
 		const admin = await mk("admin", "builtin:admin");
 		const member = await mk("member");
 		const budget = { scope: { kind: "org", id: "" }, period: "month", limitCost: 10, action: "warn" };

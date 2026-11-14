@@ -84,7 +84,7 @@ try {
 	await setMem(west, zhao);
 	const assignRole = (u, roleId, scope) => api.post(`${base}/api/admin/role-assignments`, { data: { subject: { kind: "user", id: u.me.userId }, roleId, ...(scope ? { scope } : {}) } });
 	await assignRole(zhang, "builtin:dept_admin", { kind: "department", id: sales.id });
-	await assignRole(reviewer, "builtin:skill_reviewer");
+	await assignRole(reviewer, "builtin:reviewer");
 	await assignRole(qian, "builtin:auditor");
 	const audit = (await J(await api.post(`${base}/api/admin/roles`, { data: { name: "内部审计", description: "查看审计日志与组织统计", permissions: ["audit.view", "stats.org.view", "trace.view"] } }))).role;
 	const risky = (await J(await api.post(`${base}/api/admin/roles`, { data: { name: "人员清理", description: "可以把成员移出组织", permissions: ["member.view", "member.remove"] } }))).role;

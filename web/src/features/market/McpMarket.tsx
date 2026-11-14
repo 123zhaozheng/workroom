@@ -270,7 +270,7 @@ function SubmitDialog({ open, onOpenChange, entry, onDone }: { open: boolean; on
 							))}
 						</Select>
 					) : null}
-					<Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="给审核员的说明（可选）" />
+					<Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="给审查员的说明（可选）" />
 					{err ? <p className="text-danger">{err}</p> : null}
 					<div className="flex justify-end">
 						<Button variant="primary" disabled={busy || (scope !== "org" && !ref)} onClick={() => run(() => post(`/market/mcp/${entry.id}/versions/${entry.latestVersionNo}/submit`, { targetScope: scope, targetRef: ref || undefined, note }))} data-testid="mcp-submit-confirm">
@@ -319,7 +319,7 @@ function InstallWizard({ entry, option, onClose, onDone }: { entry: McpCatalogDe
 								整个组织
 							</label>
 						</div>
-						{target === "me" && me.data?.me.policy.personalMcp === "approval" ? <p className="rounded-lg bg-warning-soft px-3 py-2 text-warning">组织策略要求个人连接器先经审核：提交后不会连接，直到审核员批准。</p> : null}
+						{target === "me" && me.data?.me.policy.personalMcp === "approval" ? <p className="rounded-lg bg-warning-soft px-3 py-2 text-warning">组织策略要求个人连接器先经审核：提交后不会连接，直到审查员批准。</p> : null}
 						{target === "org" ? (
 							<div>
 								<Label htmlFor="cred">凭据</Label>

@@ -129,7 +129,7 @@ test("upload validation: valid zip and folder give the same canonical package; z
 test("review state machine: submit → checks → scoped reviewer → approve/reject/changes → publish; self-review is refused; unapproved skills are not distributable", async () => {
 	const { t, admin, author, other, reviewer, assign, dept } = await setup();
 	try {
-		await assign(reviewer.me.userId, "builtin:skill_reviewer"); // org-wide reviewer
+		await assign(reviewer.me.userId, "builtin:reviewer"); // org-wide reviewer
 		const d1 = await dept("研发部");
 		const d2 = await dept("市场部");
 		const v1 = await up(t, admin.token, zip({ "SKILL.md": skillMd({ name: "release-notes", description: "根据提交记录生成发布说明。当用户需要整理版本更新内容时使用。" }) }));
@@ -218,11 +218,11 @@ test("reviewer permission scope: a department reviewer decides only submissions 
 		await joinDept(d1, other.me.userId);
 		await assign(author.me.userId, "builtin:dept_admin", { kind: "department", id: d1 }); // may publish (and review) in d1 only
 		const rev1 = reviewer; // reviewer scoped to d1
-		await assign(rev1.me.userId, "builtin:skill_reviewer", { kind: "department", id: d1 });
+		await assign(rev1.me.userId, "builtin:reviewer", { kind: "department", id: d1 });
 		const rev2 = await orgMember(t, admin, "mk-rev2@example.com");
-		await assign(rev2.me.userId, "builtin:skill_reviewer", { kind: "department", id: d2 });
+		await assign(rev2.me.userId, "builtin:reviewer", { kind: "department", id: d2 });
 		const revOrg = await orgMember(t, admin, "mk-revorg@example.com");
-		await assign(revOrg.me.userId, "builtin:skill_reviewer");
+		await assign(revOrg.me.userId, "builtin:reviewer");
 
 		const a = await up(t, author.token, zip({ "SKILL.md": skillMd({ name: "dept-skill", description: "研发部内部的代码评审清单。当用户做代码评审时使用。" }) }));
 		assert.equal(a.status, 200, JSON.stringify(a.body));
@@ -234,7 +234,7 @@ test("reviewer permission scope: a department reviewer decides only submissions 
 		assert.equal((await t.json("GET", "/api/market/submissions?view=queue", { token: rev2.token })).submissions.length, 0);
 		await t.json("POST", `/api/market/submissions/${sub.id}/decision`, { token: rev2.token, json: { decision: "approve" }, expect: 403 });
 		await t.json("GET", `/api/market/submissions/${sub.id}`, { token: rev2.token, expect: 403 });
-		// The author holds skill.review in d1 as a dept admin, but never reviews their own submission.
+		// The author holds market.review in d1 as a dept admin, but never reviews their own submission.
 		assert.equal((await t.req("POST", `/api/market/submissions/${sub.id}/decision`, { token: author.token, json: { decision: "approve" } })).status, 403);
 		// The d1 reviewer decides.
 		assert.equal((await t.json("GET", "/api/market/submissions?view=queue", { token: rev1.token })).submissions.length, 1);
@@ -266,7 +266,7 @@ test("reviewer permission scope: a department reviewer decides only submissions 
 test("install scopes (me / project / org), effective versions follow approvals; versioning and re-review; unpublish and force publish", async () => {
 	const { t, admin, author, other, reviewer, assign } = await setup();
 	try {
-		await assign(reviewer.me.userId, "builtin:skill_reviewer");
+		await assign(reviewer.me.userId, "builtin:reviewer");
 		const skills = t.app.ctx.services.get("skills") as Skills;
 		const desc = "项目上线前的检查清单。当用户准备发布或上线时使用。";
 		const mk = await up(t, admin.token, zip({ "SKILL.md": skillMd({ name: "checklist", version: "1.0.0", description: desc, body: "# v1 清单\n- 备份\n" }) }));
@@ -342,7 +342,7 @@ test("install scopes (me / project / org), effective versions follow approvals; 
 		await t.json("POST", `/api/market/submissions/${failed.id}/decision`, { token: reviewer.token, json: { decision: "approve" }, expect: 409 });
 
 		// Unpublish (market manager, reason mandatory): nobody can use or install it; the author's versions and blobs are kept.
-		await t.json("POST", `/api/market/skills/${id}/unpublish`, { token: reviewer.token, json: { reason: "x" }, expect: 200 }); // skill_reviewer role holds skill.marketplace.manage
+		await t.json("POST", `/api/market/skills/${id}/unpublish`, { token: reviewer.token, json: { reason: "x" }, expect: 200 }); // reviewer role holds market.manage
 		await t.json("POST", `/api/market/skills/${id}/republish`, { token: reviewer.token });
 		await t.json("POST", `/api/market/skills/${id}/unpublish`, { token: other.token, json: { reason: "no" }, expect: 403 });
 		await t.json("POST", `/api/market/skills/${id}/unpublish`, { token: admin.token, json: {}, expect: 400 });
@@ -371,7 +371,7 @@ test("install scopes (me / project / org), effective versions follow approvals; 
 test("materialisation is content-addressed and read-only; the sandbox mount plan targets /skills/<slug>; a skill cannot write to its own directory", { skip: noIsolation }, async () => {
 	const { t, admin, author, reviewer, assign } = await setup();
 	try {
-		await assign(reviewer.me.userId, "builtin:skill_reviewer");
+		await assign(reviewer.me.userId, "builtin:reviewer");
 		const market = t.app.ctx.services.get("market") as Market;
 		const skills = t.app.ctx.services.get("skills") as Skills;
 		const script = [
@@ -446,7 +446,7 @@ test("materialisation is content-addressed and read-only; the sandbox mount plan
 test("personal-skill policy: free → usable immediately; review → upload auto-submits and is unusable until a reviewer approves; disabled → refused", async () => {
 	const { t, admin, author, reviewer, assign } = await setup();
 	try {
-		await assign(reviewer.me.userId, "builtin:skill_reviewer");
+		await assign(reviewer.me.userId, "builtin:reviewer");
 		const skills = t.app.ctx.services.get("skills") as Skills;
 		const authorP = (await t.app.ctx.services.get("identity").principalFor(author.me.userId, author.me.orgId))!;
 		const space = t.app.ctx.services.get("identity").personalSpace(author.me.userId, author.me.orgId);
@@ -485,22 +485,22 @@ test("personal-skill policy: free → usable immediately; review → upload auto
 	}
 });
 
-test("custom role with ONLY skill.review at department scope: reviews that department's submissions, nothing else", async () => {
+test("custom role with ONLY market.review at department scope: reviews that department's submissions, nothing else", async () => {
 	const { t, admin, author, other, assign, dept, join: joinDept } = await setup();
 	try {
 		const d1 = await dept("研发部");
 		const d2 = await dept("市场部");
 		await joinDept(d1, author.me.userId);
 		await assign(author.me.userId, "builtin:dept_admin", { kind: "department", id: d1 });
-		const role = (await t.json("POST", "/api/admin/roles", { token: admin.token, json: { name: "仅技能审核", permissions: ["skill.review"] } })).role;
+		const role = (await t.json("POST", "/api/admin/roles", { token: admin.token, json: { name: "仅技能审核", permissions: ["market.review"] } })).role;
 		const rev = await orgMember(t, admin, "mk-onlyrev@example.com");
 		await assign(rev.me.userId, role.id, { kind: "department", id: d1 });
-		// The role grants exactly skill.review: no marketplace management, no publishing, no MCP review.
+		// The role grants exactly market.review: no marketplace management, no publishing（审查权限不区分类型）.
 		const me = (await t.json("GET", "/api/market/me", { token: rev.token })).me;
 		assert.equal(me.canReviewSkills, false, "not a member of d1 → no department queue entry point");
 		await joinDept(d1, rev.me.userId);
 		const me2 = (await t.json("GET", "/api/market/me", { token: rev.token })).me;
-		assert.deepEqual([me2.canReviewSkills, me2.canReviewMcp, me2.canManageMarket, me2.canPublishOrg], [true, false, false, false]);
+		assert.deepEqual([me2.canReview, me2.canReviewSkills, me2.canReviewMcp, me2.canManageMarket, me2.canPublishOrg], [true, true, true, false, false]); // 统一审查权限：技能/连接不再区分
 
 		const up1 = await up(t, author.token, zip({ "SKILL.md": skillMd({ name: "d1-skill", description: "研发部的发布前检查流程。当用户准备发版时使用。" }) }));
 		const s1 = (await t.json("POST", `/api/market/skills/${up1.body.skill.id}/versions/1/submit`, { token: author.token, json: { targetScope: "department", targetRef: d1 } })).submission;

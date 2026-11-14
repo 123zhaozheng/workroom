@@ -12,7 +12,7 @@ import { registerOidcRoutes } from "./oidc.ts";
 import { registerProjectRoutes } from "./projects.ts";
 import { registerRbacRoutes, setBaseRole } from "./rbac-routes.ts";
 import { policyAuthorized, registerPolicyMiddleware } from "./policy.ts";
-import { BASE_ROLE_IDS, builtinRole, permissionDef } from "../../../shared/permissions.ts";
+import { BASE_ROLE_IDS, builtinRole, canonicalRoleId, permissionDef } from "../../../shared/permissions.ts";
 
 const ORG_ROLES: OrgRole[] = ["owner", "admin", "member"];
 /** Base roles accepted by the legacy `role` fields (guest is a base role that maps to orgRole "member"). */
@@ -444,7 +444,7 @@ export function registerIdentityRoutes(api: Hono<AppEnv>, ctx: AppContext, id: I
 		if (baseName === "owner" && !id.authz.decide(a, "org.owner.manage").allow) throw new HttpError(403, "owner_required", "只有所有者可以邀请所有者");
 		noEscalation(a, rolePermsOf(p.orgId, BASE_ROLE_BY_NAME[baseName]!), scope);
 		// `guest` is a base role stored as orgRole "member" + role_id builtin:guest; any other roleId is an extra role granted on accept.
-		let roleId = b.roleId ?? (baseName === "guest" ? "builtin:guest" : undefined);
+		let roleId = (b.roleId ? canonicalRoleId(b.roleId) : undefined) ?? (baseName === "guest" ? "builtin:guest" : undefined);
 		const legacy = baseName === "guest" ? "member" : baseName;
 		if (roleId && roleId !== "builtin:guest") {
 			if (BASE_ROLE_IDS.includes(roleId)) throw new HttpError(400, "invalid_role", "基础角色请用 role 字段指定");

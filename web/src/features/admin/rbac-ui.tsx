@@ -45,7 +45,7 @@ export const criticalOf = (ids: Iterable<string>): PermissionDef[] => [...ids].m
 export const BASE_ROLE_IDS = ["builtin:owner", "builtin:admin", "builtin:member", "builtin:guest"] as const;
 export const isBaseRole = (id: string): boolean => (BASE_ROLE_IDS as readonly string[]).includes(id);
 /** Display order inside the role list (the default hierarchy: owner > admin > scoped / specialist > member > guest). */
-export const ROLE_ORDER = ["builtin:owner", "builtin:admin", "builtin:member", "builtin:guest", "builtin:dept_admin", "builtin:skill_reviewer", "builtin:auditor", "builtin:billing"];
+export const ROLE_ORDER = ["builtin:owner", "builtin:admin", "builtin:member", "builtin:guest", "builtin:dept_admin", "builtin:reviewer", "builtin:auditor", "builtin:billing"];
 export const SCOPE_KIND_LABEL: Record<PermissionScopeKind, string> = { org: "整个组织", department: "部门（含子部门）", project: "项目" };
 export const ROLE_SHORT: Record<string, string> = { "builtin:owner": "所有者", "builtin:admin": "管理员", "builtin:member": "成员", "builtin:guest": "访客" };
 

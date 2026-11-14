@@ -7,7 +7,7 @@
 
 ```ts
 const authz = ctx.services.get("authz");           // AuthzService（契约见 server/src/core/contracts.ts）
-await authz.require(principal, "skill.review");      // 不满足 → HttpError 403 {code:"forbidden", detail:{permission, because}}
+await authz.require(principal, "market.review");      // 不满足 → HttpError 403 {code:"forbidden", detail:{permission, because}}
 await authz.has(principal, "stats.department.view", { kind: "department", id });  // 部门范围含子部门
 const why = await authz.explain(principal, "member.disable");  // { allow, because:[{source,detail,effect}] }
 ```
@@ -18,7 +18,7 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 ## 模型
 
 - **权限目录**：约 60 个 id，分组、中文名、说明、适用范围（组织/部门/项目）、风险级别。
-- **内置角色**（只读，定义在代码里，随版本更新）：组织所有者、组织管理员、安全审计员、计费管理员、部门管理员（只能分配在部门范围）、技能审核员、普通成员、访客。
+- **内置角色**（只读，定义在代码里，随版本更新）：组织所有者、组织管理员、安全审计员、计费管理员、部门管理员（只能分配在部门范围）、审查员、普通成员、访客。
 - **自定义角色**：组织自定义权限集合（`id_roles`）；可克隆内置角色。不能包含 `org.owner.manage`；创建/修改者只能写入自己拥有的权限。
 - **角色分配**（`id_role_assignments`）：主体 = 用户 / 部门（含子部门成员）/ 用户组；范围 = 整个组织 / 部门（含子部门）/ 项目。基础角色（所有者/管理员/普通成员/访客）每人且仅一个，在组织范围，只能分给个人。
 - **用户直接授权/禁止**（`id_user_grants`）：按权限 + 范围；**禁止优先于允许**；组织所有者不受影响（API 直接拒绝，写入表也无效）。
@@ -46,7 +46,7 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 
 ## 权限目录（自动生成自 `shared/permissions.ts`）
 
-| 权限 id | 名称 | 范围 | 风险 | 组织所有者 | 组织管理员 | 安全审计员 | 计费管理员 | 部门管理员 | 技能审核员 | 普通成员 | 访客 |
+| 权限 id | 名称 | 范围 | 风险 | 组织所有者 | 组织管理员 | 安全审计员 | 计费管理员 | 部门管理员 | 审查员 | 普通成员 | 访客 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **组织设置** | | | |||||||||
 | `org.settings.manage` | 修改组织设置 | 组织 |  | ● | ● |  |  |  |  |  |  |
@@ -103,12 +103,12 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | `skill.use` | 使用技能 | 组织 |  | ● | ● |  |  |  | ● | ● | ● |
 | `skill.upload` | 上传个人技能 | 组织 |  | ● | ● |  |  |  |  | ● |  |
 | `skill.publish` | 发布技能 | 组织/部门 | 敏感 | ● | ● |  |  | ● |  |  |  |
-| `skill.review` | 审核技能 | 组织/部门 | 敏感 | ● | ● |  |  | ● | ● |  |  |
-| `skill.marketplace.manage` | 管理技能市场 | 组织 | 敏感 | ● | ● |  |  |  | ● |  |  |
 | **MCP 与连接器** | | | |||||||||
 | `mcp.connector.add_personal` | 添加个人连接器 | 组织 |  | ● | ● |  |  |  |  | ● |  |
 | `mcp.connector.add_org` | 添加组织连接器 | 组织/部门 | 敏感 | ● | ● |  |  | ● |  |  |  |
-| `mcp.connector.review` | 审核连接器 | 组织/部门 | 敏感 | ● | ● |  |  |  | ● |  |  |
+| **审查** | | | |||||||||
+| `market.review` | 审查 | 组织/部门 | 敏感 | ● | ● |  |  | ● | ● |  |  |
+| `market.manage` | 管理市场 | 组织 | 敏感 | ● | ● |  |  |  | ● |  |  |
 | **沙箱** | | | |||||||||
 | `sandbox.use` | 使用沙箱 | 组织 |  | ● | ● |  |  |  |  | ● |  |
 | `sandbox.network` | 沙箱联网（已停用，不再检查） | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
@@ -123,6 +123,19 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | **助手** | | | |||||||||
 | `assistant.publish.org` | 发布组织助手 | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
 
+
+## 审查员统一（round 17）
+
+原先按对象类型拆开的「技能审核员 / MCP 审核员」合并为一个**审查员**：内置角色 `builtin:reviewer`，权限 `market.review`（审查，可按组织/部门授权）和 `market.manage`（管理市场：下架、强制发布、市场策略、安装到整个组织）。审查对象类型不再体现在权限里：技能、连接器（MCP）、专家，以及以后的新类型，都由同一权限审查；新增类型只需在提交类型里加一个值并 `Market.registerKind()` 注册发布/驳回处理器。
+
+| 旧 | 新 |
+|---|---|
+| 角色 `builtin:skill_reviewer`「技能审核员」 | `builtin:reviewer`「审查员」 |
+| `skill.review`、`mcp.connector.review` | `market.review` |
+| `skill.marketplace.manage` | `market.manage` |
+| `/market/me` 的 `canReviewSkills` / `canReviewMcp` | 保留为 `canReview` 的别名（已标记 deprecated），新增 `canReview`、`reviewKinds` |
+
+兼容：identity migration v6 把库里已有的角色分配、邀请、直接授权/禁止、自定义角色的权限列表改写成新 id（幂等，合并重复）；API 输入里的旧角色 id、旧权限 id（分配角色、直接授权、自定义角色、`explain`）与 `authz.has/require/decide` 的旧权限 id 都会被解析成新的，所以旧脚本与旧自定义集成不用改。
 
 ## 已知缺口
 

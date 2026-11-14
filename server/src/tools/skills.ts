@@ -225,7 +225,7 @@ export class Skills {
 		if (!String(input.instructions ?? "").trim()) throw new HttpError(400, "invalid", "技能说明（instructions）必填");
 		const scope = input.scope === "org" ? "org" : "personal";
 		if (input.icon !== undefined && input.icon !== null && !SKILL_ICON_RE.test(String(input.icon))) throw new HttpError(400, "invalid_icon", "图标不合法");
-		if (scope === "org") await this.#market.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以直接发布组织技能；成员请上传技能包并提交审核");
+		if (scope === "org") await this.#market.require(p, "market.manage", undefined, "只有技能市场管理员可以直接发布组织技能；成员请上传技能包并提交审核");
 		const m = this.#materialize(input, input.kind);
 		const id = newId("skl");
 		const now = nowIso();

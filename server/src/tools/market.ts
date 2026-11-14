@@ -9,7 +9,8 @@ import type { AppContext, AuthzScope, Principal, Space } from "../core/contracts
 import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
 import { SKILL_ICON_RE } from "../../../shared/files.ts";
-import type { MarketMeDTO, MarketPolicyDTO, MarketScope, MarketSkillDetailDTO, MarketSkillSummaryDTO, MarketVersionDTO, PackageCheckDTO, PackageFileDTO, PackageFindingDTO, SkillManifestDTO, SubmissionDTO, SubmissionDetailDTO, SubmissionEventDTO, SubmissionKind, SubmissionState } from "../../../shared/files.ts";
+import { canonicalPermission } from "../../../shared/permissions.ts";
+import type { MarketMeDTO, ReviewFilterKind, MarketPolicyDTO, MarketScope, MarketSkillDetailDTO, MarketSkillSummaryDTO, MarketVersionDTO, PackageCheckDTO, PackageFileDTO, PackageFindingDTO, SkillManifestDTO, SubmissionDTO, SubmissionDetailDTO, SubmissionEventDTO, SubmissionKind, SubmissionState } from "../../../shared/files.ts";
 import { buildPackage, compareSemver, diffPackages, LIMITS, normalizeFiles, PackageError, sha256Hex, unzipPackage, type PackageFile } from "./skills-package.ts";
 import type { InstallRow, Resource, SkillRow, Skills, VersionRow } from "./skills.ts";
 import type { Sandbox } from "./sandbox.ts";
@@ -165,6 +166,19 @@ export interface SubRow {
 
 const DEFAULT_POLICY: MarketPolicyDTO = { personalSkill: "free", personalMcp: "free" };
 
+/**
+ * 非技能类提交（MCP 目录/连接器、专家 …）的处理器：审查/发布流程由 Market 统一管，各类型只负责「发布后落到自己的表」「驳回后的善后」
+ * 和「审查详情里展示什么」。新增对象类型 = 在 SubmissionKind 加值 + registerKind。
+ */
+export interface SubmissionKindHandler {
+	/** 审查队列的筛选分组与审计前缀（mcp.* / expert.*）。 */
+	readonly family: ReviewFilterKind;
+	onPublished(sub: SubRow, actor: { userId: string }): void;
+	/** 驳回 / 要求修改 / 撤回等非通过的决定之后。 */
+	onDecision(sub: SubRow, to: SubmissionState): void;
+	submissionInfo(sub: SubRow): Partial<SubmissionDetailDTO>;
+}
+
 export interface UploadInput {
 	skillId?: string;
 	zip?: Uint8Array;
@@ -177,6 +191,7 @@ export class Market {
 	/** Tests may replace the permission check (e.g. to exercise a department-scoped reviewer without role plumbing). */
 	authzOverride?: (p: Principal, permission: string, scope?: AuthzScope) => Promise<boolean>;
 	#names = new Map<string, string>();
+	readonly #kinds = new Map<SubmissionKind, SubmissionKindHandler>();
 	#offProvider: (() => void) | undefined;
 	/** Mount cap per run (tests may lower it). */
 	mountCap = MAX_SKILL_MOUNTS;
@@ -212,7 +227,21 @@ export class Market {
 	}
 
 	// ------------------------------------------------------------ permissions
-	async can(p: Principal, permission: string, scope?: AuthzScope): Promise<boolean> {
+	/** 注册一种非技能提交类型的处理器（MCP 市场、专家各注册自己的）。 */
+	registerKind(kind: SubmissionKind, handler: SubmissionKindHandler): void {
+		this.#kinds.set(kind, handler);
+	}
+	/** 审查队列分组：技能 / 连接（mcp_*）/ 专家。 */
+	familyOf(kind: SubmissionKind): ReviewFilterKind {
+		return kind === "skill" ? "skill" : (this.#kinds.get(kind)?.family ?? (kind === "expert" ? "expert" : "mcp"));
+	}
+	#handler(kind: SubmissionKind): SubmissionKindHandler {
+		const h = this.#kinds.get(kind);
+		if (!h) throw new HttpError(500, "kind_unhandled", `提交类型 ${kind} 没有处理器`);
+		return h;
+	}
+	async can(p: Principal, permissionIn: string, scope?: AuthzScope): Promise<boolean> {
+		const permission = canonicalPermission(permissionIn); // 旧权限 id（skill.review 等）一律按统一权限求值
 		if (this.authzOverride) return this.authzOverride(p, permission, scope);
 		// The RBAC authz service is always provided by the identity module; without it nothing is granted (fail closed).
 		return this.#ctx.services.has("authz") ? this.#ctx.services.get("authz").has(p, permission, scope) : false;
@@ -222,7 +251,7 @@ export class Market {
 	}
 	/** Anyone allowed to review/administer skills at org level. */
 	async isManager(p: Principal): Promise<boolean> {
-		return this.can(p, "skill.marketplace.manage");
+		return this.can(p, "market.manage");
 	}
 	async #userName(orgId: string, userId: string): Promise<string> {
 		const k = `${orgId}:${userId}`;
@@ -242,7 +271,7 @@ export class Market {
 		return out;
 	}
 	async setPolicy(p: Principal, patch: Partial<MarketPolicyDTO>): Promise<MarketPolicyDTO> {
-		await this.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以修改策略");
+		await this.require(p, "market.manage", undefined, "只有技能市场管理员可以修改策略");
 		const ok: Record<string, string[]> = { personalSkill: ["free", "review", "disabled"], personalMcp: ["free", "approval", "disabled"] };
 		for (const [k, v] of Object.entries(patch)) {
 			if (!ok[k]?.includes(String(v))) throw new HttpError(400, "invalid", `策略 ${k} 的取值无效：${v}`);
@@ -256,10 +285,13 @@ export class Market {
 		const sb = this.#sandbox();
 		const cap = sb ? await sb.capabilities().catch(() => null) : null;
 		const pol = this.policy(p.orgId);
+		const canReview = await this.canReviewAnything(p);
 		return {
 			canUploadSkill: pol.personalSkill !== "disabled" ? await this.can(p, "skill.upload") : await this.can(p, "skill.publish"),
-			canReviewSkills: await this.canReviewAnything(p, "skill"),
-			canReviewMcp: await this.canReviewAnything(p, "mcp"),
+			canReview,
+			reviewKinds: canReview ? ["skill", "mcp", "expert"] : [],
+			canReviewSkills: canReview,
+			canReviewMcp: canReview,
 			canManageMarket: await this.isManager(p),
 			canPublishOrg: await this.can(p, "skill.publish"),
 			canAddOrgConnector: await this.can(p, "mcp.connector.add_org"),
@@ -269,8 +301,8 @@ export class Market {
 		};
 	}
 	/** Reviewer of any scope: org level, or any department the caller is in (department-scoped reviewers only see their own subtree's queue). */
-	async canReviewAnything(p: Principal, family: "skill" | "mcp"): Promise<boolean> {
-		const perm = family === "skill" ? "skill.review" : "mcp.connector.review";
+	async canReviewAnything(p: Principal): Promise<boolean> {
+		const perm = "market.review";
 		if (await this.can(p, perm)) return true;
 		for (const d of p.departmentIds) if (await this.can(p, perm, { kind: "department", id: d })) return true;
 		return false;
@@ -485,7 +517,7 @@ export class Market {
 			);
 			this.#event(id, p.orgId, p.userId, "submit", undefined, state, input.note);
 		});
-		this.audit(p, `${input.kind === "skill" ? "skill" : "mcp"}.submit`, input.subjectId, { submissionId: id, target: input.target, ref: input.ref, ok: input.checks.ok });
+		this.audit(p, `${this.familyOf(input.kind)}.submit`, input.subjectId, { submissionId: id, target: input.target, ref: input.ref, ok: input.checks.ok });
 		return id;
 	}
 	submissionDTO(p: Principal, id: string): Promise<SubmissionDTO> {
@@ -553,7 +585,7 @@ export class Market {
 	/** Permission part of "may decide": scoped reviewer. The submitter-is-not-the-reviewer rule is applied separately. */
 	async reviewScopeAllows(p: Principal, sub: SubRow): Promise<boolean> {
 		if (sub.org_id !== p.orgId) return false;
-		const perm = sub.kind === "skill" ? "skill.review" : "mcp.connector.review";
+		const perm = "market.review"; // 统一审查权限：不区分技能 / 连接器 / 专家
 		if (sub.target_scope === "org") return this.can(p, perm, { kind: "org" });
 		if (sub.target_scope === "department" && sub.target_ref) return this.can(p, perm, { kind: "department", id: sub.target_ref });
 		if (sub.target_scope === "project" && sub.target_ref) {
@@ -579,11 +611,11 @@ export class Market {
 		const comment = input.comment?.trim() ?? "";
 		const scoped = await this.reviewScopeAllows(p, sub);
 		let forced = false;
-		if (!scoped) throw new HttpError(403, "forbidden", "你没有审核该范围提交的权限（skill.review 按组织/部门/项目授权）");
+		if (!scoped) throw new HttpError(403, "forbidden", "你没有审核该范围提交的权限（market.review 按组织/部门/项目授权）");
 		if (sub.submitter_id === p.userId) {
 			// Separation of duties. The only way around it is an explicit, audited force by a market manager.
-			const manager = sub.kind === "skill" ? await this.isManager(p) : await this.can(p, "mcp.connector.review", { kind: "org" });
-			if (!input.force || !manager) throw new HttpError(403, "self_review", "不能审核自己提交的内容；需要另一位审核员（市场管理员可附理由强制通过并留审计）");
+			const manager = await this.isManager(p);
+			if (!input.force || !manager) throw new HttpError(403, "self_review", "不能审核自己提交的内容；需要另一位审查员（市场管理员可附理由强制通过并留审计）");
 			if (!comment) throw new HttpError(400, "reason_required", "强制通过必须填写理由");
 			forced = true;
 		}
@@ -591,13 +623,13 @@ export class Market {
 		const to: SubmissionState = input.decision === "approve" ? "approved" : input.decision === "reject" ? "rejected" : "changes_requested";
 		this.#db.tx(() => {
 			this.#move(sub, to, p, input.decision, comment || undefined, { decided: true, forced });
-			if (sub.kind !== "skill" && to !== "approved") (this.#ctx.services.get("mcpMarket") as { onDecision(sub: SubRow, to: SubmissionState): void }).onDecision(sub, to);
+			if (sub.kind !== "skill" && to !== "approved") this.#handler(sub.kind).onDecision(sub, to);
 			if (to === "approved") {
 				this.#recordApproval(sub, forced);
 				if (input.publish !== false) this.#publish(sub, p, comment || undefined);
 			}
 		});
-		this.audit(p, `${sub.kind === "skill" ? "skill" : "mcp"}.${input.decision}`, sub.subject_id, { submissionId: sub.id, versionNo: sub.version_no, forced, published: to === "approved" && input.publish !== false });
+		this.audit(p, `${this.familyOf(sub.kind)}.${input.decision}`, sub.subject_id, { submissionId: sub.id, versionNo: sub.version_no, forced, published: to === "approved" && input.publish !== false });
 		return this.#subDTO(p, this.sub(id)!);
 	}
 	/** Approved but not yet published (decide with publish:false): publish later. */
@@ -615,7 +647,7 @@ export class Market {
 		if (sub.submitter_id !== p.userId && !(await this.isManager(p))) throw new HttpError(403, "forbidden", "只有提交人可以撤回");
 		this.#db.tx(() => {
 			this.#move(sub, "withdrawn", p, "withdraw");
-			if (sub.kind !== "skill") (this.#ctx.services.get("mcpMarket") as { onDecision(sub: SubRow, to: SubmissionState): void }).onDecision(sub, "withdrawn");
+			if (sub.kind !== "skill") this.#handler(sub.kind).onDecision(sub, "withdrawn");
 		});
 		return this.#subDTO(p, this.sub(id)!);
 	}
@@ -626,8 +658,8 @@ export class Market {
 	}
 	/** approved → published: the skill takes the target scope, becomes listed, and followers move to the new version. */
 	#publish(sub: SubRow, actor: { userId: string }, comment?: string): void {
-		if (sub.kind === "mcp_catalog" || sub.kind === "mcp_connector") {
-			(this.#ctx.services.get("mcpMarket") as { onPublished(sub: SubRow, actor: { userId: string }): void }).onPublished(sub, actor);
+		if (sub.kind !== "skill") {
+			this.#handler(sub.kind).onPublished(sub, actor);
 			this.#move(sub, "published", actor, "publish", comment);
 			return;
 		}
@@ -647,7 +679,7 @@ export class Market {
 
 	/** Admin override: publish a version immediately (no reviewer), with a mandatory reason, flagged as forced in the audit trail. */
 	async forcePublish(p: Principal, skillId: string, versionNo: number, reason: string, target: { scope?: MarketScope; ref?: string } = {}): Promise<SubmissionDTO> {
-		await this.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以强制发布");
+		await this.require(p, "market.manage", undefined, "只有技能市场管理员可以强制发布");
 		if (!reason?.trim()) throw new HttpError(400, "reason_required", "强制发布必须填写理由");
 		const s = this.skills.skill(skillId);
 		if (!s || s.org_id !== p.orgId) throw new HttpError(404, "not_found", "技能不存在");
@@ -694,7 +726,7 @@ export class Market {
 	}
 
 	async unpublish(p: Principal, skillId: string, reason: string): Promise<MarketSkillSummaryDTO> {
-		await this.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以下架技能");
+		await this.require(p, "market.manage", undefined, "只有技能市场管理员可以下架技能");
 		if (!reason?.trim()) throw new HttpError(400, "reason_required", "下架必须填写理由");
 		const s = this.skills.skill(skillId);
 		if (!s || s.org_id !== p.orgId) throw new HttpError(404, "not_found", "技能不存在");
@@ -707,7 +739,7 @@ export class Market {
 		return (await this.#summary(p, this.skills.skill(skillId)!))!;
 	}
 	async republish(p: Principal, skillId: string): Promise<MarketSkillSummaryDTO> {
-		await this.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以重新上架");
+		await this.require(p, "market.manage", undefined, "只有技能市场管理员可以重新上架");
 		const s = this.skills.skill(skillId);
 		if (!s || s.org_id !== p.orgId) throw new HttpError(404, "not_found", "技能不存在");
 		if (s.listed || s.scope === "personal" || !s.published_version_no) throw new HttpError(409, "not_unlisted", "技能不是已下架状态");
@@ -838,7 +870,7 @@ export class Market {
 		const summary = await this.#summary(p, s);
 		const shownNo = versionNo ?? s.published_version_no ?? s.latest_version_no;
 		const sv = this.skills.version(s.id, shownNo) ?? this.skills.version(s.id, s.latest_version_no)!;
-		if (!(await this.canSeeVersion(p, s, sv))) throw new HttpError(403, "forbidden", "该版本尚未发布，只有作者与审核员可以查看");
+		if (!(await this.canSeeVersion(p, s, sv))) throw new HttpError(403, "forbidden", "该版本尚未发布，只有作者与审查员可以查看");
 		const all = this.skills.versions(s.id);
 		const visible = manage ? all : all.filter((v) => this.versionApproved(v.id));
 		const ratings = this.#db.all<{ user_id: string; stars: number; comment: string | null; at: string }>("SELECT * FROM skill_ratings WHERE skill_id = ? ORDER BY at DESC LIMIT 30", s.id);
@@ -931,7 +963,9 @@ export class Market {
 
 	/** view: mine = submitted by the caller; queue = pending in scopes the caller reviews; history = decided ones in those scopes. */
 	async listSubmissions(p: Principal, q: { view?: string; kind?: string; state?: string }): Promise<SubmissionDTO[]> {
-		const kinds = q.kind === "mcp" ? ["mcp_catalog", "mcp_connector"] : q.kind === "skill" ? ["skill"] : ["skill", "mcp_catalog", "mcp_connector"];
+		const all: SubmissionKind[] = ["skill", "mcp_catalog", "mcp_connector", "expert"];
+		const kinds = q.kind ? all.filter((k) => this.familyOf(k) === q.kind) : all;
+		if (!kinds.length) return [];
 		const rows = this.#db.all<SubRow>(`SELECT * FROM market_submissions WHERE org_id = ? AND kind IN (${kinds.map(() => "?").join(",")}) ORDER BY created_at DESC LIMIT 300`, p.orgId, ...kinds);
 		const out: SubRow[] = [];
 		for (const r of rows) {
@@ -955,8 +989,8 @@ export class Market {
 			this.#db.all<any>("SELECT * FROM market_events WHERE submission_id = ? ORDER BY at, rowid", id).map(async (e) => ({ at: e.at, actorId: e.actor_id, actorName: await this.#userName(r.org_id, e.actor_id), action: e.action, fromState: e.from_state ?? undefined, toState: e.to_state ?? undefined, comment: e.comment ?? undefined })),
 		);
 		if (r.kind !== "skill") {
-			const info = (this.#ctx.services.get("mcpMarket") as { submissionInfo(sub: SubRow): any }).submissionInfo(r);
-			return { ...base, ...info, events };
+			const info = this.#handler(r.kind).submissionInfo(r);
+			return { ...base, ...info, events } as SubmissionDetailDTO;
 		}
 		const s = this.skills.skill(r.subject_id)!;
 		const v = this.#db.get<VersionRow>("SELECT * FROM skill_versions WHERE id = ?", r.version_id!)!;
@@ -1000,7 +1034,7 @@ export class Market {
 		}
 		let ref = "";
 		if (t === "org") {
-			await this.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以安装到整个组织");
+			await this.require(p, "market.manage", undefined, "只有技能市场管理员可以安装到整个组织");
 			if (s.scope !== "org") throw new HttpError(409, "scope_mismatch", `这是${s.scope === "department" ? "部门" : "项目"}范围的技能，不能安装到整个组织`);
 		} else if (t === "department") {
 			ref = input.scopeRef ?? "";
@@ -1027,7 +1061,7 @@ export class Market {
 		const s = this.skills.skill(skillId);
 		if (!s || s.org_id !== p.orgId) throw new HttpError(404, "not_found", "技能不存在");
 		if (target === "me") return this.skills.uninstall(p, skillId);
-		if (target === "org") await this.require(p, "skill.marketplace.manage");
+		if (target === "org") await this.require(p, "market.manage");
 		else if (target === "department") await this.require(p, "skill.publish", { kind: "department", id: scopeRef ?? "" });
 		else {
 			const space = this.#ctx.services.get("identity").projectSpace(scopeRef ?? "");
