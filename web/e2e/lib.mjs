@@ -7,7 +7,17 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-export const { chromium } = require("playwright");
+// Full `playwright` when it is installed globally; otherwise `playwright-core` plus a system Chromium (E2E_CHROMIUM or /usr/bin/chromium).
+const pw = (() => {
+	try {
+		return require("playwright");
+	} catch {
+		const core = require("playwright-core");
+		const executablePath = process.env.E2E_CHROMIUM || "/usr/bin/chromium";
+		return { chromium: { ...core.chromium, launch: (o = {}) => core.chromium.launch({ executablePath, args: ["--no-sandbox"], ...o }) } };
+	}
+})();
+export const { chromium } = pw;
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const SHOTS = join(ROOT, "artifacts/screenshots");

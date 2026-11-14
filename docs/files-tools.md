@@ -183,7 +183,7 @@ Playwright + Chromium（主机预装，`/opt/node-tools/node_modules/playwright`
 
 ### 8.2 交互式浏览器会话与接管（M11-B）
 
-每个会话一个服务端 Chromium 页面（1280×800），Agent 用 `browser_open` / `browser_act`（click/type/press/scroll/navigate/back/forward/reload）/`browser_close` 操作；空间成员可通过 API 接管：接管后 Agent 的动作被拒绝（409），直到用户交还。每次动作后刷新截图（`version` 递增）。观看 = 空间读权限（viewer 可看），操作/接管/关闭 = 空间写权限。网络与 `browse` 相同（URL 策略 + DNS 固定 + 禁 WebSocket），弹窗被合并到主页面、对话框自动关闭、禁止下载。空闲 `WORKROOM_BROWSER_IDLE_MS`（默认 15 min）自动关闭，进程内最多 `WORKROOM_BROWSER_MAX_SESSIONS` 个。测试 `server/test/tools-browser-session.test.ts`。
+每个会话一个服务端 Chromium 页面（1280×800），Agent 用 `browser_open` / `browser_act`（click/type/press/scroll/navigate/back/forward/reload）/`browser_close` 操作；空间成员可通过 API 接管：接管后 Agent 的动作被拒绝（409），直到用户交还。每次动作后刷新截图（`version` 递增）。观看 = 空间读权限（viewer 可看），操作/接管/关闭 = 空间写权限。网络与 `browse` 相同（URL 策略 + DNS 固定 + 禁 WebSocket），弹窗被合并到主页面、对话框自动关闭、禁止下载。右侧工作面板“浏览器”条目旁有“放大”按钮：打开居中的大弹框（Esc 关闭），显示实时截图（随 `version` 刷新）、标题、URL 和控制者状态，并提供接管 / 交还给助手，接管后可在截图上点击、滚轮滚动（合并为一次 `scroll` 动作）、在底部输入框输入；没有写权限时只读观看。弹框与面板预览共用同一个 `BrowserSessionView`（`web/src/features/work/live.tsx`），点击坐标换算见 `browser-geometry.ts`。e2e：`web/e2e/browser-expand.mjs`（端口 8841）。空闲 `WORKROOM_BROWSER_IDLE_MS`（默认 15 min）自动关闭，进程内最多 `WORKROOM_BROWSER_MAX_SESSIONS` 个。测试 `server/test/tools-browser-session.test.ts`。
 
 ### 8.3 默认工具集与组织策略
 
