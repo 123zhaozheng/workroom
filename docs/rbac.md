@@ -42,6 +42,7 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | GET/POST `/admin/groups` · PATCH/DELETE `/:id` · GET/PUT `/:id/members` | `role.view` · `group.manage` | 用户组（可选） |
 | GET `/admin/departments/overview` | 任意成员 | 部门树 + 负责人 + 部门管理员 + 当前用户可做的操作 |
 | 成员/邀请/部门/会话/审计 | `member.*` `dept.*` `member.session.manage` `audit.view/export` `harness.inspect`（Harness 检视，见 `docs/harness-inspect.md`） | 见 `identity/routes.ts` |
+| GET/PUT/DELETE `/admin/network-policy` · POST `/admin/network-policy/test` | `network.manage` | 组织的网络访问策略（外网模式、允许/阻止名单、内网例外）与「测试网址」，详见 `docs/files-tools.md` 的「URL 策略」 |
 | 其他模块的 `/admin/*` | 见 `identity/policy.ts` 路由权限表 | 表内路由由中间件统一校验；表外由各模块处理 |
 
 ## 权限目录（自动生成自 `shared/permissions.ts`）
@@ -117,6 +118,8 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | `sandbox.network` | 沙箱联网（已停用，不再检查） | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
 | `sandbox.browser` | 浏览器工具 | 组织 |  | ● | ● |  |  |  |  | ● |  |
 | `sandbox.policy.manage` | 管理沙箱与工具策略 | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
+| **网络访问** | | | |||||||||
+| `network.manage` | 管理网络访问策略 | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |
 | **自动化** | | | |||||||||
 | `automation.create` | 创建自动化 | 组织 |  | ● | ● |  |  |  |  | ● |  |
 | `automation.run_as_others` | 以他人身份运行自动化 | 组织 | 高危 | ● | ● |  |  |  |  |  |  |
@@ -139,6 +142,10 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | `/market/me` 的 `canReviewSkills` / `canReviewMcp` | 保留为 `canReview` 的别名（已标记 deprecated），新增 `canReview`、`reviewKinds` |
 
 兼容：identity migration v6 把库里已有的角色分配、邀请、直接授权/禁止、自定义角色的权限列表改写成新 id（幂等，合并重复）；API 输入里的旧角色 id、旧权限 id（分配角色、直接授权、自定义角色、`explain`）与 `authz.has/require/decide` 的旧权限 id 都会被解析成新的，所以旧脚本与旧自定义集成不用改。
+
+## 网络访问（`network.manage`）
+
+浏览器、网页抓取、连接器和成员自带模型的出站网络规则原先只有运维环境变量 `WORKROOM_URL_ALLOWLIST`。现在放进权限管理：管理后台 › 角色与权限 › 网络访问（权限 `network.manage`，范围仅组织，风险“敏感”，内置的组织所有者、组织管理员默认拥有，可授予自定义角色；没有该权限的人看不到入口，API 返回 403）。字段只有四个：外网访问模式、允许名单、阻止名单、内网例外；协议、凭据 URL、DNS 固定与云元数据地址拦截是不可关闭的底线。使用浏览器本身仍由 `sandbox.browser` 控制，两者互不替代。修改写入审计（`network.policy.update` / `network.policy.reset`，类别“安全”）。规则、判定顺序与 API 见 `docs/files-tools.md`。
 
 ## 已知缺口
 

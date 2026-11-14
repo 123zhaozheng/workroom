@@ -38,6 +38,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
 	{ id: "mcp", label: "MCP 与连接器", description: "添加个人/组织连接器" },
 	{ id: "review", label: "审查", description: "审查技能、连接器、专家等提交的内容，管理市场（不区分对象类型）" },
 	{ id: "sandbox", label: "沙箱", description: "沙箱执行与浏览器" },
+	{ id: "network", label: "网络访问", description: "服务器代为访问外部网址（浏览器、网页抓取、连接器、个人模型）的网络策略" },
 	{ id: "automation", label: "自动化", description: "创建自动化，以及以他人身份运行" },
 	{ id: "project", label: "项目", description: "创建项目与管理项目" },
 	{ id: "assistant", label: "助手", description: "发布组织级助手（旧接口；新的入口是「专家」）" },
@@ -122,6 +123,8 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	p("sandbox.network", "sandbox", "沙箱联网（已停用）", "已停用：沙箱网络不再由 Workroom 控制，运行代码不再检查此权限（保留一版以兼容已有角色授权，之后移除）", O, "sensitive"),
 	p("sandbox.browser", "sandbox", "浏览器工具", "使用云端浏览器工具访问网页"),
 	p("sandbox.policy.manage", "sandbox", "管理沙箱与工具策略", "修改组织的沙箱与工具策略", O, "sensitive"),
+	// ---- 网络访问
+	p("network.manage", "network", "管理网络访问策略", "设置组织的外网访问模式、允许/阻止名单和内网例外（协议、凭据 URL、云元数据地址等安全底线不可更改）", O, "sensitive"),
 	// ---- 自动化
 	p("automation.create", "automation", "创建自动化", "创建定时/事件触发的自动化"),
 	p("automation.run_as_others", "automation", "以他人身份运行自动化", "管理他人的自动化，并让自动化以其负责人以外的身份运行", O, "critical"),
@@ -271,7 +274,7 @@ export const LEGACY_ROLE_TO_BUILTIN: Readonly<Record<string, string>> = { owner:
 export const BASE_ROLE_IDS: readonly string[] = ["builtin:owner", "builtin:admin", "builtin:member", "builtin:guest"];
 
 /** Permissions that let a viewer into the admin console at all (used for tab gating in the UI). */
-export const ADMIN_CONSOLE_PERMISSIONS: readonly string[] = ["org.settings.manage", "member.view", "member.invite", "dept.manage", "dept.member.manage", "role.view", "role.manage", "role.assign", "grant.manage", "model.manage", "model.provider.manage", "budget.view", "budget.manage", "billing.view", "audit.view", "trace.view", "harness.inspect", "member.session.manage"];
+export const ADMIN_CONSOLE_PERMISSIONS: readonly string[] = ["org.settings.manage", "member.view", "member.invite", "dept.manage", "dept.member.manage", "role.view", "role.manage", "role.assign", "grant.manage", "model.manage", "model.provider.manage", "budget.view", "budget.manage", "billing.view", "audit.view", "trace.view", "harness.inspect", "member.session.manage", "network.manage"];
 
 /** Does a viewer holding `permissions` (from `/api/me` `permissionsAnywhere`) get the admin console (组织管理)? True for auditors, billing admins, department admins... not only owner/admin. */
 export function hasAdminConsoleAccess(permissions: Iterable<string> | undefined): boolean {

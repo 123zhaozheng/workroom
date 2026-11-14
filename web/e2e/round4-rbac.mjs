@@ -64,7 +64,7 @@ try {
 	await owner.goto(`${base}/admin`);
 	await owner.waitForSelector('[data-testid="admin-tabs"]');
 	const ownerTabs = await owner.locator('[data-testid^="admin-tab-"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid").replace("admin-tab-", "")));
-	check("owner sees every admin tab (12: round 7 added 运行环境 + 环境变量)", ownerTabs.length === 12 && ["departments", "roles", "authz", "members", "audit", "sandbox", "env"].every((t) => ownerTabs.includes(t)), ownerTabs.join(","));
+	check("owner sees every admin tab (14: round 7 added 运行环境 + 环境变量; 网络访问策略 added 网络访问)", ownerTabs.length === 14 && ["departments", "roles", "authz", "network", "members", "audit", "sandbox", "env"].every((t) => ownerTabs.includes(t)), ownerTabs.join(","));
 
 	// ------------------------------------------------------------------ 组织架构
 	await owner.goto(`${base}/admin?tab=departments`);

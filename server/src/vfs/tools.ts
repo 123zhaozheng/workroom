@@ -269,7 +269,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 				let mime: string | undefined;
 				let source: string;
 				if (/^https?:\/\//i.test(args.source)) {
-					const f = await fetchBytes(args.source, { signal: context.abortSignal });
+					const f = await fetchBytes(args.source, { signal: context.abortSignal, orgId: a.principal.orgId });
 					bytes = f.bytes;
 					name = safeFileName(args.name ?? f.fileName ?? "download");
 					mime = f.contentType;
@@ -313,7 +313,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 				const files: { from: string; bytes: Uint8Array; rel: string }[] = [];
 				let defaultName: string;
 				if (/^https?:\/\//i.test(args.source)) {
-					const f = await fetchBytes(args.source, { signal: context.abortSignal });
+					const f = await fetchBytes(args.source, { signal: context.abortSignal, orgId: a.principal.orgId });
 					defaultName = safeFileName(f.fileName ?? "download");
 					files.push({ from: f.finalUrl, bytes: f.bytes, rel: "" });
 				} else {

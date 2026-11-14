@@ -43,6 +43,8 @@ export function renderObservation(s: { title?: string; url: string; version: num
 interface Session {
 	id: string;
 	spaceId: string;
+	/** Organisation whose network policy governs every request of this session. */
+	orgId: string;
 	conversationId: number;
 	createdBy: string;
 	context: any;
@@ -144,11 +146,11 @@ export class BrowserSessions {
 			return existing;
 		}
 		if (this.#sessions.size >= MAX_SESSIONS) throw new HttpError(429, "too_many_sessions", "服务器上的浏览会话已达上限，请先关闭不用的会话");
-		const first = await checkUrl(url);
+		const first = await checkUrl(url, { orgId: p.orgId });
 		const browser = await (this.#ctx.services.get("browser") as BrowserService).browserForSessions();
 		const context = await browser.newContext({ acceptDownloads: false, serviceWorkers: "block", viewport: VIEWPORT, locale: "zh-CN" });
 		const blocked: string[] = [];
-		const pins = await guardContext(context, blocked, new Map([[first.url.origin, first.addresses[0]!]]));
+		const pins = await guardContext(context, blocked, new Map([[first.url.origin, first.addresses[0]!]]), p.orgId);
 		const page = await context.newPage();
 		page.on("dialog", (d: any) => d.dismiss().catch(() => {}));
 		// One tab per session: popups are closed and their URL opened in the main page (still through the guard).
@@ -159,7 +161,7 @@ export class BrowserSessions {
 			if (/^https?:/.test(target)) void page.goto(target).catch(() => {});
 		});
 		const now = nowIso();
-		const s: Session = { id: newId("bs"), spaceId, conversationId, createdBy: p.userId, context, page, pins, blocked, controller: by === "user" ? { kind: "user", userId: p.userId, name: p.displayName } : { kind: "agent" }, version: 0, shot: Buffer.alloc(0), url, title: "", createdAt: now, updatedAt: now, lastUsed: Date.now(), queue: Promise.resolve() };
+		const s: Session = { id: newId("bs"), spaceId, orgId: p.orgId, conversationId, createdBy: p.userId, context, page, pins, blocked, controller: by === "user" ? { kind: "user", userId: p.userId, name: p.displayName } : { kind: "agent" }, version: 0, shot: Buffer.alloc(0), url, title: "", createdAt: now, updatedAt: now, lastUsed: Date.now(), queue: Promise.resolve() };
 		this.#sessions.set(s.id, s);
 		try {
 			await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 });
@@ -185,7 +187,7 @@ export class BrowserSessions {
 				case "navigate": {
 					if (!a.url) throw new HttpError(400, "invalid", "navigate 需要 url");
 					const u = new URL(a.url);
-					const c = await checkUrl(a.url, { pinned: s.pins.get(u.origin) });
+					const c = await checkUrl(a.url, { pinned: s.pins.get(u.origin), orgId: s.orgId });
 					if (!s.pins.has(u.origin)) s.pins.set(u.origin, c.addresses[0]!);
 					await page.goto(a.url, { waitUntil: "domcontentloaded", timeout: 20_000 }).catch((e: any) => {
 						throw new HttpError(502, "navigation_failed", `无法打开页面：${String(e?.message ?? e).split("\n")[0]}`);
