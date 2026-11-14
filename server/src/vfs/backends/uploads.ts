@@ -13,7 +13,18 @@ interface UploadRef {
 	readonly name: string;
 	readonly fileId: string;
 	readonly versionId: string;
+	/** The name as attached (separators replaced), without the same-message de-duplication prefix. */
+	readonly plain: string;
 	readonly at?: number;
+}
+
+/**
+ * Stable path of an attachment that is known BEFORE the message entry exists (the model-facing text is composed at submit time, when the entry id
+ * "m<id>" is not yet assigned): /uploads/<versionId>/<name>. Resolved here next to the per-message layout, so conversations created before this
+ * alias existed (whose messages only ever showed fileId/versionId) keep working too.
+ */
+export function uploadAliasPath(versionId: string, name: string): string {
+	return `/uploads/${versionId}/${String(name || versionId).replace(/[\\/]/g, "_")}`;
 }
 
 export class UploadsBackend implements VfsBackend {
@@ -52,7 +63,7 @@ export class UploadsBackend implements VfsBackend {
 					let name = String(a.name || a.fileId).replace(/[\\/]/g, "_");
 					if (used.has(name)) name = `${a.fileId}-${name}`;
 					used.add(name);
-					out.push({ msg: `m${e.id}`, name, fileId: a.fileId, versionId: a.versionId });
+					out.push({ msg: `m${e.id}`, name, plain: String(a.name || a.fileId).replace(/[\\/]/g, "_"), fileId: a.fileId, versionId: a.versionId });
 				}
 			}
 			if (!p.next) break;
@@ -61,24 +72,46 @@ export class UploadsBackend implements VfsBackend {
 		return out;
 	}
 
-	#find(refs: UploadRef[], rel: string): { msg?: string; ref?: UploadRef } {
+	/** "m<entryId>/<name>" (per message) or "<versionId>/<name>" (stable alias, usable before the message exists). */
+	#find(refs: UploadRef[], rel: string): { msg?: string; ref?: UploadRef; alias?: boolean } {
 		const [msg, ...rest] = rel.split("/");
 		if (!rest.length) return { msg };
-		return { msg, ref: refs.find((r) => r.msg === msg && r.name === rest.join("/")) };
+		const name = rest.join("/");
+		const exact = refs.find((r) => r.msg === msg && r.name === name);
+		if (exact) return { msg, ref: exact };
+		// the alias addresses a file version; the plain attached name is accepted even when the per-message name got a de-duplication prefix
+		const byVersion = refs.filter((r) => r.versionId === msg);
+		const hit = byVersion.find((r) => r.name === name) ?? byVersion.find((r) => r.plain === name);
+		return { msg, ref: hit, alias: byVersion.length > 0 };
 	}
 
-	#node(r: UploadRef, size?: number): VNode {
-		return { path: `/uploads/${r.msg}/${r.name}`, name: r.name, type: "file", mime: effectiveMime(undefined, r.name), caps: RO, ...(size !== undefined ? { size } : {}) };
+	/** Where a file the model asked for under a wrong path really is: same name under a /uploads/m<id> directory (and the stable alias). */
+	async suggest(ctx: VfsContext, rel: string): Promise<string | null> {
+		const wanted = rel.split("/").filter(Boolean).at(-1);
+		if (!wanted) return null;
+		const refs = await this.refs(ctx);
+		const hits = refs.filter((r) => r.name === wanted || r.plain === wanted);
+		if (!hits.length) {
+			if (!refs.length) return "本会话还没有任何附件。";
+			const names = [...new Set(refs.map((r) => r.plain))].slice(0, 8);
+			return `本会话的附件：${names.join("、")}；用 ls /uploads 查看路径。`;
+		}
+		const paths = [...new Set(hits.slice(-3).flatMap((r) => [`/uploads/${r.msg}/${r.name}`]))];
+		return `可能的正确路径：${paths.join("、")}（附件在 /uploads/m<消息编号>/ 下，不是 /uploads/ 根目录）`;
+	}
+
+	#node(r: UploadRef, size?: number, viaAlias?: string): VNode {
+		return { path: viaAlias ? `/uploads/${viaAlias}/${r.plain}` : `/uploads/${r.msg}/${r.name}`, name: r.name, type: "file", mime: effectiveMime(undefined, r.name), caps: RO, ...(size !== undefined ? { size } : {}) };
 	}
 
 	async stat(ctx: VfsContext, rel: string): Promise<VNode | null> {
 		if (!rel) return { path: "/uploads", name: "uploads", type: "dir", caps: RO };
 		const refs = await this.refs(ctx);
-		const { msg, ref } = this.#find(refs, rel);
-		if (!rel.includes("/")) return refs.some((r) => r.msg === msg) ? { path: `/uploads/${msg}`, name: msg!, type: "dir", caps: RO } : null;
+		const { msg, ref, alias } = this.#find(refs, rel);
+		if (!rel.includes("/")) return refs.some((r) => r.msg === msg || r.versionId === msg) ? { path: `/uploads/${msg}`, name: msg!, type: "dir", caps: RO } : null;
 		if (!ref) return null;
 		const v = this.#files.versionRow(ref.versionId);
-		return this.#node(ref, v?.size);
+		return this.#node(ref, v?.size, alias ? msg : undefined);
 	}
 
 	async list(ctx: VfsContext, rel: string, opts: { cursor?: string; limit: number }) {
@@ -86,12 +119,14 @@ export class UploadsBackend implements VfsBackend {
 		let entries: VNode[];
 		if (!rel) {
 			const msgs = [...new Set(refs.map((r) => r.msg))];
-			entries = msgs.map((m) => ({ path: `/uploads/${m}`, name: m, type: "dir" as const, caps: RO, note: `${refs.filter((r) => r.msg === m).length} 个附件` }));
+			entries = msgs.map((m) => ({ path: `/uploads/${m}`, name: m, type: "dir" as const, caps: RO, note: `${refs.filter((r) => r.msg === m).length} 个附件：${refs.filter((r) => r.msg === m).map((r) => r.name).slice(0, 5).join("、")}` }));
 		} else {
 			if (rel.includes("/")) throw new VfsError("not_a_directory", `/uploads/${rel} 不是目录`);
-			const mine = refs.filter((r) => r.msg === rel);
+			const byMsg = refs.filter((r) => r.msg === rel);
+			const byVersion = byMsg.length ? [] : refs.filter((r) => r.versionId === rel).slice(0, 1);
+			const mine = byMsg.length ? byMsg : byVersion;
 			if (!mine.length) throw new VfsError("not_found", `/uploads/${rel} 不存在`, 404);
-			entries = mine.map((r) => this.#node(r, this.#files.versionRow(r.versionId)?.size));
+			entries = mine.map((r) => this.#node(r, this.#files.versionRow(r.versionId)?.size, byVersion.length ? rel : undefined));
 		}
 		const start = opts.cursor ? entries.findIndex((e) => e.name > opts.cursor!) : 0;
 		const page = start < 0 ? [] : entries.slice(start, start + opts.limit);
@@ -100,11 +135,11 @@ export class UploadsBackend implements VfsBackend {
 
 	async read(ctx: VfsContext, rel: string) {
 		const refs = await this.refs(ctx);
-		const { ref } = this.#find(refs, rel);
+		const { ref, msg, alias } = this.#find(refs, rel);
 		if (!ref) throw new VfsError("not_found", `/uploads/${rel} 不存在`, 404);
 		try {
 			const r = await this.#files.requireVersion(ctx.principal, ref.fileId, ref.versionId);
-			return { node: this.#node(ref, r.bytes.length), bytes: r.bytes };
+			return { node: this.#node(ref, r.bytes.length, alias ? msg : undefined), bytes: r.bytes };
 		} catch (e) {
 			const status = (e as { status?: number }).status;
 			if (status === 403) throw new VfsError("forbidden", "你没有权限读取这个附件", 403);

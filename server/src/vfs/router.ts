@@ -43,6 +43,31 @@ export class VfsRouter {
 		if (!(await b.available(ctx))) throw new VfsError("unavailable", `${b.root} 在当前会话中不可用`, 403);
 	}
 
+	/** " 提示" text for a path that does not exist (empty when the backend has no suggestion). Never throws. */
+	async hint(ctx: VfsContext, path: unknown): Promise<string> {
+		try {
+			const r = this.resolve(path);
+			if (!r.backend?.suggest || !r.rel) return "";
+			const h = await r.backend.suggest(ctx, r.rel);
+			return h ? ` ${h}` : "";
+		} catch {
+			return "";
+		}
+	}
+
+	/** Run a backend operation; a not_found from it gets the backend's suggestion appended. */
+	async #withHint<T>(ctx: VfsContext, r: { path: string; backend: VfsBackend | null }, fn: () => Promise<T>): Promise<T> {
+		try {
+			return await fn();
+		} catch (e) {
+			if (e instanceof VfsError && e.code === "not_found" && r.backend?.suggest) {
+				const h = await this.hint(ctx, r.path);
+				if (h) throw new VfsError("not_found", `${e.message}${h}`, e.status);
+			}
+			throw e;
+		}
+	}
+
 	async stat(ctx: VfsContext, path: unknown): Promise<VNode | null> {
 		const r = this.resolve(path);
 		if (!r.backend) return { path: "/", name: "", type: "dir", caps: ["read"] };
@@ -55,14 +80,16 @@ export class VfsRouter {
 		const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_LIST_LIMIT), MAX_LIST_LIMIT);
 		if (!r.backend) return { path: "/", entries: await this.roots(ctx), truncated: false };
 		await this.#usable(ctx, r.backend);
-		return { path: r.path, ...(await r.backend.list(ctx, r.rel, { cursor: opts.cursor, limit })) };
+		const backend = r.backend;
+		return { path: r.path, ...(await this.#withHint(ctx, r, () => backend.list(ctx, r.rel, { cursor: opts.cursor, limit }))) };
 	}
 
 	async read(ctx: VfsContext, path: unknown): Promise<{ node: VNode; bytes: Uint8Array }> {
 		const r = this.resolve(path);
 		if (!r.backend) throw new VfsError("not_a_file", "/ 是目录，请用 ls");
 		await this.#usable(ctx, r.backend);
-		return r.backend.read(ctx, r.rel);
+		const backend = r.backend;
+		return this.#withHint(ctx, r, () => backend.read(ctx, r.rel));
 	}
 
 	async write(ctx: VfsContext, path: unknown, bytes: Uint8Array, opts: { expectedEtag?: string } = {}): Promise<WriteResult> {

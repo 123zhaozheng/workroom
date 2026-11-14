@@ -92,6 +92,8 @@ export interface VfsBackend {
 	read(ctx: VfsContext, rel: string): Promise<{ node: VNode; bytes: Uint8Array }>;
 	write?(ctx: VfsContext, rel: string, bytes: Uint8Array, opts: { expectedEtag?: string }): Promise<WriteResult>;
 	remove?(ctx: VfsContext, rel: string, opts: { recursive?: boolean }): Promise<{ removed: string }>;
+	/** Optional: where a missing path most likely really is (appended to not_found errors). */
+	suggest?(ctx: VfsContext, rel: string): Promise<string | null>;
 	/** Optional fast search; the router falls back to walking `list`. */
 	search?(ctx: VfsContext, rel: string, query: string, mode: "name" | "content", limit: number): Promise<{ hits: readonly SearchHit[]; truncated: boolean }>;
 }

@@ -16,6 +16,9 @@ import { closeDeadWork } from "./lifecycle.ts";
 import { LEGACY_EXTENSIONS, LEGACY_TOOLS, LEGACY_TOOL_MAP } from "../vfs/legacy.ts";
 import { ONDEMAND_TOOLS } from "../tools/ondemand.ts";
 import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
+import { effectiveMime, previewKindOf } from "../files/mime.ts";
+import { uploadAliasPath } from "../vfs/backends/uploads.ts";
+import { humanSize, sheetNames } from "./attachment-meta.ts";
 import { entryDTO, liveDTO, queueDTO, submissionDTO, taskNodeDTO, usageFromState } from "./dto.ts";
 import { FIXTURE_LABEL, FIXTURE_MODEL_ID, FIXTURE_PROVIDER, isFixtureModel, stripDirectives } from "./fixture-model.ts";
 import type { HarnessManager } from "./harness-manager.ts";
@@ -740,11 +743,43 @@ export class Runtime implements RuntimeService {
 
 	// ------------------------------------------------------------------ submissions
 
-	composeContent(input: { text: string; attachments?: InputEntryData["attachments"]; knowledgeRefs?: InputEntryData["knowledgeRefs"] }): string {
+	/**
+	 * The text the model sees for an input. Attachments are described with what it needs to use them without guessing: the readable virtual
+	 * path (the stable alias /uploads/<versionId>/<name>, valid before the message entry exists — see UploadsBackend), size, type and, for
+	 * spreadsheets, the sheet names. Metadata is only added for files the sender may read (the ids come from the client); otherwise the
+	 * line keeps just the name and ids.
+	 */
+	async composeContent(input: { text: string; attachments?: InputEntryData["attachments"]; knowledgeRefs?: InputEntryData["knowledgeRefs"]; userId?: string; orgId?: string }, principal?: Principal): Promise<string> {
 		let content = input.text;
-		if (input.attachments?.length) content += `\n\n[附件] ${input.attachments.map((a) => `${a.name} (fileId=${a.fileId}, versionId=${a.versionId})`).join("; ")}`;
+		if (input.attachments?.length) content += `\n\n${await this.#attachmentBlock(input.attachments, principal ?? (await this.#principalOf(input.userId, input.orgId)))}`;
 		if (input.knowledgeRefs?.length) content += `\n\n[引用知识] ${input.knowledgeRefs.map((k) => `${k.name} (kbId=${k.kbId}${k.docId ? `, docId=${k.docId}` : ""})`).join("; ")}`;
 		return content;
+	}
+
+	async #principalOf(userId?: string, orgId?: string): Promise<Principal | null> {
+		if (!userId || !orgId || !this.ctx.services.has("identity")) return null;
+		return this.ctx.services.get("identity").principalFor(userId, orgId).catch(() => null);
+	}
+
+	async #attachmentBlock(attachments: NonNullable<InputEntryData["attachments"]>, principal: Principal | null): Promise<string> {
+		const files = this.ctx.services.has("files") ? (this.ctx.services.get("files") as unknown as import("../files/service.ts").Files) : null;
+		const lines: string[] = [];
+		for (const a of attachments) {
+			const ids = `fileId=${a.fileId}, versionId=${a.versionId}`;
+			const v = files && principal ? files.versionRow(a.versionId) : undefined;
+			if (!files || !principal || !v || v.file_id !== a.fileId || !(await files.decide(principal, "read", a.fileId)).allow) {
+				lines.push(`- ${a.name} (${ids})`);
+				continue;
+			}
+			const mime = effectiveMime(v.mime, a.name);
+			const parts = [uploadAliasPath(a.versionId, a.name), `${humanSize(v.size)}（${v.size} 字节）`, mime];
+			if (previewKindOf(mime, a.name) === "xlsx") {
+				const sheets = await sheetNames(this.ctx.blobs.get(v.sha256));
+				if (sheets.length) parts.push(`工作表：${sheets.slice(0, 12).join("、")}${sheets.length > 12 ? ` 等 ${sheets.length} 个` : ""}`);
+			}
+			lines.push(`- ${parts.join(" · ")} (${ids})`);
+		}
+		return `[附件] ${attachments.length} 个，路径可直接用于 read / copy_to_work（路径之外不要猜）：\n${lines.join("\n")}`;
 	}
 
 	/**
@@ -809,7 +844,7 @@ export class Runtime implements RuntimeService {
 				"input",
 				{
 					type: "input",
-					content: this.composeContent(input),
+					content: await this.composeContent(input, p),
 					requestId: input.requestId,
 					whenBusy: input.whenBusy ?? "followUp",
 					entry: { kind: InputEntry.kind, data: data as any },
@@ -1105,7 +1140,7 @@ export class Runtime implements RuntimeService {
 			data.requestId = nowRid;
 			let nowSub;
 			try {
-				nowSub = await this.#submitAs(harness, conv, p, "steer", { type: "input", content: this.composeContent(data), requestId: nowRid, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
+				nowSub = await this.#submitAs(harness, conv, p, "steer", { type: "input", content: await this.composeContent(data, p), requestId: nowRid, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
 			} catch (err) {
 				await this.recordUnplaced(harness, conv, [{ id: submissionId, entry: item.entry }], context).catch(() => {});
 				clearIntent();
@@ -1141,7 +1176,7 @@ export class Runtime implements RuntimeService {
 					// Only when the original was really withdrawn and never placed: resubmit it as steer under the promised requestId.
 					if (rec && rec.status !== "placed" && rec.status !== "done" && (rec as any).entry === undefined) {
 						const data = JSON.parse(r.data) as InputEntryData & { requestId: string };
-						await conv.submit({ type: "input", content: this.composeContent(data), requestId: r.now_request_id, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
+						await conv.submit({ type: "input", content: await this.composeContent(data), requestId: r.now_request_id, whenBusy: "steer", entry: { kind: InputEntry.kind, data: data as any } }, context);
 						resubmitted++;
 					}
 				}
