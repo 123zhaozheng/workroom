@@ -4,7 +4,7 @@ import { CheckCircle2, ChevronRight, CircleX, FileArchive, FolderUp, Plus, Refre
 import { useRef, useState } from "react";
 import { Link } from "react-router";
 import type { MarketScope, PackageCheckDTO, SkillDTO, SkillDraftDTO, SkillKind, SkillListResponse, SkillRunDTO, SubmissionDTO } from "@shared/files";
-import { ApiError, errorText, patch, post } from "@/lib/api";
+import { ApiError, errorText, patch, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
+import { IconPicker, SkillIcon } from "./SkillIcon";
 import { FindingList, SCOPE, StateBadge, permText, useAct, useMarketMe } from "./common";
 
 export const KIND: Record<SkillKind, { label: string; hint: string }> = {
@@ -41,7 +42,7 @@ export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onD
 				{(skills.data?.skills ?? []).length === 0 ? (
 					<EmptyState icon={<Sparkles />} title="还没有技能" />
 				) : (
-					<div className="space-y-2">
+					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="my-skill-grid">
 						{skills.data!.skills.map((s) => (
 							<SkillCard key={s.id} s={s} onChanged={reloadAll} />
 						))}
@@ -300,36 +301,50 @@ function SkillCard({ s, onChanged }: { s: SkillDTO; onChanged: () => void }) {
 	const eff = versions.find((v) => v.versionNo === (inst?.effectiveVersionNo ?? full.latestVersionNo));
 	const missing = eff ? eff.requiredPermissions.filter((p) => !(inst?.grantedPermissions ?? []).includes(p)) : [];
 	return (
-		<div data-testid="skill" className="rounded-xl border border-border bg-surface">
-			<div className="flex flex-wrap items-center gap-2 p-3">
-				<button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-					<ChevronRight className={cn("size-4 text-fg-subtle transition-transform", open && "rotate-90")} />
-					<span className="font-medium">{s.name}</span>
+		<div data-testid="skill" className={cn("rounded-xl border border-border bg-surface", open && "col-span-full")}>
+			<div className="flex flex-col gap-2.5 p-3.5">
+				<button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={`${s.name}，${open ? "收起" : "展开"}详情`} className="flex min-w-0 items-start gap-3 text-left">
+					<SkillIcon skill={{ ...s, description: s.description ?? eff?.description }} />
+					<span className="min-w-0 flex-1">
+						<span className="block truncate font-medium">{s.name}</span>
+						<span className="mt-0.5 block truncate text-sm text-fg-muted" data-testid="skill-desc">{s.description ?? eff?.description ?? KIND[s.kind].hint}</span>
+					</span>
+					<ChevronRight className={cn("mt-1 size-4 shrink-0 text-fg-subtle transition-transform", open && "rotate-90")} />
+				</button>
+				<div className="flex flex-wrap items-center gap-1.5">
 					<Badge title={KIND[s.kind].hint}>{KIND[s.kind].label}</Badge>
 					<Badge>{SCOPE[s.scope]}</Badge>
 					{s.viaScope?.length ? <Badge tone="info">由{s.viaScope.map((x) => SCOPE[x]).join("/")}安装</Badge> : null}
 					{s.scope !== "personal" && s.listed === false ? <Badge tone="danger">已下架</Badge> : null}
-				</button>
-				{inst ? (
-					<>
-						<Badge tone={inst.enabled ? "success" : "neutral"} data-testid="skill-state">
-							{inst.enabled ? "已启用" : "已停用"} · 使用 v{inst.effectiveVersionNo}
-							{inst.pinnedVersionNo !== null ? "（固定）" : "（跟随最新）"}
-						</Badge>
-						<span className="flex items-center gap-2 text-xs text-fg-muted">
-							<Switch aria-label={`启用 ${s.name}`} data-testid="skill-enable" checked={inst.enabled} busy={busy} onCheckedChange={(v) => run(() => patch(`/skills/${s.id}/install`, { enabled: v }))} />
-							启用
-						</span>
-					</>
-				) : (
-					<Button size="sm" disabled={busy} onClick={() => run(() => post(`/skills/${s.id}/install`))} data-testid="skill-install">
-						安装
-					</Button>
-				)}
+				</div>
+				<div className="flex flex-wrap items-center gap-2">
+					{inst ? (
+						<>
+							<Badge tone={inst.enabled ? "success" : "neutral"} data-testid="skill-state">
+								{inst.enabled ? "已启用" : "已停用"} · 使用 v{inst.effectiveVersionNo}
+								{inst.pinnedVersionNo !== null ? "（固定）" : "（跟随最新）"}
+							</Badge>
+							<span className="ml-auto flex items-center gap-2 text-xs text-fg-muted">
+								<Switch aria-label={`启用 ${s.name}`} data-testid="skill-enable" checked={inst.enabled} busy={busy} onCheckedChange={(v) => run(() => patch(`/skills/${s.id}/install`, { enabled: v }))} />
+								启用
+							</span>
+						</>
+					) : (
+						<Button size="sm" disabled={busy} onClick={() => run(() => post(`/skills/${s.id}/install`))} data-testid="skill-install">
+							安装
+						</Button>
+					)}
+				</div>
 			</div>
-			{err ? <p className="px-3 pb-2 text-sm text-danger">{err}</p> : null}
+			{err ? <p className="px-3.5 pb-2 text-sm text-danger">{err}</p> : null}
 			{open ? (
-				<div className="space-y-3 border-t border-border p-3 text-sm">
+				<div className="space-y-3 border-t border-border p-3.5 text-sm">
+					{full.canManage ? (
+						<div data-testid="icon-edit">
+							<div className="mb-1.5 text-xs font-medium text-fg-muted">图标</div>
+							<IconPicker value={full.icon} auto={{ name: full.name, slug: full.slug, category: full.category, tags: full.tags, description: full.description ?? eff?.description }} disabled={busy} onChange={(icon) => run(() => put(`/market/skills/${s.id}/icon`, { icon }))} />
+						</div>
+					) : null}
 					{eff ? (
 						<div>
 							<p className="text-fg-muted">{eff.description}</p>
@@ -429,10 +444,12 @@ function CreateSkillDialog({ open, onOpenChange, onCreated }: { open: boolean; o
 	const [kind, setKind] = useState<"prompt" | "context">("prompt");
 	const [description, setDescription] = useState("");
 	const [instructions, setInstructions] = useState("");
+	const [icon, setIcon] = useState<string | null>(null);
 	const { busy, err, run } = useAct(() => {
 		onOpenChange(false);
 		setName("");
 		setInstructions("");
+		setIcon(null);
 		onCreated();
 	});
 	return (
@@ -455,12 +472,16 @@ function CreateSkillDialog({ open, onOpenChange, onCreated }: { open: boolean; o
 						<Input id="sd" value={description} onChange={(e) => setDescription(e.target.value)} />
 					</div>
 					<div>
+						<Label>图标</Label>
+						<IconPicker value={icon ?? undefined} auto={{ name, description }} onChange={setIcon} />
+					</div>
+					<div>
 						<Label htmlFor="si">指令 / SKILL.md</Label>
 						<Textarea id="si" rows={6} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
 					</div>
 					{err ? <p className="text-sm text-danger">{err}</p> : null}
 					<div className="flex justify-end">
-						<Button variant="primary" disabled={busy || !name.trim() || !instructions.trim()} onClick={() => run(() => post("/skills", { name, kind, description, instructions }))} data-testid="skill-create">
+						<Button variant="primary" disabled={busy || !name.trim() || !instructions.trim()} onClick={() => run(() => post("/skills", { name, kind, description, instructions, ...(icon ? { icon } : {}) }))} data-testid="skill-create">
 							创建并安装
 						</Button>
 					</div>

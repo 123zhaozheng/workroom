@@ -1,14 +1,14 @@
-// 能力: 技能市场 / 我的技能 / 待审核（仅审核员）/ 连接市场 / 我的连接. Skills and MCP servers share one lifecycle:
+// 能力: 技能市场 / 我的技能 / 待审核（仅审核员）/ 我的连接. Skills (and MCP servers, reviewed in the same queue) share one lifecycle:
 // upload or import → automated checks → scoped review → publish → install (me / project / department / org).
+// The 连接市场 tab is gone from the UI; the MCP market API and the review queue's MCP review stay.
 // Design: docs/skills-mcp-marketplace.md. All permissions are decided by the server; the page only reflects them.
-import { Boxes, ClipboardCheck, Plug, Sparkles, Store } from "lucide-react";
+import { ClipboardCheck, Plug, Sparkles, Store } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { TopBar } from "@/components/shell/AppShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Page, PageHeader } from "@/components/ui/misc";
 import { Connectors } from "@/features/market/Connectors";
-import { McpMarket } from "@/features/market/McpMarket";
 import { MySkills } from "@/features/market/MySkills";
 import { ReviewQueue } from "@/features/market/ReviewQueue";
 import { SkillMarket } from "@/features/market/SkillMarket";
@@ -17,8 +17,9 @@ import { useApi } from "@/lib/useApi";
 
 export { KIND } from "@/features/market/MySkills";
 
-type Tab = "market" | "mine" | "review" | "mcp" | "connectors";
-const ALIAS: Record<string, Tab> = { skills: "mine" };
+type Tab = "market" | "mine" | "review" | "connectors";
+// Old links to the removed 连接市场 tab land on 我的连接.
+const ALIAS: Record<string, Tab> = { skills: "mine", mcp: "connectors" };
 
 export default function CapabilitiesPage() {
 	const [sp, setSp] = useSearchParams();
@@ -55,10 +56,6 @@ export default function CapabilitiesPage() {
 										{count ? <span className="ml-1 rounded-full bg-warning-soft px-1.5 text-xs text-warning" data-testid="review-count">{count}</span> : null}
 									</TabsTrigger>
 								) : null}
-								<TabsTrigger value="mcp" data-testid="tab-mcp">
-									<Boxes />
-									连接市场
-								</TabsTrigger>
 								<TabsTrigger value="connectors" data-testid="tab-connectors">
 									<Plug />
 									我的连接
@@ -76,9 +73,6 @@ export default function CapabilitiesPage() {
 								<ReviewQueue me={me.data.me} onCount={setPending} />
 							</TabsContent>
 						) : null}
-						<TabsContent value="mcp">
-							<McpMarket />
-						</TabsContent>
 						<TabsContent value="connectors">
 							<Connectors />
 						</TabsContent>

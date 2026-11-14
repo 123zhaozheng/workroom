@@ -71,6 +71,10 @@ export function registerMarketRoutes(api: Hono<AppEnv>, ctx: AppContext): void {
 		await market.uninstall(principalOf(c), c.req.param("id"), needTarget(c.req.query("target") ?? "me"), c.req.query("scopeRef"));
 		return c.json({ ok: true });
 	});
+	api.put("/market/skills/:id/icon", async (c) => {
+		const b = await jsonBody<{ icon?: string | null }>(c);
+		return c.json(await market.setIcon(principalOf(c), c.req.param("id"), b.icon ? String(b.icon) : null));
+	});
 	api.post("/market/skills/:id/unpublish", async (c) => c.json({ skill: await market.unpublish(principalOf(c), c.req.param("id"), (await jsonBody<{ reason: string }>(c)).reason) }));
 	api.post("/market/skills/:id/republish", async (c) => c.json({ skill: await market.republish(principalOf(c), c.req.param("id")) }));
 	api.post("/market/skills/:id/force-publish", async (c) => {

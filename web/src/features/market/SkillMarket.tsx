@@ -13,6 +13,7 @@ import { Dialog, DialogContent, Sheet } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { FileTree, FileViewer, FindingList, PermChips, SCOPE, Stars, StarInput, StateBadge, permExplain, useAct, useMarketMe } from "./common";
 import { Markdownish } from "./Markdownish";
+import { IconPicker, SkillIcon } from "./SkillIcon";
 
 export function SkillMarket() {
 	const [q, setQ] = useState("");
@@ -90,13 +91,14 @@ const Chip = ({ active, onClick, children }: { active: boolean; onClick: () => v
 function SkillCard({ s, onOpen }: { s: MarketSkillSummaryDTO; onOpen: () => void }) {
 	return (
 		<button type="button" onClick={onOpen} data-testid="market-skill" data-slug={s.slug} className="flex flex-col rounded-xl border border-border bg-surface p-4 text-left transition-shadow hover:shadow-pop focus-visible:outline-2 focus-visible:outline-ring">
-			<div className="flex items-start gap-2">
+			<div className="flex items-start gap-3">
+				<SkillIcon skill={s} />
 				<div className="min-w-0 flex-1">
 					<div className="truncate font-medium">{s.name}</div>
-									</div>
+					<p className="mt-0.5 line-clamp-1 text-sm text-fg-muted" data-testid="skill-desc">{s.description}</p>
+				</div>
 				<Badge>{SCOPE[s.scope]}</Badge>
 			</div>
-			<p className="mt-2 line-clamp-2 min-h-[2.6em] text-sm text-fg-muted">{s.description}</p>
 			<div className="mt-3 flex flex-wrap items-center gap-1.5">
 				{s.version ? <Badge tone="info">v{s.version}</Badge> : null}
 				<PermChips perms={s.requiredPermissions} />
@@ -138,7 +140,8 @@ function SkillDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 				{s ? (
 					<>
 						<header className="border-b border-border px-5 pb-3 pt-5">
-							<div className="flex items-start gap-2">
+							<div className="flex items-start gap-3">
+								<SkillIcon skill={s} size={44} />
 								<div className="min-w-0 flex-1">
 									<h2 className="truncate text-lg font-semibold">{s.name}</h2>
 									<p className="font-mono text-xs text-fg-subtle">/skills/{s.slug}</p>
@@ -171,6 +174,14 @@ function SkillDetail({ id, onChanged, onClose }: { id: string; onChanged: () => 
 									</Button>
 								) : null}
 							</div>
+							{s.canManage ? (
+								<details className="mt-3 text-sm" data-testid="icon-edit">
+									<summary className="cursor-pointer select-none text-fg-muted hover:text-fg">更换图标</summary>
+									<div className="mt-2">
+										<IconPicker value={s.icon} auto={s} disabled={busy} onChange={(icon) => run(() => put(`/market/skills/${id}/icon`, { icon }))} />
+									</div>
+								</details>
+							) : null}
 							{err ? <p className="mt-2 text-sm text-danger">{err}</p> : null}
 						</header>
 						<nav className="flex gap-1 overflow-x-auto border-b border-border px-4" role="tablist">
