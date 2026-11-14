@@ -3,17 +3,13 @@ import { AlertTriangle } from "lucide-react";
 import type { ExpertDTO, ExpertSkillDTO, ExpertStatus } from "@shared/experts";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/misc";
+import { BotAvatar } from "@/components/BotAvatar";
 
 export const EXPERT_CATEGORIES = ["办公效率", "研发", "数据分析", "写作", "设计", "运营", "法务财务", "通用"] as const;
 
-/** Avatar: a short text/emoji the author picked, else the first character of the name. */
-export function ExpertAvatar({ e, size = 36 }: { e?: { avatar?: string; name?: string }; size?: number }) {
-	const ch = e?.avatar && [...e.avatar].length <= 2 ? e.avatar : (e?.name ?? "专").slice(0, 1);
-	return (
-		<span aria-hidden className="inline-flex shrink-0 items-center justify-center rounded-xl bg-surface-3 font-medium text-fg" style={{ width: size, height: size, fontSize: Math.round(size * 0.46) }}>
-			{ch}
-		</span>
-	);
+/** Avatar: the expert's bot (shape / colors from avatarConfig; legacy experts get a stable default picked from the id). `working` plays the full animation. */
+export function ExpertAvatar({ e, size = 36, working = false }: { e?: { id?: string; avatarConfig?: unknown; name?: string }; size?: number; working?: boolean }) {
+	return <BotAvatar config={e?.avatarConfig} seed={e?.id ?? e?.name ?? "expert"} size={size} working={working} />;
 }
 
 export const STATUS: Record<ExpertStatus, { label: string; tone: "success" | "warning" | "danger" | "neutral" | "info" }> = {

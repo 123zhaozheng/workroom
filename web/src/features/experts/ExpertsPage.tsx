@@ -345,7 +345,7 @@ export function ExpertDetail({ id, onEdit, onChanged }: { id: string; onEdit: (e
 	return (
 		<Loadable state={d} what="专家">
 			{e ? (
-				<div className="space-y-5 text-sm" data-testid="expert-detail">
+				<div className="wr-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-5 text-sm" data-testid="expert-detail">
 					<div className="flex items-start gap-3">
 						<ExpertAvatar e={e} size={52} />
 						<div className="min-w-0 flex-1">

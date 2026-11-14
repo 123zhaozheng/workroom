@@ -196,7 +196,7 @@ function ReviewScreen({ id, me, onBack, onDecided }: { id: string; me: MarketMeD
 							{s.expert ? (
 								<div className="space-y-2 text-sm" data-testid="expert-info">
 									<p className="flex items-center gap-2">
-										<ExpertAvatar e={s.expert.config} size={28} />
+										<ExpertAvatar e={{ id: s.subjectId, avatarConfig: s.expert.config.avatarConfig, name: s.expert.config.name }} size={28} />
 										<b>{s.expert.config.name}</b>
 										<span className="text-fg-muted">{s.expert.config.category}</span>
 									</p>

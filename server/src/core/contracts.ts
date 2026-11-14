@@ -113,6 +113,7 @@ export interface InputEntryData {
 	readonly expertId?: string;
 	readonly expertName?: string;
 	readonly expertAvatar?: string;
+	readonly expertAvatarConfig?: import("../../../shared/bot-avatar/config.ts").AvatarConfig;
 	readonly via?: { kind: "automation"; automationId: string; runId: string } | { kind: "delegate" | "subagent_report" | "approval_resume"; id: string };
 }
 

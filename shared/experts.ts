@@ -1,5 +1,7 @@
 // Experts (round 17): the former 「助手」, shown in the 专家 page, mentionable with @ in a conversation.
 // Skills / connectors are attached BY ID (never a snapshot): the runtime resolves each skill's current published version on every run.
+import type { AvatarConfig } from "./bot-avatar/config.ts";
+
 export type ExpertScope = "personal" | "department" | "org";
 export type ExpertStatus = "draft" | "pending" | "published" | "unpublished";
 export type ExpertSkillState = "ok" | "missing" | "forbidden" | "unlisted" | "unapproved" | "disabled" | "no_permission";
@@ -13,7 +15,10 @@ export interface ExpertModelRef {
 /** The editable configuration (also what an immutable version snapshots). Skills are references only. */
 export interface ExpertConfigDTO {
 	readonly name: string;
+	/** Legacy text avatar (old 助手); no longer drawn — see avatarConfig. */
 	readonly avatar?: string;
+	/** The expert's bot avatar (shape / colors / eyes as JSON, see shared/bot-avatar/config.ts). Missing in old snapshots: the id's default look applies. */
+	readonly avatarConfig?: AvatarConfig;
 	readonly tagline: string;
 	readonly description: string;
 	readonly category: string;
@@ -44,6 +49,8 @@ export interface ExpertDTO {
 	readonly id: string;
 	readonly name: string;
 	readonly avatar?: string;
+	/** Always present in API responses (stored value, or the id's stable default for legacy rows). */
+	readonly avatarConfig?: AvatarConfig;
 	readonly tagline: string;
 	readonly description: string;
 	readonly category: string;
@@ -81,6 +88,7 @@ export interface MentionableExpertDTO {
 	readonly id: string;
 	readonly name: string;
 	readonly avatar?: string;
+	readonly avatarConfig?: AvatarConfig;
 	readonly tagline: string;
 	readonly category: string;
 	readonly defaultModel: ExpertModelRef | null;
@@ -93,6 +101,7 @@ export interface ConversationExpertDTO {
 	readonly boundId?: string;
 	readonly boundName?: string;
 	readonly boundAvatar?: string;
+	readonly boundAvatarConfig?: AvatarConfig;
 	/** The user chose a model explicitly in this conversation: an expert's default model never overrides it. */
 	readonly modelExplicit: boolean;
 }

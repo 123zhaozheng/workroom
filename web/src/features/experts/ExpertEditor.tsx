@@ -3,6 +3,7 @@
 // optional knowledge bases and tool allowlist. Saving never publishes: sharing goes through 提交审查.
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
+import { defaultAvatarConfig, type AvatarConfig } from "@shared/bot-avatar/config";
 import type { ExpertDTO } from "@shared/experts";
 import type { KbSummary } from "@shared/knowledge";
 import type { SkillListResponse } from "@shared/files";
@@ -15,6 +16,7 @@ import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { listOf } from "@/features/chat/pickers";
 import { modelName, useModels } from "@/features/composer/models";
 import { EXPERT_CATEGORIES } from "./common";
+import { AvatarPicker } from "./AvatarPicker";
 
 const TOOL_GROUPS = ["file_create", "file_revise", "file_read", "kb_search", "sandbox_exec", "browse", "job_start", "memory_save"];
 
@@ -24,7 +26,9 @@ export function ExpertEditor({ initial, onClose, onSaved }: { initial?: ExpertDT
 	const kbs = useApi<unknown>("/kb");
 	const kbList = listOf<KbSummary>(kbs.data, "kbs");
 	const [name, setName] = useState(initial?.name ?? "");
-	const [avatar, setAvatar] = useState(initial?.avatar ?? "");
+	// an existing expert edits its own look; a new one starts from a stable default of a draft id (the server picks the same way from the real id when none is sent)
+	const [seed] = useState(() => initial?.id ?? `draft-${Math.random().toString(36).slice(2, 10)}`);
+	const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(() => initial?.avatarConfig ?? defaultAvatarConfig(seed));
 	const [tagline, setTagline] = useState(initial?.tagline ?? "");
 	const [description, setDescription] = useState(initial?.description ?? "");
 	const [category, setCategory] = useState(initial?.category ?? "通用");
@@ -49,7 +53,7 @@ export function ExpertEditor({ initial, onClose, onSaved }: { initial?: ExpertDT
 		const m = models.find((x) => x.ref && `${x.ref.provider}/${x.ref.modelId}` === model);
 		const body = {
 			name,
-			avatar: avatar || null,
+			avatarConfig,
 			tagline,
 			description,
 			category,
@@ -77,15 +81,13 @@ export function ExpertEditor({ initial, onClose, onSaved }: { initial?: ExpertDT
 			<DialogContent title={initial ? "编辑专家" : "创建专家"} className="max-w-2xl">
 				<div className="wr-scroll -mx-1 max-h-[72vh] space-y-4 overflow-y-auto px-1 text-sm" data-testid="expert-editor">
 					{legacy ? <p className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">这是由旧助手迁移来的专家，请在「设置 → 助手」里修改。</p> : null}
-					<div className="grid grid-cols-[72px_1fr] gap-3">
-						<div>
-							<Label htmlFor="exav">头像</Label>
-							<Input id="exav" value={avatar} maxLength={2} onChange={(e) => setAvatar(e.target.value)} placeholder="字" className="text-center" />
-						</div>
-						<div>
-							<Label htmlFor="exnm">名称</Label>
-							<Input id="exnm" data-testid="expert-name" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="例如：周报专家" />
-						</div>
+					<div>
+						<Label htmlFor="exnm">名称</Label>
+						<Input id="exnm" data-testid="expert-name" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="例如：周报专家" />
+					</div>
+					<div>
+						<Label>头像</Label>
+						<AvatarPicker value={avatarConfig} onChange={setAvatarConfig} seed={seed} />
 					</div>
 					<div>
 						<Label htmlFor="extg">一句话简介</Label>

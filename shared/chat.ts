@@ -92,7 +92,7 @@ export interface UserEntryDTO extends EntryBase {
 	readonly attachments?: readonly AttachmentRef[];
 	readonly knowledgeRefs?: readonly KnowledgeRef[];
 	/** Round 17: the expert @-mentioned in this message (it answers this message). */
-	readonly expert?: { readonly id: string; readonly name: string; readonly avatar?: string };
+	readonly expert?: { readonly id: string; readonly name: string; readonly avatar?: string; readonly avatarConfig?: import("./bot-avatar/config.ts").AvatarConfig };
 	/** Set for inputs written by the runtime itself (subagent report, automation). */
 	readonly via?: { readonly kind: "automation" | "subagent_report" | "delegate" | "approval_resume"; readonly id?: string };
 	/**

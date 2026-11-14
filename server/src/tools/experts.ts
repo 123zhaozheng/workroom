@@ -5,6 +5,7 @@ import type { Context } from "@earendil-works/chord/context";
 import { defineExtension, section, type Extension } from "@earendil-works/pi-durable";
 import type { AppContext, Principal, Space } from "../core/contracts.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
+import { defaultAvatarConfig, validateAvatarConfig, type AvatarConfig } from "../../../shared/bot-avatar/config.ts";
 import { EXPERT_CATEGORIES, type ExpertConfigDTO, type ExpertDTO, type ExpertScope, type ExpertSkillDTO, type ExpertStatus, type MentionableExpertDTO } from "../../../shared/experts.ts";
 import type { PackageCheckDTO, PackageFindingDTO, SubmissionDetailDTO, SubmissionDTO } from "../../../shared/files.ts";
 import type { Market, SubRow, SubmissionKindHandler } from "./market.ts";
@@ -32,6 +33,11 @@ CREATE TRIGGER ex_versions_no_update BEFORE UPDATE ON ex_versions BEGIN SELECT R
 CREATE TABLE ex_installs (expert_id TEXT NOT NULL, user_id TEXT NOT NULL, installed_at TEXT NOT NULL, PRIMARY KEY (expert_id, user_id));
 `,
 	},
+	{
+		version: 2,
+		name: "experts: bot avatar configuration (JSON; NULL = the id's stable default look)",
+		sql: `ALTER TABLE ex_experts ADD COLUMN avatar_config TEXT;`,
+	},
 ];
 
 interface Row {
@@ -40,6 +46,7 @@ interface Row {
 	owner_user_id: string;
 	name: string;
 	avatar: string | null;
+	avatar_config: string | null;
 	tagline: string;
 	description: string;
 	category: string;
@@ -135,6 +142,7 @@ export class Experts {
 		return {
 			name: r.name,
 			...(r.avatar ? { avatar: r.avatar } : {}),
+			...this.#storedAvatar(r),
 			tagline: r.tagline,
 			description: r.description,
 			category: r.category,
@@ -148,6 +156,15 @@ export class Experts {
 			knowledge: json(r.knowledge, null),
 			tools: json(r.tools, null),
 		};
+	}
+	#storedAvatar(r: Row): { avatarConfig?: AvatarConfig } {
+		const v = r.avatar_config ? validateAvatarConfig(json<unknown>(r.avatar_config, null)) : undefined;
+		return v?.ok ? { avatarConfig: v.value } : {};
+	}
+	/** The look to draw for an expert: its (validated) configuration, else the id's stable default (legacy rows, migrated 助手, old version snapshots). */
+	avatarConfigOf(id: string, cfg?: { avatarConfig?: unknown }): AvatarConfig {
+		const v = cfg?.avatarConfig !== undefined && cfg.avatarConfig !== null ? validateAvatarConfig(cfg.avatarConfig) : undefined;
+		return v?.ok ? v.value : defaultAvatarConfig(id);
 	}
 	/** What the viewer runs: the author their draft, everyone else the published version's snapshot. */
 	effective(p: Principal, r: Row): ExpertConfigDTO | undefined {
@@ -295,6 +312,7 @@ export class Experts {
 			id: r.id,
 			name: cfg.name,
 			...(cfg.avatar ? { avatar: cfg.avatar } : {}),
+			avatarConfig: this.avatarConfigOf(r.id, cfg),
 			tagline: cfg.tagline,
 			description: cfg.description,
 			category: cfg.category,
@@ -356,7 +374,7 @@ export class Experts {
 		return rows
 			.map((r): MentionableExpertDTO => {
 				const cfg = this.effective(p, r) ?? this.#config(r);
-				return { id: r.id, name: cfg.name, ...(cfg.avatar ? { avatar: cfg.avatar } : {}), tagline: cfg.tagline, category: cfg.category, defaultModel: cfg.defaultModel, mine: r.owner_user_id === p.userId, installed: installed.has(r.id), status: this.#statusOf(r).status };
+				return { id: r.id, name: cfg.name, ...(cfg.avatar ? { avatar: cfg.avatar } : {}), avatarConfig: this.avatarConfigOf(r.id, cfg), tagline: cfg.tagline, category: cfg.category, defaultModel: cfg.defaultModel, mine: r.owner_user_id === p.userId, installed: installed.has(r.id), status: this.#statusOf(r).status };
 			})
 			.sort((a, b) => Number(b.mine || b.installed) - Number(a.mine || a.installed) || a.name.localeCompare(b.name))
 			.slice(0, 100);
@@ -382,6 +400,14 @@ export class Experts {
 			out.name = name;
 		}
 		if (has("avatar")) out.avatar = b.avatar ? str(b.avatar, 2000) : null;
+		if (has("avatarConfig")) {
+			if (b.avatarConfig === null) out.avatar_config = null;
+			else {
+				const v = validateAvatarConfig(b.avatarConfig);
+				if (!v.ok) throw new HttpError(400, "invalid_avatar", `头像配置无效：${v.errors.join("；")}`);
+				out.avatar_config = JSON.stringify(v.value);
+			}
+		}
 		if (has("tagline")) out.tagline = str(b.tagline, 80);
 		if (has("description")) out.description = str(b.description, 4000);
 		if (has("category")) out.category = str(b.category, 20) || "通用";
@@ -420,6 +446,8 @@ export class Experts {
 		this.syncAssistants(p.orgId);
 		const v = await this.#clean(p, b, false);
 		const id = newId("exp");
+		// a new expert always gets a look: the one chosen, else a stable pick (shape + color) from its id
+		if (v.avatar_config === undefined) v.avatar_config = JSON.stringify(defaultAvatarConfig(id));
 		const now = nowIso();
 		const cols = ["id", "org_id", "owner_user_id", "created_at", "updated_at", ...Object.keys(v)];
 		this.#db.run(`INSERT INTO ex_experts (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`, id, p.orgId, p.userId, now, now, ...(Object.values(v) as any[]));

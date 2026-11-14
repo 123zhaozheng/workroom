@@ -166,6 +166,7 @@ export function AssistantMessage({
 	readOnly,
 	avatarState,
 	wide,
+	expert,
 }: {
 	turn: AssistantTurn;
 	children?: ReactNode;
@@ -175,13 +176,15 @@ export function AssistantMessage({
 	avatarState: "idle" | "working" | "waiting" | "failed";
 	/** 加宽模式: no avatar and no avatar-sized gutter; status rows and text share one left edge. */
 	wide?: boolean;
+	/** The conversation's expert (its bot answers); none = the product's own bot. */
+	expert?: { id?: string; avatarConfig?: unknown; name?: string };
 }) {
 	const md = turnMarkdown(turn);
 	return (
 		<div data-testid="assistant-message" data-entry-id={turn.lastAssistantEntryId} className={cn("group flex", !wide && "gap-3")}>
 			{wide ? null : (
 				<div data-testid="assistant-avatar" className="hidden pt-0.5 sm:block">
-					<AssistantAvatar state={avatarState} label={turn.modelLabel} />
+					<AssistantAvatar state={avatarState} label={turn.modelLabel} expert={expert} />
 				</div>
 			)}
 			<div className="min-w-0 flex-1">

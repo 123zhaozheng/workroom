@@ -7,7 +7,7 @@ import { modelName, useModels, type ModelInfo } from "@/features/composer/models
 import type { ThinkingLevel } from "@shared/ops";
 import { ExpertAvatar } from "./common";
 
-export function ExpertHeader({ agent, onModel }: { agent: AgentDTO; onModel: (m: ModelInfo, thinking?: ThinkingLevel) => void | Promise<void> }) {
+export function ExpertHeader({ agent, onModel, working }: { agent: AgentDTO; working?: boolean; onModel: (m: ModelInfo, thinking?: ThinkingLevel) => void | Promise<void> }) {
 	const { groups } = useModels();
 	const e = agent.expert!;
 	const cur = agent.model;
@@ -15,7 +15,7 @@ export function ExpertHeader({ agent, onModel }: { agent: AgentDTO; onModel: (m:
 		<Menu>
 			<MenuTrigger asChild>
 				<button data-testid="chat-expert" title={e.modelExplicit ? "模型由你选择" : "使用专家指定的模型"} className="inline-flex max-w-[260px] shrink-0 items-center gap-1.5 rounded-md bg-surface-2 py-0.5 pl-1 pr-1.5 text-[11.5px] text-fg-muted hover:bg-surface-3 hover:text-fg">
-					<ExpertAvatar e={{ avatar: e.boundAvatar, name: e.boundName }} size={18} />
+					<ExpertAvatar e={{ id: e.boundId, avatarConfig: e.boundAvatarConfig, name: e.boundName }} size={20} working={working} />
 					<span className="truncate font-medium text-fg">{e.boundName}</span>
 					<span aria-hidden>·</span>
 					<span className="truncate" data-testid="chat-expert-model">

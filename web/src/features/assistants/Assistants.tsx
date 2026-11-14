@@ -13,18 +13,15 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent, Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/overlay";
 import { Badge, Loadable } from "@/components/ui/misc";
+import { BotAvatar } from "@/components/BotAvatar";
 import { listOf } from "@/features/chat/pickers";
 import { useViewerPerms } from "@/features/admin/rbac-ui";
 
 type Assistant = AssistantDTO & { modelAvailability?: { status: "ok" | "not_allowed" | "blocked"; reason?: string } };
 
-export function AssistantAvatarMark({ a, size = 28 }: { a?: Pick<AssistantDTO, "avatar" | "name">; size?: number }) {
-	const ch = a?.avatar && [...a.avatar].length <= 2 ? a.avatar : (a?.name ?? "助").slice(0, 1);
-	return (
-		<span aria-hidden className="inline-flex shrink-0 items-center justify-center rounded-full bg-surface-3 text-[13px]" style={{ width: size, height: size }}>
-			{ch}
-		</span>
-	);
+/** A legacy 助手 wears the bot its migrated expert has: same id → same stable default look. */
+export function AssistantAvatarMark({ a, size = 28 }: { a?: Pick<AssistantDTO, "id" | "name">; size?: number }) {
+	return <BotAvatar config={undefined} seed={a?.id ?? a?.name ?? "assistant"} size={size} />;
 }
 
 const MODEL_STATE = { ok: null, not_allowed: "默认模型不在你可用的列表中，将改用平台默认模型", blocked: "默认模型当前不可用（未配置凭据），将改用平台默认模型" } as const;

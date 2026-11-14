@@ -323,7 +323,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const panelOpen = panel?.kind === "preview";
 	// 加宽模式: a wider column (still capped; with the preview column open it simply fills what is left, up to 900px).
 	const colW = chatWide ? (panelOpen ? "max-w-[900px]" : "max-w-[var(--content-w-wide)]") : panelOpen ? "max-w-[720px]" : "max-w-[var(--content-w)]";
-	const gutter = chatWide ? "" : "sm:pl-[38px]"; // the avatar's width, only in the default layout
+	const gutter = chatWide ? "" : "sm:pl-[40px]"; // the avatar's width + gap, only in the default layout
 
 	return (
 		<div ref={pageRef} className="relative isolate flex min-h-0 flex-1 flex-col">
@@ -404,7 +404,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						<h1 data-testid="chat-title" className="truncate text-[14.5px] font-medium">
 							{conv?.title || "对话"}
 						</h1>
-						{agent?.expert?.boundId ? <ExpertHeader agent={agent} onModel={changeModel} /> : null}
+						{agent?.expert?.boundId ? <ExpertHeader agent={agent} working={runStatus === "running"} onModel={changeModel} /> : null}
 						{conv?.kind === "branch" ? (
 							<span data-testid="branch-badge" className="inline-flex shrink-0 items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11.5px] text-fg-muted">
 								<GitBranch className="size-3" />
@@ -475,6 +475,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 											turn={t}
 											readOnly={readOnly}
 											wide={chatWide}
+											expert={agent?.expert?.boundId ? { id: agent.expert.boundId, avatarConfig: agent.expert.boundAvatarConfig, name: agent.expert.boundName } : undefined}
 											avatarState={i === lastAssistantIdx ? avatar : "idle"}
 											onRegenerate={t.lastAssistantEntryId ? () => regenerate(t.lastAssistantEntryId!) : undefined}
 											onFork={t.lastAssistantEntryId ? () => fork(t.lastAssistantEntryId!) : undefined}

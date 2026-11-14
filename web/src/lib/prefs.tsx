@@ -29,6 +29,8 @@ interface PrefsCtx extends Prefs {
 	set: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void;
 	/** Effective: system reduced-motion OR in-app toggle. */
 	motionReduced: boolean;
+	/** Effective theme is dark. */
+	dark: boolean;
 }
 const Ctx = createContext<PrefsCtx | null>(null);
 
@@ -67,8 +69,8 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
 	}, [prefs.reduceMotion]);
 
 	const value = useMemo<PrefsCtx>(
-		() => ({ ...prefs, motionReduced: prefs.reduceMotion || systemReduce, set: (k, v) => setPrefs((p) => ({ ...p, [k]: v })) }),
-		[prefs, systemReduce],
+		() => ({ ...prefs, motionReduced: prefs.reduceMotion || systemReduce, dark, set: (k, v) => setPrefs((p) => ({ ...p, [k]: v })) }),
+		[prefs, systemReduce, dark],
 	);
 	return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
