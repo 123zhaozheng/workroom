@@ -10,6 +10,7 @@ import { ArrowUp, BookOpen, Folders, Loader2, RotateCcw, Sparkles, Square, Uploa
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { AttachmentRef, KnowledgeRef, SendMode } from "@shared/chat";
+import type { MentionableExpertDTO } from "@shared/experts";
 import type { ThinkingLevel } from "@shared/ops";
 import { ApiError, errorText, uuid } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,8 @@ import { AttachMenu } from "./AttachMenu";
 import { ModelChipNote, ModelSwitcher } from "./ModelSwitcher";
 import { readDefaultChoice, resolveChoice, supportsThinking, useModels, writeDefaultChoice, type ModelChoice, type ModelInfo } from "./models";
 import { MAX_FILES, useAttachments } from "./useAttachments";
+import { ExpertAvatar } from "@/features/experts/common";
+import { useApi } from "@/lib/useApi";
 import { MAX_UPLOAD_BYTES } from "./upload";
 
 export interface ComposerSubmit {
@@ -29,6 +32,8 @@ export interface ComposerSubmit {
 	mode: SendMode;
 	/** Stable across retries of the same content: the server dedupes on it. */
 	requestId: string;
+	/** Round 17: the expert @-mentioned in this message. */
+	expertId?: string;
 	/** Platform model chosen in the switcher (new conversations); absent when the model switcher is hidden or locked. */
 	modelId?: string;
 	thinkingLevel?: ThinkingLevel;
@@ -69,6 +74,8 @@ interface Props {
 	/** Model fixed by something else (e.g. an assistant's default model): the switcher is shown disabled with this text. */
 	modelLocked?: string;
 	hideModel?: boolean;
+	/** Round 17: typing "@" lists experts; the chosen one answers this message (home: it also becomes the conversation's expert). */
+	mentions?: boolean;
 }
 
 type KbChip = { ref: KnowledgeRef };
@@ -83,7 +90,7 @@ type SlashId = (typeof SLASH_ITEMS)[number]["id"];
 
 const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
-export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId, conversationId, placeholder, autoFocus, variant = "chat", tools, disabled, disabledReason, seed, restore, dropScope, model, modelLocked, hideModel }: Props) {
+export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId, conversationId, placeholder, autoFocus, variant = "chat", tools, disabled, disabledReason, seed, restore, dropScope, model, modelLocked, hideModel, mentions = true }: Props) {
 	const [text, setText] = useState("");
 	const [kbs, setKbs] = useState<KbChip[]>([]);
 	const att = useAttachments({ spaceId, projectId, conversationId });
@@ -111,6 +118,17 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 	const row = useRef<HTMLDivElement>(null);
 	const composing = useRef(false);
 	const skills = useUsableSkills();
+	// ---- @expert: a popup of the experts the user may use; the pick becomes a chip, the message goes out with its id
+	const [expert, setExpert] = useState<MentionableExpertDTO>();
+	const [at, setAt] = useState<{ open: boolean; q: string; index: number }>({ open: false, q: "", index: 0 });
+	const experts = useApi<{ experts: MentionableExpertDTO[] }>(mentions && at.open ? "/experts/mentionable" : null);
+	const atItems = (experts.data?.experts ?? []).filter((x) => !at.q || `${x.name}${x.tagline}`.toLowerCase().includes(at.q.toLowerCase())).slice(0, 8);
+	const pickExpert = (x: MentionableExpertDTO) => {
+		setExpert(x);
+		setAt({ open: false, q: "", index: 0 });
+		setText((t) => t.replace(/(^|\s)@[^\s@]*$/, "$1"));
+		setTimeout(() => ta.current?.focus(), 0);
+	};
 
 	// ---- model state
 	const { models, groups, defaultModelId, loading: modelsLoading, unavailable: modelsUnavailable, error: modelsError } = useModels();
@@ -232,13 +250,15 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 		const knowledgeRefs = kbs.map((k) => k.ref);
 		const sig = JSON.stringify([text.trim(), attachments.map((a) => a.versionId), knowledgeRefs.map((k) => `${k.kbId}/${k.docId ?? ""}`)]);
 		const requestId = failedSend.current?.sig === sig ? failedSend.current.requestId : uuid();
+		const lockedByExpertNow = !model && !!expert?.defaultModel;
 		const v: ComposerSubmit = {
+			...(expert ? { expertId: expert.id } : {}),
 			text: text.trim(),
 			attachments,
 			knowledgeRefs,
 			mode: busy ? "followUp" : "auto",
 			requestId,
-			...(!model && !modelLocked && !hideModel && resolved.model ? { modelId: resolved.model.id, ...(resolved.thinking ? { thinkingLevel: resolved.thinking } : {}) } : {}),
+			...(!model && !modelLocked && !lockedByExpertNow && !hideModel && resolved.model ? { modelId: resolved.model.id, ...(resolved.thinking ? { thinkingLevel: resolved.thinking } : {}) } : {}),
 		};
 		try {
 			const ok = await onSubmit(v);
@@ -246,6 +266,7 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 				failedSend.current = undefined;
 				setText("");
 				setKbs([]);
+				setExpert(undefined);
 				att.clear();
 			}
 		} catch (e) {
@@ -269,6 +290,23 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 	const slashItems = SLASH_ITEMS.filter((s) => s.id !== "skill" || skills.length > 0);
 
 	const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+		if (at.open && atItems.length) {
+			if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+				e.preventDefault();
+				const d = e.key === "ArrowDown" ? 1 : -1;
+				setAt((s) => ({ ...s, index: (s.index + d + atItems.length) % atItems.length }));
+				return;
+			}
+			if ((e.key === "Enter" || e.key === "Tab") && !e.nativeEvent.isComposing) {
+				e.preventDefault();
+				pickExpert(atItems[Math.min(at.index, atItems.length - 1)]!);
+				return;
+			}
+		}
+		if (at.open && e.key === "Escape") {
+			setAt({ open: false, q: "", index: 0 });
+			return;
+		}
 		if (slash.open) {
 			if (e.key === "ArrowDown" || e.key === "ArrowUp") {
 				e.preventDefault();
@@ -292,7 +330,8 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 			void send();
 		}
 		if (e.key === "Backspace" && text === "") {
-			if (kbs.length) setKbs((c) => c.slice(0, -1));
+			if (expert) setExpert(undefined);
+			else if (kbs.length) setKbs((c) => c.slice(0, -1));
 			else if (att.items.length) att.remove(att.items[att.items.length - 1]!.key);
 		}
 	};
@@ -301,6 +340,8 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 		setText(v);
 		const m = /(^|\s)\/([^\s]*)$/.exec(v);
 		setSlash((s) => ({ open: !!m && (m[2] ?? "").length < 8, index: m ? Math.min(s.index, slashItems.length - 1) : 0 }));
+		const a = mentions ? /(^|\s)@([^\s@]*)$/.exec(v) : null;
+		setAt((s) => ({ open: !!a && !expert, q: a?.[2] ?? "", index: a ? s.index : 0 }));
 	};
 
 	// Pasted images (screenshots, copied pictures) become attachments. Text on the clipboard always wins (copying cells from a
@@ -320,18 +361,21 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 		setText((t) => (t.startsWith("使用技能「") ? t : `使用技能「${name}」：${t}`));
 		setTimeout(() => ta.current?.focus(), 0);
 	}, []);
-	const showRow = att.items.length > 0 || kbs.length > 0;
+	const showRow = att.items.length > 0 || kbs.length > 0 || !!expert;
 	// the newest card (and any failure on it) stays in view when the list scrolls
 	useEffect(() => {
 		if (row.current) row.current.scrollTop = row.current.scrollHeight;
 	}, [att.items.length, att.items.map((i) => i.status).join(), kbs.length]);
 
-	const modelDisabled = !!modelLocked || disabled;
+	// An @-mentioned expert with its own default model decides the model of a NEW conversation (the user can still switch it in the chat).
+	const lockedByExpert = !model && expert?.defaultModel ? "专家指定的模型" : undefined;
+	const lockedText = modelLocked ?? lockedByExpert;
+	const modelDisabled = !!lockedText || disabled;
 	const menuSide = variant === "home" ? "bottom" : "top";
 	const switcher =
-		hideModel ? null : modelLocked ? (
-			<span data-testid="model-locked" className="inline-flex h-9 max-w-[200px] items-center truncate px-2.5 text-sm text-fg-muted sm:h-8 sm:max-w-[240px]" title={modelLocked}>
-				{modelLocked}
+		hideModel ? null : lockedText ? (
+			<span data-testid="model-locked" className="inline-flex h-9 max-w-[200px] items-center truncate px-2.5 text-sm text-fg-muted sm:h-8 sm:max-w-[240px]" title={lockedText}>
+				{lockedText}
 			</span>
 		) : !models.length && !model?.label ? (
 			modelsLoading ? (
@@ -362,6 +406,35 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 
 	return (
 		<div ref={root} className="relative">
+			{at.open ? (
+				<div role="listbox" id="composer-at" aria-label="选择专家" data-testid="mention-menu" className={cn("absolute left-0 z-20 w-80 max-w-full rounded-xl border border-border bg-surface p-1 text-fg shadow-pop wr-fade-in", variant === "home" ? "top-full mt-2" : "bottom-full mb-2")}>
+					<div className="px-2.5 pb-1 pt-1.5 text-xs text-fg-subtle">选择专家</div>
+					{experts.loading ? <div className="px-2.5 py-2 text-sm text-fg-subtle">加载中…</div> : null}
+					{!experts.loading && atItems.length === 0 ? <div className="px-2.5 py-2 text-sm text-fg-subtle">{at.q ? "没有匹配的专家" : "还没有可用的专家"}</div> : null}
+					{atItems.map((x, i) => (
+						<button
+							key={x.id}
+							type="button"
+							tabIndex={-1}
+							role="option"
+							aria-selected={i === at.index}
+							data-testid="mention-item"
+							onMouseDown={(ev) => {
+								ev.preventDefault();
+								pickExpert(x);
+							}}
+							className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm", i === at.index ? "bg-surface-2" : "hover:bg-surface-2")}
+						>
+							<ExpertAvatar e={x} size={28} />
+							<span className="min-w-0 flex-1">
+								<span className="block truncate font-medium">{x.name}</span>
+								{x.tagline ? <span className="block truncate text-xs text-fg-subtle">{x.tagline}</span> : null}
+							</span>
+							{x.mine ? <span className="shrink-0 text-xs text-fg-subtle">我的</span> : null}
+						</button>
+					))}
+				</div>
+			) : null}
 			{slash.open ? (
 				<div
 					role="listbox"
@@ -422,6 +495,15 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 								className="max-sm:w-full"
 							/>
 						))}
+						{expert ? (
+							<span data-testid="chip-expert" className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-surface-2 pl-1.5 pr-1 text-sm max-sm:w-full">
+								<ExpertAvatar e={expert} size={24} />
+								<span className="font-medium">@{expert.name}</span>
+								<button type="button" aria-label="取消 @专家" onClick={() => setExpert(undefined)} className="rounded p-1 text-fg-subtle hover:bg-surface-3 hover:text-fg">
+									×
+								</button>
+							</span>
+						) : null}
 						{kbs.map((k) => (
 							<RefTile key={k.ref.kbId + (k.ref.docId ?? "")} testId="chip-kb" icon={<BookOpen />} label="知识库" name={k.ref.name} onRemove={() => setKbs((cs) => cs.filter((x) => x !== k))} className="max-sm:w-full" />
 						))}
@@ -442,7 +524,7 @@ export function Composer({ onSubmit, busy, onStop, stopping, spaceId, projectId,
 					onPaste={onPaste}
 					onCompositionStart={() => (composing.current = true)}
 					onCompositionEnd={() => (composing.current = false)}
-					onBlur={() => setTimeout(() => setSlash({ open: false, index: 0 }), 120)}
+					onBlur={() => setTimeout(() => (setSlash({ open: false, index: 0 }), setAt((s) => ({ ...s, open: false }))), 120)}
 					placeholder={disabled ? disabledReason : (placeholder ?? (busy ? "继续输入…" : "说说要完成的事"))}
 					className="block max-h-[240px] min-h-[48px] w-full resize-none bg-transparent px-1 text-base leading-6 text-fg outline-none placeholder:text-fg-subtle disabled:cursor-not-allowed"
 				/>

@@ -5,7 +5,7 @@ import type { AbortResponse, AgentDTO, AttachmentRef, BranchResponse, Conversati
 import type { ThinkingLevel } from "@shared/ops";
 import { ApiError, errorText, get, patch, post, uuid } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { AssistantAvatarMark } from "@/features/assistants/Assistants";
+import { ExpertHeader } from "@/features/experts/ExpertHeader";
 import { cn } from "@/lib/utils";
 import { TopBar } from "@/components/shell/AppShell";
 import { usePanel } from "@/components/shell/panel";
@@ -56,6 +56,13 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 	const [actionErr, setActionErr] = useState<string>();
 	const [stopping, setStopping] = useState(false);
 	const [continuing, setContinuing] = useState(false);
+	// a starter question picked on the expert page: it seeds the message box (nothing is sent)
+	const [seed] = useState(() => {
+		const k = `wr.seed.${spaceId}.${id}`;
+		const t = sessionStorage.getItem(k);
+		if (t) sessionStorage.removeItem(k);
+		return t ? { text: t, n: 1 } : undefined;
+	});
 	const [restore, setRestore] = useState<{ n: number; text: string; attachments?: readonly AttachmentRef[]; knowledgeRefs?: readonly KnowledgeRef[] }>();
 	/** What 停止 did with messages still waiting in the queue (they go back to the composer, never vanish). */
 	const [handoff, setHandoff] = useState(false);
@@ -200,6 +207,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 			requestId: v.requestId,
 			...(v.attachments.length ? { attachments: v.attachments } : {}),
 			...(v.knowledgeRefs.length ? { knowledgeRefs: v.knowledgeRefs } : {}),
+			...(v.expertId ? { expertId: v.expertId } : {}),
 			mode: v.mode,
 		});
 		nearBottom.current = true;
@@ -396,12 +404,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						<h1 data-testid="chat-title" className="truncate text-[14.5px] font-medium">
 							{conv?.title || "对话"}
 						</h1>
-						{agent?.assistant && !agent.assistant.builtin ? (
-							<span data-testid="chat-assistant" className="inline-flex shrink-0 items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11.5px] text-fg-muted" title={agent.assistant.description}>
-								<AssistantAvatarMark a={agent.assistant} size={16} />
-								{agent.assistant.name}
-							</span>
-						) : null}
+						{agent?.expert?.boundId ? <ExpertHeader agent={agent} onModel={changeModel} /> : null}
 						{conv?.kind === "branch" ? (
 							<span data-testid="branch-badge" className="inline-flex shrink-0 items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11.5px] text-fg-muted">
 								<GitBranch className="size-3" />
@@ -550,6 +553,7 @@ function ChatView({ spaceId, id }: { spaceId: string; id: number }) {
 						onStop={stop}
 						stopping={stopping}
 						onSubmit={send}
+						seed={seed}
 						restore={restore}
 						tools={spaceId ? <EnvironmentButton spaceId={spaceId} conversationId={id} active={runStatus === "running"} /> : undefined}
 						disabled={!state}

@@ -6,7 +6,6 @@ import { TopBar } from "@/components/shell/AppShell";
 import { BrandMark } from "@/components/shell/BrandMark";
 import { DotMatrix } from "@/components/DotMatrix";
 import { Composer } from "@/features/chat/Composer";
-import { AssistantPicker } from "@/features/assistants/Assistants";
 import { useStartConversation } from "@/features/chat/useStartConversation";
 
 // three starters at most: each one only seeds the message box, nothing is sent
@@ -19,7 +18,6 @@ const STARTERS = [
 export function HomePage() {
 	const { me, personalSpaceId } = useSession();
 	const start = useStartConversation();
-	const [assistantId, setAssistantId] = useState<string>();
 	const [seed, setSeed] = useState({ text: "", n: 0 });
 	const page = useRef<HTMLDivElement>(null);
 
@@ -46,11 +44,9 @@ export function HomePage() {
 							tools={
 								<>
 									{personalSpaceId ? <EnvironmentButton spaceId={personalSpaceId} side="bottom" /> : null}
-									<AssistantPicker value={assistantId} onChange={setAssistantId} />
 								</>
 							}
-							modelLocked={assistantId ? "使用助手的默认模型" : undefined}
-							onSubmit={(v) => start(v, { spaceId: personalSpaceId, assistantId })}
+							onSubmit={(v) => start(v, { spaceId: personalSpaceId })}
 						/>
 					</div>
 					<div role="group" className="order-2 mb-3 flex flex-wrap justify-center gap-2 sm:order-4 sm:mb-0 sm:mt-5" aria-label="起步建议">
