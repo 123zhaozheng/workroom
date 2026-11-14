@@ -32,12 +32,15 @@ try {
 	check("M03-A: assistant stored with avatar, description, tools, knowledge, model and members (Settings)", card.includes("查资料、写摘要") && card.includes("检索员") && card.includes("模型"), card.replace(/\s+/g, " "));
 	await shot(page, "1440-assistants");
 	await page.goto(`${base}/`);
-	await page.click('[data-testid="assistant-picker"]');
-	await page.getByRole("menuitem", { name: /研究助理/ }).click();
+	// round 17: the old 助手 picker is gone — assistants are experts now; "@" on the home composer binds one to the new conversation
+	await page.click('[data-testid="composer-input"]');
+	await page.keyboard.type("@研究");
+	await page.waitForSelector('[data-testid="mention-item"]', { timeout: 10000 });
+	await page.keyboard.press("Enter");
 	await sendMessage(page, "你好 [[reply 你好，我是研究助理。]]");
 	await page.waitForURL(/\/c\//);
-	await page.waitForSelector('[data-testid="chat-assistant"]', { timeout: 15000 });
-	check("M03-A: the conversation references the assistant (shown in the header), the assistant itself is managed separately", (await page.locator('[data-testid="chat-assistant"]').innerText()).includes("研究助理"));
+	await page.waitForSelector('[data-testid="chat-expert"]', { timeout: 15000 });
+	check("M03-A: the conversation references the assistant (shown in the header as its expert), the assistant itself is managed separately", (await page.locator('[data-testid="chat-expert"]').innerText()).includes("研究助理"));
 	await idle(page);
 
 	// ---------------------------------------------------------------- M03-B / M02-C: subagent that hits its turn limit

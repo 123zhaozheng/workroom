@@ -17,6 +17,7 @@ import { cleanErrorText, userTextOf } from "./testText";
 import { StepChain } from "./Steps";
 import { JobChip } from "@/features/work/live";
 import { InspectButton } from "@/features/inspect";
+import { ExpertAvatar } from "@/features/experts/common";
 
 function ActionButton({ label, onClick, children, testId }: { label: string; onClick: () => void; children: ReactNode; testId?: string }) {
 	return (
@@ -90,6 +91,11 @@ export function UserMessage({ entry, run, onEdit, onFork, onRestore, readOnly }:
 								<RefTile key={k.kbId + (k.docId ?? "")} testId="message-kb" icon={<BookOpen />} label="知识库" name={k.name} />
 							))}
 						</div>
+					) : null}
+					{entry.expert ? (
+						<span data-testid="message-expert" className="mb-1 inline-flex h-6 items-center gap-1.5 rounded-full bg-surface-2 pl-1 pr-2.5 text-xs text-fg-muted" title="这条消息由该专家回答">
+							<ExpertAvatar e={entry.expert} size={18} />@{entry.expert.name}
+						</span>
 					) : null}
 					<div data-testid="user-bubble" className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-surface-3 px-4 py-2.5 text-[15px] leading-relaxed">
 						{shown.text ? shown.text : <span className="text-fg-muted">（测试指令）</span>}

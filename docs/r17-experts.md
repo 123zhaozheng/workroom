@@ -144,3 +144,18 @@
 | 测试 | `server/test/r17-experts.test.ts`（7 项）、`r17-reviewer-unify.test.ts` |
 
 **与第 5 节的两处具体取舍**：`@` 只改指令、技能与（未显式选择时的）模型，不改工具白名单与知识范围（这两者在会话创建时随绑定专家落到 `wr.assistant`）；专家绑定的会话里，旧助手来源的专家不重复注入指令（旧会话的 agent 已经带着）。
+
+## 10. 界面（`feat/experts-ui`）
+
+| 位置 | 实现 |
+|---|---|
+| 左侧栏「专家」（在「文件库」下面，lucide `UserRoundCog`） | `web/src/components/shell/Sidebar.tsx`，路由 `/experts` |
+| 专家广场：搜索、分类筛选、卡片网格（头像 / 名称 / 分类 · 范围 · 作者 / 简介 / 挂载技能） | `web/src/features/experts/ExpertsPage.tsx` |
+| 我的专家：状态（草稿 / 待审查 / 已发布 / 已下架 / 更新待审）、编辑、提交审查、删除 | 同上 + `ExpertEditor.tsx`（全部参数；技能多选、模型选择） |
+| 专家详情抽屉：开场白、示例问题（点击即开始并预填）、挂载技能的**当前版本**、模型、开始对话、添加到我的专家 | `ExpertDetail` |
+| 审查队列里审专家（类型筛选「专家」，配置 + 字段差异 + 技能引用） | `web/src/features/market/ReviewQueue.tsx` |
+| 输入框 `@` 弹层 → 芯片 → 随消息提交 `expertId` | `web/src/features/composer/Composer.tsx` |
+| 消息上的专家芯片；会话顶部「专家 · 模型」可切换模型 | `Messages.tsx`、`ExpertHeader.tsx`、`ChatPage.tsx` |
+| 首页不再有助手选择器（`@` 取代）；设置里的「助手」页保留，用于团队成员等旧字段 | `HomePage.tsx` |
+
+截图与检查脚本：`web/e2e/r17-experts.mjs`（17 项）。

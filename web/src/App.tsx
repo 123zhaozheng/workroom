@@ -16,6 +16,7 @@ const SharedPage = lazy(() => import("@/features/share/Share").then((m) => ({ de
 const SearchPage = lazy(() => import("@/pages/SearchPage"));
 const KnowledgePage = lazy(() => import("@/pages/KnowledgePage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
+const ExpertsPage = lazy(() => import("@/features/experts/ExpertsPage"));
 const ProjectPage = lazy(() => import("@/pages/ProjectPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const AutomationsPage = lazy(() => import("@/pages/AutomationsPage"));
@@ -86,6 +87,7 @@ export function App() {
 									<Route path="/knowledge/:kbId" element={<Lazy><KnowledgePage /></Lazy>} />
 									<Route path="/files" element={<Lazy><FilesPage /></Lazy>} />
 									<Route path="/files/:fileId" element={<Lazy><FilesPage /></Lazy>} />
+									<Route path="/experts" element={<Lazy><ExpertsPage /></Lazy>} />
 									<Route path="/projects/:projectId" element={<Lazy><ProjectPage /></Lazy>} />
 									<Route path="/settings" element={<Lazy><SettingsPage /></Lazy>} />
 									<Route path="/automations" element={<Lazy><AutomationsPage /></Lazy>} />

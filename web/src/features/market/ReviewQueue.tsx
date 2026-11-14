@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { Fold } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
+import { ExpertAvatar, SkillChip } from "@/features/experts/common";
 import { DiffView, FileTree, FileViewer, FindingList, PermChips, Section, SCOPE, StateBadge, checkVerdict, permExplain, permText, useAct } from "./common";
 
 const KIND_LABEL: Record<ReviewFilterKind, string> = { skill: "技能", mcp: "连接", expert: "专家" };
@@ -192,7 +193,23 @@ function ReviewScreen({ id, me, onBack, onDecided }: { id: string; me: MarketMeD
 									<dd>{s.mcp.secretNames.length ? `${s.mcp.secretNames.join("、")}（只显示名称）` : "不需要"}</dd>
 								</dl>
 							) : null}
-							{!s.manifest && !s.mcp ? <p className="text-sm text-fg-muted">没有更多信息。</p> : null}
+							{s.expert ? (
+								<div className="space-y-2 text-sm" data-testid="expert-info">
+									<p className="flex items-center gap-2">
+										<ExpertAvatar e={s.expert.config} size={28} />
+										<b>{s.expert.config.name}</b>
+										<span className="text-fg-muted">{s.expert.config.category}</span>
+									</p>
+									<p className="text-fg-muted">{s.expert.config.tagline}</p>
+									<p className="flex flex-wrap items-center gap-1.5">
+										挂载的技能：
+										{s.expert.skills.length ? s.expert.skills.map((k) => <SkillChip key={k.skillId} s={k} />) : <span className="text-fg-muted">无</span>}
+									</p>
+									<p className="text-xs text-fg-subtle">技能按引用挂载，运行时总是用技能当前已发布的版本。</p>
+									<p className="text-fg-muted">默认模型：{s.expert.config.defaultModel ? `${s.expert.config.defaultModel.provider}/${s.expert.config.defaultModel.modelId}` : "跟随会话"}</p>
+								</div>
+							) : null}
+							{!s.manifest && !s.mcp && !s.expert ? <p className="text-sm text-fg-muted">没有更多信息。</p> : null}
 						</Section>
 
 						<Section

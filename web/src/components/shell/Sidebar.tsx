@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, Clock4, Folders, LogOut, MessageSquarePlus, PanelLeftClose, Search, Settings, Shield, Sparkles, Workflow, X } from "lucide-react";
+import { BarChart3, BookOpen, Clock4, Folders, UserRoundCog, LogOut, MessageSquarePlus, PanelLeftClose, Search, Settings, Shield, Sparkles, Workflow, X } from "lucide-react";
 import { NavLink, useNavigate } from "react-router";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -71,6 +71,10 @@ export function Sidebar({ onCollapse, onNavigate, onClose }: { onCollapse?: () =
 				<NavLink to="/files" onClick={onNavigate} className={navCls}>
 					<Folders />
 					文件库
+				</NavLink>
+				<NavLink to="/experts" onClick={onNavigate} className={navCls} data-testid="nav-experts">
+					<UserRoundCog />
+					专家
 				</NavLink>
 			</div>
 
