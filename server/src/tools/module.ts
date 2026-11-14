@@ -35,6 +35,8 @@ import { createSkillsExtension, Skills, SKILL_MIGRATIONS, type SkillInput } from
 import { Market, MARKET_MIGRATIONS } from "./market.ts"; // marketplace group
 import { createSkillManageExtension, registerSkillDraftRoutes, SKILL_DRAFT_MIGRATIONS } from "./skill-drafts.ts"; // round 6: skills from conversation
 import { McpMarket, MCP_MARKET_MIGRATIONS } from "./mcp-market.ts"; // marketplace group
+import { Experts, EXPERT_MIGRATIONS, createExpertsExtension } from "./experts.ts"; // round 17: experts
+import { registerExpertRoutes } from "./experts-routes.ts";
 import { registerMarketRoutes } from "./market-routes.ts"; // marketplace group
 import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
 import { BrowserSessions, createBrowserSessionExtension } from "./browser-sessions.ts";
@@ -93,6 +95,7 @@ export const toolsModule: WorkroomModule = {
 		...PERSIST_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1000 })), // workspace versions (round 7b)
 		...CREDENTIAL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1200 })), // credentials (round 7b)
 		...PREWARM_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1500 })), // sandbox prewarm log (round 11, R2b)
+		...EXPERT_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1600 })), // experts (round 17)
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -108,6 +111,11 @@ export const toolsModule: WorkroomModule = {
 			const handler = { family: "mcp" as const, onPublished: (sub: any, actor: any) => mm.onPublished(sub, actor), onDecision: (sub: any, to: any) => mm.onDecision(sub, to), submissionInfo: (sub: any) => mm.submissionInfo(sub) };
 			(ctx.services.get("market") as Market).registerKind("mcp_catalog", handler);
 			(ctx.services.get("market") as Market).registerKind("mcp_connector", handler);
+			const experts = new Experts(ctx);
+			ctx.services.provide("experts", experts);
+			(ctx.services.get("market") as Market).registerKind("expert", experts.handler());
+			// An expert mounts skills by id: the conversation's current expert contributes its skills to Skills.active (no separate install).
+			(ctx.services.get("skills") as Skills).expertSkillIds = (p, space, conversationId) => experts.mountedSkillIds(p, space, conversationId);
 		}
 		ctx.services.provide("jobs", new Jobs(ctx));
 		ctx.services.provide("sandboxPrewarm", prewarmFor(ctx)); // round 11 (R2b): the runtime calls it after a user message is accepted
@@ -149,7 +157,7 @@ export const toolsModule: WorkroomModule = {
 		let codemodeSandbox = codemodeSandboxes.get(ctx);
 		if (!codemodeSandbox) codemodeSandboxes.set(ctx, (codemodeSandbox = new CodemodeSandbox({ memoryLimitBytes: 128 * 1024 * 1024, timeoutMs: 120_000 })));
 		const codemode = createCodemodeExtension({ sandbox: codemodeSandbox, models: false, inlineBudget: 0 }); // native tools carry their schemas; the wr.harness section replaces the catalog
-		return [createPolicyExtension(ctx), createHarnessPromptExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLegacyCodeRunExtension(), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
+		return [createPolicyExtension(ctx), createHarnessPromptExtension(ctx), createExpertsExtension(ctx), ext, createVfsExtension(ctx), createSandboxExtension(ctx), createLegacyCodeRunExtension(), createBrowserExtension(ctx), createSkillsExtension(ctx), createSkillManageExtension(ctx), createCredentialExtension(ctx), createJobsExtension(ctx), createBrowserSessionExtension(ctx), codemode];
 	},
 	async start(ctx) {
 		// Before the sandbox accepts runs: runs left "running" by a crash become "unknown" (never re-executed).
@@ -333,6 +341,7 @@ export const toolsModule: WorkroomModule = {
 		// ---- skills ----
 		const skills = ctx.services.get("skills") as Skills;
 		const market = ctx.services.get("market") as Market;
+		registerExpertRoutes(api, ctx); // round 17: /experts
 		registerMarketRoutes(api, ctx); // marketplace group: /market/*, per-user connector credentials and tool settings
 		registerSkillDraftRoutes(api, ctx); // GET /api/skill-drafts/:id (owner only)
 		(ctx.services.get("identity") as any).registerResolver?.("skill", (p: Principal, action: string, res: { id: string }) => skills.decide(p, action, res.id));

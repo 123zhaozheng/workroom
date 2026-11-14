@@ -80,6 +80,21 @@ export const AssistantDoc = defineDoc<{ assistantId: string | null; name: string
 	checkpointWhen: () => true,
 });
 
+/**
+ * Round 17: expert state of a conversation. modelExplicit — the user chose the model in this conversation (an expert's default model never
+ * overrides it); restoreModel — the model to go back to after an @-mentioned expert borrowed its own default model for one message.
+ * Default (no doc, e.g. conversations created before experts): modelExplicit = true, so existing conversations never change model by themselves.
+ */
+export const ExpertDoc = defineDoc<{ modelExplicit: boolean; restoreModel: { provider: string; modelId: string; thinkingLevel?: string } | null }>({
+	kind: "wr.expert",
+	version: 1,
+	scope: "conversation",
+	history: "rewindable",
+	fork: "asOf",
+	initial: () => ({ modelExplicit: true, restoreModel: null }),
+	checkpointWhen: () => true,
+});
+
 /** The entry every admitted user input is placed as (model still sees the plain user message). */
 export const InputEntry = defineEntry<InputEntryData & Record<string, any>>("wr.input");
 /** Display-only start marker written when a conversation is created (lets "edit first message" fork before it). */

@@ -520,6 +520,10 @@ export class Market {
 		this.audit(p, `${this.familyOf(input.kind)}.submit`, input.subjectId, { submissionId: id, target: input.target, ref: input.ref, ok: input.checks.ok });
 		return id;
 	}
+	/** Move every submission of a subject from one state to another (admin unpublish / republish of non-skill kinds). */
+	moveSubmissions(kind: SubmissionKind, subjectId: string, from: SubmissionState, to: SubmissionState, actor: { userId: string }, action: string, comment?: string): void {
+		for (const s of this.#db.all<SubRow>("SELECT * FROM market_submissions WHERE kind = ? AND subject_id = ? AND state = ?", kind, subjectId, from)) this.#move(s, to, actor, action, comment);
+	}
 	submissionDTO(p: Principal, id: string): Promise<SubmissionDTO> {
 		return this.#subDTO(p, this.sub(id)!);
 	}
@@ -1118,7 +1122,7 @@ export class Market {
 		if (conversationId == null) return none;
 		const rows = this.skills.loadedRows(space.id, conversationId);
 		if (!rows.length) return none;
-		const active = new Map((await this.skills.active(p, space)).map((a) => [a.skill.id, a]));
+		const active = new Map((await this.skills.active(p, space, conversationId)).map((a) => [a.skill.id, a]));
 		const cands: { skill: SkillRow; version: VersionRow }[] = [];
 		for (const r of rows) {
 			const a = active.get(r.skill_id);

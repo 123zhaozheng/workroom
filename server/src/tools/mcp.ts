@@ -797,7 +797,7 @@ export function createToolSearch(mgr: McpManager, ctx: AppContext) {
 			try {
 				const sk = ctx?.services?.has("skills") ? (ctx.services.get("skills") as any) : null;
 				if (sk) {
-					const active = (await sk.active(actor.principal, actor.space)) as { skill: { name: string }; version: { description: string } }[];
+					const active = (await sk.active(actor.principal, actor.space, actor.conversationId)) as { skill: { name: string }; version: { description: string } }[];
 					const hits = active.map((a) => ({ a, s: rankScore(query, `${a.skill.name} ${a.version.description}`) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 5);
 					if (hits.length) skillHint = `\n\nMatching skills (use the skill tool: action=load with name=<slug>):\n${hits.map((h) => `- ${h.a.skill.name}: ${h.a.version.description.slice(0, 120)}`).join("\n")}`;
 				}

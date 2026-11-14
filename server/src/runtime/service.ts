@@ -7,6 +7,7 @@ import { configure, ConversationBusy, ConversationIdle, InboxDoc, LiveDoc, Usage
 import type { AccessControl, Action, AppContext, InputEntryData, ModelRef, Principal, RuntimeService, Space, ToolActor } from "../core/contracts.ts";
 import { HttpError, nowIso } from "../core/http.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Experts } from "../tools/experts.ts";
 import type { AbortResponse, AgentDTO, ApprovalDTO, AssistantDTO, ConversationKind, ConversationState, ConversationSummary, EffectDTO, EntriesPage, EntryDTO, PromoteResponse, SubagentDTO, SubmissionDTO, TasksResponse, WithdrawResponse } from "../../../shared/chat.ts";
 import type { WorkspacePrepItem } from "../../../shared/chat.ts";
 import type { HarnessBuildDTO, HarnessToolKind } from "../../../shared/harness-inspect.ts";
@@ -15,7 +16,7 @@ import { storeLabel } from "../tools/sandbox/stores.ts";
 import { closeDeadWork } from "./lifecycle.ts";
 import { LEGACY_EXTENSIONS, LEGACY_TOOLS, LEGACY_TOOL_MAP } from "../vfs/legacy.ts";
 import { ONDEMAND_TOOLS } from "../tools/ondemand.ts";
-import { ApprovalsDoc, AssistantDoc, EffectsDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
+import { ApprovalsDoc, AssistantDoc, EffectsDoc, ExpertDoc, InputEntry, NoticeEntry, SpaceDoc, StartEntry, TeamDoc, UnplacedInputEntry, WorkspaceEntry, RunActorDoc, RUN_ACTOR_KEEP, type RunActor } from "./docs.ts";
 import { effectiveMime, previewKindOf } from "../files/mime.ts";
 import { uploadAliasPath } from "../vfs/backends/uploads.ts";
 import { humanSize, sheetNames } from "./attachment-meta.ts";
@@ -173,7 +174,7 @@ export class Runtime implements RuntimeService {
 		return { ...(exts.length ? { extensions: { remove: exts } } : {}), ...(tools.length ? { tools: { remove: tools } } : {}) };
 	}
 
-	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: Context): Promise<{ conversationId: number; notice?: string }> {
+	async createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string; expertId?: string }, context: Context): Promise<{ conversationId: number; notice?: string }> {
 		const started = Date.now();
 		const space = this.manager.space(spaceId);
 		await this.acl.require(principal, "write", { kind: "space", id: spaceId });
@@ -183,31 +184,40 @@ export class Runtime implements RuntimeService {
 			if (!cp || cp.orgId !== principal.orgId) throw new HttpError(404, "project_not_found", "项目不存在");
 			if (cp.ownerId !== principal.userId || space.ownerUserId !== principal.userId) throw new HttpError(403, "forbidden", "只能把对话放进自己的项目", { reason: "not_project_owner" });
 		}
-		const assistant = options.assistantId ? this.assistants?.get(principal, options.assistantId) : undefined;
-		if (options.assistantId && !assistant) throw new HttpError(404, "assistant_not_found", "助手不存在或无权使用");
+		// Round 17: `expertId` (preferred) / `assistantId` (legacy name). An id that is an old 助手 keeps the assistant path (team members, static
+		// instructions); any other expert is bound dynamically: its instructions and skills are resolved on every run (tools/experts.ts).
+		const wantedId = options.expertId ?? options.assistantId;
+		const assistant = wantedId ? this.assistants?.get(principal, wantedId) : undefined;
+		const expertSvc = this.ctx.services.has("experts") ? (this.ctx.services.get("experts") as Experts) : undefined;
+		const expertRow = wantedId && !assistant ? expertSvc?.resolve(principal, wantedId) : undefined;
+		const expertCfg = expertRow ? expertSvc!.effective(principal, expertRow) : undefined;
+		if (wantedId && !assistant && !expertCfg) throw new HttpError(404, options.expertId ? "expert_not_found" : "assistant_not_found", options.expertId ? "专家不存在或无权使用" : "助手不存在或无权使用");
+		const bound = assistant ?? (expertCfg ? { id: expertRow!.id, name: expertCfg.name, model: expertCfg.defaultModel ?? undefined, tools: expertCfg.tools ?? undefined, knowledge: expertCfg.knowledge ?? undefined, instructions: undefined as string | undefined, members: [] as never[] } : undefined);
 		// The assistant's default model is re-checked for THIS principal; when it is not allowed or blocked the
 		// conversation falls back to the default model and records a visible notice (never a silent swap).
 		let notice: { text: string; code: string } | undefined;
 		let model = options.model;
-		if (!model && assistant?.model) {
-			const chk = await this.checkModel(principal, assistant.model);
+		// Model rule (docs/r17-experts.md §5): a model the user chose explicitly wins; else the expert's default if usable; else the user's default.
+		const modelExplicit = !!options.model;
+		if (!model && bound?.model) {
+			const chk = await this.checkModel(principal, bound.model);
 			if (chk.ok) model = chk.ref;
 			else {
 				model = await this.defaultModel(principal);
-				notice = { code: chk.code, text: `助手「${assistant.name}」的默认模型不可用（${chk.reason}），本会话改用「${this.modelLabel(model)}」。` };
+				notice = { code: chk.code, text: `${assistant ? "助手" : "专家"}「${bound.name}」的默认模型不可用（${chk.reason}），本会话改用「${this.modelLabel(model)}」。` };
 			}
 		}
 		model ??= await this.defaultModel(principal);
 		const harness = await this.manager.get(spaceId);
 		const envInfo = await this.#workspaceEnv(space);
-		const allowed = assistant?.tools ? this.#toolsByName(assistant.tools, assistant.members.length > 0) : undefined;
+		const allowed = bound?.tools ? this.#toolsByName(bound.tools, bound.members.length > 0) : undefined;
 		const conv = await harness.createConversation(
 			{
 				ownership: { kind: "ownerless" },
 				agent: {
 					model: { provider: model.provider, modelId: model.modelId },
 					...(model.thinkingLevel ? { thinkingLevel: model.thinkingLevel } : {}),
-					...(assistant?.instructions ? { instructions: assistant.instructions } : {}),
+					...(bound?.instructions ? { instructions: bound.instructions } : {}),
 					// Round 13: the assistant's tool allowlist is the conversation's ENABLED tool set (pi-durable `tools`): it filters what the
 					// model is offered AND what nested calls (Code Mode) can reach. Unset = product default; [] = no tools; a list = exactly those.
 					...(this.#legacyRemoval().extensions ? { extensions: this.#legacyRemoval().extensions } : {}),
@@ -222,15 +232,18 @@ export class Runtime implements RuntimeService {
 					// Round 12: the workspace of the new conversation, prepared now and shown as the first step of its first answer.
 					const items = [{ key: "storage" as const, label: "会话存储", ok: true }, ...this.#prepareWorkspace(principal, space, id as number), envInfo];
 					await tx.appendEntry(WorkspaceEntry, id, { data: { ms: Math.max(1, Date.now() - started), items } });
-					if (assistant) {
+					if (bound) {
 						const d = await tx.doc(AssistantDoc, id);
-						d.assistantId = assistant.id;
-						d.name = assistant.name;
-						d.members = structuredClone(assistant.members) as any;
+						d.assistantId = bound.id;
+						d.name = bound.name;
+						d.members = structuredClone(bound.members) as any;
 						// Round 13: the assistant's knowledge scope and tool allowlist, recorded for the tools that enforce them and for audit
-						d.knowledgeScope = assistant.knowledge?.kbIds ? { kbIds: assistant.knowledge.kbIds.map(String) } : null;
-						d.tools = assistant.tools ? [...assistant.tools] : null;
+						d.knowledgeScope = bound.knowledge?.kbIds ? { kbIds: bound.knowledge.kbIds.map(String) } : null;
+						d.tools = bound.tools ? [...bound.tools] : null;
 					}
+					const xd = await tx.doc(ExpertDoc, id);
+					xd.modelExplicit = modelExplicit;
+					xd.restoreModel = null;
 				},
 			},
 			context,
@@ -686,7 +699,18 @@ export class Runtime implements RuntimeService {
 		const level = this.#validateThinking(levels, thinkingLevel) ?? ref.thinkingLevel;
 		const before = await conv.agent(context);
 		const same = before.model?.provider === ref.provider && before.model?.modelId === ref.modelId;
-		if (same && (before.thinkingLevel === level || level === undefined)) return { changed: false };
+		if (same && (before.thinkingLevel === level || level === undefined)) {
+			// Round 17: picking the model that is already in use is still an explicit choice (an expert's default model must not replace it later).
+			const xd0 = await harness.snapshot(ExpertDoc, cid(conversationId), context).catch(() => null);
+			if (xd0 && !xd0.modelExplicit) {
+				await harness.commit(async (tx) => {
+					const xd = await tx.doc(ExpertDoc, cid(conversationId));
+					xd.modelExplicit = true;
+					xd.restoreModel = null;
+				}, context);
+			}
+			return { changed: false };
+		}
 		const from = this.modelLabel(before.model);
 		const to = this.modelLabel(ref);
 		const text = `已切换模型：${from} → ${to}${level ? `（思考强度：${level}）` : ""}，由 ${p.displayName || p.email} 操作，从下一次请求起生效。`;
@@ -694,6 +718,10 @@ export class Runtime implements RuntimeService {
 		// that is the supported way to add an entry to a conversation that may be mid-run, and it never changes what the model sees.
 		await harness.commit(async (tx) => {
 			await configure(tx, cid(conversationId), { model: { provider: ref.provider, modelId: ref.modelId }, thinkingLevel: level ?? null });
+			// Round 17: choosing a model in the conversation is explicit: an expert's default model never overrides it again.
+			const xd = await tx.doc(ExpertDoc, cid(conversationId));
+			xd.modelExplicit = true;
+			xd.restoreModel = null;
 			await conv.submit(tx, { type: "write", requestId: `model-switch:${randomUUID()}`, entry: { kind: NoticeEntry.kind, data: { text, code: "model_switched" } } });
 		}, context);
 		this.ctx.db.run("UPDATE rt_conversations SET updated_at = ? WHERE space_id = ? AND conversation_id = ?", nowIso(), spaceId, conversationId);
@@ -825,10 +853,14 @@ export class Runtime implements RuntimeService {
 
 	async submit(p: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string; whenBusy?: "steer" | "followUp" | "reject" }, context: Context): Promise<SubmissionDTO> {
 		const { harness, conv, row } = await this.#admit(p, spaceId, conversationId, input, context);
+		// Round 17: @expert for this message (explicit id from the composer, else "@名称" in the text matched against the experts the user may use).
+		const mention = await this.#resolveMention(p, input);
+		await this.#applyExpertModel(p, harness, conv, conversationId, mention?.cfg, mention?.name, context);
 		const data: InputEntryData = {
 			text: input.text,
 			userId: p.userId,
 			orgId: p.orgId,
+			...(mention ? { expertId: mention.id, expertName: mention.name, ...(mention.avatar ? { expertAvatar: mention.avatar } : {}) } : {}),
 			...(input.attachments?.length ? { attachments: input.attachments } : {}),
 			...(input.knowledgeRefs?.length ? { knowledgeRefs: input.knowledgeRefs } : {}),
 			...(input.via ? { via: input.via } : {}),
@@ -863,6 +895,72 @@ export class Runtime implements RuntimeService {
 		this.touch(spaceId, conversationId);
 		this.#prewarmHint(p, spaceId, conversationId, input, harness, conv);
 		return this.submissionStatus(harness, conversationId, sub.id, context);
+	}
+
+	async #resolveMention(p: Principal, input: { text: string; expertId?: string }): Promise<{ id: string; name: string; avatar?: string; cfg: import("../../../shared/experts.ts").ExpertConfigDTO } | undefined> {
+		if (!this.ctx.services.has("experts")) return undefined;
+		const svc = this.ctx.services.get("experts") as Experts;
+		let id = input.expertId;
+		if (id !== undefined && (typeof id !== "string" || id.length > 100)) throw new HttpError(400, "invalid_expert", "expertId 无效");
+		if (!id) id = (await svc.mentionIn(p, input.text))?.id;
+		if (!id) return undefined;
+		const row = svc.resolve(p, id);
+		const cfg = row ? svc.effective(p, row) : undefined;
+		if (!row || !cfg) throw new HttpError(404, "expert_not_found", "专家不存在或无权使用");
+		return { id: row.id, name: cfg.name, ...(cfg.avatar ? { avatar: cfg.avatar } : {}), cfg };
+	}
+
+	/**
+	 * Model rule for experts (docs/r17-experts.md §5). The user's explicit choice in this conversation always wins. Otherwise an @-mentioned
+	 * expert's default model is used for this message (and the previous model restored before the next message that does not mention one); an
+	 * unusable default model leaves the model alone and says so in the transcript.
+	 */
+	async #applyExpertModel(p: Principal, harness: Harness, conv: Conversation, conversationId: number, cfg: import("../../../shared/experts.ts").ExpertConfigDTO | undefined, name: string | undefined, context: Context): Promise<void> {
+		const xd = await harness.snapshot(ExpertDoc, conv.id, context).catch(() => null);
+		if (!xd || xd.modelExplicit) return;
+		const before = await conv.agent(context);
+		let target: ModelRef | undefined;
+		let text = "";
+		let code = "expert_model";
+		if (cfg?.defaultModel) {
+			const chk = await this.checkModel(p, cfg.defaultModel);
+			if (chk.ok) {
+				if (!(before.model?.provider === chk.ref.provider && before.model?.modelId === chk.ref.modelId)) {
+					target = chk.ref;
+					text = `专家「${name}」指定使用模型 ${this.modelLabel(chk.ref)}（原为 ${this.modelLabel(before.model)}），本条消息起生效；下一条没有 @ 的消息会恢复原模型。`;
+				}
+			} else {
+				text = `专家「${name}」的默认模型不可用（${chk.reason}），本条消息沿用「${this.modelLabel(before.model)}」。`;
+				code = "expert_model_unavailable";
+			}
+		} else if (xd.restoreModel) {
+			target = { provider: xd.restoreModel.provider, modelId: xd.restoreModel.modelId, ...(xd.restoreModel.thinkingLevel ? { thinkingLevel: xd.restoreModel.thinkingLevel as ModelRef["thinkingLevel"] } : {}) };
+			text = `已恢复原模型：${this.modelLabel(target)}。`;
+			code = "expert_model_restored";
+		}
+		if (!target && !text) return;
+		const restoring = !cfg?.defaultModel;
+		const remember = target && !restoring && !xd.restoreModel && before.model ? { provider: before.model.provider, modelId: before.model.modelId, ...(before.thinkingLevel ? { thinkingLevel: before.thinkingLevel } : {}) } : undefined;
+		await harness.commit(async (tx) => {
+			if (target) await configure(tx, cid(conversationId), { model: { provider: target.provider, modelId: target.modelId }, thinkingLevel: target.thinkingLevel ?? null });
+			const d = await tx.doc(ExpertDoc, cid(conversationId));
+			if (restoring && target) d.restoreModel = null;
+			else if (remember) d.restoreModel = remember as any;
+			if (text) await conv.submit(tx, { type: "write", requestId: `expert-model:${randomUUID()}`, entry: { kind: NoticeEntry.kind, data: { text, code } } });
+		}, context);
+	}
+
+	/**
+	 * Round 17: who answers the current run — the expert @-mentioned in the run's input, else the one the conversation is bound to (none = the
+	 * default general agent; the old built-in 「Workroom 助手」 binding counts as none). Resolved on every call; nothing is cached.
+	 */
+	async expertForRun(spaceId: string, conversationId: number, context: Context = BACKGROUND_CONTEXT): Promise<{ expertId?: string; boundId?: string }> {
+		const harness = await this.manager.get(spaceId);
+		const ad = await harness.snapshot(AssistantDoc, cid(conversationId), context).catch(() => null);
+		const boundId = ad?.assistantId && ad.assistantId !== "builtin:workroom" && !ad.member ? ad.assistantId : undefined;
+		const input = await this.inputOfRun(harness, conversationId, context).catch(() => null);
+		const mentioned = (input as { expertId?: string } | null)?.expertId;
+		return { ...(mentioned ?? boundId ? { expertId: mentioned ?? boundId } : {}), ...(boundId ? { boundId } : {}) };
 	}
 
 	/**
@@ -1248,7 +1346,16 @@ export class Runtime implements RuntimeService {
 			tools: agent.tools.map((t) => t.name),
 			...(agent.maxTurns ? { maxTurns: agent.maxTurns } : {}),
 			...(assistant ? { assistant } : {}),
+			expert: await this.#expertInfo(harness, conv, ad, context),
 		};
+	}
+
+	async #expertInfo(harness: Harness, conv: Conversation, ad: { assistantId: string | null; name: string } | null | undefined, context: Context): Promise<import("../../../shared/experts.ts").ConversationExpertDTO> {
+		const xd = await harness.snapshot(ExpertDoc, conv.id, context).catch(() => null);
+		const boundId = ad?.assistantId && ad.assistantId !== "builtin:workroom" ? ad.assistantId : undefined;
+		let avatar: string | undefined;
+		if (boundId && this.ctx.services.has("experts")) avatar = (this.ctx.services.get("experts") as Experts).row(boundId)?.avatar ?? undefined;
+		return { ...(boundId ? { boundId, boundName: ad?.name, ...(avatar ? { boundAvatar: avatar } : {}) } : {}), modelExplicit: xd ? xd.modelExplicit : true };
 	}
 
 	async detail(p: Principal, spaceId: string, conversationId: number, context: Context) {

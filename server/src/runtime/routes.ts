@@ -38,7 +38,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 
 	api.post("/conversations", async (c) => {
 		const p = principalOf(c);
-		const b = await jsonBody<{ spaceId?: string; projectId?: string; title?: string; modelId?: string; thinkingLevel?: string; assistantId?: string }>(c);
+		const b = await jsonBody<{ spaceId?: string; projectId?: string; title?: string; modelId?: string; thinkingLevel?: string; assistantId?: string; expertId?: string }>(c);
 		const identity = rt.ctx.services.get("identity");
 		let spaceId = b.spaceId;
 		if (b.projectId) {
@@ -58,7 +58,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		}
 		spaceId ??= identity.personalSpace(p.userId, p.orgId).id;
 		const model = await rt.resolveModel(p, b.modelId, b.thinkingLevel);
-		const { conversationId, notice } = await rt.createConversation(p, spaceId, { title: b.title, projectId: b.projectId, model, assistantId: b.assistantId }, ctx0);
+		const { conversationId, notice } = await rt.createConversation(p, spaceId, { title: b.title, projectId: b.projectId, model, assistantId: b.assistantId, expertId: b.expertId }, ctx0);
 		const detail = await rt.detail(p, spaceId, conversationId, ctx0);
 		return c.json({ conversation: detail.conversation, agent: detail.agent, ...(notice ? { notice } : {}) });
 	});
@@ -243,7 +243,7 @@ export function mountRuntimeRoutes(api: Hono<AppEnv>, rt: Runtime, effects: Effe
 		const b = await jsonBody<SendMessageRequest>(c);
 		const mode = b.mode ?? "auto";
 		if (!["auto", "steer", "followUp"].includes(mode)) throw new HttpError(400, "invalid_mode", "mode 无效");
-		const sub = await rt.submit(p, c.req.param("spaceId"), convId(c.req.param("id")), { text: b.text, requestId: b.requestId, attachments: b.attachments, knowledgeRefs: b.knowledgeRefs, userId: p.userId, orgId: p.orgId, whenBusy: mode === "followUp" ? "followUp" : "steer" }, ctx0);
+		const sub = await rt.submit(p, c.req.param("spaceId"), convId(c.req.param("id")), { text: b.text, requestId: b.requestId, attachments: b.attachments, knowledgeRefs: b.knowledgeRefs, expertId: b.expertId, userId: p.userId, orgId: p.orgId, whenBusy: mode === "followUp" ? "followUp" : "steer" }, ctx0);
 		return c.json({ submissionId: sub.submissionId, status: sub.status, submission: sub });
 	});
 

@@ -141,6 +141,8 @@ function cleanPath(p: string): string {
 export class Skills {
 	readonly #ctx: AppContext;
 	resolveActor: ActorResolver;
+	/** Round 17: skill ids the conversation's current expert mounts (by reference). Set by the experts service; they count as installed for that conversation. */
+	expertSkillIds?: (p: Principal, space: Space | undefined, conversationId: number | undefined) => Promise<string[]>;
 	constructor(ctx: AppContext) {
 		this.#ctx = ctx;
 		this.resolveActor = runtimeActorResolver(ctx);
@@ -450,7 +452,7 @@ export class Skills {
 	 * Skills in effect for a user (in `space`): personal installs, plus org / department / project installs that apply there, minus ones the
 	 * user switched off. Only approved versions of distributed skills count. Slug clashes: org > department > project > personal.
 	 */
-	async active(p: Principal, space?: Space): Promise<{ skill: SkillRow; version: VersionRow; via: "me" | "org" | "department" | "project" }[]> {
+	async active(p: Principal, space?: Space, conversationId?: number): Promise<{ skill: SkillRow; version: VersionRow; via: "me" | "org" | "department" | "project" }[]> {
 		const visible = await this.visible(p);
 		const byId = new Map(visible.map((s) => [s.id, s]));
 		const cands = new Map<string, { skill: SkillRow; pinned: number | null; via: "me" | "org" | "department" | "project" }>();
@@ -463,6 +465,13 @@ export class Skills {
 			if (!inst) continue;
 			if (!inst.enabled) cands.delete(s.id);
 			else cands.set(s.id, { skill: s, pinned: inst.pinned_version_no, via: "me" });
+		}
+		// Round 17: skills the conversation's expert mounts by reference. Always the CURRENT usable version (pinned = null): no snapshot.
+		if (this.expertSkillIds && conversationId != null) {
+			for (const id of await this.expertSkillIds(p, space, conversationId).catch(() => [])) {
+				const s = byId.get(id);
+				if (s && !cands.has(s.id)) cands.set(s.id, { skill: s, pinned: null, via: "me" });
+			}
 		}
 		const rank = { org: 0, department: 1, project: 2, personal: 3 } as const;
 		const out: { skill: SkillRow; version: VersionRow; via: "me" | "org" | "department" | "project" }[] = [];
@@ -478,7 +487,7 @@ export class Skills {
 		return out;
 	}
 	/** Resolve a skill for use by an actor: visible, installed (for me or via a scope), enabled, approved; returns the effective (pinned or latest) version. */
-	async resolveForUse(p: Principal, name: string, space?: Space): Promise<{ skill: SkillRow; version: VersionRow }> {
+	async resolveForUse(p: Principal, name: string, space?: Space, conversationId?: number): Promise<{ skill: SkillRow; version: VersionRow }> {
 		await this.#market.require(p, "skill.use", undefined, "没有使用技能的权限（skill.use）");
 		const s = (await this.visible(p)).find((x) => x.name === name || x.id === name || this.#market.slugOf(x) === name);
 		if (!s) throw new HttpError(404, "skill_not_found", `没有可用的技能「${name}」`);
@@ -491,8 +500,9 @@ export class Skills {
 			pinned = own.pinned_version_no;
 		} else {
 			const via = this.#market.scopeInstallsFor(p, space).find((r) => r.skill_id === s.id);
-			if (!via) throw new HttpError(403, "not_installed", `技能「${s.name}」尚未安装`);
-			pinned = via.pinned_version_no;
+			if (via) pinned = via.pinned_version_no;
+			else if (this.expertSkillIds && conversationId != null && (await this.expertSkillIds(p, space, conversationId).catch(() => [] as string[])).includes(s.id)) pinned = null; // mounted by the conversation's expert
+			else throw new HttpError(403, "not_installed", `技能「${s.name}」尚未安装`);
 		}
 		const v = this.version(s.id, pinned ?? this.#market.latestUsable(s));
 		if (!v) throw new HttpError(404, "version_not_found", this.#market.latestUsable(s) === 0 ? `技能「${s.name}」还没有通过审核的版本` : "技能版本不存在");
@@ -834,7 +844,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 
 	// ----- shared implementations (the unified `skill` tool and the legacy skill_* tools call the same code) -----
 	async function doList(actor: ToolActor, limit = 100): Promise<Out> {
-		const act = await skills().active(actor.principal, actor.space);
+		const act = await skills().active(actor.principal, actor.space, actor.conversationId);
 		const mk = market();
 		if (!act.length) return { text: "（用户没有启用的技能）" };
 		const lines = act.slice(0, limit).map((a) => describe(mk, a, layoutOf(actor.space).skillsRoot));
@@ -842,7 +852,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 		return { text: lines.join("\n") };
 	}
 	async function doSearch(actor: ToolActor, query: string): Promise<Out> {
-		const act = await skills().active(actor.principal, actor.space);
+		const act = await skills().active(actor.principal, actor.space, actor.conversationId);
 		const mk = market();
 		const words = query.toLowerCase().split(/\s+/).filter(Boolean);
 		const hits = act
@@ -865,7 +875,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 		return plan.skipped.length ? `\n注意：本会话已加载的技能超过沙箱挂载上限 ${market().mountCap}，以下较早加载的技能不再挂载到沙箱：${plan.skipped.map((x) => market().slugOf(x)).join(", ")}；需要在沙箱里使用它们的文件时请重新 action=load。` : "";
 	}
 	async function doLoad(actor: ToolActor, name: string): Promise<Out & { details: Out["details"] }> {
-		const { skill, version } = await skills().resolveForUse(actor.principal, name, actor.space);
+		const { skill, version } = await skills().resolveForUse(actor.principal, name, actor.space, actor.conversationId);
 		skills().markLoaded(actor.space.id, actor.conversationId, skill, version);
 		skills().recordRun({ skill, version, mode: "load", userId: actor.principal.userId, actor, status: "ok" });
 		const res = (JSON.parse(version.resources) as Resource[]).filter((r) => r.path !== "SKILL.md");
@@ -875,7 +885,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 		return { text, details: { skillId: skill.id, versionId: version.id, versionNo: version.version_no } };
 	}
 	async function doRead(actor: ToolActor, name: string, path: string, offset?: number): Promise<Out> {
-		const { skill, version } = await skills().resolveForUse(actor.principal, name, actor.space);
+		const { skill, version } = await skills().resolveForUse(actor.principal, name, actor.space, actor.conversationId);
 		const f = market().versionFiles(skill, version).find((x) => x.path === path.replace(/^\/+/, ""));
 		if (!f) throw new HttpError(404, "file_not_found", `技能「${skill.name}」里没有文件 ${path}`);
 		let text: string;
@@ -891,7 +901,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 	}
 	async function doRun(actor: ToolActor, name: string, input: string | undefined, scriptArg: string | undefined): Promise<Out> {
 		const s = skills();
-		const { skill, version } = await s.resolveForUse(actor.principal, name, actor.space);
+		const { skill, version } = await s.resolveForUse(actor.principal, name, actor.space, actor.conversationId);
 		const deny = (msg: string): never => {
 			s.recordRun({ skill, version, mode: "run", userId: actor.principal.userId, actor, status: "denied", detail: msg });
 			throw new HttpError(403, "skill_not_granted", msg);
@@ -1011,7 +1021,7 @@ export function createSkillsExtension(ctx: AppContext, opts: { resolveActor?: Ac
 					if (!scope?.principal) return undefined; // revoked / unknown actor: nothing actor-dependent
 					const mk = market();
 					if (!(await mk.can(scope.principal, "skill.use"))) return undefined;
-					const act = await skills().active(scope.principal, scope.space);
+					const act = await skills().active(scope.principal, scope.space, input.conversationId as number);
 					return renderVfsSkillIndex(act.map(({ skill, version }) => ({ name: skill.name, slug: mk.slugOf(skill), description: version.description })));
 				} catch {
 					return undefined;

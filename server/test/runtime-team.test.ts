@@ -53,7 +53,7 @@ test("assistants (M03-A): identity stored apart from conversations; validation; 
 		assert.equal(assistant.members.length, 5);
 		assert.equal(agent.assistant.id, assistant.id);
 		const list = await t.json("GET", "/api/assistants", { token: a.token });
-		assert.deepEqual(list.assistants.map((x: any) => x.id), ["builtin:workroom", assistant.id]);
+		assert.deepEqual(list.assistants.map((x: any) => x.id), [assistant.id], "round 17: the built-in 「Workroom 助手」 is no longer listed");
 		// changing the assistant does not rewrite the conversation's run history; the binding stays by id
 		await t.json("PATCH", `/api/assistants/${assistant.id}`, { token: a.token, json: { description: "改过的说明" } });
 		const d = await t.json("GET", base(c), { token: a.token });
