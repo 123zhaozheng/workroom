@@ -291,6 +291,7 @@ try {
 	const meFlags = await (await mp.request.get(`${base}/api/market/me`)).json();
 	check("C setup: the invited member cannot publish to the org", meFlags.me?.canPublishOrg === false, String(meFlags.me?.canPublishOrg));
 	await mp.goto(`${base}/capabilities`);
+	await mp.click('[data-testid="skill-upload"]');
 	await mp.waitForSelector('[data-testid="dropzone"]');
 	const zip = Buffer.from(zipSync({ "SKILL.md": strToU8("---\nname: member-skill\ndescription: 成员自己的小技能\nversion: 1.0.0\n---\n# 小技能\n") })).toString("base64");
 	await mp.evaluate(async (b64) => {
@@ -299,6 +300,7 @@ try {
 		dt.items.add(new File([bytes], "member-skill.zip", { type: "application/zip" }));
 		document.querySelector('[data-testid="dropzone"]').dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
 	}, zip);
+	await mp.click('[data-testid="upload-submit"]');
 	await mp.waitForSelector('[data-testid="upload-result"]', { timeout: 15000 });
 	await mp.locator('[data-testid="skill"]').first().locator("button[aria-expanded]").click();
 	await mp.click('[data-testid="submit-review"]');

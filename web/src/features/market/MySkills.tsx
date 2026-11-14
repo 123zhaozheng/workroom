@@ -1,10 +1,10 @@
-// 我的技能: upload a skill package (drag-drop .zip or pick a folder) → automated check result → submit for review; my installs with the
+// 我的技能: toolbar with 上传技能 (small dialog: .zip or folder) and 新建技能 → automated check result → submit for review; my installs with the
 // full version lifecycle (pin / upgrade / rollback / grants / runs); drafts made from a finished task; my submissions and their state.
-import { CheckCircle2, ChevronRight, CircleX, FileArchive, FolderUp, Plus, RefreshCw, RotateCcw, Send, ShieldCheck, Sparkles, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { CheckCircle2, ChevronRight, CircleX, Plus, RefreshCw, RotateCcw, Send, ShieldCheck, Sparkles, Upload } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
-import type { MarketScope, PackageCheckDTO, SkillDTO, SkillDraftDTO, SkillKind, SkillListResponse, SkillRunDTO, SubmissionDTO } from "@shared/files";
-import { ApiError, errorText, patch, post, put } from "@/lib/api";
+import type { MarketScope, SkillDTO, SkillDraftDTO, SkillKind, SkillListResponse, SkillRunDTO, SubmissionDTO } from "@shared/files";
+import { patch, post, put } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { cn, fullTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { Badge, EmptyState, Loadable } from "@/components/ui/misc";
 import { IconPicker, SkillIcon } from "./SkillIcon";
-import { FindingList, SCOPE, StateBadge, permText, useAct, useMarketMe } from "./common";
+import { UploadDialog, UploadOutcome, type UploadResult } from "./UploadDialog";
+import { SCOPE, StateBadge, permText, useAct, useMarketMe } from "./common";
 
 export const KIND: Record<SkillKind, { label: string; hint: string }> = {
 	prompt: { label: "提示词预设", hint: "可复用的指令模板，不执行任何代码" },
@@ -26,18 +27,26 @@ export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onD
 	const skills = useApi<SkillListResponse>("/skills");
 	const subs = useApi<{ submissions: SubmissionDTO[] }>("/market/submissions?view=mine&kind=skill");
 	const [create, setCreate] = useState(false);
+	const [upload, setUpload] = useState(false);
+	const [uploaded, setUploaded] = useState<UploadResult>();
 	const reloadAll = () => (skills.reload(), subs.reload());
 	return (
 		<div data-testid="my-skills">
 			{draftId ? <DraftPanel id={draftId} onDone={() => (onDraftDone(), skills.reload())} /> : null}
-			<UploadPanel onUploaded={reloadAll} />
-			<div className="mb-3 mt-6 flex items-center justify-between">
+			<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 				<h2 className="text-[15px] font-semibold">我的技能</h2>
-				<Button onClick={() => setCreate(true)} disabled={skills.unavailable} data-testid="skill-new">
-					<Plus />
-					新建技能
-				</Button>
+				<div className="flex flex-wrap items-center gap-2">
+					<Button onClick={() => setUpload(true)} disabled={skills.unavailable} data-testid="skill-upload">
+						<Upload />
+						上传技能
+					</Button>
+					<Button onClick={() => setCreate(true)} disabled={skills.unavailable} data-testid="skill-new">
+						<Plus />
+						新建技能
+					</Button>
+				</div>
 			</div>
+			{uploaded ? <UploadOutcome result={uploaded} onDismiss={() => setUploaded(undefined)} /> : null}
 			<Loadable state={skills} what="技能">
 				{(skills.data?.skills ?? []).length === 0 ? (
 					<EmptyState icon={<Sparkles />} title="还没有技能" />
@@ -70,6 +79,7 @@ export function MySkills({ draftId, onDraftDone }: { draftId: string | null; onD
 					</ul>
 				</div>
 			) : null}
+			<UploadDialog open={upload} onOpenChange={setUpload} onUploaded={(r) => (setUploaded(r), reloadAll())} />
 			<CreateSkillDialog open={create} onOpenChange={setCreate} onCreated={reloadAll} />
 		</div>
 	);
@@ -81,125 +91,6 @@ function WithdrawButton({ id, onDone }: { id: string; onDone: () => void }) {
 		<Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => post(`/market/submissions/${id}/withdraw`))}>
 			撤回
 		</Button>
-	);
-}
-
-// ---------------------------------------------------------------- upload (drag-drop zip / pick folder)
-async function readFolder(files: FileList): Promise<{ path: string; content: string; encoding: "base64" }[]> {
-	const out: { path: string; content: string; encoding: "base64" }[] = [];
-	for (const f of Array.from(files)) {
-		const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
-		const bytes = new Uint8Array(await f.arrayBuffer());
-		let bin = "";
-		for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-		out.push({ path: rel, content: btoa(bin), encoding: "base64" });
-	}
-	return out;
-}
-
-function UploadPanel({ onUploaded, skillId }: { onUploaded: () => void; skillId?: string }) {
-	const [drag, setDrag] = useState(false);
-	const [busy, setBusy] = useState(false);
-	const [err, setErr] = useState<{ text: string; findings?: PackageCheckDTO["findings"] }>();
-	const [result, setResult] = useState<{ name: string; versionNo: number; skillId: string; checks: PackageCheckDTO; submission?: SubmissionDTO }>();
-	const zipRef = useRef<HTMLInputElement>(null);
-	const dirRef = useRef<HTMLInputElement>(null);
-	const me = useMarketMe();
-	const send = async (build: () => Promise<FormData | Record<string, unknown>>) => {
-		setBusy(true);
-		setErr(undefined);
-		setResult(undefined);
-		try {
-			const body = await build();
-			const r = await post<{ skill: { id: string; name: string }; versionNo: number; checks: PackageCheckDTO; submission?: SubmissionDTO }>("/market/skills/upload", body as Record<string, unknown>);
-			setResult({ name: r.skill.name, versionNo: r.versionNo, skillId: r.skill.id, checks: r.checks, submission: r.submission });
-			onUploaded();
-		} catch (e) {
-			const detail = e instanceof ApiError ? (e.detail as { findings?: PackageCheckDTO["findings"] } | undefined) : undefined;
-			setErr({ text: errorText(e), findings: detail?.findings });
-		} finally {
-			setBusy(false);
-		}
-	};
-	const sendZip = (f: File) =>
-		send(async () => {
-			const fd = new FormData();
-			fd.set("file", f);
-			if (skillId) fd.set("skillId", skillId);
-			return fd;
-		});
-	const onDrop = async (e: React.DragEvent) => {
-		e.preventDefault();
-		setDrag(false);
-		const f = e.dataTransfer.files[0];
-		if (f) await sendZip(f);
-	};
-	const lim = me.data?.me.limits;
-	return (
-		<section data-testid="upload-panel">
-			<div
-				onDragOver={(e) => (e.preventDefault(), setDrag(true))}
-				onDragLeave={() => setDrag(false)}
-				onDrop={onDrop}
-				data-testid="dropzone"
-				data-drag={drag}
-				className={cn("flex flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-7 text-center transition-colors", drag ? "border-accent bg-surface-2" : "border-border-strong bg-surface")}
-			>
-				<div className="flex size-10 items-center justify-center rounded-xl bg-surface-2 text-fg-muted">
-					<Upload className="size-5" />
-				</div>
-				<div className="text-[14px] font-medium">把技能包（.zip）拖到这里上传</div>
-				{lim ? <p className="text-xs text-fg-muted">上限 {Math.round(lim.uploadBytes / 1048576)} MB · {lim.files} 个文件</p> : null}
-				<div className="mt-1 flex flex-wrap justify-center gap-2">
-					<Button size="sm" disabled={busy} onClick={() => zipRef.current?.click()} data-testid="upload-zip">
-						<FileArchive />
-						选择 .zip
-					</Button>
-					<Button size="sm" disabled={busy} onClick={() => dirRef.current?.click()} data-testid="upload-folder">
-						<FolderUp />
-						选择文件夹
-					</Button>
-				</div>
-				<input ref={zipRef} type="file" accept=".zip,application/zip" hidden data-testid="upload-zip-input" onChange={(e) => (e.target.files?.[0] && void sendZip(e.target.files[0]), (e.target.value = ""))} />
-				<input
-					ref={dirRef}
-					type="file"
-					hidden
-					multiple
-					// @ts-expect-error non-standard but universally supported directory picker
-					webkitdirectory=""
-					data-testid="upload-folder-input"
-					onChange={(e) => {
-						const fl = e.target.files;
-						if (fl?.length) void send(async () => ({ files: await readFolder(fl), ...(skillId ? { skillId } : {}) }));
-						e.target.value = "";
-					}}
-				/>
-				{busy ? <p className="text-xs text-fg-muted">正在上传并检查…</p> : null}
-			</div>
-			{err ? (
-				<div className="mt-3 rounded-xl border border-danger/40 bg-danger-soft/40 p-3.5 text-sm" data-testid="upload-error">
-					<div className="mb-1.5 flex items-center gap-1.5 font-medium text-danger">
-						<CircleX className="size-4" />
-						上传被拒绝：{err.text}
-					</div>
-					{err.findings?.length ? <FindingList findings={err.findings} /> : null}
-				</div>
-			) : null}
-			{result ? (
-				<div className="mt-3 rounded-xl border border-border bg-surface p-3.5 text-sm" data-testid="upload-result">
-					<div className="mb-2 flex flex-wrap items-center gap-2">
-						<CheckCircle2 className="size-4 text-success" />
-						<span className="font-medium">已上传「{result.name}」v{result.versionNo}</span>
-						<span className="text-xs text-fg-subtle">
-							{result.checks.stats.fileCount} 个文件 · {(result.checks.stats.packageBytes / 1024).toFixed(1)} KB
-						</span>
-						{result.submission ? <StateBadge state={result.submission.state} /> : null}
-					</div>
-					<FindingList findings={result.checks.findings} empty="自动检查没有发现问题。" />
-				</div>
-			) : null}
-		</section>
 	);
 }
 

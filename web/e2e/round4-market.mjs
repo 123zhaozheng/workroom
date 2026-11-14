@@ -84,6 +84,9 @@ try {
 
 	// ---------------------------------------------------------------- upload by drag-drop (zip) + automated checks
 	await a.goto(`${base}/capabilities`);
+	await a.waitForSelector('[data-testid="skill-upload"]');
+	check("upload: no big upload area on the page; the toolbar has 上传技能", (await a.locator('[data-testid="upload-panel"]').count()) === 0 && (await a.locator('[data-testid="dropzone"]').count()) === 0);
+	await a.click('[data-testid="skill-upload"]');
 	await a.waitForSelector('[data-testid="dropzone"]');
 	// A real drop event with a File built in the page: the same path a user's drag-drop takes.
 	await a.evaluate(async (b64) => {
@@ -92,7 +95,11 @@ try {
 		dt.items.add(new File([bytes], "weekly-report.zip", { type: "application/zip" }));
 		document.querySelector('[data-testid="dropzone"]').dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
 	}, zipB64(v1Files));
+	await a.click('[data-testid="upload-submit"]');
 	await a.waitForSelector('[data-testid="upload-result"]', { timeout: 15000 });
+	check("upload: the dialog closes after a successful upload", (await a.locator('[data-testid="upload-dialog"]').count()) === 0);
+	await a.click('[data-testid="skill-upload"]');
+	await a.waitForSelector('[data-testid="dropzone"]');
 	check("upload: dropping a .zip uploads it and shows the automated check result", (await a.locator('[data-testid="upload-result"]').innerText()).includes("已上传「weekly-report」v1"));
 	// A malicious zip (zip-slip) is rejected in the UI with the reason, and nothing is added.
 	await a.evaluate(async (b64) => {
@@ -101,10 +108,12 @@ try {
 		dt.items.add(new File([bytes], "evil.zip", { type: "application/zip" }));
 		document.querySelector('[data-testid="dropzone"]').dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
 	}, zipB64({ "SKILL.md": md({ name: "evil", description: DESC, version: "1.0.0", body: "x" }), "../escape.sh": "echo pwned" }));
+	await a.click('[data-testid="upload-submit"]');
 	await a.waitForSelector('[data-testid="upload-error"]', { timeout: 15000 });
 	check("upload: a zip-slip archive is rejected with a visible reason", (await a.locator('[data-testid="upload-error"]').innerText()).includes("zip-slip"));
 	check("upload: only the valid skill exists", (await (await a.request.get(`${base}/api/skills`)).json()).skills.length === 1);
 	await shots(a, "market-my-skills-upload");
+	await a.keyboard.press("Escape");
 
 	// ---------------------------------------------------------------- submit for review (UI)
 	await a.locator('[data-testid="skill"]').first().locator("button[aria-expanded]").click();
