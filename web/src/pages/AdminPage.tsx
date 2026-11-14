@@ -14,6 +14,7 @@ import { Invites } from "@/features/admin/InvitesTab";
 import { OrgStructure } from "@/features/admin/OrgStructureTab";
 import { Roles } from "@/features/admin/RolesTab";
 import { Authorizations } from "@/features/admin/AuthzTab";
+import { NetworkAccess } from "@/features/admin/NetworkTab";
 import { Sessions } from "@/features/admin/SessionsTab";
 import { ModelsAdmin } from "@/features/admin/models/ModelsAdmin";
 import { SandboxProviders } from "@/features/admin/SandboxProviders";
@@ -52,6 +53,7 @@ const GROUPS: NavGroup[] = [
 		items: [
 			{ value: "roles", label: "角色", any: ["role.view", "role.manage"] },
 			{ value: "authz", label: "授权", any: ["role.assign", "role.view"] },
+			{ value: "network", label: "网络访问", any: ["network.manage"] },
 		],
 	},
 	{ label: "模型", items: [{ value: "models", label: "模型服务", any: ["model.manage", "model.provider.manage"] }] },
@@ -135,6 +137,7 @@ export default function AdminPage() {
 							{tab === "sessions" ? <Sessions /> : null}
 							{tab === "roles" ? <Roles /> : null}
 							{tab === "authz" ? <Authorizations /> : null}
+							{tab === "network" ? <NetworkAccess /> : null}
 							{tab === "models" ? <ModelsAdmin /> : null}
 							{tab === "sandbox" ? <><SandboxProviders /><SandboxPrices /></> : null}
 							{tab === "env" ? (

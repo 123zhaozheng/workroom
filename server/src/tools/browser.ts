@@ -1,6 +1,6 @@
 // Server-side browser tool (M11): open a URL in headless Chromium (Playwright), extract text, optionally save a screenshot
 // as a file version. Every request the page makes (navigation, redirects, subresources) passes the URL policy, so pages
-// cannot reach loopback/private/metadata addresses unless the operator allowlisted them.
+// cannot reach loopback/private/metadata addresses unless the operator allowlisted them, and the organisation's network policy applies.
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, posix, win32 } from "node:path";
@@ -24,7 +24,7 @@ const MAX_RESPONSE = 25 * 1024 * 1024;
  * to the validated IP (pinned per origin for the context's lifetime, so a later DNS answer cannot rebind it), and the
  * response is fulfilled back into the page. WebSockets and other schemes are refused.
  */
-export async function guardContext(context: any, blocked: string[], pins: Map<string, string> = new Map()): Promise<Map<string, string>> {
+export async function guardContext(context: any, blocked: string[], pins: Map<string, string> = new Map(), orgId?: string): Promise<Map<string, string>> {
 	await context.route("**/*", async (route: any) => {
 		const req = route.request();
 		const u: string = req.url();
@@ -39,7 +39,7 @@ export async function guardContext(context: any, blocked: string[], pins: Map<st
 			const headers: Record<string, string> = { ...(await req.allHeaders()) };
 			for (const h of Object.keys(headers)) if (h.startsWith(":")) delete headers[h];
 			headers["accept-encoding"] = "identity";
-			const res = await pinnedRequest(u, { method: req.method(), headers, body: req.postDataBuffer() ?? undefined, pinned: pins.get(origin) });
+			const res = await pinnedRequest(u, { method: req.method(), headers, body: req.postDataBuffer() ?? undefined, pinned: pins.get(origin), orgId });
 			pins.set(origin, res.address);
 			const chunks: Buffer[] = [];
 			let size = 0;
@@ -168,18 +168,19 @@ export class BrowserService {
 	}
 
 	async browse(input: { url: string; screenshot?: boolean; maxChars?: number; principal: Principal; space: Space; save?: { conversationId?: number; taskId?: number; callId?: string; idempotencyKey?: string } }): Promise<BrowseResultDTO & { blocked: string[] }> {
-		const first = await checkUrl(input.url);
+		const orgId = input.principal.orgId;
+		const first = await checkUrl(input.url, { orgId });
 		const browser = await this.#get();
 		const context = await browser.newContext({ acceptDownloads: false, serviceWorkers: "block", javaScriptEnabled: true, viewport: { width: 1280, height: 800 }, locale: "zh-CN" });
 		const blocked: string[] = [];
 		try {
 			// The address validated above is the one the page connects to (pinned for the origin).
-			const pins = await guardContext(context, blocked, new Map([[first.url.origin, first.addresses[0]!]]));
+			const pins = await guardContext(context, blocked, new Map([[first.url.origin, first.addresses[0]!]]), orgId);
 			const page = await context.newPage();
 			const resp = await page.goto(input.url, { waitUntil: "domcontentloaded", timeout: 20_000 });
 			await page.waitForLoadState("networkidle", { timeout: 3_000 }).catch(() => {});
 			const finalUrl = page.url();
-			await checkUrl(finalUrl, { pinned: pins.get(new URL(finalUrl).origin) }); // a redirect chain may not end in a blocked address
+			await checkUrl(finalUrl, { pinned: pins.get(new URL(finalUrl).origin), orgId }); // a redirect chain may not end in a blocked address
 			const title = await page.title();
 			const raw: string = await page.evaluate(() => (document.body ? (document.body as HTMLElement).innerText : ""));
 			const max = input.maxChars ?? 20_000;

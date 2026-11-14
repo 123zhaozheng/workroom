@@ -41,6 +41,7 @@ import { registerMarketRoutes } from "./market-routes.ts"; // marketplace group
 import { createJobsExtension, Jobs, JOB_MIGRATIONS } from "./jobs.ts";
 import { BrowserSessions, createBrowserSessionExtension } from "./browser-sessions.ts";
 import { createHarnessPromptExtension } from "./harness-prompt.ts";
+import { NET_POLICY_MIGRATIONS, NetPolicyService, registerNetPolicyRoutes } from "./netpolicy-service.ts"; // 网络访问策略
 import { createPolicyExtension, POLICY_MIGRATIONS, TOOL_GROUPS, ToolPolicy } from "./policy.ts";
 import type { BrowserActionRequest, ConversationWorkDTO } from "../../../shared/files.ts";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
@@ -96,6 +97,7 @@ export const toolsModule: WorkroomModule = {
 		...CREDENTIAL_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1200 })), // credentials (round 7b)
 		...PREWARM_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1500 })), // sandbox prewarm log (round 11, R2b)
 		...EXPERT_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1600 })), // experts (round 17)
+		...NET_POLICY_MIGRATIONS.map((m) => ({ ...m, version: m.version + 1700 })), // network access policy
 	],
 	init(ctx) {
 		ctx.services.provide("toolCalls", new ToolCallLog(ctx));
@@ -120,6 +122,9 @@ export const toolsModule: WorkroomModule = {
 		ctx.services.provide("jobs", new Jobs(ctx));
 		ctx.services.provide("sandboxPrewarm", prewarmFor(ctx)); // round 11 (R2b): the runtime calls it after a user message is accepted
 		ctx.services.provide("toolPolicy", new ToolPolicy(ctx));
+		const netPolicy = new NetPolicyService(ctx);
+		ctx.services.provide("netPolicy", netPolicy);
+		netPolicy.install(); // netpolicy.ts consults the organisation's policy from here on
 		// Round 14: the agent's virtual filesystem (/skills /memory /library /uploads /work). Other modules register their backends on it
 		// (knowledge: /memory; skills: /skills) — see docs/r14-virtual-backend.md.
 		const vfs = new VfsRouter();
@@ -171,6 +176,7 @@ export const toolsModule: WorkroomModule = {
 		(ctx.services.get("browserSessions") as BrowserSessions).start();
 	},
 	async stop(ctx) {
+		(ctx.services.get("netPolicy") as NetPolicyService).uninstall();
 		(ctx.services.get("market") as Market).stop(); // marketplace group
 		await (ctx.services.get("mcp") as McpManager).stop();
 		await (ctx.services.get("sandbox") as Sandbox).stop();
@@ -341,6 +347,7 @@ export const toolsModule: WorkroomModule = {
 		// ---- skills ----
 		const skills = ctx.services.get("skills") as Skills;
 		const market = ctx.services.get("market") as Market;
+		registerNetPolicyRoutes(api, ctx); // /admin/network-policy (network.manage)
 		registerExpertRoutes(api, ctx); // round 17: /experts
 		registerMarketRoutes(api, ctx); // marketplace group: /market/*, per-user connector credentials and tool settings
 		registerSkillDraftRoutes(api, ctx); // GET /api/skill-drafts/:id (owner only)

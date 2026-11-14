@@ -460,9 +460,9 @@ export class McpManager {
 			transport.stderr?.on("data", () => {}); // drained, never logged (may echo secrets)
 			await withTimeout(client.connect(transport), 15_000, "连接");
 		} else {
-			const checked = await checkUrl(row.url!, { allowPrivate: row.scope === "system" });
+			const checked = await checkUrl(row.url!, { allowPrivate: row.scope === "system", orgId: row.org_id });
 			// Every request connects to the validated, pinned address (no DNS rebinding between check and connect).
-			const transport = new StreamableHTTPClientTransport(new URL(row.url!), { requestInit: { headers: secrets }, fetch: pinnedFetch({ allowPrivate: row.scope === "system", pins: new Map([[checked.url.origin, checked.addresses[0]!]]) }) as any });
+			const transport = new StreamableHTTPClientTransport(new URL(row.url!), { requestInit: { headers: secrets }, fetch: pinnedFetch({ allowPrivate: row.scope === "system", orgId: row.org_id, pins: new Map([[checked.url.origin, checked.addresses[0]!]]) }) as any });
 			await withTimeout(client.connect(transport), 15_000, "连接");
 		}
 		const live: Live = { client, secrets: expandSecrets(Object.values(secrets)), stamp: row.updated_at, lastUsed: Date.now() };

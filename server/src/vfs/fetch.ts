@@ -30,13 +30,13 @@ function dispositionName(h: string | undefined): string | undefined {
 	return plain?.[1]?.trim() || undefined;
 }
 
-export async function fetchBytes(raw: string, opts: { maxBytes?: number; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<Fetched> {
+export async function fetchBytes(raw: string, opts: { maxBytes?: number; timeoutMs?: number; signal?: AbortSignal; orgId?: string } = {}): Promise<Fetched> {
 	const max = opts.maxBytes ?? urlMaxBytes();
 	let url = raw;
 	for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
 		let res;
 		try {
-			res = await pinnedRequest(url, { method: "GET", headers: { "user-agent": "Workroom-Fetch/1", accept: "*/*" }, signal: opts.signal, timeoutMs: opts.timeoutMs ?? 30_000 });
+			res = await pinnedRequest(url, { method: "GET", headers: { "user-agent": "Workroom-Fetch/1", accept: "*/*" }, signal: opts.signal, timeoutMs: opts.timeoutMs ?? 30_000, orgId: opts.orgId });
 		} catch (e) {
 			const code = (e as { code?: string }).code;
 			throw new VfsError("fetch_failed", code === "url_blocked" || code === "bad_url" || code === "dns_failed" ? (e as Error).message : `下载失败：${(e as Error).message}`, 400);

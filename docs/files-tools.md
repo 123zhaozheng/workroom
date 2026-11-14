@@ -156,9 +156,32 @@ node --disable-warning=ExperimentalWarning --test --test-concurrency=1 server/te
 
 Playwright + Chromium（主机预装，`/opt/node-tools/node_modules/playwright`，可用 `WORKROOM_PLAYWRIGHT_PATH` 覆盖；未运行 `playwright install`）。每次调用新建无 cookie 的 context、禁用 service worker 和下载；**每个请求**（导航、重定向、子资源）先过 URL 策略；最终 URL 再检查一次。返回标题与可见文本，可选截图保存为文件版本（幂等键 = 调用键）。`replay: "safe"`（GET 可重复；截图写入幂等）。
 
-### URL 策略（`server/src/tools/netpolicy.ts`）
+### URL 策略（`server/src/tools/netpolicy.ts`）与组织的「网络访问」设置
 
-只允许 http/https、不允许 URL 内含凭据；解析 DNS 后拒绝回环、私网、链路本地（含 169.254.169.254 元数据）、CGNAT、组播、保留地址及 `localhost`/`metadata.google.internal`，除非 `host[:port]` 或该 IP 在运维白名单 `WORKROOM_URL_ALLOWLIST` 中。
+所有由**服务器代为发出**的外部请求都走同一个 `checkUrl`：浏览器（`browse` 与交互会话）、网页抓取（`present_file` / `copy_to_work` 的 URL 来源）、MCP HTTP 连接器、成员自带密钥的模型 Base URL（获取列表、测试、对话）。判定分两层。
+
+**安全底线（固定，界面不可关闭）**：只允许 http/https；URL 不能含用户名/密码；域名只解析一次并钉住（见下）；解析后拒绝回环、私网、链路本地（含 169.254.169.254 元数据）、CGNAT、组播、保留地址及 `localhost`、`metadata.google.internal`——除非该 `host[:port]` 或 IP 在**内网例外**里。云元数据地址（整个 169.254.0.0/16、`metadata.google.internal`、IPv4 映射/6to4 写法等）**内网例外也不能放行**：界面/API 拒绝保存这样的条目，运行时即使名称解析到元数据地址同样拦截。只有运维环境变量 `WORKROOM_URL_ALLOWLIST` 保留原有能力（可点名任何主机，含元数据——与改动前一致，没有放宽也没有收紧）。
+
+**组织策略（可配置，管理后台 › 角色与权限 › 网络访问；权限 `network.manage`）**：每个组织一行（表 `tool_net_policy`，无记录 = 默认策略）。
+
+| 字段 | 含义 |
+|---|---|
+| `mode` | `open`（默认，全部公网允许）或 `allowlist`（仅允许名单内域名） |
+| `allow` | 允许名单，仅 `allowlist` 模式使用 |
+| `block` | 阻止名单：任何模式下都拦截，**优先于其它所有规则**（含内网例外与环境变量） |
+| `internal` | 内网例外：这些主机/IP 可以解析到内网地址；在 `allowlist` 模式下同时视为允许 |
+
+条目语法三个名单一致：`example.com`、`*.example.com`（所有子域名，不含 `example.com` 本身）、IPv4/IPv6、可带端口（`host:port`、`[::1]:8080`），不写端口 = 任意端口；粘贴网址会自动取出主机和端口；最多 200 条。语法与匹配在 `shared/netpolicy.ts`，网页表单与服务端是同一份代码。`allowlist` 模式下，名单外的名称**在 DNS 解析之前**就被拒绝。允许名单只决定“能不能去”，不会因此放行内网地址（要放行内网必须写进内网例外）。
+
+**判定顺序**：协议/凭据 → 阻止名单 → （`allowlist` 模式）允许名单 ∪ 内网例外 ∪ 环境变量 → DNS → 地址检查（公网通过；内网需命中内网例外或环境变量；元数据只认环境变量）。
+
+**环境变量兜底**：`WORKROOM_URL_ALLOWLIST`（逗号分隔，每次读取）与数据库的内网例外合并生效；页面里以锁形标记只读显示，保存/恢复默认都不会写入或清除它。
+
+**按组织取策略**：浏览器、网页抓取、MCP 连接器按会话主体/连接器所属组织；个人模型 Base URL 按服务商所属组织；拿不到组织的调用方（`checkUrl(url)` 不带 `orgId`）用默认策略，行为等同引入该设置之前。策略读取有内存缓存，保存/恢复默认立即失效，**无需重启，下一个请求生效**；已经打开的浏览器会话的后续请求也按新策略判断（每个请求都过 `checkUrl`）。
+
+**API**（均需 `network.manage`，其余成员 403）：`GET /api/admin/network-policy`（`{policy, env:{internal}, updatedAt, updatedBy, isDefault}`）、`PUT`（整份策略，校验并规范化后保存，格式错误 400 并指出是哪个名单的哪一条）、`DELETE`（恢复默认）、`POST /api/admin/network-policy/test {url, policy?}`（dry run：返回 `{allowed, rule, reason, host, port, addresses, via}`，只做 DNS 解析、不发起连接；带 `policy` 时按未保存的表单内容判断）。写入审计 `network.policy.update` / `network.policy.reset`（类别“安全”，带修改前后的完整策略）。
+
+测试：`server/test/netpolicy-admin.test.ts`（默认等价于改动前、仅名单模式与通配、阻止名单优先、内网例外、元数据始终拦截、环境变量合并、权限与审计、dry run、按组织隔离、browse 与网页抓取按组织策略）；`web/e2e/netpolicy-admin.mjs`（页面保存、校验、测试网址、入口按权限显示）。
 
 **DNS 固定（防重绑定）**：域名只解析一次，校验通过的 IP 被“钉住”，真正的 TCP 连接直接连到这个 IP（`pinnedRequest`：自定义 `lookup`；HTTPS 仍按域名做 SNI 与证书校验）。
 - 浏览器（`browse` 与交互会话）：Chromium 自己**不解析也不连接**。每个请求（导航、每一跳重定向、子资源、fetch/XHR）都被拦截，由服务端用 `pinnedRequest` 重新发出，再 `route.fulfill` 回页面；同一 context 内每个 origin 只解析一次（之后不再重新解析）；WebSocket 被拒绝；响应 ≤25 MB。

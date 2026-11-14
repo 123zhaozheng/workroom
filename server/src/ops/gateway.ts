@@ -322,7 +322,7 @@ export class Gateway implements ModelGateway {
 				const r = this.rowOf(id);
 				if (!r) return [];
 				await this.guardTarget(r);
-				const { models } = await listRemoteModels({ row: r, baseUrl: this.baseUrlOf(r), key: r.keyless ? undefined : providerKey(r, this.secrets).key, headers: providerHeaders(r, this.secrets), signal: c.signal, fetchImpl: r.scope === "user" ? pinnedFetch() : undefined }); // key from the store, not c.credential.key: bearer-style auth resolves without an apiKey
+				const { models } = await listRemoteModels({ row: r, baseUrl: this.baseUrlOf(r), key: r.keyless ? undefined : providerKey(r, this.secrets).key, headers: providerHeaders(r, this.secrets), signal: c.signal, fetchImpl: r.scope === "user" ? pinnedFetch({ orgId: r.org_id }) : undefined }); // key from the store, not c.credential.key: bearer-style auth resolves without an apiKey
 				this.db.run("UPDATE model_providers SET last_fetch_at = ? WHERE id = ?", nowIso(), id);
 				return models.map((m) => modelFromRemote(r, this.baseUrlOf(r), m, this.#builtins));
 			},
@@ -440,7 +440,7 @@ export class Gateway implements ModelGateway {
 			: undefined;
 		const upstreamMeta = Object.fromEntries(Object.entries(meta).filter(([k]) => !k.startsWith("wr")));
 		const { metadata: _m, ...rest } = options;
-		const baseOpts: SimpleStreamOptions = { ...rest, ...(Object.keys(upstreamMeta).length ? { metadata: upstreamMeta } : {}), ...(!rest.timeoutMs && row?.timeout_ms ? { timeoutMs: row.timeout_ms } : {}), ...(row?.scope === "user" ? { fetch: pinnedFetch() } : {}) };
+		const baseOpts: SimpleStreamOptions = { ...rest, ...(Object.keys(upstreamMeta).length ? { metadata: upstreamMeta } : {}), ...(!rest.timeoutMs && row?.timeout_ms ? { timeoutMs: row.timeout_ms } : {}), ...(row?.scope === "user" ? { fetch: pinnedFetch({ orgId: row.org_id }) } : {}) };
 
 		const needs = transcriptNeeds(context);
 		const chain: Model<Api>[] = [model];
@@ -905,7 +905,7 @@ export class Gateway implements ModelGateway {
 			try {
 				await this.guardTarget(row);
 				const k = providerKey(row, this.secrets);
-				const r = await listRemoteModels({ row, baseUrl: this.baseUrlOf(row), key: row.keyless ? undefined : k.key, headers: providerHeaders(row, this.secrets), signal: AbortSignal.timeout(20_000), fetchImpl: row.scope === "user" ? pinnedFetch() : undefined });
+				const r = await listRemoteModels({ row, baseUrl: this.baseUrlOf(row), key: row.keyless ? undefined : k.key, headers: providerHeaders(row, this.secrets), signal: AbortSignal.timeout(20_000), fetchImpl: row.scope === "user" ? pinnedFetch({ orgId: row.org_id }) : undefined });
 				result.list = { ok: true, count: r.models.length, latencyMs: r.latencyMs, url: r.url };
 			} catch (e) {
 				result.list = { ok: false, detail: redactText((e as Error).message) };
@@ -918,7 +918,7 @@ export class Gateway implements ModelGateway {
 		else {
 			const t0 = Date.now();
 			try {
-				const msg = await this.#models.completeSimple(model, { messages: [{ role: "user", content: "Reply with the single word: OK", timestamp: Date.now() }] }, { maxTokens: 24, signal: AbortSignal.timeout(45_000), metadata: { wrNoRecord: true }, ...(row.scope === "user" ? { fetch: pinnedFetch() } : {}) });
+				const msg = await this.#models.completeSimple(model, { messages: [{ role: "user", content: "Reply with the single word: OK", timestamp: Date.now() }] }, { maxTokens: 24, signal: AbortSignal.timeout(45_000), metadata: { wrNoRecord: true }, ...(row.scope === "user" ? { fetch: pinnedFetch({ orgId: row.org_id }) } : {}) });
 				const text = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("").trim();
 				result.completion = msg.stopReason === "error" || msg.stopReason === "aborted" ? { ok: false, modelId: model.id, detail: redactText(msg.errorMessage ?? msg.stopReason), latencyMs: Date.now() - t0 } : { ok: true, modelId: model.id, text: text.slice(0, 80), latencyMs: Date.now() - t0 };
 			} catch (e) {
