@@ -6,11 +6,12 @@
 //  - 浏览器: the agent's browser sessions as preview entries.
 // Everything comes from the same server ACL as the conversation itself; the outputs / jobs / browser snapshot is the conversation's
 // SSE state (published by the chat page), subagents come from the conversation's tasks endpoint.
-import { Bot, ChevronRight, Download, ExternalLink, Globe, Loader2, Plug, Users, X, type LucideIcon } from "lucide-react";
+import { Bot, ChevronRight, Download, ExternalLink, Globe, Loader2, Maximize2, Plug, Users, X, type LucideIcon } from "lucide-react";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import type { MemberType, SubagentDTO, TasksResponse } from "@shared/chat";
 import type { ConversationWorkDTO, JobDTO, LibItemDTO } from "@shared/files";
+import { BrowserModal } from "./BrowserModal";
 import { BrowserSessionView, JOB_STATUS } from "./live";
 import { useApi } from "@/lib/useApi";
 import { errorText, post } from "@/lib/api";
@@ -145,11 +146,11 @@ function OutputRow({ item }: { item: LibItemDTO }) {
 }
 
 /** A collapsible row: icon · title · status, the details behind its chevron. */
-function Row({ icon, title, status, children, testId, data }: { icon: ReactNode; title: string; status?: ReactNode; children?: ReactNode; testId: string; data?: Record<string, string | undefined> }) {
+function Row({ icon, title, status, children, testId, data, action }: { icon: ReactNode; title: string; status?: ReactNode; children?: ReactNode; testId: string; data?: Record<string, string | undefined>; action?: ReactNode }) {
 	const [open, setOpen] = useState(false);
 	return (
-		<li data-testid={testId} {...data} className="rounded-lg">
-			<button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-h-8 w-full items-center gap-2.5 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+		<li data-testid={testId} {...data} className="relative rounded-lg">
+			<button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={cn("flex min-h-8 w-full items-center gap-2.5 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", action && "pr-9")}>
 				<span aria-hidden className="flex size-[18px] shrink-0 items-center justify-center text-fg-muted [&_svg]:size-[18px]">
 					{icon}
 				</span>
@@ -157,6 +158,8 @@ function Row({ icon, title, status, children, testId, data }: { icon: ReactNode;
 				{status}
 				<ChevronRight aria-hidden className={cn("size-4 shrink-0 text-fg-subtle transition-transform duration-150", open && "rotate-90")} />
 			</button>
+			{/* Beside the row's toggle (never inside it: no button in a button); sits between the host and the chevron. */}
+			{action ? <span className="absolute right-6 top-0 flex h-8 items-center">{action}</span> : null}
 			{open ? <div className="wr-fade-in mb-1.5 ml-[30px] mr-1 mt-0.5">{children}</div> : null}
 		</li>
 	);
@@ -240,6 +243,7 @@ function SubagentRow({ s, spaceId }: { s: SubagentDTO; spaceId: string }) {
 }
 
 function BrowserRow({ s }: { s: ConversationWorkDTO["browserSessions"][number] }) {
+	const [big, setBig] = useState(false);
 	const host = (() => {
 		try {
 			return new URL(s.url).host || s.url;
@@ -248,8 +252,21 @@ function BrowserRow({ s }: { s: ConversationWorkDTO["browserSessions"][number] }
 		}
 	})();
 	return (
-		<Row testId="browser-entry" icon={<Globe strokeWidth={1.5} />} title={s.title || host} status={<span className="max-w-[40%] truncate text-xs text-fg-subtle">{host}</span>}>
-			<BrowserSessionView s={s} onChanged={() => {}} />
-		</Row>
+		<>
+			<Row
+				testId="browser-entry"
+				icon={<Globe strokeWidth={1.5} />}
+				title={s.title || host}
+				status={<span className="max-w-[40%] truncate text-xs text-fg-subtle">{host}</span>}
+				action={
+					<button type="button" data-testid="browser-expand" aria-label="放大" title="放大" onClick={() => setBig(true)} className="flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+						<Maximize2 className="size-4" strokeWidth={1.5} />
+					</button>
+				}
+			>
+				<BrowserSessionView s={s} onChanged={() => {}} />
+			</Row>
+			{big ? <BrowserModal s={s} open onOpenChange={setBig} /> : null}
+		</>
 	);
 }
