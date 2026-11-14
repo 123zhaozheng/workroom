@@ -378,10 +378,10 @@ try {
 	await mp.waitForSelector('[data-testid="market-skill"]');
 	await jargonFree(mp, "the skill market");
 	check("market: no paragraph subtitle under the title", (await mp.locator("h1 ~ p").count()) === 0);
-	await mp.goto(`${base}/capabilities?tab=mcp`);
-	await mp.waitForSelector('[data-testid="mcp-market"]');
-	check("market: the connection tab is called 连接市场, not MCP", (await mp.locator('[data-testid="tab-mcp"]').innerText()).includes("连接市场"));
-	await jargonFree(mp, "the connection market");
+	check("market: there is no 连接市场 tab any more", (await mp.locator('[data-testid="tab-mcp"]').count()) === 0);
+	await mp.goto(`${base}/capabilities?tab=connectors`);
+	await mp.waitForSelector('[data-testid="tab-connectors"]');
+	await jargonFree(mp, "my connections");
 
 	// settings + my permissions
 	await p.goto(`${base}/settings?tab=permissions`);

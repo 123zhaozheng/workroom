@@ -5,6 +5,7 @@
 // (credentials, native binaries) are rejected at upload as well, `warn` findings are shown on the review screen.
 import { createHash } from "node:crypto";
 import { unzipSync, zipSync } from "fflate";
+import { SKILL_ICON_RE } from "../../../shared/files.ts";
 import type { PackageCheckDTO, PackageFindingDTO, SkillKind, SkillManifestDTO, SkillPermission } from "../../../shared/files.ts";
 
 export const LIMITS = {
@@ -349,6 +350,8 @@ export function parseSkillMd(files: readonly PackageFile[]): ParsedSkill {
 	if (explicitKind === "executable" && !entry) throw new PackageError("manifest_invalid", "可执行技能必须声明 entry");
 	const perms = [...new Set(requiredPermissions)];
 	if (kind === "executable" && !perms.includes("sandbox.exec")) perms.unshift("sandbox.exec");
+	const iconRaw = asStr(pick("icon"));
+	if (iconRaw && !SKILL_ICON_RE.test(iconRaw)) throw new PackageError("manifest_invalid", `icon「${iconRaw}」不合法：只能用小写字母、数字、连字符，≤32 字符`);
 	const manifest: SkillManifestDTO = {
 		name,
 		title: asStr(pick("title")),
@@ -357,6 +360,7 @@ export function parseSkillMd(files: readonly PackageFile[]): ParsedSkill {
 		license: asStr(data.license),
 		compatibility,
 		category: asStr(pick("category")),
+		icon: iconRaw,
 		tags: asList(pick("tags")).slice(0, 12).map((t) => t.slice(0, 24)),
 		entry: entry ? safePath(entry) : undefined,
 		kind,

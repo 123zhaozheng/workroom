@@ -224,6 +224,12 @@ export interface SkillDTO {
 	readonly listed?: boolean;
 	/** Active for the caller because an org / department / project install applies (not only a personal install). */
 	readonly viaScope?: readonly ("org" | "department" | "project")[];
+	/** Icon id chosen by the author (a key of the web icon library; unknown ids fall back to an automatic icon). */
+	readonly icon?: string;
+	/** One-line description of the version shown on the card, and the classification the web uses to pick an automatic icon. */
+	readonly description?: string;
+	readonly category?: string;
+	readonly tags?: readonly string[];
 	readonly status: "active" | "archived";
 	readonly versions?: SkillVersionDTO[];
 	/** Caller's installation (absent when not installed). */
@@ -444,6 +450,8 @@ export interface SkillManifestDTO {
 	readonly license?: string;
 	readonly compatibility?: string;
 	readonly category?: string;
+	/** Optional icon id (SKILL.md `icon:` / `metadata.icon`); see SKILL_ICON_RE. */
+	readonly icon?: string;
 	readonly tags: readonly string[];
 	readonly entry?: string;
 	readonly kind: SkillKind;
@@ -466,6 +474,8 @@ export interface MarketSkillSummaryDTO {
 	readonly scope: MarketScope;
 	readonly scopeRef?: string;
 	readonly category?: string;
+	/** Icon id chosen by the author; absent → the web picks one from the name / category. */
+	readonly icon?: string;
 	readonly tags: readonly string[];
 	readonly kind: SkillKind;
 	readonly ownerUserId: string;
@@ -710,3 +720,6 @@ export interface PresentedDetailsDTO {
 	readonly status: "created" | "updated" | "unchanged";
 	readonly item: LibItemDTO;
 }
+
+/** A skill icon id: a short lowercase key into the web icon library (validated by shape only, so the library can grow without a server change). */
+export const SKILL_ICON_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;

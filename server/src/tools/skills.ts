@@ -11,6 +11,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AppContext, Principal, Space, ToolActor } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
+import { SKILL_ICON_RE } from "../../../shared/files.ts";
 import type { SkillDraftDTO, SkillDTO, SkillKind, SkillPermission, SkillRunDTO, SkillValidationDTO, SkillVersionDTO } from "../../../shared/files.ts";
 import { runtimeActorResolver, type ActorResolver } from "../files/actor.ts";
 import type { ToolCallLog } from "./calls.ts";
@@ -80,6 +81,7 @@ export interface SkillRow {
 	published_version_no: number | null;
 	listed: number;
 	category: string | null;
+	icon: string | null;
 	tags: string;
 	unpublished_reason: string | null;
 	created_at: string;
@@ -126,6 +128,8 @@ export interface SkillInput {
 	readonly requiredTools?: readonly string[];
 	readonly requiredPermissions?: readonly string[];
 	readonly changeNote?: string;
+	/** Icon id for the card (shape-checked; the web icon library resolves it). */
+	readonly icon?: string;
 }
 
 function cleanPath(p: string): string {
@@ -220,12 +224,13 @@ export class Skills {
 		if (!KINDS.includes(input.kind)) throw new HttpError(400, "invalid", "kind 必须是 prompt、context 或 executable");
 		if (!String(input.instructions ?? "").trim()) throw new HttpError(400, "invalid", "技能说明（instructions）必填");
 		const scope = input.scope === "org" ? "org" : "personal";
+		if (input.icon !== undefined && input.icon !== null && !SKILL_ICON_RE.test(String(input.icon))) throw new HttpError(400, "invalid_icon", "图标不合法");
 		if (scope === "org") await this.#market.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以直接发布组织技能；成员请上传技能包并提交审核");
 		const m = this.#materialize(input, input.kind);
 		const id = newId("skl");
 		const now = nowIso();
 		this.#db.tx(() => {
-			this.#db.run("INSERT INTO skill_skills (id, org_id, scope, owner_user_id, name, kind, latest_version_no, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)", id, p.orgId, scope, p.userId, name, input.kind, now, now);
+			this.#db.run("INSERT INTO skill_skills (id, org_id, scope, owner_user_id, name, kind, latest_version_no, created_at, updated_at, icon) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)", id, p.orgId, scope, p.userId, name, input.kind, now, now, input.icon ?? null);
 			this.#insertVersion(id, 1, p, input, m, extra);
 		});
 		// Legacy JSON path: an organisation admin publishing an org skill is a direct (audited, forced) publish; a personal skill
@@ -409,6 +414,10 @@ export class Skills {
 			slug: this.#market.slugOf(s),
 			kind: s.kind,
 			scope: s.scope,
+			icon: s.icon ?? undefined,
+			description: (effV ?? this.version(s.id, s.latest_version_no))?.description || undefined,
+			category: s.category ?? undefined,
+			tags: JSON.parse(s.tags || "[]"),
 			ownerUserId: s.owner_user_id,
 			latestVersionNo: manage ? s.latest_version_no : this.#market.latestUsable(s),
 			publishedVersionNo: s.published_version_no ?? undefined,

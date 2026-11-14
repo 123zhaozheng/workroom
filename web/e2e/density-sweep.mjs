@@ -56,7 +56,6 @@ try {
 		stats: "/stats",
 		"cap-mine": "/capabilities?tab=mine",
 		"cap-market": "/capabilities?tab=market",
-		"cap-mcp": "/capabilities?tab=mcp",
 		"cap-connectors": "/capabilities?tab=connectors",
 		"settings-general": "/settings?tab=general",
 		"settings-assistants": "/settings?tab=assistants",

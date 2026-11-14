@@ -1,5 +1,6 @@
 // Round 4 — 技能 / MCP 市场: upload (drag-drop zip) → automated checks → submit → scoped reviewer screen (manifest, permissions,
-// file tree, diff, checks) → approve → market → install; version update re-review with diff; MCP import → review → install wizard;
+// file tree, diff, checks) → approve → market → install; version update re-review with diff; MCP import → review → install (the 连接市场 tab
+// was removed from the UI: import / submit / install go through the still-existing API, the review is done in the 待审核 screen);
 // personal-MCP approval gate. Screenshots at 1366 / 1440 / 390.
 // Run: npm run -w web build && node web/e2e/round4-market.mjs   (port 8866, data dir data/dev-market)
 import { mkdirSync, rmSync } from "node:fs";
@@ -79,7 +80,7 @@ try {
 	// ---------------------------------------------------------------- tabs: members do not see 待审核
 	await member.p.goto(`${base}/capabilities`);
 	await member.p.waitForSelector('[data-testid="tab-mine"]');
-	check("tabs: an ordinary member has 技能市场 / 我的技能 / 连接市场 / 我的连接 but no 待审核", (await member.p.locator('[data-testid="tab-market"]').count()) === 1 && (await member.p.locator('[data-testid="tab-mcp"]').count()) === 1 && (await member.p.locator('[data-testid="tab-connectors"]').count()) === 1 && (await member.p.locator('[data-testid="tab-review"]').count()) === 0);
+	check("tabs: an ordinary member has 技能市场 / 我的技能 / 我的连接 but no 待审核 and no 连接市场", (await member.p.locator('[data-testid="tab-market"]').count()) === 1 && (await member.p.locator('[data-testid="tab-mcp"]').count()) === 0 && (await member.p.locator('[data-testid="tab-connectors"]').count()) === 1 && (await member.p.locator('[data-testid="tab-review"]').count()) === 0);
 
 	// ---------------------------------------------------------------- upload by drag-drop (zip) + automated checks
 	await a.goto(`${base}/capabilities`);
@@ -189,15 +190,14 @@ try {
 	check("re-review: after approval the market shows v1.1.0", (await m.locator('[data-testid="market-skill"]').first().innerText()).includes("v1.1.0"));
 
 	// ---------------------------------------------------------------- MCP market: import → submit → review → install
+	const imp = await a.request.post(`${base}/api/market/mcp/import`, { data: { serverJson: mcpJson } });
+	const impJ = await imp.json();
+	check("mcp: a pasted server.json is imported as a draft with its install option (API)", imp.ok() && impJ.entry?.id && JSON.stringify(impJ.entry).includes("remote"), String(imp.status()));
+	const sub = await a.request.post(`${base}/api/market/mcp/${impJ.entry.id}/versions/${impJ.versionNo}/submit`, { data: { targetScope: "org" } });
+	check("mcp: submitted for review", sub.ok(), String(sub.status()));
 	await a.goto(`${base}/capabilities?tab=mcp`);
-	await a.click('[data-testid="mcp-import"]');
-	await a.fill('[data-testid="mcp-json"]', JSON.stringify(mcpJson));
-	await a.click('[data-testid="mcp-import-go"]');
-	await a.waitForSelector('[data-testid="mcp-detail"] [data-testid="mcp-options"]', { timeout: 15000 });
-	check("mcp: a pasted server.json is imported as a draft with its install option", (await a.locator('[data-testid="mcp-options"]').innerText()).includes("远程"));
-	await a.click('[data-testid="mcp-submit"]');
-	await a.click('[data-testid="mcp-submit-confirm"]');
-	await a.waitForFunction(() => !document.querySelector('[data-testid="mcp-submit-confirm"]'), null, { timeout: 15000 });
+	await a.waitForSelector('[data-testid="tab-mine"]');
+	check("removed 连接市场: ?tab=mcp lands on 我的连接 and no market of connections is rendered", (await a.locator('[data-testid="mcp-market"]').count()) === 0 && (await a.locator('[data-testid="connectors"], [data-testid="tab-connectors"][data-state="active"]').count()) > 0);
 	await r.goto(`${base}/capabilities?tab=review`);
 	await r.click('[data-testid="review-item"]');
 	await r.waitForSelector('[data-testid="mcp-info"]');
@@ -208,17 +208,9 @@ try {
 	await r.click('[data-testid="approve"]');
 	await r.click('[data-testid="confirm-ok"]');
 	await r.waitForSelector('[data-testid="review-screen"]', { state: "detached", timeout: 15000 });
-	await m.goto(`${base}/capabilities?tab=mcp`);
-	await m.waitForSelector('[data-testid="mcp-entry"]');
-	await shots(m, "market-mcp");
-	await m.click('[data-testid="mcp-entry"]');
-	await m.waitForSelector('[data-testid="mcp-install"]');
-	await m.click('[data-testid="mcp-install"]');
-	check("mcp install: the secret input is a password field", (await m.locator('[data-testid="input-Authorization"]').getAttribute("type")) === "password");
-	await m.fill('[data-testid="input-Authorization"]', `Bearer ${TOKEN}`);
-	await m.click('[data-testid="mcp-install-confirm"]');
-	await m.waitForSelector('[data-testid="install-result"]', { timeout: 20000 });
-	check("mcp install: connected", (await m.locator('[data-testid="install-result"]').innerText()).includes("已连接"));
+	const inst = await m.request.post(`${base}/api/market/mcp/${impJ.entry.id}/install`, { data: { target: "me", optionIndex: 0, secrets: { Authorization: `Bearer ${TOKEN}` } } });
+	const instJ = await inst.json();
+	check("mcp install: connected (API)", inst.ok() && instJ.connector?.status === "ready", `${inst.status()} ${instJ.connector?.status}`);
 	await m.goto(`${base}/capabilities?tab=connectors`);
 	await m.waitForSelector('[data-testid="connector"]');
 	const cardText = await m.locator('[data-testid="connector"]').first().innerText();
@@ -256,7 +248,7 @@ try {
 
 	// ---------------------------------------------------------------- layout sanity at narrow width
 	await a.setViewportSize({ width: 390, height: 844 });
-	for (const tab of ["market", "mine", "review", "mcp", "connectors"]) {
+	for (const tab of ["market", "mine", "review", "connectors"]) {
 		await a.goto(`${base}/capabilities?tab=${tab === "mine" ? "" : tab}`.replace("tab=&", "").replace(/\?$/, ""));
 		await a.waitForSelector('[data-testid="tab-mine"]');
 		await sleep(400);

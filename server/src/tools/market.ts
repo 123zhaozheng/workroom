@@ -8,6 +8,7 @@ import { dirname, join, sep } from "node:path";
 import type { AppContext, AuthzScope, Principal, Space } from "../core/contracts.ts";
 import type { Migration } from "../core/db.ts";
 import { HttpError, newId, nowIso } from "../core/http.ts";
+import { SKILL_ICON_RE } from "../../../shared/files.ts";
 import type { MarketMeDTO, MarketPolicyDTO, MarketScope, MarketSkillDetailDTO, MarketSkillSummaryDTO, MarketVersionDTO, PackageCheckDTO, PackageFileDTO, PackageFindingDTO, SkillManifestDTO, SubmissionDTO, SubmissionDetailDTO, SubmissionEventDTO, SubmissionKind, SubmissionState } from "../../../shared/files.ts";
 import { buildPackage, compareSemver, diffPackages, LIMITS, normalizeFiles, PackageError, sha256Hex, unzipPackage, type PackageFile } from "./skills-package.ts";
 import type { InstallRow, Resource, SkillRow, Skills, VersionRow } from "./skills.ts";
@@ -66,6 +67,11 @@ CREATE TABLE skill_conv_loaded (
   PRIMARY KEY (space_id, conversation_id, skill_id)
 );
 `,
+	},
+	{
+		version: 3,
+		name: "skills: author-chosen icon id",
+		sql: `ALTER TABLE skill_skills ADD COLUMN icon TEXT;`,
 	},
 ];
 
@@ -379,12 +385,13 @@ export class Market {
 			if (!id) {
 				id = newId("skl");
 				this.#db.run(
-					"INSERT INTO skill_skills (id, org_id, scope, owner_user_id, name, kind, latest_version_no, created_at, updated_at, slug, category, tags) VALUES (?, ?, 'personal', ?, ?, ?, 1, ?, ?, ?, ?, ?)",
-					id, p.orgId, p.userId, title, m.kind, now, now, m.name, m.category ?? null, JSON.stringify(m.tags),
+					"INSERT INTO skill_skills (id, org_id, scope, owner_user_id, name, kind, latest_version_no, created_at, updated_at, slug, category, tags, icon) VALUES (?, ?, 'personal', ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+					id, p.orgId, p.userId, title, m.kind, now, now, m.name, m.category ?? null, JSON.stringify(m.tags), m.icon ?? null,
 				);
 			} else {
 				n = skill!.latest_version_no + 1;
-				this.#db.run("UPDATE skill_skills SET latest_version_no = ?, kind = ?, category = ?, tags = ?, updated_at = ? WHERE id = ?", n, m.kind, m.category ?? null, JSON.stringify(m.tags), now, id);
+				// A new version only replaces the icon when its SKILL.md declares one (an icon picked in the UI is kept otherwise).
+				this.#db.run("UPDATE skill_skills SET latest_version_no = ?, kind = ?, category = ?, tags = ?, icon = COALESCE(?, icon), updated_at = ? WHERE id = ?", n, m.kind, m.category ?? null, JSON.stringify(m.tags), m.icon ?? null, now, id);
 			}
 			this.#db.run(
 				"INSERT INTO skill_versions (id, skill_id, version_no, kind, description, instructions, resources, entry, required_tools, required_permissions, change_note, source, validation, created_by, created_at, semver, package_sha256, package_size, manifest, checks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'package', NULL, ?, ?, ?, ?, ?, ?, ?)",
@@ -675,6 +682,17 @@ export class Market {
 		this.audit(p, "skill.force_publish", skillId, { versionNo, reason: "admin_direct" });
 	}
 
+	/** The author (or a market manager, for distributed skills) picks the card icon; null clears it back to the automatic one. */
+	async setIcon(p: Principal, skillId: string, icon: string | null): Promise<{ icon?: string }> {
+		const s = this.skills.skill(skillId);
+		if (!s || s.org_id !== p.orgId) throw new HttpError(404, "not_found", "技能不存在");
+		if (!(await this.skills.decide(p, "write", skillId)).allow) throw new HttpError(403, "forbidden", "只有技能的作者或市场管理员可以修改图标");
+		if (icon !== null && !SKILL_ICON_RE.test(String(icon))) throw new HttpError(400, "invalid_icon", "图标不合法");
+		this.#db.run("UPDATE skill_skills SET icon = ?, updated_at = updated_at WHERE id = ?", icon, skillId);
+		this.audit(p, "skill.icon", skillId, { icon });
+		return { icon: icon ?? undefined };
+	}
+
 	async unpublish(p: Principal, skillId: string, reason: string): Promise<MarketSkillSummaryDTO> {
 		await this.require(p, "skill.marketplace.manage", undefined, "只有技能市场管理员可以下架技能");
 		if (!reason?.trim()) throw new HttpError(400, "reason_required", "下架必须填写理由");
@@ -738,6 +756,7 @@ export class Market {
 			scope: s.scope as MarketScope,
 			scopeRef: s.scope_ref ?? undefined,
 			category: s.category ?? undefined,
+			icon: s.icon ?? undefined,
 			tags: JSON.parse(s.tags || "[]"),
 			kind: s.kind,
 			ownerUserId: s.owner_user_id,
