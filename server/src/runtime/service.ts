@@ -860,7 +860,7 @@ export class Runtime implements RuntimeService {
 			text: input.text,
 			userId: p.userId,
 			orgId: p.orgId,
-			...(mention ? { expertId: mention.id, expertName: mention.name, ...(mention.avatar ? { expertAvatar: mention.avatar } : {}) } : {}),
+			...(mention ? { expertId: mention.id, expertName: mention.name, ...(mention.avatar ? { expertAvatar: mention.avatar } : {}), expertAvatarConfig: mention.avatarConfig } : {}),
 			...(input.attachments?.length ? { attachments: input.attachments } : {}),
 			...(input.knowledgeRefs?.length ? { knowledgeRefs: input.knowledgeRefs } : {}),
 			...(input.via ? { via: input.via } : {}),
@@ -897,7 +897,7 @@ export class Runtime implements RuntimeService {
 		return this.submissionStatus(harness, conversationId, sub.id, context);
 	}
 
-	async #resolveMention(p: Principal, input: { text: string; expertId?: string }): Promise<{ id: string; name: string; avatar?: string; cfg: import("../../../shared/experts.ts").ExpertConfigDTO } | undefined> {
+	async #resolveMention(p: Principal, input: { text: string; expertId?: string }): Promise<{ id: string; name: string; avatar?: string; avatarConfig: import("../../../shared/bot-avatar/config.ts").AvatarConfig; cfg: import("../../../shared/experts.ts").ExpertConfigDTO } | undefined> {
 		if (!this.ctx.services.has("experts")) return undefined;
 		const svc = this.ctx.services.get("experts") as Experts;
 		let id = input.expertId;
@@ -907,7 +907,7 @@ export class Runtime implements RuntimeService {
 		const row = svc.resolve(p, id);
 		const cfg = row ? svc.effective(p, row) : undefined;
 		if (!row || !cfg) throw new HttpError(404, "expert_not_found", "专家不存在或无权使用");
-		return { id: row.id, name: cfg.name, ...(cfg.avatar ? { avatar: cfg.avatar } : {}), cfg };
+		return { id: row.id, name: cfg.name, ...(cfg.avatar ? { avatar: cfg.avatar } : {}), avatarConfig: svc.avatarConfigOf(row.id, cfg), cfg };
 	}
 
 	/**
@@ -1354,8 +1354,14 @@ export class Runtime implements RuntimeService {
 		const xd = await harness.snapshot(ExpertDoc, conv.id, context).catch(() => null);
 		const boundId = ad?.assistantId && ad.assistantId !== "builtin:workroom" ? ad.assistantId : undefined;
 		let avatar: string | undefined;
-		if (boundId && this.ctx.services.has("experts")) avatar = (this.ctx.services.get("experts") as Experts).row(boundId)?.avatar ?? undefined;
-		return { ...(boundId ? { boundId, boundName: ad?.name, ...(avatar ? { boundAvatar: avatar } : {}) } : {}), modelExplicit: xd ? xd.modelExplicit : true };
+		let avatarConfig: import("../../../shared/bot-avatar/config.ts").AvatarConfig | undefined;
+		if (boundId && this.ctx.services.has("experts")) {
+			const svc = this.ctx.services.get("experts") as Experts;
+			const row = svc.row(boundId);
+			avatar = row?.avatar ?? undefined;
+			if (row) avatarConfig = svc.avatarConfigOf(boundId, (row.avatar_config ? { avatarConfig: JSON.parse(row.avatar_config) } : undefined));
+		}
+		return { ...(boundId ? { boundId, boundName: ad?.name, ...(avatar ? { boundAvatar: avatar } : {}), ...(avatarConfig ? { boundAvatarConfig: avatarConfig } : {}) } : {}), modelExplicit: xd ? xd.modelExplicit : true };
 	}
 
 	async detail(p: Principal, spaceId: string, conversationId: number, context: Context) {

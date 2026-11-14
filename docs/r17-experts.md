@@ -159,3 +159,21 @@
 | 首页不再有助手选择器（`@` 取代）；设置里的「助手」页保留，用于团队成员等旧字段 | `HomePage.tsx` |
 
 截图与检查脚本：`web/e2e/r17-experts.mjs`（17 项）。
+
+## 专家头像（bot avatar）
+
+所有专家头像都是 [open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar)（MIT）风格：一个柔和的物体剪影 + 两只眼睛，带轻微立体感。渲染器 vendor 在 `shared/bot-avatar/`（含原 `LICENSE`，改动与来源见该目录 `NOTICE.md`），画布挂载在 `web/src/lib/bot-avatar/`。[bloub](https://github.com/jeremy-prt/bloub)（MIT）只作配色/造型参考，没有拷贝代码。
+
+**配置字段** `avatarConfig`（专家配置的一部分，随版本快照保存；`PATCH /experts/:id` 传 `null` 恢复默认）：
+
+```json
+{ "shape": "cat", "color": "#f8a01c" }
+{ "shape": "cat", "color": "#f8a01c", "eyeColor": "#151515", "eyes": { "x": 50, "y": 43, "spacing": 17, "scale": 1.1 } }
+{ "shape": "custom", "color": "#1f7cf2", "custom": { "version": 1, "id": "box", "name": "Box", "body": { "path": "M20 20 H80 V80 H20 Z" }, "eyes": { "x": 50, "y": 46, "spacing": 15, "scale": 1 } } }
+```
+
+- `shape`：22 个预设造型（见 `AVATAR_PRESETS`）或 `custom`（自带 open-bot-avatar v1 定义，同样校验）；`color` / `eyeColor`：`#rrggbb`（`#rgb` 会规范化）；`eyes` 微调眼睛，必须落在造型内。未知字段、未知造型、坏颜色一律 400 `invalid_avatar`。
+- **默认与兼容**：新专家不传时按专家 id 稳定哈希挑造型和颜色（亮色系），旧数据（没有该字段的行、旧版本快照、从旧助手迁移来的专家、存了坏 JSON 的行）读取时用同一个函数按 id 给默认值，所以同一个专家在任何地方长得一样。旧的文字头像字段 `avatar` 仍保留在数据里，只是不再绘制。
+- **动效与性能**：默认 `calm`——身体不动，只眨眼；两次眨眼之间没有任何定时器或帧。专家工作（会话在运行）时切到完整的 `thinking` 动画（30 fps）。屏幕外（IntersectionObserver）和标签页隐藏时暂停；系统或应用内“减少动效”时只画一帧。
+- **深色模式**：近黑色的身体在深色页面自动换成浅色身体，眼睛不变。
+- **产品 logo / 无专家时的助手头像**：同一套造型里的 `chat`（对话气泡）；侧栏、登录页、首页是 `BrandMark`，favicon 是 `web/public/favicon.svg`，`web/public/logo.svg` 是无底板版本。
