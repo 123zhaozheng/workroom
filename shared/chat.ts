@@ -56,6 +56,8 @@ export interface AgentDTO {
 	readonly tools: readonly string[];
 	readonly maxTurns?: number;
 	readonly assistant?: AssistantDTO;
+	/** Round 17: the expert bound to the conversation (and whether the user chose the model explicitly). */
+	readonly expert?: import("./experts.ts").ConversationExpertDTO;
 }
 
 // ---------------------------------------------------------------- entries
@@ -89,6 +91,8 @@ export interface UserEntryDTO extends EntryBase {
 	readonly authorName?: string;
 	readonly attachments?: readonly AttachmentRef[];
 	readonly knowledgeRefs?: readonly KnowledgeRef[];
+	/** Round 17: the expert @-mentioned in this message (it answers this message). */
+	readonly expert?: { readonly id: string; readonly name: string; readonly avatar?: string };
 	/** Set for inputs written by the runtime itself (subagent report, automation). */
 	readonly via?: { readonly kind: "automation" | "subagent_report" | "delegate" | "approval_resume"; readonly id?: string };
 	/**
@@ -263,6 +267,8 @@ export interface SendMessageRequest {
 	readonly requestId: string;
 	readonly attachments?: readonly AttachmentRef[];
 	readonly knowledgeRefs?: readonly KnowledgeRef[];
+	/** Round 17: @expert for this message only. */
+	readonly expertId?: string;
 	/** auto (default) = steer the running work when busy, start a run when idle. */
 	readonly mode?: SendMode;
 }

@@ -115,7 +115,8 @@ export class AssistantStore {
 
 	list(p: Principal): AssistantDTO[] {
 		const rows = this.#ctx.db.all<Row>("SELECT * FROM rt_assistants WHERE archived_at IS NULL AND org_id = ? AND (scope = 'org' OR owner_user_id = ?) ORDER BY created_at", p.orgId, p.userId);
-		return [BUILTIN_ASSISTANT, ...rows.map((r) => this.#dto(r))];
+		// Round 17: the built-in 「Workroom 助手」 is no longer listed (no expert = the default general agent); its id still resolves for old conversations.
+		return rows.map((r) => this.#dto(r));
 	}
 
 	#validate(b: any, partial: boolean) {

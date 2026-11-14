@@ -573,6 +573,8 @@ export interface SubmissionDetailDTO extends SubmissionDTO {
 	readonly events: readonly SubmissionEventDTO[];
 	/** MCP submissions: summary of what would be installed. */
 	readonly mcp?: McpSubmissionInfoDTO;
+	/** Expert submissions: the configuration under review (the diff against the previous published version is in `diff`). */
+	readonly expert?: import("./experts.ts").ExpertSubmissionInfoDTO;
 }
 
 export interface MarketPolicyDTO {

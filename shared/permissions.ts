@@ -40,7 +40,8 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
 	{ id: "sandbox", label: "沙箱", description: "沙箱执行与浏览器" },
 	{ id: "automation", label: "自动化", description: "创建自动化，以及以他人身份运行" },
 	{ id: "project", label: "项目", description: "创建项目与管理项目" },
-	{ id: "assistant", label: "助手", description: "发布组织级助手" },
+	{ id: "assistant", label: "助手", description: "发布组织级助手（旧接口；新的入口是「专家」）" },
+	{ id: "expert", label: "专家", description: "创建专家，并把专家提交到部门或组织（审查沿用统一的审查员权限）" },
 	{ id: "credential", label: "凭据", description: "项目/组织级凭据的保存、使用与撤销（任何人都读不到明文）" },
 ];
 
@@ -129,6 +130,9 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	p("project.manage", "project", "管理项目", "管理项目设置与成员（不含查看项目内容）；项目所有者默认拥有", OP, "sensitive"),
 	// ---- 助手
 	p("assistant.publish.org", "assistant", "发布组织助手", "创建、修改和删除组织级助手", O, "sensitive"),
+	// ---- 专家（round 17）：审查/下架沿用 market.review / market.manage
+	p("expert.create", "expert", "创建专家", "创建和编辑仅自己使用的专家"),
+	p("expert.publish", "expert", "发布专家", "把专家提交到部门或组织（经审查员通过后上架）", OD, "sensitive"),
 	// ---- 凭据（round 7b，增量）
 	p("credential.manage.project", "credential", "管理项目凭据", "把凭据保存为项目级、轮换并撤销项目级凭据；项目成员可通过代理使用，没有任何接口返回明文", OP, "sensitive"),
 	p("credential.manage.org", "credential", "管理组织凭据", "保存、轮换并撤销组织级凭据，撤销或停用组织内任何人的凭据（看不到明文）", O, "critical"),
@@ -168,6 +172,7 @@ const MEMBER_PERMS = [
 	"share.external.create",
 	"skill.use",
 	"skill.upload",
+	"expert.create",
 	"mcp.connector.add_personal",
 	"sandbox.use",
 	"sandbox.browser",
@@ -213,6 +218,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
 			"kb.publish",
 			"kb.govern",
 			"skill.publish",
+			"expert.publish",
 			"market.review",
 			"mcp.connector.add_org",
 		],

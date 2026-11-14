@@ -95,6 +95,7 @@ export function entryDTO(e: EntryRecord, authorName?: (userId: string) => string
 				authorName: d.userId && authorName ? authorName(d.userId) : undefined,
 				...(d.attachments?.length ? { attachments: d.attachments } : {}),
 				...(d.knowledgeRefs?.length ? { knowledgeRefs: d.knowledgeRefs } : {}),
+				...(d.expertId ? { expert: { id: d.expertId, name: d.expertName ?? "专家", ...(d.expertAvatar ? { avatar: d.expertAvatar } : {}) } } : {}),
 				...(d.via ? { via: { kind: d.via.kind, id: d.via.automationId ?? d.via.id } } : {}),
 				...(e.kind === "wr.input-unplaced" ? { placed: false } : {}),
 				...(typeof (msg as any)?.timestamp === "number" ? { timestamp: (msg as any).timestamp } : typeof d.at === "number" ? { timestamp: d.at } : {}),

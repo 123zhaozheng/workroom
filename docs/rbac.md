@@ -109,6 +109,9 @@ const why = await authz.explain(principal, "member.disable");  // { allow, becau
 | **审查** | | | |||||||||
 | `market.review` | 审查 | 组织/部门 | 敏感 | ● | ● |  |  | ● | ● |  |  |
 | `market.manage` | 管理市场 | 组织 | 敏感 | ● | ● |  |  |  | ● |  |  |
+| **专家** | | | |||||||||
+| `expert.create` | 创建专家 | 组织 |  | ● | ● |  |  |  |  | ● |  |
+| `expert.publish` | 发布专家 | 组织/部门 | 敏感 | ● | ● |  |  | ● |  |  |  |
 | **沙箱** | | | |||||||||
 | `sandbox.use` | 使用沙箱 | 组织 |  | ● | ● |  |  |  |  | ● |  |
 | `sandbox.network` | 沙箱联网（已停用，不再检查） | 组织 | 敏感 | ● | ● |  |  |  |  |  |  |

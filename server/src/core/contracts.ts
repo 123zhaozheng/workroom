@@ -109,6 +109,10 @@ export interface InputEntryData {
 	readonly attachments?: readonly { fileId: string; versionId: string; name: string }[];
 	/** Knowledge bases / docs referenced with chips. */
 	readonly knowledgeRefs?: readonly { kbId: string; docId?: string; name: string }[];
+	/** Round 17: the expert @-mentioned for this input (id + display name at the time). */
+	readonly expertId?: string;
+	readonly expertName?: string;
+	readonly expertAvatar?: string;
 	readonly via?: { kind: "automation"; automationId: string; runId: string } | { kind: "delegate" | "subagent_report" | "approval_resume"; id: string };
 }
 
@@ -130,7 +134,7 @@ export interface RuntimeService {
 	spaceOfConversation(spaceId: string, conversationId: number): Promise<Space | null>;
 	/** Admit a user input on behalf of a principal (used by API and automations). requestId dedupes. */
 	submitInput(principal: Principal, spaceId: string, conversationId: number, input: InputEntryData & { requestId: string; whenBusy?: "steer" | "followUp" | "reject" }, context: ChordContext): Promise<{ submissionId: number }>;
-	createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string }, context: ChordContext): Promise<{ conversationId: number }>;
+	createConversation(principal: Principal, spaceId: string, options: { title?: string; projectId?: string; kind?: "chat" | "automation"; model?: ModelRef; assistantId?: string; expertId?: string }, context: ChordContext): Promise<{ conversationId: number }>;
 	/** Like actorForTool, resolving the space from the storage's `wr.space` doc; `input` = first placed input of the current run. */
 	actorForToolCall(api: ToolApiLike, context: ChordContext): Promise<ToolActor & { input?: InputEntryData }>;
 	inputForTool(api: ToolApiLike, context: ChordContext): Promise<InputEntryData | undefined>;

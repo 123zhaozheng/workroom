@@ -64,7 +64,7 @@ export class SkillsBackend implements VfsBackend {
 		const out: Entry[] = [];
 		const slugs = new Set<string>();
 		const space: Space = ctx.space;
-		for (const a of await this.#skills.active(p, space)) {
+		for (const a of await this.#skills.active(p, space, ctx.conversationId)) {
 			const slug = this.#market.slugOf(a.skill);
 			slugs.add(slug);
 			out.push({ slug, skill: a.skill, version: a.version, owned: a.skill.scope === "personal" && a.skill.owner_user_id === p.userId, via: a.via });
