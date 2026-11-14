@@ -3,7 +3,7 @@
 // Approve / request changes / reject always ask first; reviewers cannot decide their own submissions (the server enforces it too).
 import { ArrowLeft, Check, CheckCircle2, CircleX, MessageSquareWarning, TriangleAlert, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { MarketMeDTO, SubmissionDTO, SubmissionDetailDTO } from "@shared/files";
+import type { MarketMeDTO, ReviewFilterKind, SubmissionDTO, SubmissionDetailDTO } from "@shared/files";
 import { post } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useSession } from "@/lib/session";
@@ -16,9 +16,11 @@ import { Fold } from "@/features/admin/common";
 import { useConfirm } from "@/features/admin/confirm";
 import { DiffView, FileTree, FileViewer, FindingList, PermChips, Section, SCOPE, StateBadge, checkVerdict, permExplain, permText, useAct } from "./common";
 
+const KIND_LABEL: Record<ReviewFilterKind, string> = { skill: "技能", mcp: "连接", expert: "专家" };
+
 export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: number) => void }) {
 	const [view, setView] = useState<"queue" | "history">("queue");
-	const [kind, setKind] = useState<"" | "skill" | "mcp">("");
+	const [kind, setKind] = useState<"" | ReviewFilterKind>("");
 	const [sel, setSel] = useState<string>();
 	const list = useApi<{ submissions: SubmissionDTO[] }>(`/market/submissions?view=${view}${kind ? `&kind=${kind}` : ""}`, { pollMs: 15000 });
 	const items = list.data?.submissions ?? [];
@@ -38,8 +40,11 @@ export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: nu
 					</div>
 					<Select value={kind} onChange={(e) => (setKind(e.target.value as typeof kind), setSel(undefined))} aria-label="类型" className="h-8 text-sm">
 						<option value="">全部类型</option>
-						<option value="skill" disabled={!me.canReviewSkills}>技能</option>
-						<option value="mcp" disabled={!me.canReviewMcp}>连接</option>
+						{me.reviewKinds.map((k) => (
+							<option key={k} value={k}>
+								{KIND_LABEL[k]}
+							</option>
+						))}
 					</Select>
 				</div>
 				<Loadable state={list} what="审核队列">
@@ -52,7 +57,7 @@ export function ReviewQueue({ me, onCount }: { me: MarketMeDTO; onCount?: (n: nu
 									<button type="button" onClick={() => setSel(s.id)} data-testid="review-item" data-id={s.id} className={cn("w-full rounded-xl border bg-surface p-3 text-left hover:bg-surface-2", sel === s.id ? "border-accent" : "border-border")} aria-current={sel === s.id ? "true" : undefined}>
 										<div className="flex items-center gap-2">
 											<span className="min-w-0 flex-1 truncate text-sm font-medium">{s.subjectName}</span>
-											<Badge>{s.kind === "skill" ? "技能" : "连接"}</Badge>
+											<Badge>{s.kind === "skill" ? "技能" : s.kind === "expert" ? "专家" : "连接"}</Badge>
 										</div>
 										<div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
 											<span>v{s.semver ?? s.versionNo ?? "—"}</span>

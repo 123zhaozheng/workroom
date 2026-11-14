@@ -74,8 +74,8 @@ try {
 	await register(a, base, { email: `mk-${Date.now()}@example.com`, name: "组织管理员" });
 	const reviewer = await newUser(a, "审核员乙");
 	const member = await newUser(a, "成员丙");
-	const assign = await a.request.post(`${base}/api/admin/role-assignments`, { data: { subject: { kind: "user", id: reviewer.userId }, roleId: "builtin:skill_reviewer" } });
-	check("setup: reviewer holds the 技能审核员 role (skill.review / mcp.connector.review)", assign.ok(), String(assign.status()));
+	const assign = await a.request.post(`${base}/api/admin/role-assignments`, { data: { subject: { kind: "user", id: reviewer.userId }, roleId: "builtin:reviewer" } });
+	check("setup: reviewer holds the 审查员 role (skill.review / mcp.connector.review)", assign.ok(), String(assign.status()));
 
 	// ---------------------------------------------------------------- tabs: members do not see 待审核
 	await member.p.goto(`${base}/capabilities`);

@@ -121,6 +121,27 @@ CREATE TABLE id_project_shares (project_id TEXT NOT NULL REFERENCES id_projects(
 CREATE INDEX id_project_shares_user ON id_project_shares(user_id, org_id);
 `,
 	},
+	{
+		version: 6,
+		name: "round 17: 审查员 / 审查员 → 统一的「审查员」(market.review / market.manage / builtin:reviewer)",
+		// Rewrites stored ids to the unified ones (idempotent: UPDATE OR IGNORE + deletes the leftovers that would duplicate an existing row).
+		//  - role assignments / invites of builtin:skill_reviewer → builtin:reviewer
+		//  - direct grants/denies of skill.review | mcp.connector.review → market.review, skill.marketplace.manage → market.manage
+		//  - custom roles: permission lists are rewritten with the new ids (deduplicated)
+		sql: `
+UPDATE OR IGNORE id_role_assignments SET role_id = 'builtin:reviewer' WHERE role_id = 'builtin:skill_reviewer';
+DELETE FROM id_role_assignments WHERE role_id = 'builtin:skill_reviewer';
+UPDATE id_invites SET role_id = 'builtin:reviewer' WHERE role_id = 'builtin:skill_reviewer';
+UPDATE OR IGNORE id_user_grants SET permission = 'market.review' WHERE permission IN ('skill.review', 'mcp.connector.review');
+DELETE FROM id_user_grants WHERE permission IN ('skill.review', 'mcp.connector.review');
+UPDATE OR IGNORE id_user_grants SET permission = 'market.manage' WHERE permission = 'skill.marketplace.manage';
+DELETE FROM id_user_grants WHERE permission = 'skill.marketplace.manage';
+UPDATE id_roles SET permissions = (
+  SELECT json_group_array(DISTINCT CASE value WHEN 'skill.review' THEN 'market.review' WHEN 'mcp.connector.review' THEN 'market.review' WHEN 'skill.marketplace.manage' THEN 'market.manage' ELSE value END)
+  FROM json_each(id_roles.permissions)
+) WHERE permissions LIKE '%skill.review%' OR permissions LIKE '%mcp.connector.review%' OR permissions LIKE '%skill.marketplace.manage%';
+`,
+	},
 ];
 
 export function hashPassword(password: string): string {

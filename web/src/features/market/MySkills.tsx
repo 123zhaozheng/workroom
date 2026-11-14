@@ -271,7 +271,7 @@ function VersionSubmit({ skill, onChanged }: { skill: SkillDTO; onChanged: () =>
 							</div>
 						) : null}
 						<div>
-							<Label htmlFor="sn2">给审核员的说明（可选）</Label>
+							<Label htmlFor="sn2">给审查员的说明（可选）</Label>
 							<Textarea id="sn2" rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
 						</div>
 						{err ? <p className="text-danger">{err}</p> : null}

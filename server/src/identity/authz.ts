@@ -13,7 +13,7 @@
 // Scope containment: org contains everything in the org; department D contains D and its sub-departments; project P = P.
 import type { AppContext, AuthzExplanation, AuthzScope, AuthzService, Principal } from "../core/contracts.ts";
 import { HttpError } from "../core/http.ts";
-import { BASE_ROLE_IDS, BUILTIN_ROLES, PERMISSIONS, builtinRole, permissionDef, type EffectivePermissionDTO, type PermissionScopeKind } from "../../../shared/permissions.ts";
+import { BASE_ROLE_IDS, BUILTIN_ROLES, PERMISSIONS, builtinRole, canonicalPermission, permissionDef, type EffectivePermissionDTO, type PermissionScopeKind } from "../../../shared/permissions.ts";
 import type { Identity } from "./module.ts";
 
 type Effect = "allow" | "deny";
@@ -116,7 +116,8 @@ export class Authz implements AuthzService {
 	}
 
 	// ------------------------------------------------------------------ pure decision
-	decide(a: Access, permission: string, scopeIn?: AuthzScope): AuthzExplanation {
+	decide(a: Access, permissionIn: string, scopeIn?: AuthzScope): AuthzExplanation {
+		const permission = canonicalPermission(permissionIn); // 旧权限 id（skill.review / mcp.connector.review / skill.marketplace.manage）按统一权限求值
 		const def = permissionDef(permission);
 		if (!def) return { allow: false, because: [{ source: "default", detail: `未知权限 ${permission}`, effect: "deny" }] };
 		const scope = normScope(scopeIn);

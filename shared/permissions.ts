@@ -34,8 +34,9 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
 	{ id: "knowledge", label: "知识库", description: "创建个人/部门/企业知识库、发布与治理" },
 	{ id: "file", label: "文件导出", description: "把文件带出工作区" },
 	{ id: "share", label: "外部分享", description: "创建公开只读链接与治理他人创建的链接" },
-	{ id: "skill", label: "技能", description: "使用、上传、发布、审核技能与管理市场" },
-	{ id: "mcp", label: "MCP 与连接器", description: "添加个人/组织连接器，审核连接器" },
+	{ id: "skill", label: "技能", description: "使用、上传、发布技能" },
+	{ id: "mcp", label: "MCP 与连接器", description: "添加个人/组织连接器" },
+	{ id: "review", label: "审查", description: "审查技能、连接器、专家等提交的内容，管理市场（不区分对象类型）" },
 	{ id: "sandbox", label: "沙箱", description: "沙箱执行与浏览器" },
 	{ id: "automation", label: "自动化", description: "创建自动化，以及以他人身份运行" },
 	{ id: "project", label: "项目", description: "创建项目与管理项目" },
@@ -109,12 +110,12 @@ export const PERMISSIONS: readonly PermissionDef[] = [
 	p("skill.use", "skill", "使用技能", "在对话中使用已启用的技能"),
 	p("skill.upload", "skill", "上传个人技能", "上传仅自己使用的技能"),
 	p("skill.publish", "skill", "发布技能", "把技能发布给部门或组织（需经审核时进入待审）", OD, "sensitive"),
-	p("skill.review", "skill", "审核技能", "审批或驳回提交的技能", OD, "sensitive"),
-	p("skill.marketplace.manage", "skill", "管理技能市场", "上下架市场条目，设置来源与可见范围", O, "sensitive"),
 	// ---- MCP 与连接器
 	p("mcp.connector.add_personal", "mcp", "添加个人连接器", "添加仅自己使用的 MCP 连接器"),
 	p("mcp.connector.add_org", "mcp", "添加组织连接器", "添加供组织或部门使用的连接器（含系统连接）", OD, "sensitive"),
-	p("mcp.connector.review", "mcp", "审核连接器", "审批或驳回连接器与工具策略变更", OD, "sensitive"),
+	// ---- 审查（统一：技能 / 连接器 / 专家 …，后续新增的对象类型沿用同一权限）
+	p("market.review", "review", "审查", "审批、驳回或要求修改提交的技能、连接器、专家等内容（可按部门授权）", OD, "sensitive"),
+	p("market.manage", "review", "管理市场", "下架、重新上架与强制发布市场条目，设置市场策略，安装到整个组织", O, "sensitive"),
 	// ---- 沙箱
 	p("sandbox.use", "sandbox", "使用沙箱", "在云端沙箱执行代码与命令"),
 	p("sandbox.network", "sandbox", "沙箱联网（已停用）", "已停用：沙箱网络不再由 Workroom 控制，运行代码不再检查此权限（保留一版以兼容已有角色授权，之后移除）", O, "sensitive"),
@@ -212,17 +213,17 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
 			"kb.publish",
 			"kb.govern",
 			"skill.publish",
-			"skill.review",
+			"market.review",
 			"mcp.connector.add_org",
 		],
 		scopes: ["department"],
 	},
 	{
-		id: "builtin:skill_reviewer",
-		key: "skill_reviewer",
-		name: "技能审核员",
-		description: "审核技能与 MCP 连接器的发布申请，管理技能市场。",
-		permissions: ["skill.review", "skill.marketplace.manage", "mcp.connector.review", "skill.use", "dept.view"],
+		id: "builtin:reviewer",
+		key: "reviewer",
+		name: "审查员",
+		description: "审查技能、连接器、专家等发布申请（不区分类型），管理市场。",
+		permissions: ["market.review", "market.manage", "skill.use", "dept.view"],
 		scopes: ["org", "department"],
 	},
 	{ id: "builtin:member", key: "member", name: "普通成员", description: "日常使用：对话、模型、个人知识库/技能/连接器、沙箱、自动化、创建项目与外部分享。", permissions: MEMBER_PERMS, scopes: ["org"] },
@@ -238,8 +239,26 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
 
 const ROLE_BY_ID = new Map(BUILTIN_ROLES.map((r) => [r.id, r]));
 export function builtinRole(id: string): BuiltinRoleDef | undefined {
-	return ROLE_BY_ID.get(id);
+	return ROLE_BY_ID.get(canonicalRoleId(id));
 }
+
+// ------------------------------------------------------------------ legacy aliases (审查员统一，round 17)
+// 「审查员 / 审查员」合并为统一的「审查员」。旧权限 id 与旧内置角色 id 仍被接受（API 输入、旧脚本），一律解析成新的；
+// 数据库里已有的授权由 identity migration v6 改写，所以存储里不会再出现旧 id。
+/** old permission id → unified permission id */
+export const LEGACY_PERMISSION_ALIASES: Readonly<Record<string, string>> = {
+	"skill.review": "market.review",
+	"mcp.connector.review": "market.review",
+	"skill.marketplace.manage": "market.manage",
+};
+/** old built-in role id → current built-in role id */
+export const LEGACY_ROLE_ALIASES: Readonly<Record<string, string>> = { "builtin:skill_reviewer": "builtin:reviewer" };
+export const canonicalPermission = (id: string): string => LEGACY_PERMISSION_ALIASES[id] ?? id;
+export const canonicalRoleId = (id: string): string => LEGACY_ROLE_ALIASES[id] ?? id;
+
+/** Object kinds that go through 提交 → 审查 → 发布. Unified reviewers cover all of them; 连接器（connector）目前就是 mcp。 */
+export type ReviewKind = "skill" | "mcp" | "expert";
+export const REVIEW_KIND_LABEL: Readonly<Record<ReviewKind, string>> = { skill: "技能", mcp: "连接", expert: "专家" };
 /** Legacy Principal.orgRole → built-in role id. */
 export const LEGACY_ROLE_TO_BUILTIN: Readonly<Record<string, string>> = { owner: "builtin:owner", admin: "builtin:admin", member: "builtin:member" };
 /** Built-in roles that act as the "base" role of a member at org scope (exactly one is held). */

@@ -301,9 +301,9 @@ export class McpManager {
 		if (!r) return { allow: false, reason: "not_found" };
 		if (r.org_id !== p.orgId) return { allow: false, reason: "other_org" };
 		if (r.scope === "personal") return r.owner_user_id === p.userId ? { allow: true, reason: "owner" } : { allow: false, reason: "personal_connector" };
-		// Organisation connectors are managed by whoever may add them (mcp.connector.add_org) or review them (mcp.connector.review).
+		// Organisation connectors are managed by whoever may add them (mcp.connector.add_org) or review them (market.review).
 		const market = this.#ctx.services.get("market") as Market;
-		const manager = (await market.can(p, "mcp.connector.add_org")) || (await market.can(p, "mcp.connector.review"));
+		const manager = (await market.can(p, "mcp.connector.add_org")) || (await market.can(p, "market.review"));
 		if (action === "read" || action === "use") {
 			if (r.access === "admins" && !manager) return { allow: false, reason: "admins_only" };
 			return { allow: true, reason: "org_member" };

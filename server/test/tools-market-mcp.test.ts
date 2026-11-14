@@ -38,7 +38,7 @@ async function setup(config: Record<string, unknown> = { secretKey: "market-mcp-
 	const member = await orgMember(t, admin, "mm-member@example.com");
 	const other = await orgMember(t, admin, "mm-other@example.com");
 	const reviewer = await orgMember(t, admin, "mm-reviewer@example.com");
-	await t.json("POST", "/api/admin/role-assignments", { token: admin.token, json: { subject: { kind: "user", id: reviewer.me.userId }, roleId: "builtin:skill_reviewer" } });
+	await t.json("POST", "/api/admin/role-assignments", { token: admin.token, json: { subject: { kind: "user", id: reviewer.me.userId }, roleId: "builtin:reviewer" } });
 	const mgr = t.app.ctx.services.get("mcp") as McpManager;
 	const actorFor = (u: { me: any }) => fixedActor(t.app.ctx, u.me.userId, u.me.orgId, t.app.ctx.services.get("identity").personalSpace(u.me.userId, u.me.orgId).id);
 	return { t, fx, hits: () => hits, admin, member, other, reviewer, mgr, actorFor, close: async () => { await t.dispose(); await fx.close(); delete process.env.WORKROOM_URL_ALLOWLIST; } };

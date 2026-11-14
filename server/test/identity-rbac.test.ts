@@ -41,11 +41,11 @@ test("catalog integrity: unique ids, groups, Chinese labels, valid scopes, role 
 	}
 	for (const g of PERMISSION_GROUPS) assert.ok(PERMISSIONS.some((p) => p.group === g.id), `group ${g.id} is not empty`);
 	// Every area the product asks for exists.
-	for (const need of ["member.disable", "skill.review", "model.provider.manage", "mcp.connector.review", "sandbox.network", "sandbox.browser", "automation.run_as_others", "share.external.create", "file.export", "kb.create.department", "stats.department.view", "audit.view", "trace.view", "budget.manage", "project.manage", "role.assign", "grant.manage"]) assert.ok(ids.includes(need), need);
+	for (const need of ["member.disable", "market.review", "market.manage", "model.provider.manage", "sandbox.network", "sandbox.browser", "automation.run_as_others", "share.external.create", "file.export", "kb.create.department", "stats.department.view", "audit.view", "trace.view", "budget.manage", "project.manage", "role.assign", "grant.manage"]) assert.ok(ids.includes(need), need);
 	for (const r of BUILTIN_ROLES) for (const p of r.permissions) assert.ok(ids.includes(p), `${r.id} references unknown ${p}`);
 	assert.equal(BUILTIN_ROLES.length, 8);
 	assert.deepEqual([...builtinRole("builtin:owner")!.permissions].sort(), [...ids].sort(), "owner holds every permission");
-	assert.deepEqual(BUILTIN_ROLES.map((r) => r.name), ["组织所有者", "组织管理员", "安全审计员", "计费管理员", "部门管理员", "技能审核员", "普通成员", "访客"]);
+	assert.deepEqual(BUILTIN_ROLES.map((r) => r.name), ["组织所有者", "组织管理员", "安全审计员", "计费管理员", "部门管理员", "审查员", "普通成员", "访客"]);
 });
 
 test("built-in roles: each role's effective permissions match its definition (incl. via /me/permissions and the API)", async () => {
@@ -56,7 +56,7 @@ test("built-in roles: each role's effective permissions match its definition (in
 		await assign(t, owner, users.guest!.me.userId, "builtin:guest");
 		await assign(t, owner, users.auditor!.me.userId, "builtin:auditor");
 		await assign(t, owner, users.billing!.me.userId, "builtin:billing");
-		await assign(t, owner, users.reviewer!.me.userId, "builtin:skill_reviewer");
+		await assign(t, owner, users.reviewer!.me.userId, "builtin:reviewer");
 		const az = authzOf(t);
 		const held = async (u: U) => {
 			const p = await principal(t, u);
@@ -72,7 +72,7 @@ test("built-in roles: each role's effective permissions match its definition (in
 		assert.deepEqual(await held(users.guest!), expectSet("builtin:guest"));
 		assert.deepEqual(await held(users.auditor!), expectSet("builtin:member", "builtin:auditor"));
 		assert.deepEqual(await held(users.billing!), expectSet("builtin:member", "builtin:billing"));
-		assert.deepEqual(await held(users.reviewer!), expectSet("builtin:member", "builtin:skill_reviewer"));
+		assert.deepEqual(await held(users.reviewer!), expectSet("builtin:member", "builtin:reviewer"));
 		// Guest: read-only — no sandbox, no external share, no export, no project/automation creation.
 		const g = await held(users.guest!);
 		for (const nope of ["sandbox.use", "sandbox.network", "sandbox.browser", "share.external.create", "file.export", "project.create", "automation.create", "skill.upload"]) assert.equal(g.has(nope), false, nope);
@@ -341,10 +341,10 @@ test("no privilege escalation: nobody grants, assigns, invites or edits roles be
 		// 部门管理员 cannot hand out permissions they lack (auditor / admin / billing roles; direct grants need grant.manage).
 		const da = users.da!;
 		await assign(t, da, users.victim!.me.userId, "builtin:auditor", { kind: "department", id: d }, 400); // auditor is org-scope only
-		await assign(t, da, users.victim!.me.userId, "builtin:skill_reviewer", { kind: "department", id: d }, 403); // holds skill.review but NOT skill.marketplace.manage
-		const { role: ok } = await t.json("POST", "/api/admin/roles", { token: owner.token, json: { name: "部门技能审核", permissions: ["skill.review", "kb.publish"] } });
+		await assign(t, da, users.victim!.me.userId, "builtin:reviewer", { kind: "department", id: d }, 403); // holds market.review but NOT market.manage
+		const { role: ok } = await t.json("POST", "/api/admin/roles", { token: owner.token, json: { name: "部门技能审核", permissions: ["market.review", "kb.publish"] } });
 		await assign(t, da, users.victim!.me.userId, ok.id, { kind: "department", id: d });
-		const { role: big } = await t.json("POST", "/api/admin/roles", { token: owner.token, json: { name: "大权限", permissions: ["skill.review", "audit.view"] } });
+		const { role: big } = await t.json("POST", "/api/admin/roles", { token: owner.token, json: { name: "大权限", permissions: ["market.review", "audit.view"] } });
 		const r = await assign(t, da, users.victim!.me.userId, big.id, { kind: "department", id: d }, 403);
 		assert.equal(r.error?.code ?? r.code, "privilege_escalation");
 		await assign(t, da, users.victim!.me.userId, ok.id, { kind: "org" }, 403); // no org-level authority
@@ -430,8 +430,8 @@ test("explain: reports role + scope, department inheritance, group/department su
 		assert.equal((await az.explain(await principal(t, owner), "model.provider.manage")).because[0]!.source, "owner");
 		assert.equal((await az.explain(pa, "does.not.exist")).allow, false);
 		// Role granted to a department subject / a user group reaches members (and sub-department members) and says why.
-		await t.json("POST", "/api/admin/role-assignments", { token: owner.token, json: { subject: { kind: "department", id: top }, roleId: "builtin:skill_reviewer", scope: { kind: "org" } } });
-		const pa2 = await az.explain(pa, "skill.review");
+		await t.json("POST", "/api/admin/role-assignments", { token: owner.token, json: { subject: { kind: "department", id: top }, roleId: "builtin:reviewer", scope: { kind: "org" } } });
+		const pa2 = await az.explain(pa, "market.review");
 		assert.equal(pa2.allow, true);
 		assert.match(pa2.because.map((b) => b.detail).join("|"), /经部门「分部」获得|经部门「总部」获得/);
 		const { group } = await t.json("POST", "/api/admin/groups", { token: owner.token, json: { name: "报表组" } });
@@ -448,7 +448,7 @@ test("explain: reports role + scope, department inheritance, group/department su
 		assert.equal(http.allow, true);
 		const access = await t.json("GET", `/api/admin/members/${users.a!.me.userId}/access`, { token: owner.token });
 		assert.ok(access.access.assignments.some((x: any) => x.roleId === "builtin:dept_admin" && x.via === "direct"));
-		assert.ok(access.access.assignments.some((x: any) => x.roleId === "builtin:skill_reviewer" && x.via === "department"));
+		assert.ok(access.access.assignments.some((x: any) => x.roleId === "builtin:reviewer" && x.via === "department"));
 		assert.equal(access.access.scoped.length >= 1, true);
 		assert.equal(access.access.departments[0].path, "总部 / 分部");
 	} finally {
@@ -543,7 +543,7 @@ test("cross-tenant: roles, assignments, grants, groups and scopes never cross or
 		assert.equal((await t.json("GET", "/api/admin/roles", { token: bOwner.token })).roles.some((r: any) => r.id === aRole.id), false);
 		await assign(t, bOwner, bm.me.userId, aRole.id, { kind: "org" }, 404);
 		await assign(t, bOwner, bm.me.userId, "builtin:billing", { kind: "department", id: aDept }, 404);
-		await assign(t, bOwner, bm.me.userId, "builtin:skill_reviewer", { kind: "department", id: aDept }, 404);
+		await assign(t, bOwner, bm.me.userId, "builtin:reviewer", { kind: "department", id: aDept }, 404);
 		await assign(t, bOwner, bm.me.userId, aRole.id, { kind: "project", id: aProject }, 404);
 		await assign(t, bOwner, a.users.am!.me.userId, "builtin:admin", { kind: "org" }, 404);
 		await t.json("POST", "/api/admin/role-assignments", { token: bOwner.token, json: { subject: { kind: "group", id: aGroup.id }, roleId: "builtin:billing", scope: { kind: "org" } }, expect: 404 });

@@ -4,7 +4,7 @@
 import type { Context as HonoContext, Hono } from "hono";
 import type { AppContext, AppEnv, Principal } from "../core/contracts.ts";
 import { HttpError, jsonBody, newId, nowIso, principalOf } from "../core/http.ts";
-import { ADMIN_CONSOLE_PERMISSIONS, BASE_ROLE_IDS, BUILTIN_ROLES, PERMISSIONS, PERMISSION_GROUPS, builtinRole, permissionDef, type MemberAccessDTO, type PermissionScopeKind, type RoleAssignmentDTO, type RoleDTO, type ScopeRef, type UserGrantDTO } from "../../../shared/permissions.ts";
+import { ADMIN_CONSOLE_PERMISSIONS, BASE_ROLE_IDS, BUILTIN_ROLES, PERMISSIONS, PERMISSION_GROUPS, builtinRole, canonicalPermission, canonicalRoleId, permissionDef, type MemberAccessDTO, type PermissionScopeKind, type RoleAssignmentDTO, type RoleDTO, type ScopeRef, type UserGrantDTO } from "../../../shared/permissions.ts";
 import { audit, type Identity } from "./module.ts";
 import type { Access } from "./authz.ts";
 
@@ -105,7 +105,7 @@ export function registerRbacRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 	};
 	const cleanPerms = (raw: unknown): string[] => {
 		if (!Array.isArray(raw)) throw new HttpError(400, "invalid", "permissions 必须是权限 id 数组");
-		const out = [...new Set(raw.map(String))];
+		const out = [...new Set(raw.map((x) => canonicalPermission(String(x))))];
 		for (const x of out) {
 			if (!permissionDef(x)) throw new HttpError(400, "unknown_permission", `未知权限：${x}`);
 			if (x === "org.owner.manage") throw new HttpError(400, "reserved_permission", "「变更组织所有者」仅限内置的组织所有者角色，不能放入自定义角色");
@@ -232,6 +232,7 @@ export function registerRbacRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 	api.post("/admin/role-assignments", async (c) => {
 		const { p, a } = actor(c);
 		const b = await jsonBody<{ subject: { kind: "user" | "department" | "group"; id: string }; roleId: string; scope?: ScopeIn }>(c);
+		if (typeof b.roleId === "string") b.roleId = canonicalRoleId(b.roleId); // 旧角色 id（builtin:skill_reviewer）→ builtin:reviewer
 		if (!b.subject || !["user", "department", "group"].includes(b.subject.kind) || !b.subject.id || !b.roleId) throw new HttpError(400, "invalid", "需要 subject{kind,id} 与 roleId");
 		const scope = parseScope(b.scope);
 		checkAssign(a, p.orgId, b.subject, b.roleId, scope);
@@ -326,7 +327,7 @@ export function registerRbacRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 		if (!canViewMember(a, uid)) deny(a, "member.view");
 		const t = az.load(uid, p.orgId, { includeDisabled: true });
 		if (!t) throw new HttpError(404, "member_not_found", "组织内没有该成员");
-		const perm = c.req.query("permission") ?? "";
+		const perm = canonicalPermission(c.req.query("permission") ?? "");
 		if (!permissionDef(perm)) throw new HttpError(400, "unknown_permission", `未知权限：${perm}`);
 		const scope = c.req.query("scopeKind") ? parseScope({ kind: c.req.query("scopeKind"), id: c.req.query("scopeId") }) : undefined;
 		if (scope) validateScope(p.orgId, scope);
@@ -345,6 +346,7 @@ export function registerRbacRoutes(api: Hono<AppEnv>, ctx: AppContext, id: Ident
 		const uid = c.req.param("userId");
 		need(a, "grant.manage");
 		const b = await jsonBody<{ permission: string; effect: "allow" | "deny"; scope?: ScopeIn; reason?: string }>(c);
+		if (typeof b.permission === "string") b.permission = canonicalPermission(b.permission);
 		const def = permissionDef(b.permission ?? "");
 		if (!def) throw new HttpError(400, "unknown_permission", `未知权限：${b.permission}`);
 		if (b.effect !== "allow" && b.effect !== "deny") throw new HttpError(400, "invalid", "effect 必须是 allow 或 deny");

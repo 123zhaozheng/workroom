@@ -425,7 +425,10 @@ export interface ConversationWorkDTO {
 // distributed after a reviewer approved that exact version (the package sha256 is the version identity).
 export type MarketScope = "personal" | "project" | "department" | "org";
 export type SubmissionState = "checks_failed" | "pending_review" | "changes_requested" | "rejected" | "approved" | "published" | "unpublished" | "withdrawn" | "superseded";
-export type SubmissionKind = "skill" | "mcp_catalog" | "mcp_connector";
+/** 提交对象类型。审查权限不区分类型（统一的「审查员」）；新增类型（专家、将来的连接器等）只需在此加一个值并注册处理器。 */
+export type SubmissionKind = "skill" | "mcp_catalog" | "mcp_connector" | "expert";
+/** 审查队列里的类型筛选：mcp = mcp_catalog + mcp_connector（连接器）。 */
+export type ReviewFilterKind = "skill" | "mcp" | "expert";
 
 export interface PackageFindingDTO {
 	readonly severity: "error" | "warn" | "info";
@@ -580,7 +583,13 @@ export interface MarketPolicyDTO {
 }
 export interface MarketMeDTO {
 	readonly canUploadSkill: boolean;
+	/** 是审查员（统一权限 market.review，组织级或任一所在部门）。 */
+	readonly canReview: boolean;
+	/** 该审查员能审的对象类型（目前不区分，等于全部已注册类型）。 */
+	readonly reviewKinds: readonly ReviewFilterKind[];
+	/** @deprecated 旧字段别名：与 canReview 相同，由统一权限决定。 */
 	readonly canReviewSkills: boolean;
+	/** @deprecated 旧字段别名：与 canReview 相同，由统一权限决定。 */
 	readonly canReviewMcp: boolean;
 	readonly canManageMarket: boolean;
 	readonly canPublishOrg: boolean;

@@ -31,7 +31,7 @@ export function Authorizations() {
 	const { ask, dialog } = useConfirm();
 	const [kind, setKind] = useState<SubjectKind>("user");
 	const [subject, setSubject] = useState("");
-	const [roleId, setRoleId] = useState("builtin:skill_reviewer");
+	const [roleId, setRoleId] = useState("builtin:reviewer");
 	const [scope, setScope] = useState<{ kind: PermissionScopeKind; id: string }>({ kind: "org", id: "" });
 	const [filter, setFilter] = useState("");
 	const allRoles = roles.data?.roles ?? [];

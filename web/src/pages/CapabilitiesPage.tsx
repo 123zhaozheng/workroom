@@ -1,4 +1,4 @@
-// 能力: 技能市场 / 我的技能 / 待审核（仅审核员）/ 我的连接. Skills (and MCP servers, reviewed in the same queue) share one lifecycle:
+// 能力: 技能市场 / 我的技能 / 待审核（仅审查员）/ 我的连接. Skills (and MCP servers, reviewed in the same queue) share one lifecycle:
 // upload or import → automated checks → scoped review → publish → install (me / project / department / org).
 // The 连接市场 tab is gone from the UI; the MCP market API and the review queue's MCP review stay.
 // Design: docs/skills-mcp-marketplace.md. All permissions are decided by the server; the page only reflects them.
@@ -28,7 +28,7 @@ export default function CapabilitiesPage() {
 	const tab = (ALIAS[raw] ?? raw) as Tab;
 	const me = useMarketMe();
 	const [pending, setPending] = useState<number>();
-	const canReview = !!me.data && (me.data.me.canReviewSkills || me.data.me.canReviewMcp);
+	const canReview = !!me.data && me.data.me.canReview;
 	const queue = useApi<{ submissions: unknown[] }>(canReview ? "/market/submissions?view=queue" : null, { pollMs: 30000 });
 	const count = pending ?? queue.data?.submissions.length;
 	const go = (t: string) => setSp(t === "mine" ? {} : { tab: t });

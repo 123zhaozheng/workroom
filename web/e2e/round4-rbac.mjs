@@ -122,7 +122,7 @@ try {
 	await owner.goto(`${base}/admin?tab=roles`);
 	await owner.waitForSelector('[data-testid="roles-tab"]');
 	const roleNames = await owner.locator('[data-testid="role-item"]').allInnerTexts();
-	check("roles: eight built-in roles listed", ["组织所有者", "组织管理员", "安全审计员", "计费管理员", "部门管理员", "技能审核员", "普通成员", "访客"].every((n) => roleNames.some((t) => t.includes(n))), roleNames.length + " items");
+	check("roles: eight built-in roles listed", ["组织所有者", "组织管理员", "安全审计员", "计费管理员", "部门管理员", "审查员", "普通成员", "访客"].every((n) => roleNames.some((t) => t.includes(n))), roleNames.length + " items");
 	await owner.locator('[data-testid="role-item"][data-role="builtin:auditor"]').click();
 	await owner.waitForSelector('[data-testid="role-editor"][data-role="builtin:auditor"]');
 	const disabled = await owner.locator('[data-testid="perm-matrix"] input[type="checkbox"]').evaluateAll((els) => els.filter((e) => !e.disabled).length);
@@ -159,15 +159,15 @@ try {
 	await owner.click('[data-testid="authz-assign"]');
 	await owner.waitForSelector('[data-testid="authz-row"]:has-text("赵六")');
 	check("authz: custom role assigned org-wide to 赵六", true);
-	// department-scoped assignment: 技能审核员 limited to 华西
+	// department-scoped assignment: 审查员 limited to 华西
 	await pick(owner.locator('[data-testid="authz-subject"]'), { label: "王五（王五@rbac.example）" });
 	await pick(owner.locator('[data-testid="authz-scope"] [data-wr-select][aria-label="范围"]'), "department");
 	await pick(owner.locator('[data-testid="authz-scope"] [data-wr-select][aria-label="部门"]'), D["华西"]);
-	await pick(owner.locator('[data-testid="authz-role"]'), { label: "技能审核员" });
+	await pick(owner.locator('[data-testid="authz-role"]'), { label: "审查员" });
 	await owner.click('[data-testid="authz-assign"]');
 	await owner.waitForSelector('[data-testid="authz-row"]:has-text("王五")');
 	const rowText = await owner.locator('[data-testid="authz-row"]:has-text("王五")').innerText();
-	check("authz: department-scoped assignment shows its scope", rowText.includes("华西") && rowText.includes("技能审核员"), rowText.replace(/\s+/g, " "));
+	check("authz: department-scoped assignment shows its scope", rowText.includes("华西") && rowText.includes("审查员"), rowText.replace(/\s+/g, " "));
 	// user group (optional): create, add 李四, grant 计费管理员 to the group
 	await owner.click('[data-testid="groups-panel"] summary');
 	await owner.fill('input[aria-label="新用户组名称"]', "报表组");

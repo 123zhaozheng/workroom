@@ -206,7 +206,7 @@ function checkServerJson(sj: ServerJson, bundle: PackageFile[] | null): PackageC
 		if (!p.version && (p.registryType === "npm" || p.registryType === "pypi")) add("warn", "unpinned_package", `${p.identifier} 没有固定版本：每次启动可能拿到不同代码`);
 		if ((p.environmentVariables ?? []).some((e) => e.isSecret !== true && /key|token|secret|password/i.test(e.name))) add("warn", "secret_env_not_marked", "疑似凭据的环境变量没有标记 isSecret");
 	}
-	if (!sj.repository?.url) add("info", "no_repository", "没有 repository 链接，审核员无法对照源码");
+	if (!sj.repository?.url) add("info", "no_repository", "没有 repository 链接，审查员无法对照源码");
 	if (bundle) {
 		const sc = scanFiles(bundle);
 		findings.push(...sc.findings);
@@ -324,7 +324,7 @@ export class McpMarket {
 		return { entry, version: this.version(id, entry.latest_version_no)!, check };
 	}
 	async #canManage(p: Principal): Promise<boolean> {
-		return this.#market.can(p, "mcp.connector.review", { kind: "org" });
+		return this.#market.can(p, "market.manage");
 	}
 
 	// ------------------------------------------------------------ submissions
@@ -348,7 +348,7 @@ export class McpMarket {
 	}
 	/** Admin direct publish of a catalog version (audited as forced; reason mandatory). */
 	async forcePublish(p: Principal, id: string, versionNo: number, reason: string, target: { scope?: MarketScope; ref?: string } = {}) {
-		await this.#market.require(p, "mcp.connector.review", { kind: "org" }, "只有 MCP 市场管理员可以强制发布");
+		await this.#market.require(p, "market.manage", undefined, "只有市场管理员可以强制发布");
 		if (!reason?.trim()) throw new HttpError(400, "reason_required", "强制发布必须填写理由");
 		const e = this.row(id);
 		const v = e ? this.version(id, versionNo) : undefined;
@@ -359,7 +359,7 @@ export class McpMarket {
 		return this.#market.submissionDTO(p, subId);
 	}
 	async unpublish(p: Principal, id: string, reason: string): Promise<void> {
-		await this.#market.require(p, "mcp.connector.review", { kind: "org" }, "只有 MCP 市场管理员可以下架");
+		await this.#market.require(p, "market.manage", undefined, "只有市场管理员可以下架");
 		if (!reason?.trim()) throw new HttpError(400, "reason_required", "下架必须填写理由");
 		const e = this.row(id);
 		if (!e || e.org_id !== p.orgId) throw new HttpError(404, "not_found", "条目不存在");
