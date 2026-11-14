@@ -303,7 +303,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 	const copy = defineTool({
 		name: "copy_to_work",
 		description:
-			"把 /uploads、/library、/skills、/memory 中的文件或 HTTP(S) URL 复制到 /work 供 exec 处理；原件保留，不产生卡片。技能目录需 recursive: true；目标已存在且内容不同需 overwrite: true。",
+			"把 /uploads（路径见消息里的 [附件] 行）、/library、/skills、/memory 中的文件或 HTTP(S) URL 复制到 /work 供 exec 处理；原件保留，不产生卡片。技能目录需 recursive: true；目标已存在且内容不同需 overwrite: true。",
 		parameters: obj({ source: str({ minLength: 1 }), destination: opt(str()), overwrite: opt(bool()), recursive: opt(bool()) }),
 		replay: "safe",
 		executionMode: "sequential", // a round that writes then presents/reads the same file must run in order
@@ -321,7 +321,7 @@ export function createVfsExtension(ctx: AppContext, opts: { resolveActor?: Actor
 					if (src === "/work" || src.startsWith("/work/")) throw new VfsError("bad_path", "源文件已在 /work 中，无需复制");
 					defaultName = baseName(src);
 					const st = await vfs().stat(v, src);
-					if (!st) throw new VfsError("not_found", `${src} 不存在`, 404);
+					if (!st) throw new VfsError("not_found", `${src} 不存在${await vfs().hint(v, src)}`, 404);
 					if (st.type === "dir") {
 						if (!args.recursive) throw new VfsError("bad_path", `${src} 是目录：确实要复制整个目录请传 recursive: true`);
 						const stack = [src];
@@ -377,7 +377,7 @@ export function renderFilesSection(o: { backend: string; sharedSpace: boolean })
 		"文件工具（ls、read、write、edit、search、remove）作用于虚拟路径，权限由路径决定，被拒时错误会说明原因：",
 		"- /skills：技能，用到时先读 SKILL.md。个人技能可直接写，保存即生成新版本；已安装、组织、市场技能只读，要修改用 skill_manage（checkout → 改 → submit_draft，用户确认后生效）。",
 		`- /memory：长期记忆，MEMORY.md 是索引。只记有对话依据的稳定偏好与背景（合并重复、替换过时内容）；不记临时参数、推测、密码或密钥，任务进度也不写在这里。改已有文件先 read 并带 expected_etag（用户可能刚改过）。${o.sharedSpace ? "共享空间的对话没有任何人的个人记忆。" : ""}`,
-		"- /uploads：用户附件，只读。/library：已交付成果，只能由 present_file 写入。",
+		"- /uploads：用户附件，只读。消息里的 [附件] 行给出每个附件的完整路径，直接使用，不要猜；路径不明时 ls /uploads（附件在 /uploads/<目录>/ 下，不在 /uploads/ 根）。/library：已交付成果，只能由 present_file 写入。",
 		`- /work：会话沙盒工作区（${o.backend}），可读写，exec 在此运行。`,
 		"用命令处理 /uploads、/library、/skills、/memory 的文件前，先 copy_to_work。生成文件不等于交付：present_file 成功才进入文件库并显示卡片（同名覆盖），后台任务的输出也要经它交付。",
 	].join("\n");
